@@ -154,11 +154,23 @@ live town before they can be exercised end to end.
 ## Public repository and distribution setup
 
 The user authorized creating a public repository and pushing this implementation,
-using the existing bots as the reference for licensing and deployment. Adapt
-review-bot's pinned Linux/macOS CI, native release archives, checksum installer,
-npm launcher/platform packages, integrity checks, and tag-only OIDC workflow.
-Create BrokkAi/brokk-town, set origin, match the reference repository's settings
-and access, and configure packages-publish for v* tags. Validate packaging locally
-without publishing, push master, and check the actual hosted CI. npm-side trust
-requires the package names to exist; bootstrap publication is part of the first
-release, not the source push. Record the exact distinction in release docs.
+using the existing bots as the reference for licensing and deployment. Created
+https://github.com/BrokkAi/brokk-town and pushed master with origin tracking.
+Adapted review-bot's pinned Linux/macOS CI, native release archives, checksum
+installer, npm launcher/platform packages, integrity checks, and tag-only OIDC
+workflow. GitHub recognizes Apache-2.0; effective collaborator access matches
+review-bot. The packages-publish environment accepts v* tags only. Default
+workflow tokens are read-only, with write permissions scoped to publishing jobs.
+
+Local application, API, terminal, package/installer tests, license checks, and
+workflow lint passed. All four native archives and five npm packages were built
+and verified, then an offline npm install successfully launched bt. The hosted
+macOS smoke exposed a PTY output-drain issue in the test harness; keep reading
+while waiting for the TUI's screen-restoration output and process exit. CI checks
+both platforms independently so a failing platform does not cancel the other.
+
+No release tag or npm package was published. All five new npm package names
+currently return 404. npm-side trust requires bootstrap publication during the
+first release; the prepared OIDC workflow alone is not actual npm trust. The
+release guide records bootstrap, access matching, trust registration, validation,
+and release/recovery steps.

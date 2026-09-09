@@ -75,7 +75,10 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         def drain():
             try:
                 while True:
-                    output.extend(os.read(master, 65536))
+                    chunk = os.read(master, 65536)
+                    if not chunk:
+                        return
+                    output.extend(chunk)
             except (BlockingIOError, OSError):
                 pass
 
@@ -92,7 +95,10 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         os.write(master, b's')
         wait_for(lambda: (drain(), snapshot()['towns']['brokkai/orchard']['workers']['bug']['enabled'])[1])
         os.write(master, b'q')
-        terminal.wait(timeout=3)
+        # Keep consuming output while the TUI restores the screen. macOS PTYs
+        # can fill their output buffer before process exit if the test stops
+        # reading here; a real terminal continues draining it.
+        wait_for(lambda: (drain(), terminal.poll() is not None)[1], timeout=3)
         drain()
         assert terminal.returncode == 0
         assert b'\x1b[?1049l' in output and b'\x1b[?25h' in output

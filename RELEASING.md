@@ -9,12 +9,15 @@ trigger needed. `publish-packages.yml` runs Linux/macOS CI through the reusable
 `release.yml`, builds and publishes the native GitHub assets, then builds/tests
 and uploads all five npm packages at the exact same tag and commit. A failed
 native release prevents npm publication. Follow the **Publish packages** run for
-the complete result. npm's trusted publisher remains `publish-packages.yml` in
+the complete result. The npm trusted-publisher configuration targets
+`publish-packages.yml` in
 the `packages-publish` environment. The environment accepts only `v*` tags.
 npm publishing is configured to use OIDC; no `NPM_TOKEN` secret is required.
 For brokk-town, npm-side trust is not active until the first package bootstrap
 and trust registration below are completed. Do not push the first stable tag
-before that setup.
+before that setup. Repository workflow tokens default to read-only; only the
+native publishing job requests `contents: write`, and the npm job requests
+`id-token: write`.
 
 The installer expects `brokk-town-VERSION-OS-ARCH.tar.gz`, containing `bt`,
 and `checksums.txt`. Supported targets are Linux/macOS, amd64/arm64.
