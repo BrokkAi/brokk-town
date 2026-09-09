@@ -142,12 +142,23 @@ live autonomous work against the user's repositories as a development test.
 ## Boundaries of the first implementation
 
 No standalone bot repository was changed: their released library APIs are reused,
-with Town-specific certification and PR repair adapters. No hosted site, live
-bot work, GitHub repository, release, tag, npm package, or remote push was created.
-The original brokk-town checkout has no origin. Native/npm publication is deferred
-until requested. The browser assets were inspected, and frontend contracts were
+with Town-specific certification and PR repair adapters. No hosted site or live bot work was run. The subsequent public-repository
+setup adds the bot-style native/npm packaging and release workflows. No release
+tag or npm version is published by the source-publication task. The browser assets were inspected, and frontend contracts were
 tested; browser interaction/visual QA was not performed in this environment.
 Large repositories may need incremental inventories and task archival. Merge
 queues and non-squash merge strategies currently require manual merging. Real
 agent judgment and repository-specific publishing policy need an operator-chosen
 live town before they can be exercised end to end.
+
+## Public repository and distribution setup
+
+The user authorized creating a public repository and pushing this implementation,
+using the existing bots as the reference for licensing and deployment. Adapt
+review-bot's pinned Linux/macOS CI, native release archives, checksum installer,
+npm launcher/platform packages, integrity checks, and tag-only OIDC workflow.
+Create BrokkAi/brokk-town, set origin, match the reference repository's settings
+and access, and configure packages-publish for v* tags. Validate packaging locally
+without publishing, push master, and check the actual hosted CI. npm-side trust
+requires the package names to exist; bootstrap publication is part of the first
+release, not the source push. Record the exact distinction in release docs.

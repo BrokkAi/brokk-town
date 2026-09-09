@@ -37,7 +37,8 @@ live credentials.
 
 Run `make build` and check `bin/bt serve --demo` and `bin/bt tui --demo`
 when changing the local service or clients. Never run live autonomous bots as
-a development test. Native release and npm publication are not configured yet.
+a development test. For installer and release changes, run `make package-smoke` from a clean
+committed checkout. See [RELEASING.md](RELEASING.md) for the publishing pipeline.
 
 ## Licensing and dependencies
 

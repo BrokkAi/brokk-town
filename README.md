@@ -12,6 +12,8 @@ a house to inspect its queue, activity, errors, and controls. Town hall holds
 repo-bot's reports. The all-towns overview shows activity and attention counts
 without visiting each repository.
 
+[![CI](https://github.com/BrokkAi/brokk-town/actions/workflows/ci.yml/badge.svg)](https://github.com/BrokkAi/brokk-town/actions/workflows/ci.yml)
+
 This is the first local implementation. The browser UI is embedded in the Go
 binary; Node.js is only needed for UI development checks and agents that use it.
 Linux and macOS are supported. No hosted service is required.
@@ -40,6 +42,31 @@ The browser and TUI attach to the same service. Closing either leaves workers
 running. Stop the foreground service with Ctrl+C; it cancels and waits for workers
 before releasing the state lock. `bt` without a command opens the TUI of an
 already-running service. Use `bt web` to print its browser address again.
+
+## Installation and releases
+
+Source is published at [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town).
+Until the first release, build from source as above, or install the current branch:
+
+```sh
+go install github.com/BrokkAi/brokk-town/cmd/bt@master
+```
+
+The release pipeline builds checksum-verified Linux/macOS archives for amd64 and
+arm64, plus `@brokkai/brokk-town` and four native npm packages. All packages carry
+the project license, attribution, and complete third-party notices. No release
+has been cut yet. After the first release, the supported installer commands are:
+
+```sh
+sh install.sh                       # From a checkout; defaults to ~/.local/bin
+npm install -g @brokkai/brokk-town   # Installs the bt launcher and native package
+```
+
+The GitHub release workflow and npm OIDC workflow follow the bot repositories.
+The `packages-publish` environment accepts `v*` tags only. npm trust must be
+configured for all five package names after their initial bootstrap publication;
+a workflow file alone does not establish npm trust. See [RELEASING.md](RELEASING.md)
+for first-release setup, access checks, publishing, and recovery.
 
 ## Connect real repositories
 
@@ -172,5 +199,5 @@ development test. See [CONTRIBUTING.md](CONTRIBUTING.md),
 
 Licensed under [Apache-2.0](LICENSE). Attribution is in [NOTICE](NOTICE) and
 [third-party notices](licenses/THIRD_PARTY_NOTICES.txt). Artwork provenance is in
-[docs/ARTWORK.md](docs/ARTWORK.md). Native release archives and npm publication will
-be added when the first release is requested; this checkout builds from source.
+[docs/ARTWORK.md](docs/ARTWORK.md). Native and npm packaging is configured; the first publication still requires
+the documented package bootstrap and trusted-publisher setup.

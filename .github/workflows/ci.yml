@@ -1,23 +1,42 @@
 name: CI
-on:
-  push:
-  pull_request:
+on: [push, pull_request, workflow_dispatch, workflow_call]
 permissions:
   contents: read
 jobs:
-  check:
-    runs-on: ubuntu-latest
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v4
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
-      - run: make check smoke
-      - name: Cross-compile supported systems
-        run: |
-          GOOS=darwin GOARCH=arm64 go build -o /tmp/bt-darwin-arm64 ./cmd/bt
-          GOOS=darwin GOARCH=amd64 go build -o /tmp/bt-darwin-amd64 ./cmd/bt
-          GOOS=linux GOARCH=arm64 go build -o /tmp/bt-linux-arm64 ./cmd/bt
+      - name: Check dependency licenses and notices
+        run: python3 scripts/licenses.py
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l .)"
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go build -o bin/bt ./cmd/bt
+      - run: ./bin/bt --help
+      - run: npm run check
+      - run: npm test
+      - run: python3 scripts/smoke.py
+      - run: sh -n install.sh
+      - run: python3 -m unittest discover -s scripts -p '*_test.py'
+      - run: node --test --test-isolation=none npm/bt.test.cjs
+      - run: python3 scripts/smoke_installers.py
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
