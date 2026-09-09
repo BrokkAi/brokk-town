@@ -1,0 +1,288 @@
+{
+  "dimensions": [
+    1536,
+    1024
+  ],
+  "grid": {
+    "columns": 3,
+    "rows": 2,
+    "cellWidth": 512,
+    "cellHeight": 512
+  },
+  "coordinateFormat": "x,y,width,height",
+  "note": "Use recommendedSourceRect for building center column. Watchtower antenna begins around y=492 and crosses nominal y=512 grid line. Alpha channels preserved, no image edits or retries.",
+  "buildings": {
+    "file": "buildings-atlas.png",
+    "frames": [
+      {
+        "name": "bugbot-greenhouse",
+        "gridCell": 0,
+        "nominalSourceRect": [
+          0,
+          0,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          0,
+          0,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          37,
+          48,
+          492,
+          457
+        ]
+      },
+      {
+        "name": "issuebot-workshop",
+        "gridCell": 1,
+        "nominalSourceRect": [
+          512,
+          0,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          512,
+          0,
+          512,
+          480
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          42,
+          45,
+          475,
+          465
+        ]
+      },
+      {
+        "name": "reviewbot-observatory",
+        "gridCell": 2,
+        "nominalSourceRect": [
+          1024,
+          0,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          1024,
+          0,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          39,
+          59,
+          474,
+          473
+        ]
+      },
+      {
+        "name": "release-depot",
+        "gridCell": 3,
+        "nominalSourceRect": [
+          0,
+          512,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          0,
+          512,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          35,
+          41,
+          494,
+          446
+        ]
+      },
+      {
+        "name": "repobot-watchtower",
+        "gridCell": 4,
+        "nominalSourceRect": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          512,
+          480,
+          512,
+          544
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          44,
+          11,
+          471,
+          490
+        ]
+      },
+      {
+        "name": "town-hall",
+        "gridCell": 5,
+        "nominalSourceRect": [
+          1024,
+          512,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          1024,
+          512,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          12,
+          13,
+          482,
+          453
+        ]
+      }
+    ]
+  },
+  "actors": {
+    "file": "actors-atlas.png",
+    "frames": [
+      {
+        "name": "wheelbarrow-right",
+        "gridCell": 0,
+        "nominalSourceRect": [
+          0,
+          0,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          0,
+          0,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          116,
+          145,
+          449,
+          441
+        ]
+      },
+      {
+        "name": "wheelbarrow-left",
+        "gridCell": 1,
+        "nominalSourceRect": [
+          512,
+          0,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          512,
+          0,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          86,
+          145,
+          397,
+          438
+        ]
+      },
+      {
+        "name": "worker-wrench",
+        "gridCell": 2,
+        "nominalSourceRect": [
+          1024,
+          0,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          1024,
+          0,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          175,
+          145,
+          388,
+          441
+        ]
+      },
+      {
+        "name": "truck-right",
+        "gridCell": 3,
+        "nominalSourceRect": [
+          0,
+          512,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          0,
+          512,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          49,
+          77,
+          477,
+          404
+        ]
+      },
+      {
+        "name": "truck-left",
+        "gridCell": 4,
+        "nominalSourceRect": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          62,
+          95,
+          496,
+          406
+        ]
+      },
+      {
+        "name": "worker-clipboard",
+        "gridCell": 5,
+        "nominalSourceRect": [
+          1024,
+          512,
+          512,
+          512
+        ],
+        "recommendedSourceRect": [
+          1024,
+          512,
+          512,
+          512
+        ],
+        "opaqueCoreBoundsInSourceRect": [
+          163,
+          110,
+          395,
+          416
+        ]
+      }
+    ]
+  }
+}

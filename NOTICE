@@ -1,0 +1,12 @@
+Brokk Town
+Copyright 2026 Brokk.ai and contributors
+
+This project is licensed under the Apache License, Version 2.0.
+See LICENSE for the full terms. Third-party terms and attribution are
+provided in licenses/THIRD_PARTY_NOTICES.txt.
+
+Process execution, terminal key decoding, and license checking foundations
+are adapted from BrokkAi/review-bot, BrokkAi/bug-bot, and BrokkAi/issue-bot,
+also licensed under Apache-2.0. Modified for the local multi-repository service.
+
+Town artwork was generated for this project; see docs/ARTWORK.md.

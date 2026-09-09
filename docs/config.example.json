@@ -1,0 +1,12 @@
+[
+  {
+    "repo": "BrokkAi/my-project",
+    "branch": "main",
+    "agent": {"command": ["codex-acp"]},
+    "verify": ["go", "test", "./..."],
+    "merge_policy": "bot",
+    "poll_seconds": 60,
+    "report_seconds": 1800,
+    "max_cycles": 5
+  }
+]

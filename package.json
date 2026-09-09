@@ -1,0 +1,9 @@
+{
+  "name": "brokk-town-ui-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check internal/web/app.js && node --check internal/web/town.js && node --check internal/web/tools.js",
+    "test": "node --test internal/web/*.test.js"
+  }
+}

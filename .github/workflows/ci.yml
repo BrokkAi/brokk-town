@@ -1,0 +1,23 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: make check smoke
+      - name: Cross-compile supported systems
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o /tmp/bt-darwin-arm64 ./cmd/bt
+          GOOS=darwin GOARCH=amd64 go build -o /tmp/bt-darwin-amd64 ./cmd/bt
+          GOOS=linux GOARCH=arm64 go build -o /tmp/bt-linux-arm64 ./cmd/bt

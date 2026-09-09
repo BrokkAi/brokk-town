@@ -1,0 +1,176 @@
+# Brokk Town
+
+One repository, one little town. Brokk Town runs several repository towns from a
+local Go service, with an animated browser village and a compact terminal control
+panel. Each town owns its houses, queues, review loops, releases, and history.
+Branches and private worktrees belong to their repository's town. Your machine
+hosts the towns and shares four agent worker slots between them.
+
+The browser shows worker houses, wheelbarrows carrying completed handoffs, trucks
+bringing external issues and PRs, and shipments leaving the release depot. Visit
+a house to inspect its queue, activity, errors, and controls. Town hall holds
+repo-bot's reports. The all-towns overview shows activity and attention counts
+without visiting each repository.
+
+This is the first local implementation. The browser UI is embedded in the Go
+binary; Node.js is only needed for UI development checks and agents that use it.
+Linux and macOS are supported. No hosted service is required.
+
+## Try the town
+
+Build with the Go version in `go.mod`:
+
+```sh
+make build
+./bin/bt serve --demo
+```
+
+Open the browser address printed by the service. In another terminal:
+
+```sh
+./bin/bt tui --demo
+```
+
+Demo mode uses an isolated state directory and simulated activity in two towns.
+It never calls GitHub or launches agents. Orchard cycles through bug discovery,
+implementation, review, repair, merge, release, and external arrivals. Paper-trail
+illustrates a quiet neighboring repository. Pause a house to hold its next step.
+
+The browser and TUI attach to the same service. Closing either leaves workers
+running. Stop the foreground service with Ctrl+C; it cancels and waits for workers
+before releasing the state lock. `bt` without a command opens the TUI of an
+already-running service. Use `bt web` to print its browser address again.
+
+## Connect real repositories
+
+Install and authenticate `git`, GitHub CLI (`gh`), and an ACP coding agent. The
+agent defaults to `codex-acp` on PATH, with `npx --yes
+@agentclientprotocol/codex-acp` as its fallback. Git must already be able to clone
+and push your GitHub repositories; Town uses the current Git/gh credentials.
+
+```sh
+./bin/bt serve --repo BrokkAi/my-project
+# In another terminal:
+./bin/bt add --repo BrokkAi/another-project
+./bin/bt tui
+```
+
+New towns start with the four automation workers **paused**. Repo-bot starts its
+read-only inventory. Inspect the town, then start individual workers or choose
+**Wake the town**. Starting workers authorizes their real work: filing issues,
+creating and repairing PRs, posting reviews, merging under the configured policy,
+and publishing releases. Agents and verification commands run with your local
+permissions. Use an isolated account or machine for repositories you don't trust.
+
+```sh
+./bin/bt start --repo BrokkAi/my-project --role bug
+./bin/bt pause --repo BrokkAi/my-project --role all
+./bin/bt stop --repo BrokkAi/my-project --role issue
+./bin/bt status
+```
+
+Pause finishes active work and stops scheduling more. Stop also cancels active
+work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
+uncertain external writes retain their saved intent and are reconciled first.
+
+## How work moves
+
+| House | Work and handoff |
+| --- | --- |
+| Bug greenhouse | Runs bug-bot's investigation and verification; observed filed issues travel to issue-bot. |
+| Issue workshop | Runs issue-bot on eligible issues, opens implementation-ready PRs, and repairs Town-owned PR branches from review feedback. |
+| Review observatory | Runs review-bot, independently checks the full change and every retained finding, then returns fixes or waits for merge requirements. |
+| Release depot | Runs release-bot's batching and publishing policy. Confirmed merged/direct commits accumulate here; a published stable release ships only commits proven to be its ancestors. |
+| Repo watchtower | Polls GitHub, reconciles arrivals and revisions, summarizes new commit titles, reports queue growth and blocked work. |
+| Town hall | Stores periodic and event-triggered repo-bot reports. |
+
+The first complete inventory establishes existing work without a burst of arrival
+animations. Subsequent deliveries follow durable, sequenced state changes.
+Animation never initiates a GitHub write. Reconnecting does not replay previously
+seen deliveries. External PRs receive reviews but their branches are left to their
+authors; only locally recorded Town-created branches enter automatic repair.
+
+A review is bound to the exact base, head, PR description, and discussion snapshot. A suppressed
+duplicate comment is still a finding to check. Complete coverage, explicit
+resolution of every concern, and validation evidence are required for a clean
+result. New commits invalidate review readiness. Uncertain reviews and exhausted
+repair cycles become visible tasks needing attention.
+
+The default merge policy is `bot`: auto-merge eligible Town-created PRs. `manual`
+leaves merging to the operator; `all` also permits eligible external PRs. Town-managed merges require current clean Town evidence, GitHub mergeability, required checks
+and approvals. Town uses an expected-head squash merge, without admin bypass.
+Repositories that require a merge queue or prohibit squash merging need manual
+merges for now. GitHub is the final authority at write time.
+
+## Configuration and recovery
+
+Copy [docs/config.example.json](docs/config.example.json), edit the repository,
+agent command, verification command, and policy, then run:
+
+```sh
+./bin/bt serve --config /path/to/towns.json
+```
+
+Configuration is a JSON array. Each entry supplies `repo`, optional `branch`,
+`agent`, optional `verify` argument vector, `merge_policy`, `poll_seconds`,
+`report_seconds`, and `max_cycles`. The example lists all required values. Town
+uses the repository's default branch when omitted; an initialized town's branch
+cannot be changed in place. Omitted towns are retained when loading a config.
+Agent configuration uses acp-go's `command`, `environment`, `auth_method`, `mode`, `model`, and `effort` fields.
+
+Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet reports
+use `report_seconds` (1800). Bug-bot runs at most every 30 minutes; release-bot
+checks every five minutes and retains its own quiet window, minimum gap, and
+batching decisions. Each worker attempt has a two-hour deadline. Repair cycles
+default to five; failed PR attempts back off and block after three failures.
+
+Private state defaults to `$XDG_STATE_HOME/brokk-town` or
+`~/.local/state/brokk-town`. `--state-dir` selects another directory; `--demo`
+appends `demo`. A single writer lock, atomic snapshots, per-role bot state, and
+private worktrees keep towns separate. Events, logs, and reports have bounded
+recent histories; task/intent history persists. Browser access uses a per-service
+local key in a URL fragment. `connection.json` and state snapshots are mode 0600.
+Agent commands/environment values are omitted from public configuration snapshots.
+Local logs and worktrees can contain repository content; keep this directory private.
+
+If a push or merge response is lost, Town checks GitHub rather than assuming
+success. Inspect the task and its saved intent, then use **Reconcile and retry** or:
+
+```sh
+./bin/bt retry --repo BrokkAi/my-project --task pr:123
+```
+
+Retry explicitly permits another attempt after fresh checks. For an uncertain
+repair push, it reuses and verifies the saved commit; it does not rerun the agent.
+If the PR moved, the saved worktree is retained for inspection. A retry also resets
+an exhausted repair budget. Never delete an uncertain intent to force progress.
+Use `bt status` to inspect saved details and GitHub to resolve conflicts.
+
+The HTTP listener accepts loopback IPs only (default `127.0.0.1:8099`). Host,
+origin, and bearer key checks protect the local API. A browser supporting WebMCP
+can list towns and navigate to a house through optional page tools. Unsupported
+browsers use the ordinary interface.
+
+## Keyboard and development
+
+Browser: `0` overview, `1`–`5` agent houses, `6` town hall, `?` help, Escape closes
+the inspector. Motion follows reduced-motion preferences and can be switched off.
+Terminal: `0` overview, Tab next town, `1`–`5` or `j`/`k` select a house, `s` start,
+`p` pause, `x` stop, `a` wake the selected town, `q` detach. Bracketed paste is
+ignored as commands. Network and agent work stay off the input/render loops.
+
+```sh
+make check
+make smoke
+```
+
+Tests use fake GitHub and agents, temporary local Git remotes, authenticated HTTP
+fixtures, and the isolated simulation. Do not use live repository automation as a
+development test. See [CONTRIBUTING.md](CONTRIBUTING.md),
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and
+[licenses/README.md](licenses/README.md).
+
+Licensed under [Apache-2.0](LICENSE). Attribution is in [NOTICE](NOTICE) and
+[third-party notices](licenses/THIRD_PARTY_NOTICES.txt). Artwork provenance is in
+[docs/ARTWORK.md](docs/ARTWORK.md). Native release archives and npm publication will
+be added when the first release is requested; this checkout builds from source.

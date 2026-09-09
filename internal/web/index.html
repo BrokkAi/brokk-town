@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="A little town for your repository's agents."
+    />
+    <title>Brokk Town</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/" aria-label="Brokk Town home"
+        ><span class="brand-mark">B<span>▦</span></span
+        ><span>BROKK<span class="brand-light">TOWN</span></span></a
+      >
+      <div class="connection">
+        <span id="connection-dot" class="dot"></span
+        ><span id="connection">Connecting</span>
+      </div>
+      <span id="mode" class="badge" hidden>DEMO</span>
+      <div class="header-space"></div>
+      <button id="motion" class="quiet" aria-pressed="false">Motion on</button
+      ><button id="new-town">＋ New town</button>
+    </header>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="eyebrow">YOUR NEIGHBORHOODS</div>
+        <button id="all-towns" class="town-link selected">▧ All towns</button>
+        <nav id="towns" aria-label="Repositories"></nav>
+        <div class="sidebar-bottom">
+          <div class="eyebrow">TOWN CLOCK</div>
+          <div id="clock" class="clock"></div>
+          <p>Every delivery has a story.<br />Choose a house to follow it.</p>
+          <button id="help" class="quiet">
+            Keyboard shortcuts <kbd>?</kbd>
+          </button>
+        </div>
+      </aside>
+      <main>
+        <div class="town-heading">
+          <div>
+            <div class="eyebrow" id="repo-owner">WELCOME TO</div>
+            <h1 id="town-name">Your next little town</h1>
+            <div id="town-meta" class="muted">
+              Connect a repository to bring its agents together.
+            </div>
+          </div>
+          <div class="town-controls">
+            <button id="start-all" class="primary" disabled>
+              ▶ Wake the town</button
+            ><button id="pause-all" class="quiet" disabled>Ⅱ Pause</button>
+          </div>
+        </div>
+        <div id="error" role="alert" hidden></div>
+        <div id="demo-note" hidden>
+          DEMO TOWN
+          <span
+            >Simulated workers and deliveries. No GitHub writes or agents are
+            running.</span
+          >
+        </div>
+        <section id="overview" aria-label="All repository towns"></section>
+        <section class="world" aria-label="Agent town">
+          <canvas
+            id="world"
+            width="1120"
+            height="680"
+            aria-label="Animated deliveries between the agent houses"
+          ></canvas>
+          <div id="houses"></div>
+          <div class="world-legend">
+            <span><i class="dot active"></i>Working</span
+            ><span><i class="dot waiting"></i>Waiting</span
+            ><span><i class="dot blocked"></i>Needs attention</span>
+          </div>
+          <div id="empty" hidden>
+            <h2>A place for every agent.</h2>
+            <p>
+              Add a GitHub repository. The reporter will take a look first;<br />you
+              decide when the workers start.
+            </p>
+            <button id="empty-add" class="primary">＋ Add a repository</button>
+          </div>
+        </section>
+        <section class="activity">
+          <div class="section-heading">
+            <h2>Along the way <span id="activity-count"></span></h2>
+            <span class="eyebrow">LIVE TOWN JOURNAL</span>
+          </div>
+          <ol id="journal" aria-live="polite"></ol>
+        </section>
+      </main>
+      <aside id="inspector" class="inspector" aria-label="Selected house">
+        <div class="inspector-top">
+          <span class="eyebrow">HOUSE INSPECTOR</span
+          ><button
+            id="close-inspector"
+            class="quiet"
+            aria-label="Close inspector"
+          >
+            ×
+          </button>
+        </div>
+        <div id="inspection">
+          <h2>Take a look around</h2>
+          <p class="muted">
+            Visit a house to see its work, read the latest news, or lend a hand.
+          </p>
+        </div>
+      </aside>
+    </div>
+    <dialog id="add-dialog">
+      <form id="add-form">
+        <div class="eyebrow">ESTABLISH A NEIGHBORHOOD</div>
+        <h2>A new town</h2>
+        <label for="repo-input">GitHub repository</label
+        ><input
+          id="repo-input"
+          name="repo"
+          placeholder="BrokkAi/my-project"
+          required
+          pattern="[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*"
+          autocomplete="off"
+        />
+        <p class="muted">
+          Agents start paused. Repo-bot will bring you the first inventory.
+        </p>
+        <label for="merge-policy">When a reviewed PR is ready</label
+        ><select id="merge-policy">
+          <option value="bot">
+            Auto-merge town-created PRs after required checks
+          </option>
+          <option value="manual">Leave merging to me</option>
+          <option value="all">
+            Auto-merge all eligible PRs after required checks
+          </option>
+        </select>
+        <div id="add-error" role="alert"></div>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-add" class="quiet">Cancel</button
+          ><button type="submit" class="primary">Build town</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="connect-dialog">
+      <form id="connect-form">
+        <h2>Connect to your town</h2>
+        <p>
+          Open the address printed by <code>bt serve</code>, or enter its local
+          access key.
+        </p>
+        <label for="token-input">Local access key</label
+        ><input id="token-input" type="password" autocomplete="off" required />
+        <div class="dialog-actions">
+          <button class="primary">Connect</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="help-dialog">
+      <h2>Around the town</h2>
+      <p><kbd>0</kbd> All towns</p>
+      <p><kbd>1</kbd>–<kbd>5</kbd> Visit agent houses</p>
+      <p><kbd>6</kbd> Read the town hall reports</p>
+      <p><kbd>Esc</kbd> Close a panel</p>
+      <p>
+        Click a delivery or queued task to inspect its contents. Pause lets
+        active work finish; stop cancels it.
+      </p>
+      <button id="close-help">Back to town</button>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
