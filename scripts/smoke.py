@@ -102,7 +102,8 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         drain()
         assert terminal.returncode == 0
         assert b'\x1b[?1049l' in output and b'\x1b[?25h' in output
-        assert termios.tcgetattr(slave) == original, 'Terminal settings were not restored'
+        restored = termios.tcgetattr(slave)
+        assert restored == original, f'Terminal settings were not restored: before={original!r}, after={restored!r}'
         assert service.poll() is None, 'Detaching stopped the service'
         service.send_signal(signal.SIGTERM)
         service.wait(timeout=6)
