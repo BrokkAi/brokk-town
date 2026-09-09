@@ -103,7 +103,14 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         assert terminal.returncode == 0
         assert b'\x1b[?1049l' in output and b'\x1b[?25h' in output
         restored = termios.tcgetattr(slave)
-        assert restored == original, f'Terminal settings were not restored: before={original!r}, after={restored!r}'
+        expected_settings, actual_settings = list(original), list(restored)
+        if sys.platform == 'darwin':
+            # XNU sets PENDIN when ICANON is restored, to reprocess typeahead.
+            # It is transient kernel state, not a changed terminal setting:
+            # https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/tty.c
+            expected_settings[3] &= ~termios.PENDIN
+            actual_settings[3] &= ~termios.PENDIN
+        assert actual_settings == expected_settings, f'Terminal settings were not restored: before={original!r}, after={restored!r}'
         assert service.poll() is None, 'Detaching stopped the service'
         service.send_signal(signal.SIGTERM)
         service.wait(timeout=6)

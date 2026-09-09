@@ -13,9 +13,12 @@ the complete result. The npm trusted-publisher configuration targets
 `publish-packages.yml` in
 the `packages-publish` environment. The environment accepts only `v*` tags.
 npm publishing is configured to use OIDC; no `NPM_TOKEN` secret is required.
-For brokk-town, npm-side trust is not active until the first package bootstrap
-and trust registration below are completed. Do not push the first stable tag
-before that setup. Repository workflow tokens default to read-only; only the
+All five brokk-town packages were manually bootstrapped as `0.1.0-rc.1` on npm
+under `next`, from commit `cfa1a68754e565b61894bb5de33558ee05b169f7`. Their
+actual npm trusted publishers were then created and read back successfully.
+Public visibility, collaborators, and developers-team write access match mjolnir.
+Published integrity values match the validated local artifacts. No stable release
+has been cut yet. Repository workflow tokens default to read-only; only the
 native publishing job requests `contents: write`, and the npm job requests
 `id-token: write`.
 

@@ -14,6 +14,6 @@ legal texts, and stale reports. It does not classify or approve new licenses.
 Preserve LICENSE, NOTICE, and this directory in source and binary distributions.
 Native archives and every npm package include the exact reviewed legal files.
 Packaging rejects missing or altered legal content and records the source commit
-in each native artifact. No first release has been published yet.
+in each native artifact. The `0.1.0-rc.1` npm bootstrap is published; stable GitHub releases remain pending.
 Separately installed coding agents and interpreters have their own terms.
 Original generated artwork is documented in [ARTWORK.md](../docs/ARTWORK.md).

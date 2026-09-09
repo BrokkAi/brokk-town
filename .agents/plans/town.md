@@ -143,8 +143,8 @@ live autonomous work against the user's repositories as a development test.
 
 No standalone bot repository was changed: their released library APIs are reused,
 with Town-specific certification and PR repair adapters. No hosted site or live bot work was run. The subsequent public-repository
-setup adds the bot-style native/npm packaging and release workflows. No release
-tag or npm version is published by the source-publication task. The browser assets were inspected, and frontend contracts were
+setup adds the bot-style native/npm packaging and release workflows. No GitHub release
+tag was created. The user subsequently authorized manual npm bootstrap publication. The browser assets were inspected, and frontend contracts were
 tested; browser interaction/visual QA was not performed in this environment.
 Large repositories may need incremental inventories and task archival. Merge
 queues and non-squash merge strategies currently require manual merging. Real
@@ -169,8 +169,17 @@ macOS smoke exposed a PTY output-drain issue in the test harness; keep reading
 while waiting for the TUI's screen-restoration output and process exit. CI checks
 both platforms independently so a failing platform does not cancel the other.
 
-No release tag or npm package was published. All five new npm package names
-currently return 404. npm-side trust requires bootstrap publication during the
-first release; the prepared OIDC workflow alone is not actual npm trust. The
-release guide records bootstrap, access matching, trust registration, validation,
-and release/recovery steps.
+The user then explicitly requested manual npm publication. Published all five
+0.1.0-rc.1 packages under next from cfa1a68754e565b61894bb5de33558ee05b169f7,
+following browser authentication. Configured actual npm trusted publishers for
+all five names and read every setting back: BrokkAi/brokk-town,
+publish-packages.yml, packages-publish, with the same publishing permissions as
+review-bot. All five are public, effective collaborators match mjolnir, and the
+brokkai:developers team has read-write access. Published package integrity matches
+the validated local artifacts. Audit details: /tmp/brokk-town-npm-audit.json.
+No GitHub tag or stable release was created.
+
+The remaining macOS smoke difference was precisely the transient PENDIN flag,
+which XNU sets when ICANON is restored. The smoke comparison accounts for that
+kernel-maintained state on macOS while checking all configured flags, control
+characters, and speeds. The application itself correctly restored its settings.

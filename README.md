@@ -46,7 +46,13 @@ already-running service. Use `bt web` to print its browser address again.
 ## Installation and releases
 
 Source is published at [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town).
-Until the first release, build from source as above, or install the current branch:
+The bootstrap prerelease is available on npm:
+
+```sh
+npm install -g @brokkai/brokk-town@next
+```
+
+You can also build from source as above or install the current branch:
 
 ```sh
 go install github.com/BrokkAi/brokk-town/cmd/bt@master
@@ -54,8 +60,8 @@ go install github.com/BrokkAi/brokk-town/cmd/bt@master
 
 The release pipeline builds checksum-verified Linux/macOS archives for amd64 and
 arm64, plus `@brokkai/brokk-town` and four native npm packages. All packages carry
-the project license, attribution, and complete third-party notices. No release
-has been cut yet. After the first release, the supported installer commands are:
+the project license, attribution, and complete third-party notices. The initial `0.1.0-rc.1` npm bootstrap is published. After the first stable GitHub
+release, the supported installer commands are:
 
 ```sh
 sh install.sh                       # From a checkout; defaults to ~/.local/bin
@@ -63,9 +69,9 @@ npm install -g @brokkai/brokk-town   # Installs the bt launcher and native packa
 ```
 
 The GitHub release workflow and npm OIDC workflow follow the bot repositories.
-The `packages-publish` environment accepts `v*` tags only. npm trust must be
-configured for all five package names after their initial bootstrap publication;
-a workflow file alone does not establish npm trust. See [RELEASING.md](RELEASING.md)
+The `packages-publish` environment accepts `v*` tags only. Actual npm trusted publishers are configured and verified for all five packages,
+restricted to this repository, `publish-packages.yml`, and `packages-publish`.
+Visibility is public and collaborator/developers-team access matches mjolnir. See [RELEASING.md](RELEASING.md)
 for first-release setup, access checks, publishing, and recovery.
 
 ## Connect real repositories
@@ -199,5 +205,5 @@ development test. See [CONTRIBUTING.md](CONTRIBUTING.md),
 
 Licensed under [Apache-2.0](LICENSE). Attribution is in [NOTICE](NOTICE) and
 [third-party notices](licenses/THIRD_PARTY_NOTICES.txt). Artwork provenance is in
-[docs/ARTWORK.md](docs/ARTWORK.md). Native and npm packaging is configured; the first publication still requires
-the documented package bootstrap and trusted-publisher setup.
+[docs/ARTWORK.md](docs/ARTWORK.md). Native and npm packaging is configured, and the npm bootstrap and trusted
+publishers are established. Stable GitHub release publication remains separate.
