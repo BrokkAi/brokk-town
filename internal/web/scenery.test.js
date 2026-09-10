@@ -4,7 +4,7 @@ import { seededRandom, workerPose, easeDelivery } from "./scenery.js";
 import { routePosition } from "./town.js";
 
 test("reduced motion freezes workers at every phase", () => {
-  for (const role of ["bug", "issue", "review", "release", "repo"]) {
+  for (const role of ["bug", "issue", "review", "release", "repo", "feature"]) {
     assert.deepEqual(
       workerPose(role, 0, false),
       workerPose(role, 15930, false),

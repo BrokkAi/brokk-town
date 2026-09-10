@@ -1,4 +1,4 @@
-import { positions } from "./town.js";
+import { positions, roadSegments, houseRoad } from "./town.js";
 
 // Scenery is painted once per town. Animation only reads committed worker state.
 export function seededRandom(seed) {
@@ -14,7 +14,9 @@ export function easeDelivery(progress) {
   return p * p * (3 - 2 * p);
 }
 export function workerPose(role, time, motion = true) {
-  const index = ["bug", "issue", "review", "release", "repo"].indexOf(role);
+  const index = [
+    "bug", "issue", "review", "release", "repo", "feature",
+  ].indexOf(role);
   const t = motion ? time / 1000 + Math.max(0, index) * 1.73 : 0;
   const cycle = t % 7,
     walking = motion && cycle < 2.8;
@@ -22,7 +24,8 @@ export function workerPose(role, time, motion = true) {
     x: 72 + (walking ? Math.sin((cycle / 2.8) * Math.PI) * 31 : 0),
     y: 74 + (walking ? Math.abs(Math.sin(t * 13)) * 3 : 0),
     tilt: motion
-      ? Math.sin(t * (walking ? 13 : 7)) * (walking ? 0.06 : 0.13)
+      ? Math.sin(t * (walking ? 13 : role === "feature" ? 2 : 7)) *
+        (walking ? 0.06 : role === "feature" ? 0.025 : 0.13)
       : 0,
     working: !walking,
     phase: t,
@@ -186,25 +189,20 @@ function rock(c, x, y, s) {
 }
 function road(c) {
   c.beginPath();
-  c.moveTo(-20, 330);
-  c.lineTo(1150, 330);
-  c.moveTo(180, 230);
-  c.lineTo(180, 540);
-  c.lineTo(960, 540);
-  c.moveTo(555, 220);
-  c.lineTo(555, 550);
-  c.moveTo(930, 220);
-  c.lineTo(930, 550);
-  c.lineTo(1150, 550);
+  for (const [a, b] of roadSegments) {
+    c.moveTo(...a);
+    c.lineTo(...b);
+  }
 }
 function onRoad(x, y) {
-  return (
-    Math.abs(y - 330) < 15 ||
-    (y > 230 && y < 545 && Math.abs(x - 180) < 15) ||
-    (y > 220 &&
-      y < 550 &&
-      (Math.abs(x - 555) < 15 || Math.abs(x - 930) < 15)) ||
-    (x > 180 && Math.abs(y - 540) < 15)
+  return roadSegments.some(([a, b]) =>
+    a[0] === b[0]
+      ? Math.abs(x - a[0]) < 15 &&
+        y >= Math.min(a[1], b[1]) &&
+        y <= Math.max(a[1], b[1])
+      : Math.abs(y - a[1]) < 15 &&
+        x >= Math.min(a[0], b[0]) &&
+        x <= Math.max(a[0], b[0]),
   );
 }
 export function landscape(seed) {
@@ -263,7 +261,7 @@ export function landscape(seed) {
     if (role === "outside") continue;
     oval(c, x, y + 62, 110, 33, "#273f2b55");
     oval(c, x - 8, y + 57, 98, 25, "#81916420");
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; y + 86 + i * 7 < houseRoad(role); i++) {
       c.fillStyle = i % 2 ? "#909072" : "#a7a07d";
       c.fillRect(x - 8 + (i % 2) * 2, y + 86 + i * 7, 15, 4);
     }
@@ -271,22 +269,16 @@ export function landscape(seed) {
   const trees = [
     [28, 99, 1.1, 1],
     [75, 66, 0.85, 0],
-    [330, 112, 0.82, 0],
-    [387, 142, 0.66, 1],
-    [748, 103, 0.85, 1],
-    [790, 85, 0.68, 0],
-    [1093, 145, 1, 0],
-    [1066, 208, 0.68, 1],
+    [282, 68, 0.72, 0],
+    [564, 77, 0.66, 1],
+    [837, 65, 0.72, 0],
+    [1103, 79, 0.72, 1],
     [22, 240, 0.85, 1],
-    [364, 288, 0.65, 0],
-    [746, 260, 0.7, 0],
-    [35, 439, 0.9, 0],
-    [67, 479, 0.68, 1],
+    [288, 282, 0.55, 0],
+    [837, 281, 0.55, 1],
     [354, 452, 0.75, 1],
     [391, 424, 0.63, 0],
     [733, 463, 0.88, 0],
-    [1083, 457, 1, 1],
-    [1033, 486, 0.65, 0],
     [116, 628, 0.85, 0],
     [335, 645, 1, 1],
     [392, 633, 0.73, 1],
@@ -297,8 +289,8 @@ export function landscape(seed) {
   trees.sort((a, b) => a[1] - b[1]).forEach((v) => tree(c, ...v));
   for (const [x, y, s] of [
     [82, 215, 0.55],
-    [409, 178, 0.6],
-    [781, 191, 0.65],
+    [287, 186, 0.5],
+    [563, 187, 0.5],
     [1020, 65, 0.7],
     [57, 575, 0.9],
     [414, 503, 0.6],
@@ -309,8 +301,8 @@ export function landscape(seed) {
   ])
     rock(c, x, y, s);
   for (const [x, y] of [
-    [304, 230],
-    [685, 225],
+    [269, 230],
+    [552, 225],
     [91, 546],
     [422, 598],
     [691, 396],
@@ -405,7 +397,9 @@ export function drawWorking(c, role, x, y, now, motion, paintWorker) {
   c.save();
   c.translate(wx, wy);
   c.rotate(pose.tilt);
-  paintWorker(role === "review" || role === "repo" ? 5 : 2);
+  paintWorker(
+    role === "feature" ? "feature" : role === "review" || role === "repo" ? 5 : 2,
+  );
   c.restore();
   if (pose.working || !motion) {
     for (let i = 0; i < 4; i++) {

@@ -29,7 +29,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				w.Status = "waiting"
 				w.Task = "Watching the village"
 			}
-			t.Report("A good morning in orchard", "The town is awake. A bug investigation is underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
+			t.Report("A good morning in orchard", "The town is awake. Bug and feature investigations are underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
 		}
 		return nil
 	}); err != nil {
@@ -48,11 +48,11 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				if t == nil || t.Deleted {
 					return nil
 				}
-				role := []Role{Bug, Bug, Issue, Review, Issue, Review, Review, Release, Repo}[step%9]
+				role := []Role{Bug, Bug, Issue, Review, Issue, Review, Review, Release, Repo, Feature, Feature}[step%11]
 				if !t.Workers[role].Enabled {
 					return nil
 				}
-				number := 142 + (step/9)%20
+				number := 142 + (step/11)%20
 				active := false
 				for _, w := range t.Workers {
 					if w.Enabled {
@@ -69,7 +69,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				}
 				issueID := fmt.Sprintf("issue:%d", number)
 				prID := fmt.Sprintf("pr:%d", number+100)
-				switch step % 9 {
+				switch step % 11 {
 				case 0:
 					w := t.Workers[Bug]
 					w.Status = "working"
@@ -121,6 +121,17 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 					s.Event(t.ID, "delivery", "release", "outside", "release:"+t.LastRelease, "Shipment "+t.LastRelease+" left town", now)
 					t.Report("A shipment is on its way", "The reconnect fix passed its review loop and shipped. One issue moved from discovery through implementation, verification, merge, and release.", now)
 					s.Event(t.ID, "report", "repo", "hall", "", "Repo-bot brought the latest town report", now)
+				case 9:
+					w := t.Workers[Feature]
+					w.Status = "working"
+					w.Phase = "investigating"
+					w.Task = "Studying saved report workflows and comparing feature ideas"
+					s.Event(t.ID, "activity", "feature", "feature", "", "Feature-bot is researching a useful new capability", now)
+				case 10:
+					id := fmt.Sprintf("issue:%d", number+900)
+					t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 900, Title: "Save reusable report views", House: Issue, Stage: "queued", Updated: now, Detail: "Let operators save filters as named views. Acceptance: create, select, rename and delete views; restore the selected view after restart."}
+					s.Event(t.ID, "delivery", "feature", "issue", id, "Feature-bot filed an independently reviewed proposal", now)
+					t.Workers[Feature].Task = "Proposal filed; waiting for the next research session"
 				case 8:
 					id := fmt.Sprintf("issue:%d", number+500)
 					t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 500, Title: "Support a custom report schedule", House: Issue, Stage: "queued", External: true, Updated: now}

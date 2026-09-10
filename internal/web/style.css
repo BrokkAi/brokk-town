@@ -249,6 +249,8 @@ p {
 }
 .world {
   position: relative;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
   isolation: isolate;
   border: 1px solid #314b36;
@@ -278,7 +280,7 @@ canvas {
 .house {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 23%;
+  width: 21%;
   height: 36%;
   border: none;
   background: transparent !important;
@@ -296,8 +298,9 @@ canvas {
 .house-label {
   position: absolute;
   top: 92%;
-  max-width: 180px;
-  min-width: 120px;
+  width: 160px;
+  max-width: 100%;
+  min-width: 0;
   background: #0a1b15ec;
   border: 1px solid #527148aa;
   border-radius: 5px;
@@ -307,12 +310,16 @@ canvas {
 }
 .house-label strong {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
   letter-spacing: 1px;
   font: 600 12px var(--mono);
   color: #dbe6d3;
 }
 .house-label small {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   color: #a9bea5;
   margin-top: 4px;
@@ -827,11 +834,11 @@ textarea {
     aspect-ratio: 1.4;
   }
   .house-label {
-    min-width: 86px;
-    padding: 4px 5px;
+    padding: 4px 3px;
   }
   .house-label strong {
-    font-size: 10px;
+    font-size: 9px;
+    letter-spacing: 0;
   }
   .house-label small {
     font-size: 10px;
@@ -860,6 +867,45 @@ textarea {
   #journal .event-route {
     min-width: 60px;
     font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .world {
+    min-height: 0;
+    aspect-ratio: 1120/720;
+  }
+  .house-label {
+    padding: 3px 2px;
+  }
+  .house-label strong {
+    font-size: 9px;
+    line-height: 11px;
+    padding-right: 7px;
+  }
+  .house-label .bot-suffix {
+    display: none;
+  }
+  .house-label small {
+    position: absolute;
+    top: 6px;
+    right: 3px;
+    margin: 0;
+    font-size: 0;
+  }
+  .house-label .dot {
+    width: 4px;
+    height: 4px;
+    margin: 0;
+  }
+  .house-label .count {
+    padding: 0 2px;
+  }
+  .world-legend {
+    left: 7px;
+    bottom: 5px;
+    gap: 8px;
+    font-size: 8px;
   }
 }
 

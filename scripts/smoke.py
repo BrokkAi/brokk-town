@@ -51,8 +51,14 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
 
         wait_for(lambda: len(snapshot()['towns']) == 2)
         assert snapshot()['demo'] is True
+        for action in ['pause', 'start']:
+            subprocess.run([binary, action, '--demo', '--state-dir', directory,
+                            '--repo', 'BrokkAi/orchard', '--role', 'feature'],
+                           check=True, stdout=subprocess.DEVNULL)
+            assert snapshot()['towns']['brokkai/orchard']['workers']['feature']['enabled'] == (action == 'start')
         for path in ['/', '/app.js', '/town.js', '/tools.js', '/manage.js', '/scenery.js', '/style.css',
-                     '/assets/buildings-atlas.png', '/assets/actors-atlas.png']:
+                     '/assets/buildings-atlas.png', '/assets/actors-atlas.png',
+                     '/assets/feature-study.png', '/assets/feature-reader.png']:
             with request(path, auth=False) as response:
                 assert response.status == 200 and response.read()
         try:

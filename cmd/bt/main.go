@@ -69,7 +69,7 @@ func run(ctx context.Context, args []string) error {
 	listen := fs.String("listen", "127.0.0.1:8099", "loopback HTTP address (serve only)")
 	demo := fs.Bool("demo", false, "isolated simulated town (serve only)")
 	repo := fs.String("repo", "", "GitHub OWNER/REPO")
-	role := fs.String("role", "all", "bug, issue, review, release, repo, or all")
+	role := fs.String("role", "all", "bug, feature, issue, review, release, repo, or all")
 	task := fs.String("task", "", "task ID for retry")
 	config := fs.String("config", "", "optional JSON array of town configs (serve only)")
 	agentHarness := fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")

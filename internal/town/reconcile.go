@@ -19,13 +19,15 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		id := fmt.Sprintf("issue:%d", i.Number)
 		task := t.Tasks[id]
 		if task == nil {
-			task = &Task{ID: id, Kind: "issue", Number: i.Number, Title: i.Title, URL: i.URL, House: Issue, External: !strings.Contains(i.Body, "<!-- bug-bot:"), Stage: "queued", Updated: now}
+			from := "outside"
+			if strings.Contains(i.Body, "<!-- feature-bot:") {
+				from = "feature"
+			} else if strings.Contains(i.Body, "<!-- bug-bot:") {
+				from = "bug"
+			}
+			task = &Task{ID: id, Kind: "issue", Number: i.Number, Title: i.Title, URL: i.URL, House: Issue, External: from == "outside", Stage: "queued", Updated: now}
 			t.Tasks[id] = task
 			if !initial && i.State == "open" {
-				from := "bug"
-				if task.External {
-					from = "outside"
-				}
 				s.Event(t.ID, "delivery", from, "issue", id, "Issue arrived: "+i.Title, now)
 				changes = append(changes, fmt.Sprintf("New issue #%d: %s", i.Number, i.Title))
 			}

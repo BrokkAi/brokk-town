@@ -1,6 +1,7 @@
 import {
   positions,
   houseNames,
+  houseShortcuts,
   routePosition,
   queueFor,
   visibleEvents,
@@ -42,9 +43,13 @@ let state = null,
 const canvas = $("#world"),
   ctx = canvas.getContext("2d"),
   buildings = new Image(),
-  actors = new Image();
+  actors = new Image(),
+  featureStudy = new Image(),
+  featureReader = new Image();
 buildings.src = "/assets/buildings-atlas.png";
 actors.src = "/assets/actors-atlas.png";
+featureStudy.src = "/assets/feature-study.png";
+featureReader.src = "/assets/feature-reader.png";
 const crops = [
   [0, 0, 512, 512],
   [512, 0, 512, 480],
@@ -63,7 +68,9 @@ const actorCrops = [
   [62, 95, 434, 311],
   [163, 110, 232, 306],
 ];
-const indices = { bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5 };
+const indices = {
+  bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5, feature: 6,
+};
 async function api(path, body, signal) {
   const response = await fetch(path, {
     method: body ? "POST" : "GET",
@@ -247,7 +254,7 @@ function renderHouses() {
             : status === "blocked" || status === "failed"
               ? "blocked"
               : "waiting";
-      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}"><span class="house-label"><strong>${houseNames[role]}${count ? `<span class="count">${count}</span>` : ""}</strong><small><i class="dot ${dot}"></i>${esc(status.replaceAll("_", " "))}</small></span></button>`;
+      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}" title="${houseNames[role]} · ${esc(status.replaceAll("_", " "))}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}${count ? `<span class="count">${count}</span>` : ""}</strong><small><i class="dot ${dot}"></i>${esc(status.replaceAll("_", " "))}</small></span></button>`;
     })
     .join("");
   $("#houses")
@@ -291,7 +298,7 @@ function renderInspection() {
   const w = t.workers[selectedHouse],
     queue = queueFor(t, selectedHouse);
   if (!w) return;
-  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || "Waiting for work")}</p><div class="status-line"><i class="dot ${w.status === "working" ? "active" : w.status === "failed" ? "blocked" : "waiting"}"></i>${esc(w.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
+  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : "Waiting for work"))}</p><div class="status-line"><i class="dot ${w.status === "working" ? "active" : w.status === "failed" ? "blocked" : "waiting"}"></i>${esc(w.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
     queue
       .slice(0, 40)
       .map(
@@ -368,6 +375,11 @@ function sprite(image, index, x, y, size) {
   const width = image === buildings ? size : (size * crop[2]) / crop[3];
   ctx.drawImage(image, ...crop, x - width / 2, y - size / 2, width, size);
 }
+function singleSprite(image, x, y, height) {
+  if (!image.complete || !image.naturalWidth) return;
+  const width = (height * image.naturalWidth) / image.naturalHeight;
+  ctx.drawImage(image, x - width / 2, y - height / 2, width, height);
+}
 function draw(now) {
   if (overview || document.hidden) {
     requestAnimationFrame(draw);
@@ -387,11 +399,14 @@ function draw(now) {
       ctx.ellipse(x, y + 72, 118, 28, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
+    if (role === "feature") singleSprite(featureStudy, x, y, 235);
+    else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
     const w = t?.workers[role];
     if (w?.status === "working" || w?.status === "pausing") {
       drawWorking(ctx, role, x, y, now, motion, (index) =>
-        sprite(actors, index, 0, 0, 52),
+        index === "feature"
+          ? singleSprite(featureReader, 0, 0, 58)
+          : sprite(actors, index, 0, 0, 52),
       );
     }
   }
@@ -510,10 +525,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "?") $("#help-dialog").showModal();
   if (e.key === "Escape") $("#inspector").classList.remove("open");
-  if (/^[1-6]$/.test(e.key))
-    chooseHouse(
-      ["bug", "issue", "review", "release", "repo", "hall"][Number(e.key) - 1],
-    );
+  if (/^[1-7]$/.test(e.key)) chooseHouse(houseShortcuts[Number(e.key) - 1]);
 });
 canvas.onclick = (e) => {
   const r = canvas.getBoundingClientRect(),

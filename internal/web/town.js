@@ -1,7 +1,8 @@
 export const positions = {
-  bug: [180, 172],
-  issue: [555, 172],
-  review: [930, 172],
+  bug: [142, 172],
+  feature: [420, 172],
+  issue: [700, 172],
+  review: [978, 172],
   hall: [180, 446],
   repo: [555, 446],
   release: [930, 446],
@@ -9,12 +10,52 @@ export const positions = {
 };
 export const houseNames = {
   bug: "BUG BOT",
+  feature: "FEATURE BOT",
   issue: "ISSUE BOT",
   review: "REVIEW BOT",
   release: "RELEASE BOT",
   repo: "REPO BOT",
   hall: "TOWN HALL",
 };
+// Preserve established shortcuts and append the new study on key 7.
+export const houseShortcuts = [
+  "bug",
+  "issue",
+  "review",
+  "release",
+  "repo",
+  "hall",
+  "feature",
+];
+export const roadLevels = { upper: 330, lower: 540 };
+export const roadEdges = [40, 1080];
+export function houseDoor(role) {
+  const [x, y] = positions[role] || positions.hall;
+  return [x, role === "outside" ? roadLevels.upper : y + 80];
+}
+export function houseRoad(role) {
+  return role === "outside" || houseDoor(role)[1] < roadLevels.upper
+    ? roadLevels.upper
+    : roadLevels.lower;
+}
+export const roadSegments = [
+  [
+    [-50, roadLevels.upper],
+    [1170, roadLevels.upper],
+  ],
+  [
+    [-50, roadLevels.lower],
+    [1170, roadLevels.lower],
+  ],
+  ...roadEdges.map((x) => [
+    [x, roadLevels.upper],
+    [x, roadLevels.lower],
+  ]),
+  ...Object.keys(houseNames).map((role) => [
+    houseDoor(role),
+    [positions[role][0], houseRoad(role)],
+  ]),
+];
 export function queueFor(town, role) {
   return Object.values(town.tasks || {})
     .filter(
@@ -46,14 +87,27 @@ export function safeURL(value) {
   }
 }
 export function routePosition(from, to, progress) {
-  const a = positions[from] || positions.outside,
-    b = to === "outside" ? [1170, 550] : positions[to] || positions.hall,
-    road = from === "release" || to === "release" ? 540 : 330;
+  const source = Object.hasOwn(positions, from) ? from : "outside",
+    target = Object.hasOwn(positions, to) ? to : "hall",
+    a = houseDoor(source),
+    b = target === "outside" ? [1170, roadLevels.lower] : houseDoor(target),
+    aRoad = houseRoad(source),
+    bRoad = target === "outside" ? roadLevels.lower : houseRoad(target),
+    edge = roadEdges.reduce((best, x) =>
+      Math.abs(a[0] - x) + Math.abs(b[0] - x) <
+      Math.abs(a[0] - best) + Math.abs(b[0] - best)
+        ? x
+        : best,
+    );
+  // Use side lanes between rows so couriers never cross through a house.
   const points = [
-      [a[0], a[1] + 80],
-      [a[0], road],
-      [b[0], road],
-      [b[0], b[1] + 80],
+      a,
+      [a[0], aRoad],
+      ...(aRoad === bRoad
+        ? []
+        : [[edge, aRoad], [edge, bRoad]]),
+      [b[0], bRoad],
+      b,
     ],
     lengths = points
       .slice(1)
@@ -66,7 +120,7 @@ export function routePosition(from, to, progress) {
       return {
         x: points[i][0] + (points[i + 1][0] - points[i][0]) * f,
         y: points[i][1] + (points[i + 1][1] - points[i][1]) * f,
-        direction: b[0] - a[0],
+        direction: points[i + 1][0] - points[i][0] || b[0] - a[0],
       };
     }
     distance -= lengths[i];

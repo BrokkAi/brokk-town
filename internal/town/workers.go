@@ -11,6 +11,7 @@ import (
 	"time"
 
 	bugbot "github.com/BrokkAi/bug-bot"
+	featurebot "github.com/BrokkAi/feature-bot"
 	issuebot "github.com/BrokkAi/issue-bot"
 	releasebot "github.com/BrokkAi/release-bot"
 	reviewbot "github.com/BrokkAi/review-bot"
@@ -48,6 +49,17 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 		c.Verify = t.Config.Verify
 		ctx = bugbot.WithProgress(ctx, func(p bugbot.Progress) { observe(Progress{p.Phase, p.Task}) })
 		return result, bugbot.Run(ctx, c, log, true)
+	case Feature:
+		c := featurebot.DefaultConfig()
+		c.Remote = remote
+		c.Branch = t.Config.Branch
+		c.Directory = dir
+		c.StateDirectory = state
+		c.Agent = agent
+		c.GitHub.Repo = t.Config.Repo
+		c.Verify = t.Config.Verify
+		ctx = featurebot.WithProgress(ctx, func(p featurebot.Progress) { observe(Progress{p.Phase, p.Task}) })
+		return result, featurebot.Run(ctx, c, log, true)
 	case Issue:
 		if task := nextTask(t, Issue, "fixes"); task != nil {
 			result.PR = task.Number

@@ -36,6 +36,15 @@ func Open(dir string, demo bool) (*Store, error) {
 	if err == nil {
 		err = json.Unmarshal(b, &s.state)
 		if err == nil {
+			// Older towns predate feature discovery. Add only the absent role,
+			// paused, without enabling new automation or repairing corrupt workers.
+			for _, t := range s.state.Towns {
+				if t != nil && t.Workers != nil {
+					if _, present := t.Workers[Feature]; !present {
+						t.Workers[Feature] = &Worker{Role: Feature, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
+					}
+				}
+			}
 			err = validateState(s.state, demo)
 		}
 	}

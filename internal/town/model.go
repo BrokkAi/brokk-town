@@ -16,13 +16,14 @@ type Role string
 
 const (
 	Bug     Role = "bug"
+	Feature Role = "feature"
 	Issue   Role = "issue"
 	Review  Role = "review"
 	Release Role = "release"
 	Repo    Role = "repo"
 )
 
-var Roles = []Role{Bug, Issue, Review, Release, Repo}
+var Roles = []Role{Bug, Issue, Review, Release, Repo, Feature}
 
 func ValidRole(r Role) bool {
 	for _, v := range Roles {

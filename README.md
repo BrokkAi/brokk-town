@@ -34,7 +34,7 @@ Open the browser address printed by the service. In another terminal:
 ```
 
 Demo mode uses an isolated state directory and simulated activity in two towns.
-It never calls GitHub or launches agents. Orchard cycles through bug discovery,
+It never calls GitHub or launches agents. Orchard cycles through bug and feature discovery,
 implementation, review, repair, merge, release, and external arrivals. Paper-trail
 illustrates a quiet neighboring repository. Pause a house to hold its next step.
 
@@ -89,7 +89,7 @@ the current Git/gh credentials.
 ./bin/bt tui
 ```
 
-New towns start with the four automation workers **paused**. Repo-bot starts its
+New towns start with the five automation workers **paused**. Repo-bot starts its
 read-only inventory. Inspect the town, then start individual workers or choose
 **Wake the town**. Starting workers authorizes their real work: filing issues,
 creating and repairing PRs, posting reviews, merging under the configured policy,
@@ -98,6 +98,7 @@ permissions. Use an isolated account or machine for repositories you don't trust
 
 ```sh
 ./bin/bt start --repo BrokkAi/my-project --role bug
+./bin/bt start --repo BrokkAi/my-project --role feature
 ./bin/bt pause --repo BrokkAi/my-project --role all
 ./bin/bt stop --repo BrokkAi/my-project --role issue
 ./bin/bt status
@@ -198,6 +199,7 @@ finish before restoring a town.
 | House | Work and handoff |
 | --- | --- |
 | Bug greenhouse | Runs bug-bot's investigation and verification; observed filed issues travel to issue-bot. |
+| Feature study | Runs feature-bot to discover useful new capabilities, independently review their value and feasibility, and compare existing requests; confirmed feature issues travel to issue-bot. |
 | Issue workshop | Runs issue-bot on eligible issues, opens implementation-ready PRs, and repairs Town-owned PR branches from review feedback. |
 | Review observatory | Runs review-bot, independently checks the full change and every retained finding, then returns fixes or waits for merge requirements. |
 | Release depot | Runs release-bot's batching and publishing policy. Confirmed merged/direct commits accumulate here; a published stable release ships only commits proven to be its ancestors. |
@@ -239,10 +241,18 @@ cannot be changed in place. Omitted towns are retained when loading a config.
 Agent configuration uses acp-go's `command`, `environment`, `auth_method`, `mode`, `model`, and `effort` fields.
 
 Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet reports
-use `report_seconds` (1800). Bug-bot runs at most every 30 minutes; release-bot
+use `report_seconds` (1800). Bug-bot and feature-bot run at most every 30 minutes; release-bot
 checks every five minutes and retains its own quiet window, minimum gap, and
 batching decisions. Each worker attempt has a two-hour deadline. Repair cycles
 default to five; failed PR attempts back off and block after three failures.
+
+Feature-bot uses the same selected ACP harness, model, effort and optional verifier
+as the other workers, with its own private workspace and durable publication state.
+It proposes scoped features with user value, repository evidence and acceptance
+criteria. A separate review rejects duplicate, already implemented, rejected or
+uncertain proposals before filing. Its verifier receives `FEATURE_COMMIT` and
+`FEATURE_FINDING`; shared verification commands must support the selected bot's
+environment. New and upgraded towns keep feature discovery paused until started.
 
 Private state defaults to `$XDG_STATE_HOME/brokk-town` or
 `~/.local/state/brokk-town`. `--state-dir` selects another directory; `--demo`

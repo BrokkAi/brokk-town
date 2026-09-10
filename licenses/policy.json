@@ -68,6 +68,15 @@
         "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
         "NOTICE": "5ad9d0fc9b1d1d5493077a159cd1b25f3b012f792b5df194df0395bcecb3e9f9"
       }
+    },
+    "github.com/BrokkAi/feature-bot": {
+      "version": "v0.1.0-rc.1",
+      "license": "Apache-2.0",
+      "source": "https://github.com/BrokkAi/feature-bot/tree/v0.1.0-rc.1",
+      "files": {
+        "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "NOTICE": "e2e342e0cbf3a2f35aebb97d73f124fd454f219f91d6b3ea80877221770c032d"
+      }
     }
   },
   "supplemental": [

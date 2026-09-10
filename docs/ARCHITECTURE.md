@@ -129,3 +129,21 @@ the intended workflow, but they are not an OS sandbox. Isolate untrusted work at
 the operating-system level. The first implementation polls complete GitHub
 inventories; large repositories may need incremental synchronization and archival
 policies in a later iteration.
+
+## Automatic feature discovery
+
+Feature-bot is a separate Go/ACP bot and `bfb` CLI, modeled on bug-bot. Town calls
+its shared library with the selected harness and an isolated feature workspace.
+Both discovery workers wait 30 minutes between successful attempts and share the
+same global worker cap with implementation, review and release workers.
+Feature proposals require a user problem, current workflow, proposed behavior,
+user value, bounded scope, testable acceptance criteria and repository evidence.
+The bot independently reviews the proposal and compares all existing issue
+history before publishing through a durable request intent.
+
+Town never turns a successful discovery exit into an issue delivery. Only the
+GitHub inventory's observed `feature-bot` receipt marker routes a new issue from
+the feature study to the issue workshop. The initial inventory stays a baseline;
+repeated inventories do not replay arrivals. Existing saved towns gain an absent
+feature worker paused, preserving every other worker's settings. The closed demo
+simulates feature research and its confirmed delivery without an agent or GitHub.

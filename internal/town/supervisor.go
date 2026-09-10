@@ -214,7 +214,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		w.Status = "waiting"
 		w.Updated = s.now()
 		w.Next = s.now().Add(time.Duration(current.Config.PollSeconds) * time.Second)
-		if r == Bug {
+		if r == Bug || r == Feature {
 			w.Next = s.now().Add(30 * time.Minute)
 		}
 		if r == Release {

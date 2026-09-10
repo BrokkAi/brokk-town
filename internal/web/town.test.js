@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   positions,
+  houseNames,
+  houseShortcuts,
+  roadSegments,
   routePosition,
   visibleEvents,
   queueFor,
@@ -21,6 +24,9 @@ test("deliveries resume after cursor and stay in their repository", () => {
 test("all delivery routes have finite continuous endpoints", () => {
   for (const [from, to] of [
     ["bug", "issue"],
+    ["feature", "issue"],
+    ["feature", "hall"],
+    ["outside", "feature"],
     ["issue", "review"],
     ["review", "issue"],
     ["review", "release"],
@@ -41,6 +47,37 @@ test("all delivery routes have finite continuous endpoints", () => {
     }
     assert.deepEqual(routePosition(from, to, -1), a);
     assert.deepEqual(routePosition(from, to, 2), b);
+  }
+});
+test("all seven houses fit and feature deliveries follow the painted roads", () => {
+  assert.equal(Object.keys(houseNames).length, 7);
+  assert.equal(houseNames.feature, "FEATURE BOT");
+  assert.equal(houseShortcuts[5], "hall");
+  assert.equal(houseShortcuts[6], "feature");
+  const houses = Object.keys(houseNames);
+  for (const role of houses) {
+    const [x, y] = positions[role];
+    assert.ok(x >= 118 && x <= 1002 && y >= 118 && y <= 562);
+    for (const other of houses.filter((other) => other !== role)) {
+      const [ox, oy] = positions[other];
+      assert.ok(Math.abs(x - ox) >= 236 || Math.abs(y - oy) >= 236);
+    }
+  }
+  for (const from of [...houses, "outside"]) {
+    for (const to of [...houses, "outside"]) {
+      for (let i = 0; i <= 100; i++) {
+        const { x, y } = routePosition(from, to, i / 100);
+        assert.ok(
+          roadSegments.some(([a, b]) =>
+            x >= Math.min(a[0], b[0]) - 1e-6 &&
+            x <= Math.max(a[0], b[0]) + 1e-6 &&
+            y >= Math.min(a[1], b[1]) - 1e-6 &&
+            y <= Math.max(a[1], b[1]) + 1e-6,
+          ),
+          `${from} → ${to} left the road at ${x}, ${y}`,
+        );
+      }
+    }
   }
 });
 test("queue and overview report blocked and waiting work", () => {
@@ -105,9 +142,14 @@ test("optional tools validate input and use the visible navigation", async () =>
     house: "review",
   });
   assert.deepEqual(calls, ["acme/a", "review"]);
+  assert.ok(visit.inputSchema.properties.house.enum.includes("feature"));
+  assert.deepEqual(visit.execute({ town: "acme/a", house: "feature" }), {
+    town: "acme/a",
+    house: "feature",
+  });
   assert.throws(() => visit.execute({ town: "acme/no", house: "review" }));
   assert.throws(() => visit.execute({ town: "acme/a", house: "toString" }));
-  assert.deepEqual(calls, ["acme/a", "review"]);
+  assert.deepEqual(calls, ["acme/a", "review", "acme/a", "feature"]);
   cleanup();
   assert.equal(list.options.signal.aborted, true);
   assert.doesNotThrow(() =>

@@ -279,3 +279,53 @@ and foundev/draupnir instead of a fixed three-agent selector.
   refresh/discovery do not run agents or access the network. No live bot work,
   GitHub writes, or publication was used. Actual provider authentication remains
   the user's harness setup; the tests use fake agents and downloaded fixtures.
+
+## Feature-bot discovery and distribution (2026-09-10)
+
+User requested a separate feature-bot closely modeled on the latest bug-bot,
+including native/npm packaging, matching GitHub Actions, and a studious graphic.
+Pulled master in both Town and bug-bot before beginning. Standalone source is committed and published from the separate sibling
+/Users/ryansvihla/code/feature-bot checkout.
+
+- Adapt bug-bot's discovery, independent review, full issue-history comparison,
+  exact revision checks and durable publication intents for useful new features.
+  Require user problem/value, scope, acceptance criteria and repository evidence;
+  reject defects, existing/rejected requests, unsupported or uncertain proposals.
+- Preserve the standalone Go/ACP library, bfb CLI/TUI, installer, four native
+  targets, five @brokkai/feature-bot npm packages and three pinned Actions workflows.
+- Integrate the feature role into Town's shared controls, supervision, 30-minute
+  cadence, receipt-driven issue deliveries and isolated demo. Migrate existing
+  state by adding only an absent feature worker, paused by default.
+- Add original studious study/reader artwork and a seven-building browser layout.
+- Validate with fake GitHub/ACP, race/vet, frontend checks and demo integration;
+  validate complete standalone packaging/offline install before external setup.
+- User explicitly authorized the public repository and initial prerelease, then
+  clarified the established bootstrap flow: npm publish, user follows its approval
+  link and enables the five-minute window, then CLI scripts configure trusted
+  publishers and matching owners. Use that flow for subsequent npm bootstraps;
+  do not drive account setup through browser automation.
+- Created public BrokkAi/feature-bot with bug-bot's effective GitHub collaborators,
+  workflow permissions and packages-publish environment. Published v0.1.0-rc.1
+  at df984949176eb3865414897b9a2ff7de954a8ce2, with six native GitHub assets and
+  five npm packages under next. Every published artifact matches the validated
+  local bytes. All five trusted publishers were configured by npm CLI and read
+  back, with createPackage/createStagedPackage permissions matching bug-bot;
+  effective npm owners are foundev and bigslopdave on every package.
+- Town pins the published v0.1.0-rc.1 library without local replacements. Updated
+  reviewed dependency notices. Full make check smoke passes (Go race/vet,
+  frontend and launcher tests, package/license regressions, isolated CLI/API/TUI
+  integration). Independent review found and fixed new-CLI/old-service TUI
+  compatibility; missing feature workers display restart guidance.
+- Browser QA passed at 1440, 390 and 320 pixels with controls, keyboard 7,
+  reduced motion, PNG serving and no errors/overflow. Both original studious
+  RGBA sprites preserve their generated alpha; prompts and provenance are saved.
+- Final public npm install launched bfb v0.1.0-rc.1. Exact-source Linux/macOS CI
+  passed on both master and the release tag. The existing-release package
+  validation workflow 34498883724 passed, rebuilt identical npm packages from
+  the published native assets, verified registry integrity, and saved its
+  validated package artifact. The redundant tag-triggered publisher was canceled
+  after its checks passed because the bootstrap release was already published.
+- Final standalone source is df98494. Published artifacts and the five-package
+  owner/trust audit are retained in feature-bot/dist (ignored). Town integration
+  is committed on its current master branch; no Town release was published and
+  the user's existing live service was not restarted or enabled by this work.
