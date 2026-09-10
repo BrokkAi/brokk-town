@@ -4,6 +4,20 @@
     "branch": "main",
     "harness": "codex",
     "agent": {"model": "", "effort": ""},
+    "bot_agents": {
+      "review": {
+        "harness": "claude",
+        "agent": {"model": "", "effort": ""}
+      },
+      "issue": {
+        "harness": "codex",
+        "agent": {"model": "", "effort": ""}
+      },
+      "release": {
+        "harness": "opencode",
+        "agent": {"model": "", "effort": ""}
+      }
+    },
     "verify": ["go", "test", "./..."],
     "merge_policy": "bot",
     "poll_seconds": 60,

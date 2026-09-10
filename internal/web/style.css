@@ -623,6 +623,30 @@ dialog a {
 #settings-dialog p {
   margin: 10px 0;
 }
+.agent-profile {
+  padding: 4px 14px;
+  margin: 16px 0;
+  background: #1e2e24;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.profile-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.profile-actions button {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+#settings-dialog .profile-draft-note {
+  font-size: 12px;
+}
+#settings-success {
+  color: var(--green);
+  font-size: 14px;
+}
 textarea {
   resize: vertical;
   line-height: 1.6;

@@ -29,14 +29,21 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Hour)
 	defer cancel()
 	result := RunResult{}
+	t = clone(t)
+	t.Config = t.Config.ForRole(r)
 	dir, state := Workspace(b.Root, t.ID, r)
 	remote := "https://github.com/" + t.Config.Repo + ".git"
 	agent, err := agentConfig(ctx, t.Config, b.Root)
 	if err != nil {
 		return result, err
 	}
-	t = clone(t)
 	t.Config.Agent = agent
+	if profile, overridden := t.Config.BotAgents[r]; overridden {
+		// Nested certification/repair sessions reuse this run's prepared command
+		// and environment, including any resolved registry distribution values.
+		profile.Agent = agent
+		t.Config.BotAgents[r] = profile
+	}
 	switch r {
 	case Bug:
 		c := bugbot.DefaultConfig()
@@ -185,6 +192,8 @@ func (b *BotWorkers) remote(repo string) string {
 	return "https://github.com/" + repo + ".git"
 }
 func (b *BotWorkers) agent(ctx context.Context, t *Town, tree sessionTree, role string, log *slog.Logger, prompt string) (string, error) {
+	t = clone(t)
+	t.Config = t.Config.ForRole(Role(role))
 	if b.executeAgent != nil {
 		return b.executeAgent(ctx, t, tree, role, log, prompt)
 	}

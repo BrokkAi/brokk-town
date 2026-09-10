@@ -130,6 +130,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		}
 		// Resolve settings at actual dispatch, not from an older scheduler snapshot.
 		t = clone(current)
+		if r != Repo {
+			t.Config = t.Config.ForRole(r)
+		}
 		w.Status = "working"
 		w.Error = ""
 		w.Updated = now

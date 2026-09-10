@@ -9,29 +9,101 @@ const esc = (v) =>
         c
       ],
   );
+const profileNames = {
+  "": "Town defaults",
+  bug: "Bug Bot",
+  feature: "Feature Bot",
+  issue: "Issue Bot",
+  review: "Review Bot",
+  release: "Release Bot",
+};
+
+function agentDraft(config, role) {
+  const profile = (role && config.bot_agents?.[role]) || config;
+  return {
+    harness: profile.harness || "codex-acp",
+    version: profile.harness_version || "",
+    model: profile.model || "",
+    effort: profile.effort || "",
+    command: "",
+    inherited: !!role && profile.inherited !== false,
+    dirty: false,
+  };
+}
 
 export function management({ api, getTown, getState, refresh }) {
   let settingsTown = "",
+    settingsRole = "",
+    settingsVersion = 0,
+    settingsSaving = false,
+    settingsConfig = null,
+    drafts = {},
     requestTown = "",
     choicesVersion = 0,
     choicesAbort = null,
+    choicesLoading = false,
     loaded = false;
   let catalog = null,
     catalogVersion = 0,
     catalogAbort = null,
+    catalogLoading = false,
     savedHarness = "",
     savedVersion = "",
     selectedVersion = null;
+  const pendingReset = () =>
+    !!drafts[settingsRole]?.inherited && drafts[settingsRole].dirty;
+  function syncProfileControls() {
+    for (const id of ["harness-input", "model-input", "effort-input", "command-input", "update-harness"])
+      $("#" + id).disabled = settingsSaving || pendingReset();
+    $("#load-choices").disabled = settingsSaving || pendingReset() || choicesLoading;
+  }
+  function renderProfileStatus() {
+    const draft = drafts[settingsRole];
+    for (const option of $("#agent-role").options) {
+      const other = drafts[option.value];
+      option.textContent = `${profileNames[option.value]}${option.value ? (other.inherited ? " · town defaults" : " · custom") : ""}${other.dirty ? " · unsaved" : ""}`;
+    }
+    $("#agent-profile-status").textContent =
+      `${settingsRole ? (draft.inherited ? "Uses town defaults" : "Custom agent profile") : "Default agent for bots without an override"}${draft.dirty ? " · unsaved changes" : ""}.`;
+    $("#inherit-agent").hidden = !settingsRole || draft.inherited;
+    $("#save-agent").textContent =
+      `Save ${settingsRole ? profileNames[settingsRole] : "town defaults"}`;
+    $("#agent-profile-note").textContent = pendingReset()
+      ? "Save to use town defaults before customizing this bot."
+      : settingsRole
+        ? `${profileNames[settingsRole]} uses this profile on its next run. Editing an inherited profile creates a custom profile for this bot.`
+        : "Town defaults apply on the next run to bots that use them. Custom bot profiles keep their own settings. Repo Bot does not use an agent.";
+    syncProfileControls();
+  }
+  function rememberDraft() {
+    if (!drafts[settingsRole]) return;
+    Object.assign(drafts[settingsRole], {
+      harness: $("#harness-input").value,
+      version: selectedVersion || "",
+      model: $("#model-input").value,
+      effort: $("#effort-input").value,
+      command: $("#command-input").value,
+    });
+  }
+  function markEdited() {
+    rememberDraft();
+    drafts[settingsRole].inherited = false;
+    drafts[settingsRole].dirty = true;
+    $("#settings-success").textContent = "";
+    renderProfileStatus();
+  }
   const cancelChoices = () => {
     choicesVersion++;
     choicesAbort?.abort();
     choicesAbort = null;
-    $("#load-choices").disabled = false;
+    choicesLoading = false;
+    $("#load-choices").disabled = settingsSaving || pendingReset();
   };
   $("#settings-dialog").addEventListener("close", cancelChoices);
   $("#settings-dialog").addEventListener("close", () => {
     catalogVersion++;
     catalogAbort?.abort();
+    catalogLoading = false;
   });
 
   function harnessDetail() {
@@ -89,6 +161,7 @@ export function management({ api, getTown, getState, refresh }) {
     catalogAbort?.abort();
     catalogAbort = new AbortController();
     const version = ++catalogVersion;
+    catalogLoading = true;
     $("#refresh-harnesses").disabled = true;
     $("#registry-status").textContent = refresh
       ? "Refreshing the official registry…"
@@ -115,7 +188,10 @@ export function management({ api, getTown, getState, refresh }) {
       if (version === catalogVersion)
         $("#registry-status").textContent = e.message;
     } finally {
-      if (version === catalogVersion) $("#refresh-harnesses").disabled = false;
+      if (version === catalogVersion) {
+        catalogLoading = false;
+        $("#refresh-harnesses").disabled = settingsSaving;
+      }
     }
   }
   $("#refresh-harnesses").onclick = () => loadCatalog(true);
@@ -127,11 +203,14 @@ export function management({ api, getTown, getState, refresh }) {
       selectedVersion = entry.version;
       cancelChoices();
       loaded = false;
+      markEdited();
       harnessDetail();
     }
   };
   const draftKey = () => `brokk-town-request:${requestTown}`;
   const readAgent = () => {
+    if (settingsRole && drafts[settingsRole].inherited)
+      return { inherit: true };
     const agent = {
       harness: $("#harness-input").value,
       model: $("#model-input").value.trim(),
@@ -149,11 +228,10 @@ export function management({ api, getTown, getState, refresh }) {
     }
     return agent;
   };
-  const busyForm = async (event, errorID, action) => {
+  const busyForm = async (event, errorID, action, isCurrent = () => true) => {
     event.preventDefault();
-    const button = event.submitter;
-    button.disabled = true;
-    const fields = [...event.target.querySelectorAll("input,select,textarea")];
+    const fields = [...event.target.querySelectorAll("input,select,textarea,button")];
+    const disabled = fields.map((f) => f.disabled);
     fields.forEach((f) => {
       f.disabled = true;
     });
@@ -161,42 +239,83 @@ export function management({ api, getTown, getState, refresh }) {
     try {
       await action();
     } catch (e) {
-      $(errorID).textContent = e.message;
+      if (isCurrent()) $(errorID).textContent = e.message;
     } finally {
-      button.disabled = false;
-      fields.forEach((f) => {
-        f.disabled = false;
-      });
+      if (isCurrent()) {
+        fields.forEach((f, i) => {
+          f.disabled = disabled[i];
+        });
+        if (event.target === $("#settings-form")) {
+          syncProfileControls();
+          $("#refresh-harnesses").disabled = catalogLoading;
+        }
+      }
     }
   };
   document.querySelectorAll("[data-close]").forEach((b) => {
     b.onclick = () => $("#" + b.dataset.close).close();
   });
 
-  $("#town-settings").onclick = () => {
-    const t = getTown();
-    if (!t) return;
-    settingsTown = t.id;
-    savedHarness = t.config.harness || "codex-acp";
-    savedVersion = t.config.harness_version || "";
-    selectedVersion = null;
+  function showProfile(role) {
+    settingsRole = role;
+    const draft = drafts[role];
+    savedHarness = draft.harness;
+    savedVersion = draft.version;
+    selectedVersion = draft.version || null;
     cancelChoices();
     loaded = false;
-    $("#settings-form").reset();
-    $("#settings-repo").textContent = t.config.repo;
+    $("#agent-role").value = role;
     $("#harness-input").replaceChildren(new Option(savedHarness, savedHarness));
     $("#harness-input").value = savedHarness;
-    $("#model-input").value = t.config.model || "";
-    $("#effort-input").value = t.config.effort || "";
+    $("#model-input").value = draft.model;
+    $("#effort-input").value = draft.effort;
+    $("#command-input").value = draft.command;
     $("#custom-agent").hidden = $("#harness-input").value !== "custom";
     $("#settings-error").textContent = "";
     $("#choices-status").textContent = "";
     $("#model-choices").replaceChildren();
     $("#effort-choices").replaceChildren();
     $("#load-choices").disabled = false;
-    $("#settings-dialog").showModal();
     if (catalog) renderCatalog();
+    else harnessDetail();
+    renderProfileStatus();
+  }
+  function openSettings(role = "") {
+    const t = getTown();
+    if (!t) return;
+    settingsTown = t.id;
+    settingsVersion++;
+    settingsSaving = false;
+    settingsConfig = t.config;
+    drafts = Object.fromEntries(
+      Object.keys(profileNames).map((r) => [r, agentDraft(t.config, r)]),
+    );
+    $("#settings-form").reset();
+    $("#settings-form").querySelectorAll("input,select,textarea,button")
+      .forEach((field) => { field.disabled = false; });
+    $("#settings-repo").textContent = t.config.repo;
+    $("#settings-success").textContent = "";
+    showProfile(Object.hasOwn(profileNames, role) ? role : "");
+    $("#settings-dialog").showModal();
     void loadCatalog();
+  }
+  $("#town-settings").onclick = () => openSettings();
+  document.addEventListener("open-settings", (event) =>
+    openSettings(event.detail?.role),
+  );
+  $("#agent-role").onchange = () => {
+    rememberDraft();
+    $("#settings-success").textContent = "";
+    showProfile($("#agent-role").value);
+  };
+  $("#inherit-agent").onclick = () => {
+    drafts[settingsRole] = {
+      ...agentDraft(settingsConfig, ""),
+      inherited: true,
+      dirty: true,
+    };
+    $("#settings-success").textContent = "";
+    showProfile(settingsRole);
   };
   $("#harness-input").onchange = () => {
     selectedVersion =
@@ -211,6 +330,7 @@ export function management({ api, getTown, getState, refresh }) {
       $("#" + id).replaceChildren();
     $("#choices-status").textContent = "";
     $("#load-choices").disabled = false;
+    markEdited();
     harnessDetail();
   };
   async function loadChoices() {
@@ -224,6 +344,7 @@ export function management({ api, getTown, getState, refresh }) {
       return;
     }
     $("#load-choices").disabled = true;
+    choicesLoading = true;
     $("#choices-status").textContent =
       "Preparing the harness and loading choices…";
     $("#settings-error").textContent = "";
@@ -231,7 +352,7 @@ export function management({ api, getTown, getState, refresh }) {
     try {
       const result = await api(
         "/api/choices",
-        { town: settingsTown, agent },
+        { town: settingsTown, role: settingsRole, agent },
         choicesAbort.signal,
       );
       if (version !== choicesVersion) return;
@@ -257,30 +378,58 @@ export function management({ api, getTown, getState, refresh }) {
       if (version === choicesVersion)
         $("#choices-status").textContent = e.message;
     } finally {
-      if (version === choicesVersion) $("#load-choices").disabled = false;
+      if (version === choicesVersion) {
+        choicesLoading = false;
+        $("#load-choices").disabled = settingsSaving || pendingReset();
+      }
     }
   }
   $("#load-choices").onclick = loadChoices;
   $("#model-input").oninput = () => {
+    markEdited();
     cancelChoices();
     $("#effort-choices").replaceChildren();
     $("#choices-status").textContent =
       "Load choices for this model’s effort levels.";
   };
   $("#command-input").oninput = () => {
+    markEdited();
     cancelChoices();
     loaded = false;
   };
   $("#model-input").onchange = () => {
     $("#effort-input").value = "";
+    markEdited();
     if (loaded) loadChoices();
   };
-  $("#settings-form").onsubmit = (e) =>
-    busyForm(e, "#settings-error", async () => {
-      await api("/api/settings", { town: settingsTown, agent: readAgent() });
-      $("#settings-dialog").close();
-      await refresh();
-    });
+  $("#effort-input").oninput = markEdited;
+  $("#settings-form").onsubmit = (e) => {
+    const version = settingsVersion;
+    return busyForm(e, "#settings-error", async () => {
+      const role = settingsRole;
+      rememberDraft();
+      settingsSaving = true;
+      cancelChoices();
+      try {
+        await api("/api/settings", { town: settingsTown, role, agent: readAgent() });
+        if (version === settingsVersion)
+          $("#settings-success").textContent = `${profileNames[role]} saved.`;
+        await refresh();
+        if (version !== settingsVersion || !$("#settings-dialog").open) return;
+        const config = getState()?.towns[settingsTown]?.config;
+        if (!config) return;
+        settingsConfig = config;
+        for (const [r, draft] of Object.entries(drafts)) {
+          if (r === role || !draft.dirty) drafts[r] = agentDraft(config, r);
+          else if (draft.inherited)
+            drafts[r] = { ...agentDraft(config, ""), inherited: true, dirty: true };
+        }
+        showProfile(role);
+      } finally {
+        if (version === settingsVersion) settingsSaving = false;
+      }
+    }, () => version === settingsVersion);
+  };
   $("#open-delete").onclick = () => {
     $("#delete-repo").textContent = settingsTown;
     $("#delete-error").textContent = "";

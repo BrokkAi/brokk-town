@@ -298,7 +298,11 @@ function renderInspection() {
   const w = t.workers[selectedHouse],
     queue = queueFor(t, selectedHouse);
   if (!w) return;
-  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : "Waiting for work"))}</p><div class="status-line"><i class="dot ${w.status === "working" ? "active" : w.status === "failed" ? "blocked" : "waiting"}"></i>${esc(w.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
+  const agent = t.config.bot_agents?.[selectedHouse] || t.config;
+  const agentDetails = selectedHouse === "repo"
+    ? '<p class="muted">Reports repository state without an agent.</p>'
+    : `<p class="muted">Next run: ${esc(agent.harness || "codex-acp")} · ${esc(agent.model || "Default model")} · ${esc(agent.effort || "Default effort")}<br>${agent.inherited === false ? "Own bot profile" : "Town defaults"}</p><button id="configure-agent" type="button">Configure agent</button>`;
+  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : "Waiting for work"))}</p><div class="status-line"><i class="dot ${w.status === "working" ? "active" : w.status === "failed" ? "blocked" : "waiting"}"></i>${esc(w.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${agentDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
     queue
       .slice(0, 40)
       .map(
@@ -314,6 +318,10 @@ function renderInspection() {
         .join("\n"),
     ) || "No activity yet."
   }</div>`;
+  const configure = out.querySelector("#configure-agent");
+  if (configure) configure.onclick = () => document.dispatchEvent(
+    new CustomEvent("open-settings", { detail: { role: selectedHouse } }),
+  );
   out
     .querySelectorAll("[data-action]")
     .forEach(

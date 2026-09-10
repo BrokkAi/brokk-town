@@ -169,6 +169,23 @@
         <div class="eyebrow">YOUR AGENT TEAM</div>
         <h2>Town settings</h2>
         <p id="settings-repo" class="muted"></p>
+        <div class="agent-profile">
+          <label for="agent-role">Configure agent for</label>
+          <select id="agent-role">
+            <option value="">Town defaults</option>
+            <option value="bug">Bug Bot</option>
+            <option value="feature">Feature Bot</option>
+            <option value="issue">Issue Bot</option>
+            <option value="review">Review Bot</option>
+            <option value="release">Release Bot</option>
+          </select>
+          <div class="profile-actions">
+            <p id="agent-profile-status" class="muted" role="status"></p>
+            <button id="inherit-agent" type="button" class="quiet" hidden>
+              Use town defaults
+            </button>
+          </div>
+        </div>
         <label for="harness-input">Coding harness</label>
         <select id="harness-input">
           <option value="custom">Custom ACP command</option>
@@ -239,20 +256,24 @@
         <p class="muted">
           Load choices prepares and briefly starts the harness without assigning
           work. It may need you to log in through its CLI first. Leave model or
-          effort blank to use its default.
+          effort blank to use its default. Use the exact model and effort IDs
+          advertised by the selected harness.
         </p>
-        <p class="muted">
-          These settings apply to all four bots on their next run. Active work
-          finishes with its current settings.
+        <p id="agent-profile-note" class="muted"></p>
+        <p class="muted profile-draft-note">
+          Save each profile before closing. Unsaved edits stay here when you
+          switch bots. Closing discards unsaved edits. Active work finishes with
+          its current settings.
         </p>
+        <div id="settings-success" role="status"></div>
         <div id="settings-error" class="form-error" role="alert"></div>
         <div class="dialog-actions">
           <button id="open-delete" type="button" class="danger quiet">
             Delete town</button
           ><span class="spacer"></span
           ><button type="button" data-close="settings-dialog" class="quiet">
-            Cancel</button
-          ><button class="primary" type="submit">Save settings</button>
+            Close</button
+          ><button id="save-agent" class="primary" type="submit">Save town defaults</button>
         </div>
       </form>
     </dialog>

@@ -44,20 +44,32 @@ of public snapshots. Final worker results still commit to its recovery record.
 Re-adding waits for workers to stop, then restores the same identity, history, and
 private worktrees with automation disabled.
 
+Town config retains a default harness and ACP agent configuration, plus optional
+complete `bot_agents` profiles for bug, feature, issue, review, and release roles.
+An absent role inherits the town defaults; an explicit profile owns its harness,
+launch definition, model, effort, command, environment, authentication, and mode.
+Blank selectors use that profile's harness defaults. Repo-bot has no agent.
 Agent settings preserve private command/authentication fields when changing only
-model or effort; switching harnesses resets harness-specific configuration.
-Dispatch takes a fresh config snapshot so queued work uses the latest settings.
+model or effort; switching harnesses resets harness-specific configuration only
+within the selected profile. Resetting a role removes its profile, restoring
+inheritance. Public snapshots expose effective per-bot harness/model/effort and
+inheritance state while omitting private ACP fields and full launch definitions.
+Dispatch takes a fresh, role-resolved config snapshot so queued work uses the
+latest settings. Running workers and their nested ACP sessions retain their
+starting profile; issue repairs use issue-bot's profile and review certification
+uses review-bot's profile.
 `internal/harness` reads the official ACP registry v1 index, retaining a bundled
 offline snapshot and an atomic, validated cache. Authenticated API/CLI refreshes
 run independently of town scheduling. The browser displays the cached catalog
 immediately and refreshes stale entries in the background. Anvil, Muse ACP, and
 Draupnir are explicit supplements resolved from PATH, with setup notes.
 
-Selecting a harness persists its full launch definition in private town config;
-public snapshots expose only the ID and version. Catalog refreshes never mutate
-saved definitions. A user can explicitly select the new version. Legacy towns
-pin their definition at settings save or first dispatch. Package runners receive
-the registry's exact package, arguments, and environment without a shell. Native
+Selecting a harness persists its full launch definition in the selected private
+profile; public snapshots expose only the ID and version. Catalog refreshes never
+mutate saved definitions. A user can explicitly select the new version. Legacy
+towns retain their defaults and pin the definition at settings save or first
+dispatch. Package runners receive the registry's exact package, arguments, and
+environment without a shell. Native
 archives install in a private cache keyed by definition and platform, using a
 cross-process lock, bounded downloads/extraction, optional registry checksums,
 path/link validation, and atomic publication. Preparation runs in worker or
@@ -65,8 +77,9 @@ choice-request contexts, not in render or scheduling loops. Installed supplement
 commands retain the user's version. Registry definitions pin launch recipes;
 upstream mutable package tags or release assets remain upstream-controlled.
 
-Choice discovery first prepares the harness with a three-minute bound, then uses
-a temporary ACP session with a 45-second bound, no prompt, and no client tools.
+Choice discovery resolves the selected role's profile and first prepares its
+harness with a three-minute bound, then uses a temporary ACP session with a
+45-second bound, no prompt, and no client tools.
 Model selection precedes reading model-specific effort options. Demo discovery
 uses fixtures and never starts a process; demo registry refreshes never access
 the network. Nested bot sessions reuse the prepared launch from their run.
@@ -133,7 +146,8 @@ policies in a later iteration.
 ## Automatic feature discovery
 
 Feature-bot is a separate Go/ACP bot and `bfb` CLI, modeled on bug-bot. Town calls
-its shared library with the selected harness and an isolated feature workspace.
+its shared library with the feature role's effective harness and an isolated
+feature workspace.
 Both discovery workers wait 30 minutes between successful attempts and share the
 same global worker cap with implementation, review and release workers.
 Feature proposals require a user problem, current workflow, proposed behavior,

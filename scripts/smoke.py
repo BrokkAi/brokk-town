@@ -90,6 +90,32 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
                         '--model', 'demo-model', '--effort', 'high'], check=True)
         with request('/api/choices', {'town': 'brokkai/orchard', 'agent': {}}) as response:
             assert json.load(response)['models'][0]['value'] == 'demo-model'
+        # Each bot can select its own harness and model without changing its neighbors.
+        for role, harness, model, effort in [
+                ('review', 'claude', 'review-model', 'xhigh'),
+                ('issue', 'codex', 'issue-model', 'xhigh'),
+                ('release', 'opencode', 'release-model', '')]:
+            subprocess.run([binary, 'settings', '--demo', '--state-dir', directory,
+                            '--repo', 'BrokkAi/orchard', '--role', role,
+                            '--harness', harness, '--model', model, '--effort', effort], check=True)
+            with request('/api/choices', {'town': 'brokkai/orchard', 'role': role, 'agent': {}}) as response:
+                assert json.load(response)['models'][0]['value'] == 'demo-model'
+        profiles = snapshot()['towns']['brokkai/orchard']['config']['bot_agents']
+        assert profiles['review']['harness'] == 'claude-acp' and profiles['review']['model'] == 'review-model'
+        assert profiles['issue']['harness'] == 'codex-acp' and profiles['issue']['model'] == 'issue-model'
+        assert profiles['release']['harness'] == 'opencode' and profiles['release']['effort'] == ''
+        assert not any(profiles[role]['inherited'] for role in ['review', 'issue', 'release'])
+        subprocess.run([binary, 'settings', '--demo', '--state-dir', directory,
+                        '--repo', 'BrokkAi/orchard', '--model', 'new-default'], check=True)
+        updated = snapshot()['towns']['brokkai/orchard']['config']['bot_agents']
+        assert all(updated[role] == profiles[role] for role in ['review', 'issue', 'release'])
+        assert updated['bug']['inherited'] and updated['bug']['model'] == 'new-default'
+        assert updated['feature']['inherited'] and updated['feature']['model'] == 'new-default'
+        subprocess.run([binary, 'settings', '--demo', '--state-dir', directory,
+                        '--repo', 'BrokkAi/orchard', '--role', 'review', '--inherit'], check=True)
+        reset = snapshot()['towns']['brokkai/orchard']['config']['bot_agents']
+        assert reset['review']['inherited'] and reset['review']['model'] == 'new-default'
+        assert reset['issue'] == profiles['issue'] and reset['release'] == profiles['release']
         issue_body = root / 'request.md'
         issue_body.write_text('Steps:\n1. Keep literal `code` and $(text).\n2. Preserve the selection.\n')
         submit = [binary, 'request', '--demo', '--state-dir', directory,
@@ -178,7 +204,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         saved = json.loads((root / 'demo' / 'state.json').read_text())
         assert saved['towns']['brokkai/paper-trail']['deleted']
         assert all(not w['enabled'] for w in saved['towns']['brokkai/paper-trail']['workers'].values())
-        print('Demo smoke passed: assets, auth, SSE, registry, supplemental harnesses, pinned settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, restart recovery.')
+        print('Demo smoke passed: assets, auth, SSE, registry, supplemental harnesses, per-bot profiles/defaults/reset, pinned settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, restart recovery.')
     finally:
         if terminal is not None and terminal.poll() is None:
             terminal.kill()

@@ -16,8 +16,12 @@ import (
 )
 
 func fixture(t *testing.T) (*Server, *httptest.Server) {
+	return fixtureMode(t, false)
+}
+
+func fixtureMode(t *testing.T, demo bool) (*Server, *httptest.Server) {
 	t.Helper()
-	store, e := town.Open(t.TempDir(), false)
+	store, e := town.Open(t.TempDir(), demo)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -136,6 +140,64 @@ func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
 	if !s.Store.Snapshot().Towns["acme/managed"].Deleted {
 		t.Fatal("deleted recovery record not retained")
 	}
+}
+
+func TestBotProfileAPIsIsolateSettingsAndValidateDiscoveryRole(t *testing.T) {
+	s, h := fixture(t)
+	if r := call(t, h.URL, "POST", "/api/towns", `{"repo":"acme/team","agent":{"harness":"custom","command":["fake","private-default"],"model":"default"}}`, "test-key", ""); r.StatusCode != 201 {
+		t.Fatal(r.Status)
+	}
+	for _, body := range []string{
+		`{"town":"acme/team","role":"review","agent":{"harness":"claude","model":"review-model","effort":"xhigh"}}`,
+		`{"town":"acme/team","role":"issue","agent":{"model":"issue-model"}}`,
+		`{"town":"acme/team","role":"release","agent":{"harness":"custom","command":["fake-release","private-release"],"model":"release-model"}}`,
+		`{"town":"acme/team","agent":{"model":"new-default"}}`,
+	} {
+		r := call(t, h.URL, "POST", "/api/settings", body, "test-key", "")
+		if r.StatusCode != 200 {
+			data, _ := io.ReadAll(r.Body)
+			t.Fatal(r.Status, string(data))
+		}
+	}
+	c := s.Store.Snapshot().Towns["acme/team"].Config
+	if c.Agent.Model != "new-default" || c.ForRole(town.Review).Agent.Model != "review-model" || c.ForRole(town.Issue).Agent.Model != "issue-model" || c.ForRole(town.Release).Agent.Model != "release-model" || c.ForRole(town.Feature).Agent.Model != "new-default" {
+		t.Fatal("API changed another bot's settings")
+	}
+	r := call(t, h.URL, "GET", "/api/state", "", "test-key", "")
+	data, _ := io.ReadAll(r.Body)
+	if strings.Contains(string(data), "private-") || !strings.Contains(string(data), `"bot_agents"`) || !strings.Contains(string(data), `"inherited":false`) {
+		t.Fatal("public profiles omitted or leaked private values", string(data))
+	}
+	// Invalid roles must fail before a discovery session can start the fake command.
+	for _, path := range []string{"/api/settings", "/api/choices"} {
+		for _, role := range []string{"repo", "all", "wat"} {
+			body := `{"town":"acme/team","role":"` + role + `","agent":{}}`
+			if r := call(t, h.URL, "POST", path, body, "test-key", ""); r.StatusCode != 400 {
+				t.Fatal(path, "accepted unsupported role", role)
+			}
+		}
+	}
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/team","role":"review","agent":{"inherit":true}}`, "test-key", "")
+	if r.StatusCode != 200 {
+		t.Fatal(r.Status)
+	}
+	c = s.Store.Snapshot().Towns["acme/team"].Config
+	if c.ForRole(town.Review).Agent.Model != "new-default" || c.ForRole(town.Issue).Agent.Model != "issue-model" {
+		t.Fatal("reset did not isolate its target bot")
+	}
+	t.Run("demo choice discovery", func(t *testing.T) {
+		demo, server := fixtureMode(t, true)
+		if err := demo.Store.Update(func(st *town.State) error { _, err := st.Add(town.DefaultConfig("acme/team")); return err }); err != nil {
+			t.Fatal(err)
+		}
+		for _, role := range []string{"review", "issue", "release", "feature", "bug"} {
+			r := call(t, server.URL, "POST", "/api/choices", `{"town":"acme/team","role":"`+role+`","agent":{}}`, "test-key", "")
+			var choices town.AgentChoices
+			if r.StatusCode != 200 || json.NewDecoder(r.Body).Decode(&choices) != nil || len(choices.Models) == 0 {
+				t.Fatal("demo role discovery failed", role, r.Status)
+			}
+		}
+	})
 }
 
 type issuePublisher struct{}

@@ -110,15 +110,22 @@ uncertain external writes retain their saved intent and are reconciled first.
 
 ## Town settings, requests, and deletion
 
-Visit a town and choose **Settings** to select any agent from the
+Visit a town and choose **Settings**, then use **Configure agent for** to select
+the bot and configure its agent, model, and reasoning effort independently. Bug,
+feature, issue, review, and release bots can each use a different profile. Bots
+without a profile inherit **Town defaults**. Choose **Use town defaults** and save
+to remove a bot's independent profile. Save each changed profile before closing
+Settings. Repo-bot only reports repository state and does not use an agent.
+
+For each profile, select any agent from the
 [official ACP registry](https://agentclientprotocol.com/get-started/registry),
 plus **Anvil**, **Muse ACP**, **Draupnir**, or a custom ACP command. The full
 catalog loads from a bundled snapshot or local cache, then refreshes in the
 background when stale. **Refresh registry** checks for new agents and versions;
 failed refreshes preserve the last usable catalog. Demo stays offline.
 
-Selecting a registry agent saves its version and launch definition with the town.
-Refreshing the catalog does not upgrade existing towns. To upgrade, choose
+Selecting a registry agent saves its version and launch definition with that
+profile. Refreshing the catalog does not upgrade saved profiles. To upgrade, choose
 **Use registry version** in Settings, or pass the version shown by `bt harnesses`
 to `--harness-version`. Active work retains its starting settings.
 
@@ -140,27 +147,43 @@ The additional harnesses use the executable installed on the service's PATH:
 These three use your installed versions. Their project links and setup notes
 also appear in Settings. A custom command supports other local ACP agents.
 
-**Load available choices** prepares and briefly starts the selected harness
+**Load available choices** prepares and briefly starts the selected bot's harness
 without a work prompt, then lists its advertised models and reasoning efforts.
 Authenticate it in your terminal first. Choose a model before effort: available
 effort levels can depend on it. You can also enter an exact ACP selector value,
 or leave either field blank for the harness default. Unsupported selections fail
 visibly when the worker starts. Switching harnesses clears the previous harness's
-private authentication, command, and mode settings. Changes apply to the next
-worker run.
+private authentication, command, and mode settings in the selected profile.
+Changing town defaults affects bots that inherit them; independent profiles keep
+their settings. Changes apply to the next worker run.
 
 ```sh
 ./bin/bt harnesses --refresh
-./bin/bt settings --repo BrokkAi/my-project --harness opencode
-./bin/bt settings --repo BrokkAi/my-project --harness BrokkAi/anvil
-./bin/bt settings --repo BrokkAi/my-project --harness muse-acp
-./bin/bt settings --repo BrokkAi/my-project --harness draupnir
-./bin/bt settings --repo BrokkAi/my-project --model MODEL_ID --effort EFFORT_ID
-./bin/bt settings --repo BrokkAi/my-project --model '' --effort ''
-./bin/bt settings --repo BrokkAi/my-project --harness custom --agent-command '["my-agent", "--acp"]'
+# Without --role, change the town defaults.
+./bin/bt settings --repo BrokkAi/my-project --harness codex
+# Give each bot its own harness and exact selectors from available choices.
+./bin/bt settings --repo BrokkAi/my-project --role review --harness claude --model MODEL_ID --effort EFFORT_ID
+./bin/bt settings --repo BrokkAi/my-project --role issue --harness codex --model MODEL_ID --effort EFFORT_ID
+./bin/bt settings --repo BrokkAi/my-project --role release --harness opencode --model MODEL_ID
+./bin/bt settings --repo BrokkAi/my-project --role bug --harness BrokkAi/anvil
+./bin/bt settings --repo BrokkAi/my-project --role feature --harness custom --agent-command '["my-agent", "--acp"]'
+# Blank selectors use this profile's harness defaults.
+./bin/bt settings --repo BrokkAi/my-project --role review --model '' --effort ''
+# Remove the review profile and follow the town defaults again.
+./bin/bt settings --repo BrokkAi/my-project --role review --inherit
 ```
 
 `codex` and `claude` remain aliases for `codex-acp` and `claude-acp`.
+The model and effort IDs above are placeholders: use the exact values advertised
+by the selected harness. An effort such as `xhigh` is available only when that
+harness and model support it.
+
+For an OpenRouter-backed release bot, select **OpenCode** as its harness,
+authenticate OpenRouter in OpenCode with `/connect`, then load the release bot's
+available choices and select the desired OpenRouter model. OpenCode provides the
+ACP agent and OpenRouter supplies its model. See
+[OpenCode's OpenRouter setup](https://opencode.ai/docs/providers/#openrouter) and
+[ACP support](https://opencode.ai/docs/acp/).
 
 Choose **New request**, select **Feature request** or **Bug report**, and describe
 the work. **Create GitHub issue** posts it to that town's repository and places
@@ -227,18 +250,30 @@ merges for now. GitHub is the final authority at write time.
 ## Configuration and recovery
 
 Copy [docs/config.example.json](docs/config.example.json), edit the repository,
-agent command, verification command, and policy, then run:
+bot profiles, verification command, and policy, then run:
 
 ```sh
 ./bin/bt serve --config /path/to/towns.json
 ```
 
-Configuration is a JSON array. Each entry supplies `repo`, optional `branch` and `harness`,
-`agent`, optional `verify` argument vector, `merge_policy`, `poll_seconds`,
-`report_seconds`, and `max_cycles`. The example lists all required values. Town
+Configuration is a JSON array. Each entry supplies `repo`, optional `branch` and
+`harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
+`merge_policy`, `poll_seconds`, `report_seconds`, and `max_cycles`. The example
+lists all required values. Town
 uses the repository's default branch when omitted; an initialized town's branch
 cannot be changed in place. Omitted towns are retained when loading a config.
 Agent configuration uses acp-go's `command`, `environment`, `auth_method`, `mode`, `model`, and `effort` fields.
+
+The top-level `harness` and `agent` define town defaults. `bot_agents` maps any of
+`bug`, `feature`, `issue`, `review`, and `release` to a complete profile containing
+its own `harness` and `agent`, with an optional saved `harness_definition`.
+An absent role follows the town defaults. A configured role is independent:
+blank model or effort uses its harness default, and omitted agent fields do not
+inherit private command, environment, or authentication values from the town.
+The example gives review-bot Claude Code, issue-bot Codex, and release-bot OpenCode;
+bug-bot and feature-bot inherit the town defaults. Select models and efforts after
+authenticating each harness. Verification and scheduling settings remain shared
+at town level.
 
 Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet reports
 use `report_seconds` (1800). Bug-bot and feature-bot run at most every 30 minutes; release-bot
@@ -246,8 +281,8 @@ checks every five minutes and retains its own quiet window, minimum gap, and
 batching decisions. Each worker attempt has a two-hour deadline. Repair cycles
 default to five; failed PR attempts back off and block after three failures.
 
-Feature-bot uses the same selected ACP harness, model, effort and optional verifier
-as the other workers, with its own private workspace and durable publication state.
+Feature-bot uses its own effective ACP harness, model, and effort, plus the town's
+optional verifier, with a private workspace and durable publication state.
 It proposes scoped features with user value, repository evidence and acceptance
 criteria. A separate review rejects duplicate, already implemented, rejected or
 uncertain proposals before filing. Its verifier receives `FEATURE_COMMIT` and
@@ -260,8 +295,9 @@ appends `demo`. A single writer lock, atomic snapshots, per-role bot state, and
 private worktrees keep towns separate. Events, logs, and reports have bounded
 recent histories; task/intent history persists. Browser access uses a per-service
 local key in a URL fragment. `connection.json` and state snapshots are mode 0600.
-Agent commands/environment values are omitted from public configuration snapshots;
-the selected harness, model, and effort are visible.
+Private agent commands, environment, and authentication configuration are omitted
+from public configuration snapshots for both town defaults and bot profiles;
+each bot's effective harness, model, and effort are visible.
 Local logs and worktrees can contain repository content; keep this directory private.
 
 If a push or merge response is lost, Town checks GitHub rather than assuming

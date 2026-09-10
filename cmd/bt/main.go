@@ -69,7 +69,7 @@ func run(ctx context.Context, args []string) error {
 	listen := fs.String("listen", "127.0.0.1:8099", "loopback HTTP address (serve only)")
 	demo := fs.Bool("demo", false, "isolated simulated town (serve only)")
 	repo := fs.String("repo", "", "GitHub OWNER/REPO")
-	role := fs.String("role", "all", "bug, feature, issue, review, release, repo, or all")
+	role := fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls; omit for town defaults in settings")
 	task := fs.String("task", "", "task ID for retry")
 	config := fs.String("config", "", "optional JSON array of town configs (serve only)")
 	agentHarness := fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
@@ -78,6 +78,7 @@ func run(ctx context.Context, args []string) error {
 	model := fs.String("model", "", "ACP model ID; empty uses harness default (add/settings)")
 	effort := fs.String("effort", "", "ACP reasoning effort; empty uses harness default (add/settings)")
 	agentCommand := fs.String("agent-command", "", "custom ACP command as a JSON argument array (add/settings)")
+	inherit := fs.Bool("inherit", false, "restore a bot's town defaults (settings --role BOT)")
 	kind := fs.String("kind", "feature", "feature or bug (request)")
 	title := fs.String("title", "", "GitHub issue title (request)")
 	bodyFile := fs.String("body-file", "", "issue description file, or - for stdin (request)")
@@ -106,8 +107,11 @@ func run(ctx context.Context, args []string) error {
 		return serve(ctx, abs, *listen, *demo, *config, *repo)
 	}
 	agent := map[string]any{}
+	roleSet := false
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
+		case "role":
+			roleSet = true
 		case "harness":
 			agent["harness"] = *agentHarness
 		case "harness-version":
@@ -124,6 +128,12 @@ func run(ctx context.Context, args []string) error {
 			return fmt.Errorf("--agent-command must be a JSON argument array: %w", err)
 		}
 		agent["command"] = args
+	}
+	if *inherit {
+		if command != "settings" || !roleSet || *role == "all" || *role == "repo" || len(agent) != 0 {
+			return errors.New("--inherit requires settings --role BOT and cannot be combined with agent settings")
+		}
+		agent["inherit"] = true
 	}
 	conn, err := readConnection(abs)
 	if err != nil {
@@ -179,7 +189,14 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("--repo OWNER/REPO is required")
 		}
 		var result any
-		return request(ctx, conn, "POST", "/api/settings", map[string]any{"town": strings.ToLower(*repo), "agent": agent}, &result)
+		settingsRole := ""
+		if roleSet {
+			if !town.ValidRole(town.Role(*role)) || *role == "repo" {
+				return errors.New("settings --role must be bug, feature, issue, review, or release; omit --role to edit town defaults")
+			}
+			settingsRole = *role
+		}
+		return request(ctx, conn, "POST", "/api/settings", map[string]any{"town": strings.ToLower(*repo), "role": settingsRole, "agent": agent}, &result)
 	case "request":
 		if *repo == "" || *title == "" || *bodyFile == "" {
 			return errors.New("--repo, --title, and --body-file are required")

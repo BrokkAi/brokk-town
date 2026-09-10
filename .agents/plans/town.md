@@ -1,5 +1,32 @@
 # Brokk Town implementation plan
 
+## Per-bot agent profiles (2026-09-10)
+
+User requested independent harness/model/reasoning choices for every bot, such as
+Claude for review, Codex for issue implementation, and an OpenRouter-backed agent
+for releases.
+
+- Preserved town-wide agent settings as defaults; added complete private profiles
+  for bug, feature, issue, review, and release bots, with explicit inheritance
+  reset. Repo-bot performs repository reporting without an agent.
+- Persisted per-profile harness versions, commands, authentication, environment,
+  model and effort. The selected bot resolves at dispatch; active runs retain
+  their settings, and nested repair/review sessions reuse the prepared launch.
+  Public state exposes only harness/version/model/effort and inheritance.
+- Added browser profile selection and bot-inspector access, authenticated API and
+  CLI role selection/reset, documentation and a multi-profile config example.
+- Validation passed: `make check` (Go race tests/vet, 15 frontend behavior tests,
+  syntax, launcher, packaging and license checks) and isolated `make smoke` with
+  CLI/API profile isolation, defaults/reset and restart persistence. Fake agents
+  cover private config preservation, dispatch/nested sessions, and model choices.
+- In-app browser demo QA verified Claude review, Codex issue and OpenCode release
+  profiles, saved versions, offline choices, reset isolation and reload/inspector
+  display, with no browser errors. Unsaved drafts survive switching profiles;
+  pending inheritance resets must be saved before further customization so old
+  private commands/authentication cannot survive a reset followed by an edit.
+- Changes stay local on the current branch. No live service restart, real bot
+  automation, GitHub writes or release publication were used for development.
+
 ## Product
 
 A town application that runs and supervises the Brokk bots. Houses represent

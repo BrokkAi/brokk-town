@@ -292,6 +292,9 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 		add("")
 		r := town.Roles[roleIndex]
 		add(" AT " + strings.ToUpper(string(r)) + "'S DOOR")
+		if r != town.Repo {
+			add(fmt.Sprintf(" Configure: bt settings --repo %s --role %s", t.Config.Repo, r))
+		}
 		tasks := []*town.Task{}
 		for _, task := range t.Tasks {
 			if task.House == r && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
