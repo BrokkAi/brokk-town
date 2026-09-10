@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
@@ -94,7 +95,7 @@ func TestLocalAPIAuthenticationOriginAndStrictInput(t *testing.T) {
 
 func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
 	s, h := fixture(t)
-	for _, path := range []string{"/api/settings", "/api/choices", "/api/requests", "/api/requests/check"} {
+	for _, path := range []string{"/api/settings", "/api/choices", "/api/requests", "/api/requests/check", "/api/harnesses/refresh"} {
 		if r := call(t, h.URL, "POST", path, `{}`, "", ""); r.StatusCode != 401 {
 			t.Fatal(path, "missing authorization")
 		}
@@ -219,4 +220,38 @@ func TestEventStreamSnapshotAndCommittedUpdate(t *testing.T) {
 		t.Fatal("stream did not reflect committed update")
 	}
 	cancel()
+}
+
+func TestHarnessCatalogAPIIncludesRegistryAndSupplements(t *testing.T) {
+	s, h := fixture(t)
+	s.Supervisor.Harnesses = harness.New(t.TempDir(), true)
+	if r := call(t, h.URL, "GET", "/api/harnesses", "", "", ""); r.StatusCode != 401 {
+		t.Fatal("unauthenticated catalog")
+	}
+	for _, method := range []string{"GET", "POST"} {
+		path, body := "/api/harnesses", ""
+		if method == "POST" {
+			path, body = path+"/refresh", "{}"
+		}
+		r := call(t, h.URL, method, path, body, "test-key", "")
+		if r.StatusCode != 200 {
+			t.Fatal(r.Status)
+		}
+		var list harness.Listing
+		if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
+			t.Fatal(err)
+		}
+		found := map[string]bool{}
+		for _, entry := range list.Agents {
+			found[entry.ID] = true
+		}
+		if len(found) < 33 || !list.Demo || list.Source != harness.RegistryURL {
+			t.Fatal(list)
+		}
+		for _, id := range []string{"codex-acp", "brokkai/anvil", "brokkai/muse-acp", "foundev/draupnir"} {
+			if !found[id] {
+				t.Fatal("missing harness", id)
+			}
+		}
+	}
 }

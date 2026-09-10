@@ -91,8 +91,12 @@ func (tree sessionTree) close() error {
 	}
 	return err
 }
-func runAgent(ctx context.Context, t *Town, tree sessionTree, role string, log *slog.Logger, prompt string) (string, error) {
-	return (runner.Runner{Config: runner.Config{Directory: tree.dir, StateDirectory: filepath.Dir(tree.repository), Agent: agentConfig(t.Config), AutoApprove: true, ClientInfo: acp.ClientInfo{Name: "brokk-town-" + role, Version: "dev"}}, Log: log}).Execute(ctx, prompt)
+func (b *BotWorkers) runAgent(ctx context.Context, t *Town, tree sessionTree, role string, log *slog.Logger, prompt string) (string, error) {
+	agent, err := agentConfig(ctx, t.Config, b.Root)
+	if err != nil {
+		return "", err
+	}
+	return (runner.Runner{Config: runner.Config{Directory: tree.dir, StateDirectory: filepath.Dir(tree.repository), Agent: agent, AutoApprove: true, ClientInfo: acp.ClientInfo{Name: "brokk-town-" + role, Version: "dev"}}, Log: log}).Execute(ctx, prompt)
 }
 func receipt(text, prefix string, out any) error {
 	lines := strings.Split(strings.TrimSpace(text), "\n")

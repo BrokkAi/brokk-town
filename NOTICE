@@ -10,3 +10,9 @@ are adapted from BrokkAi/review-bot, BrokkAi/bug-bot, and BrokkAi/issue-bot,
 also licensed under Apache-2.0. Modified for the local multi-repository service.
 
 Town artwork was generated for this project; see docs/ARTWORK.md.
+
+internal/harness/registry.json includes an unmodified index snapshot from the
+Agent Client Protocol registry (https://github.com/agentclientprotocol/registry),
+licensed under Apache-2.0, retrieved September 10, 2026 from
+https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json.
+The listed agents are not bundled; each retains its own license and terms.

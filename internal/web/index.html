@@ -171,11 +171,35 @@
         <p id="settings-repo" class="muted"></p>
         <label for="harness-input">Coding harness</label>
         <select id="harness-input">
-          <option value="codex">Codex</option>
-          <option value="claude">Claude Agent</option>
-          <option value="gemini">Gemini CLI</option>
           <option value="custom">Custom ACP command</option>
         </select>
+        <div class="choice-actions">
+          <button id="refresh-harnesses" type="button">Refresh registry</button
+          ><span id="registry-status" class="muted" role="status"></span>
+        </div>
+        <p class="muted">
+          Agents from the
+          <a
+            href="https://agentclientprotocol.com/get-started/registry"
+            target="_blank"
+            rel="noopener noreferrer"
+            >official ACP registry</a
+          >, plus Anvil, Muse ACP, and Draupnir.
+        </p>
+        <p id="harness-detail" class="muted"></p>
+        <p class="muted">
+          <span id="harness-version"></span>
+          <a
+            id="harness-project"
+            target="_blank"
+            rel="noopener noreferrer"
+            hidden
+            >Project and installation ↗</a
+          >
+        </p>
+        <button id="update-harness" type="button" hidden>
+          Use registry version
+        </button>
         <div id="custom-agent" hidden>
           <label for="command-input">Command and arguments (JSON array)</label>
           <textarea
@@ -213,9 +237,9 @@
           ><span id="choices-status" class="muted" role="status"></span>
         </div>
         <p class="muted">
-          Load choices briefly starts the harness without assigning work. It may
-          need you to log in through its CLI first. Leave model or effort blank
-          to use its default.
+          Load choices prepares and briefly starts the harness without assigning
+          work. It may need you to log in through its CLI first. Leave model or
+          effort blank to use its default.
         </p>
         <p class="muted">
           These settings apply to all four bots on their next run. Active work

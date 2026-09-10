@@ -64,6 +64,21 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
             assert response.readline().startswith(b'id: ')
             assert response.readline().startswith(b'data: ')
 
+        catalog_cli = subprocess.check_output([binary, 'harnesses', '--demo',
+            '--state-dir', directory, '--refresh'], text=True)
+        with request('/api/harnesses') as response:
+            catalog = json.load(response)
+        agents = {a['id']: a for a in catalog['agents']}
+        assert len(agents) >= 33 and catalog['demo']
+        for harness in ['brokkai/anvil', 'brokkai/muse-acp', 'foundev/draupnir']:
+            assert harness in catalog_cli and agents[harness]['version'] == 'installed'
+            subprocess.run([binary, 'settings', '--demo', '--state-dir', directory,
+                '--repo', 'BrokkAi/orchard', '--harness', harness], check=True,
+                stdout=subprocess.DEVNULL)
+            with request('/api/choices', {'town': 'brokkai/orchard', 'agent': {}}) as response:
+                assert json.load(response)['models'][0]['value'] == 'demo-model'
+            assert snapshot()['towns']['brokkai/orchard']['config']['harness'] == harness
+
         subprocess.run([binary, 'settings', '--demo', '--state-dir', directory,
                         '--repo', 'BrokkAi/orchard', '--harness', 'claude',
                         '--model', 'demo-model', '--effort', 'high'], check=True)
@@ -77,7 +92,8 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         for _ in range(2):
             subprocess.run(submit, check=True, stdout=subprocess.DEVNULL)
         managed = snapshot()['towns']['brokkai/orchard']
-        assert managed['config']['harness'] == 'claude' and managed['config']['effort'] == 'high'
+        assert managed['config']['harness'] == 'claude-acp' and managed['config']['effort'] == 'high'
+        assert managed['config']['harness_version'] == agents['claude-acp']['version']
         assert len(managed['requests']) == 1
         receipt = managed['requests']['00112233445566778899aabbccddeeff']
         assert receipt['status'] == 'confirmed' and not receipt.get('url')
@@ -151,11 +167,12 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         conn = json.loads(conn_path.read_text())
         state = snapshot()
         assert len(state['towns']) == 1
+        assert state['towns']['brokkai/orchard']['config'] == managed['config']
         assert state['towns']['brokkai/orchard']['requests'][receipt['id']]['status'] == 'confirmed'
         saved = json.loads((root / 'demo' / 'state.json').read_text())
         assert saved['towns']['brokkai/paper-trail']['deleted']
         assert all(not w['enabled'] for w in saved['towns']['brokkai/paper-trail']['workers'].values())
-        print('Demo smoke passed: assets, auth, SSE, settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, restart recovery.')
+        print('Demo smoke passed: assets, auth, SSE, registry, supplemental harnesses, pinned settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, restart recovery.')
     finally:
         if terminal is not None and terminal.poll() is None:
             terminal.kill()

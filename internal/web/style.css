@@ -604,6 +604,18 @@ kbd {
 .wide-dialog {
   width: min(640px, 95vw);
 }
+dialog a {
+  color: var(--green);
+}
+#settings-dialog {
+  padding: 24px;
+}
+#settings-dialog h2 {
+  margin-bottom: 12px;
+}
+#settings-dialog p {
+  margin: 10px 0;
+}
 textarea {
   resize: vertical;
   line-height: 1.6;

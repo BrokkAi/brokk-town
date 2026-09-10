@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/harness"
 )
 
 type Progress struct{ Phase, Task string }
@@ -27,6 +29,7 @@ type Supervisor struct {
 	GitHub     GitHub
 	Workers    Workers
 	Publisher  IssuePublisher
+	Harnesses  *harness.Catalog
 	mu         sync.Mutex
 	running    map[string]context.CancelFunc
 	wg         sync.WaitGroup
@@ -37,7 +40,7 @@ type Supervisor struct {
 
 func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	publisher, _ := gh.(IssuePublisher)
-	return &Supervisor{MaxWorkers: 4, Store: store, GitHub: gh, Workers: workers, Publisher: publisher, running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	return &Supervisor{MaxWorkers: 4, Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -117,6 +120,13 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		w := current.Workers[r]
 		if current.Deleted || !w.Enabled || ctx.Err() != nil {
 			return context.Canceled
+		}
+		if r != Repo {
+			// Migrate older towns to a pinned registry definition at first dispatch.
+			// Invalid selections are reported by the worker, not a store failure.
+			if cfg, err := s.Prepare(current.Config, AgentSettings{}); err == nil {
+				current.Config = cfg
+			}
 		}
 		// Resolve settings at actual dispatch, not from an older scheduler snapshot.
 		t = clone(current)

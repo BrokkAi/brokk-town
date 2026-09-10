@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/harness"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -73,7 +75,7 @@ func TestAgentSettingsPreservePrivateConfigAndSwitchHarness(t *testing.T) {
 		t.Fatal(err)
 	}
 	c = s.Snapshot().Towns[x.ID].Config
-	if c.harness() != "claude" || !reflect.DeepEqual(c.Agent, runner.AgentConfig{}) {
+	if c.harness() != "claude-acp" || !reflect.DeepEqual(c.Agent, runner.AgentConfig{}) {
 		t.Fatal("authentication carried across harnesses", c)
 	}
 	for _, input := range []AgentSettings{{Harness: ptr("unknown")}, {Harness: ptr("custom")}, {Command: ptr([]string{"foo"})}} {
@@ -81,13 +83,16 @@ func TestAgentSettingsPreservePrivateConfigAndSwitchHarness(t *testing.T) {
 			t.Fatal("invalid setting accepted", input)
 		}
 	}
-	if s.Snapshot().Towns[x.ID].Config.harness() != "claude" {
+	if s.Snapshot().Towns[x.ID].Config.harness() != "claude-acp" {
 		t.Fatal("invalid update committed")
 	}
 	if err := sup.Settings(x.ID, AgentSettings{Harness: ptr("custom"), Command: ptr([]string{"agent", "--acp"}), Model: ptr("m"), Effort: ptr("e")}); err != nil {
 		t.Fatal(err)
 	}
-	resolved := agentConfig(s.Snapshot().Towns[x.ID].Config)
+	resolved, err := agentConfig(context.Background(), s.Snapshot().Towns[x.ID].Config, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if resolved.Model != "m" || resolved.Effort != "e" || !reflect.DeepEqual(resolved.Command, []string{"agent", "--acp"}) {
 		t.Fatal(resolved)
 	}
@@ -363,4 +368,79 @@ func TestChoiceAgentHelper(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+func TestSavedRegistryDefinitionSurvivesCatalogChangesAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := addTown(t, store)
+	sup := NewSupervisor(store, nil, nil)
+	if err := sup.Settings(x.ID, AgentSettings{Harness: ptr("codex")}); err != nil {
+		t.Fatal(err)
+	}
+	latest := store.Snapshot().Towns[x.ID].Config.HarnessDefinition
+	// Simulate a town created against an older registry release.
+	update(t, store, func(st *State) {
+		d := st.Towns[x.ID].Config.HarnessDefinition
+		d.Version = "0.0.1"
+		d.Distribution = harness.Distribution{Npx: &harness.Package{Package: "fake-agent@0.0.1", Env: map[string]string{"PRIVATE": "private-registry-value"}}}
+	})
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	sup = NewSupervisor(store, nil, nil)
+	if err := sup.Settings(x.ID, AgentSettings{Model: ptr("new-model")}); err != nil {
+		t.Fatal(err)
+	}
+	config := store.Snapshot().Towns[x.ID].Config
+	if config.HarnessDefinition.Version != "0.0.1" || config.HarnessDefinition.Distribution.Npx.Package != "fake-agent@0.0.1" {
+		t.Fatal("saved recipe changed", config)
+	}
+	private, _ := json.Marshal(store.Snapshot().Public())
+	if strings.Contains(string(private), "private-registry-value") || strings.Contains(string(private), "fake-agent") || !strings.Contains(string(private), `"harness_version":"0.0.1"`) {
+		t.Fatal("public definition leak", string(private))
+	}
+	// Preparation uses the pinned package without executing it.
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "npx"), []byte("fake executable"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	agent, err := agentConfig(context.Background(), config, dir)
+	if err != nil || agent.Command[3] != "fake-agent@0.0.1" || agent.Model != "new-model" {
+		t.Fatal(agent, err)
+	}
+	if err := sup.Settings(x.ID, AgentSettings{Version: ptr(latest.Version)}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(store.Snapshot().Towns[x.ID].Config.HarnessDefinition, latest) {
+		t.Fatal("explicit registry update was not saved")
+	}
+}
+
+func TestRequestedHarnessSettingsAndDemoChoices(t *testing.T) {
+	store := testStore(t, true)
+	x := addTown(t, store)
+	sup := NewSupervisor(store, nil, nil)
+	t.Setenv("PATH", t.TempDir()) // Demo must work without any agent executable.
+	for _, id := range []string{"BrokkAi/anvil", "BrokkAi/muse-acp", "foundev/draupnir", "opencode"} {
+		if err := sup.Settings(x.ID, AgentSettings{Harness: ptr(id)}); err != nil {
+			t.Fatal(id, err)
+		}
+		c := store.Snapshot().Towns[x.ID].Config
+		if c.harness() != harness.Canonical(id) || c.HarnessDefinition == nil {
+			t.Fatal(c)
+		}
+		if choices, err := sup.Choices(context.Background(), x.ID, AgentSettings{}); err != nil || len(choices.Models) == 0 {
+			t.Fatal(id, choices, err)
+		}
+	}
 }

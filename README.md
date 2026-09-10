@@ -76,10 +76,11 @@ for first-release setup, access checks, publishing, and recovery.
 
 ## Connect real repositories
 
-Install and authenticate `git`, GitHub CLI (`gh`), and an ACP coding agent. The
-agent defaults to `codex-acp` on PATH, with `npx --yes
-@agentclientprotocol/codex-acp` as its fallback. Git must already be able to clone
-and push your GitHub repositories; Town uses the current Git/gh credentials.
+Install and authenticate `git`, GitHub CLI (`gh`), and your chosen coding agent.
+Town defaults to the official ACP registry’s `codex-acp` npm distribution, which
+requires Node.js and `npx`. Choose another harness in Settings as described below.
+Git must already be able to clone and push your GitHub repositories; Town uses
+the current Git/gh credentials.
 
 ```sh
 ./bin/bt serve --repo BrokkAi/my-project
@@ -108,26 +109,57 @@ uncertain external writes retain their saved intent and are reconciled first.
 
 ## Town settings, requests, and deletion
 
-Visit a town and choose **Settings** to select Codex, Claude Agent, Gemini CLI,
-or a custom ACP command. **Load available choices** opens a short harness session
-without a work prompt and lists its advertised models and reasoning efforts.
-Choose a model first: available effort levels can depend on it. You can also
-enter an exact ACP selector value, or leave either field blank for the harness
-default. Unsupported selections fail visibly when the worker starts.
+Visit a town and choose **Settings** to select any agent from the
+[official ACP registry](https://agentclientprotocol.com/get-started/registry),
+plus **Anvil**, **Muse ACP**, **Draupnir**, or a custom ACP command. The full
+catalog loads from a bundled snapshot or local cache, then refreshes in the
+background when stale. **Refresh registry** checks for new agents and versions;
+failed refreshes preserve the last usable catalog. Demo stays offline.
 
-Authenticate the harness in your terminal first. Town uses `codex-acp`,
-`claude-agent-acp`, or `gemini --acp` on PATH, falling back to the corresponding
-`@agentclientprotocol/codex-acp`, `@agentclientprotocol/claude-agent-acp`, or
-`@google/gemini-cli` npm package through `npx --yes`. Switching harnesses clears
-the previous harness's private authentication, command, and mode settings.
-Changes apply to the next worker run; active work retains its starting settings.
+Selecting a registry agent saves its version and launch definition with the town.
+Refreshing the catalog does not upgrade existing towns. To upgrade, choose
+**Use registry version** in Settings, or pass the version shown by `bt harnesses`
+to `--harness-version`. Active work retains its starting settings.
+
+Town prepares the registry's distribution on first use: npm packages run through
+`npx --yes`, Python packages through `uvx`, and native archives download into
+Town's private cache. Install Node.js/npm or uv when the selected entry requires
+it. Native installs are shared across workers and check a checksum when the
+registry supplies one. Agents without a distribution for your platform are
+marked unavailable. Provider credentials and login remain the harness's own.
+
+The additional harnesses use the executable installed on the service's PATH:
+
+| Harness | Command | Setup |
+| --- | --- | --- |
+| [BrokkAi/anvil](https://github.com/BrokkAi/anvil) | `anvil` | `npm install -g @brokkai/anvil`; configure its model provider. |
+| [BrokkAi/muse-acp](https://github.com/BrokkAi/muse-acp) | `muse-acp` | Install the adapter and Muse Code; authenticate with `muse login`. |
+| [foundev/draupnir](https://github.com/foundev/draupnir) | `draupnir` | Install its release and configure its model provider. |
+
+These three use your installed versions. Their project links and setup notes
+also appear in Settings. A custom command supports other local ACP agents.
+
+**Load available choices** prepares and briefly starts the selected harness
+without a work prompt, then lists its advertised models and reasoning efforts.
+Authenticate it in your terminal first. Choose a model before effort: available
+effort levels can depend on it. You can also enter an exact ACP selector value,
+or leave either field blank for the harness default. Unsupported selections fail
+visibly when the worker starts. Switching harnesses clears the previous harness's
+private authentication, command, and mode settings. Changes apply to the next
+worker run.
 
 ```sh
-./bin/bt settings --repo BrokkAi/my-project --harness codex
+./bin/bt harnesses --refresh
+./bin/bt settings --repo BrokkAi/my-project --harness opencode
+./bin/bt settings --repo BrokkAi/my-project --harness BrokkAi/anvil
+./bin/bt settings --repo BrokkAi/my-project --harness muse-acp
+./bin/bt settings --repo BrokkAi/my-project --harness draupnir
 ./bin/bt settings --repo BrokkAi/my-project --model MODEL_ID --effort EFFORT_ID
 ./bin/bt settings --repo BrokkAi/my-project --model '' --effort ''
 ./bin/bt settings --repo BrokkAi/my-project --harness custom --agent-command '["my-agent", "--acp"]'
 ```
+
+`codex` and `claude` remain aliases for `codex-acp` and `claude-acp`.
 
 Choose **New request**, select **Feature request** or **Bug report**, and describe
 the work. **Create GitHub issue** posts it to that town's repository and places

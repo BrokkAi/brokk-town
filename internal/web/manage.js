@@ -16,6 +16,12 @@ export function management({ api, getTown, getState, refresh }) {
     choicesVersion = 0,
     choicesAbort = null,
     loaded = false;
+  let catalog = null,
+    catalogVersion = 0,
+    catalogAbort = null,
+    savedHarness = "",
+    savedVersion = "",
+    selectedVersion = null;
   const cancelChoices = () => {
     choicesVersion++;
     choicesAbort?.abort();
@@ -23,6 +29,107 @@ export function management({ api, getTown, getState, refresh }) {
     $("#load-choices").disabled = false;
   };
   $("#settings-dialog").addEventListener("close", cancelChoices);
+  $("#settings-dialog").addEventListener("close", () => {
+    catalogVersion++;
+    catalogAbort?.abort();
+  });
+
+  function harnessDetail() {
+    const id = $("#harness-input").value,
+      entry = catalog?.agents.find((a) => a.id === id);
+    $("#harness-detail").textContent = entry
+      ? `${entry.description} ${entry.setup}`
+      : "";
+    const version =
+      selectedVersion ||
+      (id === savedHarness && savedVersion ? savedVersion : entry?.version);
+    $("#harness-version").textContent =
+      version === "installed"
+        ? "Uses your installed version."
+        : version
+          ? `Selected version: ${version}.`
+          : "";
+    $("#update-harness").hidden =
+      !entry || !version || version === entry.version;
+    $("#update-harness").textContent = entry
+      ? `Use registry version ${entry.version}`
+      : "Use registry version";
+    $("#harness-project").hidden = !safeURL(entry?.repository);
+    if (safeURL(entry?.repository))
+      $("#harness-project").href = entry.repository;
+  }
+  function renderCatalog() {
+    const select = $("#harness-input"),
+      selected = select.value || savedHarness;
+    const options = [];
+    for (const [source, label] of [
+      ["registry", "Official ACP registry"],
+      ["additional", "Additional harnesses"],
+    ]) {
+      const group = document.createElement("optgroup");
+      group.label = label;
+      for (const agent of catalog.agents.filter((a) => a.source === source)) {
+        const option = new Option(
+          `${agent.name}${agent.available ? "" : " — unavailable on this platform"}`,
+          agent.id,
+        );
+        option.disabled = !agent.available;
+        group.append(option);
+      }
+      options.push(group);
+    }
+    if (selected !== "custom" && !catalog.agents.some((a) => a.id === selected))
+      options.push(new Option(`Saved harness: ${selected}`, selected));
+    options.push(new Option("Custom ACP command", "custom"));
+    select.replaceChildren(...options);
+    select.value = selected;
+    harnessDetail();
+  }
+  async function loadCatalog(refresh = false) {
+    catalogAbort?.abort();
+    catalogAbort = new AbortController();
+    const version = ++catalogVersion;
+    $("#refresh-harnesses").disabled = true;
+    $("#registry-status").textContent = refresh
+      ? "Refreshing the official registry…"
+      : "Loading harnesses…";
+    try {
+      const next = await api(
+        refresh ? "/api/harnesses/refresh" : "/api/harnesses",
+        refresh ? {} : undefined,
+        catalogAbort.signal,
+      );
+      if (version !== catalogVersion) return;
+      catalog = next;
+      renderCatalog();
+      $("#registry-status").textContent = next.demo
+        ? "Bundled registry · demo is offline"
+        : next.stale
+          ? "Using bundled or cached registry"
+          : `Registry updated ${new Date(next.fetched).toLocaleDateString()}`;
+      if (!refresh && next.stale && !next.demo) {
+        void loadCatalog(true);
+        return;
+      }
+    } catch (e) {
+      if (version === catalogVersion)
+        $("#registry-status").textContent = e.message;
+    } finally {
+      if (version === catalogVersion) $("#refresh-harnesses").disabled = false;
+    }
+  }
+  $("#refresh-harnesses").onclick = () => loadCatalog(true);
+  $("#update-harness").onclick = () => {
+    const entry = catalog?.agents.find(
+      (a) => a.id === $("#harness-input").value,
+    );
+    if (entry) {
+      selectedVersion = entry.version;
+      cancelChoices();
+      loaded = false;
+      harnessDetail();
+    }
+  };
   const draftKey = () => `brokk-town-request:${requestTown}`;
   const readAgent = () => {
     const agent = {
@@ -30,6 +137,8 @@ export function management({ api, getTown, getState, refresh }) {
       model: $("#model-input").value.trim(),
       effort: $("#effort-input").value.trim(),
     };
+    if (selectedVersion && agent.harness !== "custom")
+      agent.version = selectedVersion;
     if (agent.harness === "custom" && $("#command-input").value.trim()) {
       agent.command = JSON.parse($("#command-input").value);
       if (
@@ -68,11 +177,15 @@ export function management({ api, getTown, getState, refresh }) {
     const t = getTown();
     if (!t) return;
     settingsTown = t.id;
+    savedHarness = t.config.harness || "codex-acp";
+    savedVersion = t.config.harness_version || "";
+    selectedVersion = null;
     cancelChoices();
     loaded = false;
     $("#settings-form").reset();
     $("#settings-repo").textContent = t.config.repo;
-    $("#harness-input").value = t.config.harness || "codex";
+    $("#harness-input").replaceChildren(new Option(savedHarness, savedHarness));
+    $("#harness-input").value = savedHarness;
     $("#model-input").value = t.config.model || "";
     $("#effort-input").value = t.config.effort || "";
     $("#custom-agent").hidden = $("#harness-input").value !== "custom";
@@ -82,8 +195,13 @@ export function management({ api, getTown, getState, refresh }) {
     $("#effort-choices").replaceChildren();
     $("#load-choices").disabled = false;
     $("#settings-dialog").showModal();
+    if (catalog) renderCatalog();
+    void loadCatalog();
   };
   $("#harness-input").onchange = () => {
+    selectedVersion =
+      catalog?.agents.find((a) => a.id === $("#harness-input").value)
+        ?.version || null;
     cancelChoices();
     loaded = false;
     $("#custom-agent").hidden = $("#harness-input").value !== "custom";
@@ -93,6 +211,7 @@ export function management({ api, getTown, getState, refresh }) {
       $("#" + id).replaceChildren();
     $("#choices-status").textContent = "";
     $("#load-choices").disabled = false;
+    harnessDetail();
   };
   async function loadChoices() {
     cancelChoices();
@@ -105,7 +224,8 @@ export function management({ api, getTown, getState, refresh }) {
       return;
     }
     $("#load-choices").disabled = true;
-    $("#choices-status").textContent = "Asking the harness…";
+    $("#choices-status").textContent =
+      "Preparing the harness and loading choices…";
     $("#settings-error").textContent = "";
     choicesAbort = new AbortController();
     try {

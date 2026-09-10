@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/town"
 	"github.com/BrokkAi/brokk-town/internal/web"
 )
@@ -71,7 +72,9 @@ func run(ctx context.Context, args []string) error {
 	role := fs.String("role", "all", "bug, issue, review, release, repo, or all")
 	task := fs.String("task", "", "task ID for retry")
 	config := fs.String("config", "", "optional JSON array of town configs (serve only)")
-	harness := fs.String("harness", "", "codex, claude, gemini, or custom (add/settings)")
+	agentHarness := fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
+	harnessVersion := fs.String("harness-version", "", "select an exact catalog version (add/settings)")
+	refreshHarnesses := fs.Bool("refresh", false, "refresh the official ACP registry (harnesses)")
 	model := fs.String("model", "", "ACP model ID; empty uses harness default (add/settings)")
 	effort := fs.String("effort", "", "ACP reasoning effort; empty uses harness default (add/settings)")
 	agentCommand := fs.String("agent-command", "", "custom ACP command as a JSON argument array (add/settings)")
@@ -80,7 +83,7 @@ func run(ctx context.Context, args []string) error {
 	bodyFile := fs.String("body-file", "", "issue description file, or - for stdin (request)")
 	requestID := fs.String("request-id", "", "saved submission ID (request/check-request)")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|add|delete|settings|request|check-request|start|pause|stop|retry|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
+		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -106,7 +109,9 @@ func run(ctx context.Context, args []string) error {
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "harness":
-			agent["harness"] = *harness
+			agent["harness"] = *agentHarness
+		case "harness-version":
+			agent["version"] = *harnessVersion
 		case "model":
 			agent["model"] = *model
 		case "effort":
@@ -125,6 +130,31 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("town service is not available; run bt serve (or bt serve --demo): %w", err)
 	}
 	switch command {
+	case "harnesses":
+		var catalog harness.Listing
+		method, path := "GET", "/api/harnesses"
+		var body any
+		if *refreshHarnesses {
+			method, path, body = "POST", "/api/harnesses/refresh", map[string]any{}
+		}
+		if err := request(ctx, conn, method, path, body, &catalog); err != nil {
+			return err
+		}
+		fmt.Println("Official ACP registry:", catalog.Source)
+		if catalog.Demo {
+			fmt.Println("Demo uses the bundled registry offline.")
+		} else if catalog.Stale {
+			fmt.Println("Using a bundled or cached catalog; run bt harnesses --refresh to update.")
+		}
+		for _, a := range catalog.Agents {
+			availability := ""
+			if !a.Available {
+				availability = " [unavailable on this platform]"
+			}
+			fmt.Printf("%-25s %-16s %s (%s)%s\n", a.ID, a.Version, a.Name, a.Source, availability)
+		}
+		fmt.Println("custom — supply an ACP command with --agent-command")
+		return nil
 	case "tui":
 		return tui(ctx, conn)
 	case "web":
@@ -222,7 +252,7 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 35 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

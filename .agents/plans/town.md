@@ -245,3 +245,37 @@ requests that create issues, better working animation, and a landscaped field.
   Chrome desktop QA verified the landscaped scene, saved harness/model/effort,
   a demo bug receipt in the workshop, and deletion of the neighboring town.
   No live GitHub writes, real bot work, or release publication were used.
+
+## Official ACP registry and additional harnesses
+
+User requested the official ACP registry plus BrokkAi/anvil, BrokkAi/muse-acp,
+and foundev/draupnir instead of a fixed three-agent selector.
+
+- Added the complete official registry v1 catalog (40 bundled entries), validated
+  refreshes, an atomic persistent cache, and an offline/demo fallback. Browser
+  settings group registry agents and the three requested supplements, display
+  setup/project/version details, and refresh stale catalogs asynchronously.
+- Registry selections persist the exact launch definition privately with each
+  town. Catalog refreshes leave saved versions and active runs alone; explicit
+  version selection upgrades a town. Public snapshots expose ID/version without
+  commands or environment. Codex/Claude aliases and custom commands still work.
+- Launch preparation handles registry npm/uvx recipes and native zip, tar.gz,
+  tar.bz2, and raw executables. Private native installations use cross-process
+  locks, bounded downloads/extraction, optional checksums, safe paths/links, and
+  atomic publication. Anvil/Muse ACP/Draupnir resolve their installed commands.
+  Model discovery retains prompt-free ACP selectors and cancellation, with a
+  separate preparation timeout. Nested bot sessions reuse their run's launch.
+- Added `bt harnesses [--refresh]` and `--harness-version`, with README setup
+  instructions, architecture notes, and Apache-2.0 registry snapshot attribution.
+- Validation: `make check` and `make smoke` pass, including Go race tests/vet,
+  frontend syntax/behavior, existing packaging checks, and isolated CLI/TUI/API
+  integration. Fake downloads cover concurrency/cache reuse, zip/gzip/bzip/raw
+  formats, checksums, cancellation, archive traversal/links, and partial-install
+  rejection. Tests cover catalog refresh/failure/restart, version preservation,
+  explicit upgrades, private metadata, and all three supplemental settings.
+- Chrome demo QA verified all 40 registry entries and three supplements, setup
+  links, native distribution details, model-choice completion, saved Anvil model
+  and effort, persistence after restart, and the compact dialog layout. Demo
+  refresh/discovery do not run agents or access the network. No live bot work,
+  GitHub writes, or publication was used. Actual provider authentication remains
+  the user's harness setup; the tests use fake agents and downloaded fixtures.

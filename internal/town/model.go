@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/harness"
 )
 
 type Role string
@@ -42,15 +43,16 @@ func SHA(v string) bool {
 }
 
 type Config struct {
-	Repo          string             `json:"repo"`
-	Branch        string             `json:"branch,omitempty"`
-	Harness       string             `json:"harness,omitempty"`
-	Agent         runner.AgentConfig `json:"agent"`
-	Verify        []string           `json:"verify,omitempty"`
-	MergePolicy   string             `json:"merge_policy"`
-	PollSeconds   int                `json:"poll_seconds"`
-	ReportSeconds int                `json:"report_seconds"`
-	MaxCycles     int                `json:"max_cycles"`
+	Repo              string             `json:"repo"`
+	Branch            string             `json:"branch,omitempty"`
+	Harness           string             `json:"harness,omitempty"`
+	HarnessDefinition *harness.Entry     `json:"harness_definition,omitempty"`
+	Agent             runner.AgentConfig `json:"agent"`
+	Verify            []string           `json:"verify,omitempty"`
+	MergePolicy       string             `json:"merge_policy"`
+	PollSeconds       int                `json:"poll_seconds"`
+	ReportSeconds     int                `json:"report_seconds"`
+	MaxCycles         int                `json:"max_cycles"`
 }
 
 func DefaultConfig(repo string) Config {
@@ -77,13 +79,14 @@ func (c Config) Validate() error {
 
 // PublicConfig deliberately excludes agent environment values and command arguments.
 type PublicConfig struct {
-	Repo        string `json:"repo"`
-	Branch      string `json:"branch"`
-	MergePolicy string `json:"merge_policy"`
-	MaxCycles   int    `json:"max_cycles"`
-	Harness     string `json:"harness"`
-	Model       string `json:"model"`
-	Effort      string `json:"effort"`
+	Repo           string `json:"repo"`
+	Branch         string `json:"branch"`
+	MergePolicy    string `json:"merge_policy"`
+	MaxCycles      int    `json:"max_cycles"`
+	Harness        string `json:"harness"`
+	Model          string `json:"model"`
+	Effort         string `json:"effort"`
+	HarnessVersion string `json:"harness_version,omitempty"`
 }
 type Worker struct {
 	Role    Role      `json:"role"`
@@ -281,5 +284,9 @@ func (s State) Public() map[string]any {
 }
 
 func (c Config) Public() PublicConfig {
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort}
+	version := ""
+	if c.HarnessDefinition != nil {
+		version = c.HarnessDefinition.Version
+	}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version}
 }

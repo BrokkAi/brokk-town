@@ -32,6 +32,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/towns", s.add)
 	mux.HandleFunc("POST /api/settings", s.settings)
 	mux.HandleFunc("POST /api/choices", s.choices)
+	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
+	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
 	mux.HandleFunc("POST /api/requests", s.submitRequest)
 	mux.HandleFunc("POST /api/requests/check", s.checkRequest)
 	mux.Handle("/", http.FileServerFS(files))
@@ -148,7 +150,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	if input.MergePolicy != "" {
 		cfg.MergePolicy = input.MergePolicy
 	}
-	cfg, err := input.Agent.Apply(cfg)
+	cfg, err := s.Supervisor.Prepare(cfg, input.Agent)
 	if err != nil {
 		problem(w, err.Error(), 400)
 		return
@@ -161,6 +163,19 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	respond(w, map[string]string{"id": id})
+}
+
+func (s *Server) refreshHarnesses(w http.ResponseWriter, r *http.Request) {
+	var input struct{}
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	if err := s.Supervisor.Harnesses.Refresh(r.Context()); err != nil {
+		problem(w, err.Error(), 502)
+		return
+	}
+	respond(w, s.Supervisor.Harnesses.List())
 }
 
 type settingsInput struct {

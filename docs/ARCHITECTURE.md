@@ -47,9 +47,29 @@ private worktrees with automation disabled.
 Agent settings preserve private command/authentication fields when changing only
 model or effort; switching harnesses resets harness-specific configuration.
 Dispatch takes a fresh config snapshot so queued work uses the latest settings.
-Choice discovery uses a temporary ACP session with no prompt or client tools.
+`internal/harness` reads the official ACP registry v1 index, retaining a bundled
+offline snapshot and an atomic, validated cache. Authenticated API/CLI refreshes
+run independently of town scheduling. The browser displays the cached catalog
+immediately and refreshes stale entries in the background. Anvil, Muse ACP, and
+Draupnir are explicit supplements resolved from PATH, with setup notes.
+
+Selecting a harness persists its full launch definition in private town config;
+public snapshots expose only the ID and version. Catalog refreshes never mutate
+saved definitions. A user can explicitly select the new version. Legacy towns
+pin their definition at settings save or first dispatch. Package runners receive
+the registry's exact package, arguments, and environment without a shell. Native
+archives install in a private cache keyed by definition and platform, using a
+cross-process lock, bounded downloads/extraction, optional registry checksums,
+path/link validation, and atomic publication. Preparation runs in worker or
+choice-request contexts, not in render or scheduling loops. Installed supplemental
+commands retain the user's version. Registry definitions pin launch recipes;
+upstream mutable package tags or release assets remain upstream-controlled.
+
+Choice discovery first prepares the harness with a three-minute bound, then uses
+a temporary ACP session with a 45-second bound, no prompt, and no client tools.
 Model selection precedes reading model-specific effort options. Demo discovery
-uses fixtures and never starts a process.
+uses fixtures and never starts a process; demo registry refreshes never access
+the network. Nested bot sessions reuse the prepared launch from their run.
 
 Feature and bug submissions are durable commands separate from bot scheduling.
 The HTTP handler validates and queues a client-generated idempotency ID. A

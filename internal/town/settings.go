@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	acp "github.com/BrokkAi/acp-go"
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
@@ -20,27 +21,34 @@ type AgentSettings struct {
 	Model   *string   `json:"model,omitempty"`
 	Effort  *string   `json:"effort,omitempty"`
 	Command *[]string `json:"command,omitempty"`
+	Version *string   `json:"version,omitempty"`
 }
 
 func (c Config) harness() string {
 	if c.Harness != "" {
-		return c.Harness
+		return harness.Canonical(c.Harness)
 	}
 	if len(c.Agent.Command) > 0 {
 		return "custom"
 	}
-	return "codex"
+	return "codex-acp"
 }
 
 func validateAgent(c Config) error {
-	switch c.harness() {
-	case "codex", "claude", "gemini":
-	case "custom":
+	if c.harness() == "custom" {
 		if len(c.Agent.Command) == 0 || strings.TrimSpace(c.Agent.Command[0]) == "" {
 			return errors.New("custom harness requires an ACP command")
 		}
-	default:
-		return errors.New("harness must be codex, claude, gemini, or custom")
+	} else if !harness.ValidID(c.harness()) {
+		return errors.New("invalid ACP registry harness ID")
+	}
+	if d := c.HarnessDefinition; d != nil {
+		if c.harness() != d.ID {
+			return errors.New("saved harness definition does not match selection")
+		}
+		if err := d.Validate(); err != nil {
+			return err
+		}
 	}
 	for _, v := range append([]string{c.Agent.Model, c.Agent.Effort}, c.Agent.Command...) {
 		if len(v) > 4096 || strings.ContainsAny(v, "\x00\r\n") {
@@ -52,11 +60,12 @@ func validateAgent(c Config) error {
 
 func (a AgentSettings) Apply(c Config) (Config, error) {
 	if a.Harness != nil {
-		if *a.Harness != c.harness() {
+		if harness.Canonical(*a.Harness) != c.harness() {
 			// Authentication and mode belong to the selected harness.
 			c.Agent = runner.AgentConfig{}
+			c.HarnessDefinition = nil
 		}
-		c.Harness = *a.Harness
+		c.Harness = harness.Canonical(*a.Harness)
 	}
 	if a.Command != nil {
 		if c.harness() != "custom" {
@@ -73,27 +82,60 @@ func (a AgentSettings) Apply(c Config) (Config, error) {
 	return c, c.Validate()
 }
 
-func agentConfig(c Config) runner.AgentConfig {
+func agentConfig(ctx context.Context, c Config, root string) (runner.AgentConfig, error) {
 	a := c.Agent
 	if len(a.Command) != 0 {
-		return a
+		return a, nil
 	}
-	var binary, pkg string
-	var args []string
-	switch c.harness() {
-	case "claude":
-		binary, pkg = "claude-agent-acp", "@agentclientprotocol/claude-agent-acp"
-	case "gemini":
-		binary, pkg, args = "gemini", "@google/gemini-cli", []string{"--acp"}
-	default:
-		binary, pkg = "codex-acp", "@agentclientprotocol/codex-acp"
-	}
-	if p, err := exec.LookPath(binary); err == nil {
-		a.Command = append([]string{p}, args...)
+	var entry harness.Entry
+	if c.HarnessDefinition != nil {
+		entry = *c.HarnessDefinition
 	} else {
-		a.Command = append([]string{"npx", "--yes", pkg}, args...)
+		var err error
+		entry, err = harness.New(filepath.Join(root, "harnesses"), false).Lookup(c.harness(), "")
+		if err != nil {
+			return a, err
+		}
 	}
-	return a
+	command, env, err := harness.Launch(ctx, root, entry)
+	if err != nil {
+		return a, err
+	}
+	a.Command = command
+	merged := map[string]string{}
+	for k, v := range env {
+		merged[k] = v
+	}
+	for k, v := range a.Environment {
+		merged[k] = v
+	}
+	a.Environment = merged
+	return a, nil
+}
+
+// Prepare records the selected registry definition without downloading or
+// launching anything. Network refreshes cannot change a saved selection.
+func (s *Supervisor) Prepare(c Config, settings AgentSettings) (Config, error) {
+	cfg, err := settings.Apply(c)
+	if err != nil {
+		return cfg, err
+	}
+	if cfg.harness() == "custom" {
+		return cfg, nil
+	}
+	if cfg.HarnessDefinition != nil && (settings.Version == nil || *settings.Version == cfg.HarnessDefinition.Version) {
+		return cfg, nil
+	}
+	version := ""
+	if settings.Version != nil {
+		version = *settings.Version
+	}
+	e, err := s.Harnesses.Lookup(cfg.harness(), version)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.HarnessDefinition = &e
+	return cfg, cfg.Validate()
 }
 
 func (s *Supervisor) Add(c Config) (string, error) {
@@ -156,7 +198,7 @@ func (s *Supervisor) Settings(id string, settings AgentSettings) error {
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
 		}
-		cfg, err := settings.Apply(t.Config)
+		cfg, err := s.Prepare(t.Config, settings)
 		if err != nil {
 			return err
 		}
@@ -193,15 +235,25 @@ func choices(session acp.Session) AgentChoices {
 
 // A discovery session never sends a prompt, exposes client tools or uses a
 // repository worktree. It only asks the harness for its session selectors.
-func ProbeAgent(ctx context.Context, cfg Config) (AgentChoices, error) {
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
+func ProbeAgent(ctx context.Context, cfg Config, roots ...string) (AgentChoices, error) {
+	prepareCtx, cancelPrepare := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancelPrepare()
 	dir, err := os.MkdirTemp("", "brokk-town-choices-*")
 	if err != nil {
 		return AgentChoices{}, err
 	}
 	defer os.RemoveAll(dir)
-	a := agentConfig(cfg)
+	root := dir
+	if len(roots) > 0 {
+		root = roots[0]
+	}
+	a, err := agentConfig(prepareCtx, cfg, root)
+	cancelPrepare()
+	if err != nil {
+		return AgentChoices{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
 	cmd := osrun.StartCommand(ctx, dir, a.Command, a.Environment)
 	cmd.Stderr = &osrun.Tail{Capacity: 16 << 10}
 	in, err := cmd.StdoutPipe()
@@ -258,7 +310,7 @@ func (s *Supervisor) Choices(ctx context.Context, id string, settings AgentSetti
 		s.mu.Unlock()
 		return AgentChoices{}, errors.New("unknown town")
 	}
-	cfg, err := settings.Apply(t.Config)
+	cfg, err := s.Prepare(t.Config, settings)
 	if err != nil {
 		s.mu.Unlock()
 		return AgentChoices{}, err
@@ -278,5 +330,5 @@ func (s *Supervisor) Choices(ctx context.Context, id string, settings AgentSetti
 	s.mu.Unlock()
 	defer s.wg.Done()
 	defer func() { cancel(); s.mu.Lock(); delete(s.running, key); s.mu.Unlock() }()
-	return ProbeAgent(ctx, cfg)
+	return ProbeAgent(ctx, cfg, filepath.Dir(s.Store.path))
 }

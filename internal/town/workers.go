@@ -30,7 +30,12 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	result := RunResult{}
 	dir, state := Workspace(b.Root, t.ID, r)
 	remote := "https://github.com/" + t.Config.Repo + ".git"
-	agent := agentConfig(t.Config)
+	agent, err := agentConfig(ctx, t.Config, b.Root)
+	if err != nil {
+		return result, err
+	}
+	t = clone(t)
+	t.Config.Agent = agent
 	switch r {
 	case Bug:
 		c := bugbot.DefaultConfig()
@@ -171,5 +176,5 @@ func (b *BotWorkers) agent(ctx context.Context, t *Town, tree sessionTree, role 
 	if b.executeAgent != nil {
 		return b.executeAgent(ctx, t, tree, role, log, prompt)
 	}
-	return runAgent(ctx, t, tree, role, log, prompt)
+	return b.runAgent(ctx, t, tree, role, log, prompt)
 }
