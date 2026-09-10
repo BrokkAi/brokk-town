@@ -33,6 +33,29 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def archive_payload(data):
+    """Compare payload bytes and modes, independent of gzip/tar implementation."""
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+        result = {}
+        for member in archive.getmembers():
+            if (not member.isfile() or member.name in result
+                    or member.name.startswith("/") or ".." in member.name.split("/")):
+                raise ValueError("invalid or duplicate archive member")
+            result[member.name] = (member.mode, archive.extractfile(member).read())
+        if not result:
+            raise ValueError("empty archive")
+        return result
+
+
+def compare_assets(tag, actual, expected, sha):
+    verify_local(tag, actual, sha)
+    verify_local(tag, expected, sha)
+    for target in TARGETS:
+        name = archive_name(tag, target)
+        if archive_payload((actual / name).read_bytes()) != archive_payload((expected / name).read_bytes()):
+            raise ValueError(f"published payload differs from expected build: {name}")
+
+
 def validate_tag(tag):
     if not TAG.fullmatch(tag):
         raise ValueError("tag must be a version such as v0.1.0 or v0.1.0-rc.1")

@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import tarfile
@@ -16,8 +17,31 @@ ROOT = Path(__file__).resolve().parent.parent
 NPM_ROOT = "@brokkai/brokk-town"
 
 
+def npm_build_environment(directory):
+    # Packaging/offline tests must not inherit developer account settings.
+    env = {k: v for k, v in os.environ.items() if not k.lower().startswith("npm_config_")}
+    return dict(env, npm_config_userconfig=str(directory / "user.npmrc"),
+                npm_config_globalconfig=str(directory / "global.npmrc"),
+                npm_config_cache=str(directory / "npm-cache"))
+
+
 def write_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
+
+
+def pack_record(output, name, version):
+    records = json.loads(output)
+    # npm 12 keys pack output by package name; npm 11 returns an array.
+    if isinstance(records, dict) and set(records) == {name}:
+        records = [records[name]]
+    if not isinstance(records, list) or len(records) != 1:
+        raise ValueError("npm pack must report exactly one package")
+    info = records[0]
+    if (info.get("name") != name or info.get("version") != version
+            or not info.get("integrity") or not info.get("filename")
+            or Path(info["filename"]).name != info["filename"]):
+        raise ValueError("npm pack metadata does not match the requested package")
+    return info
 
 
 def package(tag, assets, output, sha):
@@ -49,8 +73,8 @@ def package(tag, assets, output, sha):
                 path.chmod(0o755 if filename.startswith("bin/") else 0o644)
             result = subprocess.check_output([
                 "npm", "pack", "--ignore-scripts", "--json", "--pack-destination", str(npm_output.resolve()),
-            ], cwd=directory)
-            info = json.loads(result)[0]
+            ], cwd=directory, env=npm_build_environment(staging))
+            info = pack_record(result, name, npm_version)
             tarball = npm_output / info["filename"]
             licenses.check_npm(tarball)
             packages.append({"name": name, "version": npm_version, "filename": tarball.name,

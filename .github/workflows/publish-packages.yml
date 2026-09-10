@@ -1,80 +1,64 @@
 name: Publish packages
 run-name: Release ${{ inputs.tag || github.ref_name }} (publish=${{ github.event_name == 'push' || inputs.publish }})
-
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing published release tag, such as v0.1.0 (dispatch from this tag)
+        description: Proposed version; publish=true requires dispatch from this exact existing tag
         required: true
         type: string
       publish:
-        description: Publish to npm after validation (false only builds and checks)
+        description: Publish validated deliverables (false never uploads release assets or packages)
         type: boolean
         default: false
-
 permissions:
   contents: read
-
 concurrency:
   group: brokk-town-packages
   cancel-in-progress: false
-
 jobs:
   native:
-    if: github.event_name == 'push'
-    permissions:
-      contents: write
     uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
   packages:
     needs: native
-    if: ${{ !cancelled() && (needs.native.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     environment: packages-publish
     permissions:
-      contents: read
+      actions: read
+      contents: write
       id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_COMMIT: ${{ github.sha }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - name: Require the exact release tag
-        env:
-          RELEASE_REF: ${{ github.ref }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: test "$RELEASE_REF" = "refs/tags/$RELEASE_TAG"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Download the published native assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = false
-          gh release download "$RELEASE_TAG" --dir dist/native
-      - name: Test launchers and build packages from verified assets
-        env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          python3 -m unittest discover -s scripts -p '*_test.py' -v
-          node --test --test-isolation=none npm/bt.test.cjs
-          python3 scripts/package_installers.py "$RELEASE_TAG" dist/native dist/packages
-          python3 scripts/smoke_installers.py --tag "$RELEASE_TAG" --assets dist/native --packages dist/packages
-      - name: Check version availability and existing package integrity
-        run: python3 scripts/package_registry.py check dist/packages
-      - name: Save validated packages for review and bootstrap publication
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: packages-${{ inputs.tag || github.ref_name }}
-          path: dist/packages/
-          if-no-files-found: error
-      - name: Submit validated packages
+      - name: Require exact existing tag for publication
         if: github.event_name == 'push' || inputs.publish
-        run: python3 scripts/package_registry.py publish dist/packages
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: test "$RELEASE_REF" = "refs/tags/$RELEASE_TAG"
+      - name: Download candidate from this exact workflow run
+        env:
+          RELEASE_RUN: ${{ github.run_id }}
+        run: gh run download "$RELEASE_RUN" --repo github.com/BrokkAi/brokk-town --name "release-candidate-$RELEASE_COMMIT-$RELEASE_TAG" --dir dist/candidate
+      - name: Check every version before any final upload
+        run: python3 scripts/release_checks.py version
+      - name: Validate actual publisher without publishing
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        run: python3 scripts/release_checks.py authorization
+      - name: Recheck credentials, resume uploads, and finalize last
+        if: github.event_name == 'push' || inputs.publish
+        run: python3 scripts/publish_release.py

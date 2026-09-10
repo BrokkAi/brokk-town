@@ -18,7 +18,7 @@ def smoke(packages):
     arch = {"x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}[platform.machine()]
     with tempfile.TemporaryDirectory() as temporary:
         temporary = Path(temporary)
-        env = dict(os.environ, npm_config_cache=str(temporary / "npm-cache"))
+        env = package_installers.npm_build_environment(temporary)
         npm_arch = "x64" if arch == "amd64" else "arm64"
         manifest = json.loads((packages / "npm/manifest.json").read_text())
         selected = [p for p in manifest["packages"] if p["name"] in
