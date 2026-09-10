@@ -26,6 +26,7 @@ type Supervisor struct {
 	Store      *Store
 	GitHub     GitHub
 	Workers    Workers
+	Publisher  IssuePublisher
 	mu         sync.Mutex
 	running    map[string]context.CancelFunc
 	wg         sync.WaitGroup
@@ -35,7 +36,8 @@ type Supervisor struct {
 }
 
 func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
-	return &Supervisor{MaxWorkers: 4, Store: store, GitHub: gh, Workers: workers, running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	publisher, _ := gh.(IssuePublisher)
+	return &Supervisor{MaxWorkers: 4, Store: store, GitHub: gh, Workers: workers, Publisher: publisher, running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -70,6 +72,10 @@ func (s *Supervisor) schedule(ctx context.Context) {
 		return
 	}
 	for _, t := range state.Towns {
+		if t.Deleted {
+			continue
+		}
+		s.scheduleRequests(ctx, t)
 		for _, r := range Roles {
 			w := t.Workers[r]
 			if !w.Enabled || w.Next.After(s.now()) {
@@ -83,7 +89,7 @@ func (s *Supervisor) schedule(ctx context.Context) {
 			_, busy := s.running[key]
 			active := 0
 			for key := range s.running {
-				if !strings.HasSuffix(key, ":repo") {
+				if !strings.HasSuffix(key, ":repo") && !strings.HasSuffix(key, ":requests") {
 					active++
 				}
 			}
@@ -107,10 +113,13 @@ func (s *Supervisor) schedule(ctx context.Context) {
 func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	now := s.now()
 	if err := s.Store.Update(func(st *State) error {
-		w := st.Towns[t.ID].Workers[r]
-		if !w.Enabled {
+		current := st.Towns[t.ID]
+		w := current.Workers[r]
+		if current.Deleted || !w.Enabled || ctx.Err() != nil {
 			return context.Canceled
 		}
+		// Resolve settings at actual dispatch, not from an older scheduler snapshot.
+		t = clone(current)
 		w.Status = "working"
 		w.Error = ""
 		w.Updated = now
@@ -315,6 +324,12 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 	})
 }
 func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
+	if action == "delete" {
+		if role != "all" {
+			return errors.New("delete applies to the entire town")
+		}
+		return s.Delete(id)
+	}
 	if action != "start" && action != "pause" && action != "stop" && action != "retry" {
 		return errors.New("unknown action")
 	}
@@ -323,7 +338,7 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 	}
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
-		if t == nil {
+		if t == nil || t.Deleted {
 			return errors.New("unknown town")
 		}
 		if action == "retry" {

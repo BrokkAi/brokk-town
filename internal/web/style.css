@@ -25,7 +25,8 @@ body {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 button {
@@ -64,7 +65,8 @@ button:disabled {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 2px solid var(--green);
   outline-offset: 3px;
 }
@@ -241,7 +243,9 @@ p {
 .town-controls {
   display: flex;
   gap: 6px;
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 350px;
 }
 .world {
   position: relative;
@@ -555,7 +559,8 @@ label {
   margin: 18px 0 9px;
 }
 input,
-select {
+select,
+textarea {
   width: 100%;
   background: #081a10;
   color: #e3ecd9;
@@ -595,6 +600,112 @@ kbd {
 }
 [hidden] {
   display: none !important;
+}
+.wide-dialog {
+  width: min(640px, 95vw);
+}
+textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+.form-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.choice-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 15px;
+}
+.choice-actions button {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.choice-actions .muted {
+  font-size: 12px;
+}
+.form-error {
+  color: #f2b99e;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.spacer {
+  flex: 1;
+}
+.danger {
+  color: #ffd0b7;
+  border-color: #955f49;
+  background: #412a22;
+}
+.danger:hover {
+  background: #65392b;
+}
+.danger.quiet {
+  background: transparent;
+  border-color: transparent;
+}
+#request-success {
+  color: var(--green);
+  font-size: 14px;
+  margin-top: 12px;
+}
+.submission-history {
+  margin-top: 25px;
+  border-top: 1px solid var(--line);
+}
+.submission-history h3 {
+  font-size: 14px;
+}
+.submission {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.submission strong,
+.submission small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.submission small {
+  color: var(--muted);
+  margin-top: 5px;
+}
+.submission p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.submission a {
+  color: var(--green);
+  font-size: 13px;
+}
+.submission button {
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .town-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .town-controls {
+    flex-direction: row !important;
+    max-width: none;
+  }
+  .form-columns {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .choice-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  dialog {
+    padding: 22px;
+  }
+  .dialog-actions {
+    flex-wrap: wrap;
+  }
 }
 @media (min-width: 1700px) {
   main {

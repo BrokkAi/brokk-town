@@ -106,6 +106,20 @@ func validateState(s State, demo bool) error {
 				return errors.New("invalid ownership")
 			}
 		}
+		for id, r := range t.Requests {
+			if r == nil || r.ID != id || r.validate() != nil {
+				return errors.New("invalid issue submission")
+			}
+			switch r.Status {
+			case "queued", "uncertain", "canceled":
+			case "confirmed":
+				if r.Number < 1 {
+					return errors.New("invalid issue confirmation")
+				}
+			default:
+				return errors.New("invalid issue submission status")
+			}
+		}
 		for n, i := range t.Intents {
 			if i == nil || i.PR != n || n < 1 || !SHA(i.Base) || !SHA(i.Head) || (i.Kind != "merge" && i.Kind != "repair") || (i.Status != "uncertain" && i.Status != "confirmed" && i.Status != "retry") {
 				return errors.New("invalid write intent")

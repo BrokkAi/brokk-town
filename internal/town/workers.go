@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/acp-go/runner"
 	bugbot "github.com/BrokkAi/bug-bot"
 	issuebot "github.com/BrokkAi/issue-bot"
 	releasebot "github.com/BrokkAi/release-bot"
@@ -26,17 +24,6 @@ type BotWorkers struct {
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
 }
 
-func agentConfig(c Config) runner.AgentConfig {
-	a := c.Agent
-	if len(a.Command) == 0 {
-		if p, err := exec.LookPath("codex-acp"); err == nil {
-			a.Command = []string{p}
-		} else {
-			a.Command = []string{"npx", "--yes", "@agentclientprotocol/codex-acp"}
-		}
-	}
-	return a
-}
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (RunResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Hour)
 	defer cancel()

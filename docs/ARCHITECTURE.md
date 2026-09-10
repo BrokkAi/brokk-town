@@ -38,6 +38,33 @@ scheduling and cancels the worker context. The scheduler rechecks enabled state
 before entering a worker, preventing a stale scheduling snapshot from restarting
 an already-stopped house. Each worker has a deadline and a per-role next-run time.
 
+Town deletion marks a durable tombstone, disables scheduling, cancels queued
+issue submissions and running contexts, and filters the town and its events out
+of public snapshots. Final worker results still commit to its recovery record.
+Re-adding waits for workers to stop, then restores the same identity, history, and
+private worktrees with automation disabled.
+
+Agent settings preserve private command/authentication fields when changing only
+model or effort; switching harnesses resets harness-specific configuration.
+Dispatch takes a fresh config snapshot so queued work uses the latest settings.
+Choice discovery uses a temporary ACP session with no prompt or client tools.
+Model selection precedes reading model-specific effort options. Demo discovery
+uses fixtures and never starts a process.
+
+Feature and bug submissions are durable commands separate from bot scheduling.
+The HTTP handler validates and queues a client-generated idempotency ID. A
+supervised background publisher persists `uncertain` before the GitHub POST.
+A confirmed receipt creates a workshop task without enabling issue-bot. A lost
+response or restart only permits paginated reads of open/closed issues for that
+ID's marker; absence never permits another POST. Deletion preserves in-flight
+outcomes while canceling submissions that have not begun. Demo requests only
+create local tasks.
+
+Field scenery is generated once per selected town and cached as a canvas.
+Active worker poses and effects read committed worker status. Delivery easing
+changes presentation only; pointer hit testing uses the same eased positions.
+Reduced-motion preferences freeze worker poses and clear moving deliveries.
+
 ## Review, repair, merge, release
 
 Certifications retain findings and discussion IDs across revisions. Strict

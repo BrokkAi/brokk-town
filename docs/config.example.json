@@ -2,7 +2,8 @@
   {
     "repo": "BrokkAi/my-project",
     "branch": "main",
-    "agent": {"command": ["codex-acp"]},
+    "harness": "codex",
+    "agent": {"model": "", "effort": ""},
     "verify": ["go", "test", "./..."],
     "merge_policy": "bot",
     "poll_seconds": 60,

@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
 
         wait_for(lambda: len(snapshot()['towns']) == 2)
         assert snapshot()['demo'] is True
-        for path in ['/', '/app.js', '/town.js', '/tools.js', '/style.css',
+        for path in ['/', '/app.js', '/town.js', '/tools.js', '/manage.js', '/scenery.js', '/style.css',
                      '/assets/buildings-atlas.png', '/assets/actors-atlas.png']:
             with request(path, auth=False) as response:
                 assert response.status == 200 and response.read()
@@ -63,6 +63,26 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         with request('/api/events') as response:
             assert response.readline().startswith(b'id: ')
             assert response.readline().startswith(b'data: ')
+
+        subprocess.run([binary, 'settings', '--demo', '--state-dir', directory,
+                        '--repo', 'BrokkAi/orchard', '--harness', 'claude',
+                        '--model', 'demo-model', '--effort', 'high'], check=True)
+        with request('/api/choices', {'town': 'brokkai/orchard', 'agent': {}}) as response:
+            assert json.load(response)['models'][0]['value'] == 'demo-model'
+        issue_body = root / 'request.md'
+        issue_body.write_text('Steps:\n1. Keep literal `code` and $(text).\n2. Preserve the selection.\n')
+        submit = [binary, 'request', '--demo', '--state-dir', directory,
+                  '--repo', 'BrokkAi/orchard', '--kind', 'bug', '--title', 'Demo operator bug',
+                  '--body-file', str(issue_body), '--request-id', '00112233445566778899aabbccddeeff']
+        for _ in range(2):
+            subprocess.run(submit, check=True, stdout=subprocess.DEVNULL)
+        managed = snapshot()['towns']['brokkai/orchard']
+        assert managed['config']['harness'] == 'claude' and managed['config']['effort'] == 'high'
+        assert len(managed['requests']) == 1
+        receipt = managed['requests']['00112233445566778899aabbccddeeff']
+        assert receipt['status'] == 'confirmed' and not receipt.get('url')
+        assert receipt['body'] == issue_body.read_text().strip()
+        assert managed['tasks'][f"issue:{receipt['number']}"]['title'] == 'Demo operator bug'
 
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 32, 100, 0, 0))
@@ -91,9 +111,18 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         drain()
         assert terminal.poll() is None
         assert not snapshot()['towns']['brokkai/orchard']['workers']['bug']['enabled']
+        os.write(master, b'd')
+        wait_for(lambda: (drain(), b'Delete brokkai/orchard?' in output)[1])
+        os.write(master, b'n')
+        wait_for(lambda: (drain(), b'Deletion canceled' in output)[1])
+        assert len(snapshot()['towns']) == 2
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 30, 0, 0))
         os.write(master, b's')
         wait_for(lambda: (drain(), snapshot()['towns']['brokkai/orchard']['workers']['bug']['enabled'])[1])
+        os.write(master, b'\td')
+        wait_for(lambda: (drain(), b'Delete brokkai/paper-trail?' in output)[1])
+        os.write(master, b'y')
+        wait_for(lambda: (drain(), 'brokkai/paper-trail' not in snapshot()['towns'])[1])
         os.write(master, b'q')
         # Keep consuming output while the TUI restores the screen. macOS PTYs
         # can fill their output buffer before process exit if the test stops
@@ -120,8 +149,13 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
                                     '--listen', '127.0.0.1:0'], stdout=subprocess.DEVNULL)
         wait_for(conn_path.exists)
         conn = json.loads(conn_path.read_text())
-        assert len(snapshot()['towns']) == 2
-        print('Demo smoke passed: embedded assets, auth, SSE, two towns, PTY controls, paste, resize, detach, shutdown, restart.')
+        state = snapshot()
+        assert len(state['towns']) == 1
+        assert state['towns']['brokkai/orchard']['requests'][receipt['id']]['status'] == 'confirmed'
+        saved = json.loads((root / 'demo' / 'state.json').read_text())
+        assert saved['towns']['brokkai/paper-trail']['deleted']
+        assert all(not w['enabled'] for w in saved['towns']['brokkai/paper-trail']['workers'].values())
+        print('Demo smoke passed: assets, auth, SSE, settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, restart recovery.')
     finally:
         if terminal is not None and terminal.poll() is None:
             terminal.kill()

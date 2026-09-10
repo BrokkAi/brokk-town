@@ -15,3 +15,10 @@ Their source assets have not been copied.
 extends above its nominal lower-row cell, so its crop starts at y=480 and the
 workshop crop ends at y=480. The renderer draws geometric paths and UI labels in
 code, while representational buildings and actors come from the generated atlases.
+
+The field added on 2026-09-10 is drawn in `internal/web/scenery.js`: seeded grass,
+dirt paths, trees, rocks, flowers, and fences, with a cached background per town.
+It uses no additional image assets. Original building artwork is unchanged;
+actors use tighter transparent crops, walking/tool poses, shadows, and house
+activity effects. Delivery movement follows committed events and respects the
+motion toggle and the operating system's reduced-motion preference.

@@ -50,6 +50,10 @@
             </div>
           </div>
           <div class="town-controls">
+            <button id="new-request" disabled>＋ New request</button>
+            <button id="town-settings" class="quiet" disabled>
+              ⚙ Settings
+            </button>
             <button id="start-all" class="primary" disabled>
               ▶ Wake the town</button
             ><button id="pause-all" class="quiet" disabled>Ⅱ Pause</button>
@@ -159,6 +163,137 @@
           <button class="primary">Connect</button>
         </div>
       </form>
+    </dialog>
+    <dialog id="settings-dialog" class="wide-dialog">
+      <form id="settings-form">
+        <div class="eyebrow">YOUR AGENT TEAM</div>
+        <h2>Town settings</h2>
+        <p id="settings-repo" class="muted"></p>
+        <label for="harness-input">Coding harness</label>
+        <select id="harness-input">
+          <option value="codex">Codex</option>
+          <option value="claude">Claude Agent</option>
+          <option value="gemini">Gemini CLI</option>
+          <option value="custom">Custom ACP command</option>
+        </select>
+        <div id="custom-agent" hidden>
+          <label for="command-input">Command and arguments (JSON array)</label>
+          <textarea
+            id="command-input"
+            rows="2"
+            spellcheck="false"
+            placeholder='["my-agent", "--acp"]'
+          ></textarea>
+          <p class="muted">
+            A saved command stays private. Leave this blank to keep it.
+          </p>
+        </div>
+        <div class="form-columns">
+          <div>
+            <label for="model-input">Model</label
+            ><input
+              id="model-input"
+              list="model-choices"
+              placeholder="Harness default"
+              autocomplete="off"
+            /><datalist id="model-choices"></datalist>
+          </div>
+          <div>
+            <label for="effort-input">Reasoning effort</label
+            ><input
+              id="effort-input"
+              list="effort-choices"
+              placeholder="Harness default"
+              autocomplete="off"
+            /><datalist id="effort-choices"></datalist>
+          </div>
+        </div>
+        <div class="choice-actions">
+          <button id="load-choices" type="button">Load available choices</button
+          ><span id="choices-status" class="muted" role="status"></span>
+        </div>
+        <p class="muted">
+          Load choices briefly starts the harness without assigning work. It may
+          need you to log in through its CLI first. Leave model or effort blank
+          to use its default.
+        </p>
+        <p class="muted">
+          These settings apply to all four bots on their next run. Active work
+          finishes with its current settings.
+        </p>
+        <div id="settings-error" class="form-error" role="alert"></div>
+        <div class="dialog-actions">
+          <button id="open-delete" type="button" class="danger quiet">
+            Delete town</button
+          ><span class="spacer"></span
+          ><button type="button" data-close="settings-dialog" class="quiet">
+            Cancel</button
+          ><button class="primary" type="submit">Save settings</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="delete-dialog">
+      <form id="delete-form">
+        <div class="eyebrow">REMOVE A NEIGHBORHOOD</div>
+        <h2>Delete this town?</h2>
+        <p id="delete-repo"></p>
+        <p>
+          This stops its workers and removes the town from your world. Your
+          GitHub repository, issues, and pull requests remain intact.
+        </p>
+        <p class="muted">
+          Local recovery records and worktrees are kept. Adding the same
+          repository again restores its history with automation paused.
+        </p>
+        <div id="delete-error" class="form-error" role="alert"></div>
+        <div class="dialog-actions">
+          <button type="button" data-close="delete-dialog" class="quiet">
+            Keep town</button
+          ><button class="danger" type="submit">Delete town</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="request-dialog" class="wide-dialog">
+      <form id="request-form">
+        <div class="eyebrow">BRING AN IDEA TO TOWN</div>
+        <h2>A new piece of work</h2>
+        <p id="request-repo" class="muted"></p>
+        <label for="request-kind">What would you like to submit?</label>
+        <select id="request-kind">
+          <option value="feature">Feature request</option>
+          <option value="bug">Bug report</option>
+        </select>
+        <label for="request-title">Issue title</label
+        ><input
+          id="request-title"
+          maxlength="256"
+          required
+          autocomplete="off"
+          placeholder="A short, specific title"
+        />
+        <label for="request-body">Describe the work</label
+        ><textarea
+          id="request-body"
+          rows="6"
+          maxlength="30000"
+          required
+          placeholder="What should change, and what would a good result look like?"
+        ></textarea>
+        <p id="request-note" class="muted"></p>
+        <div id="request-error" class="form-error" role="alert"></div>
+        <div id="request-success" role="status"></div>
+        <div class="dialog-actions">
+          <button type="button" data-close="request-dialog" class="quiet">
+            Close</button
+          ><button id="submit-request" class="primary" type="submit">
+            Create GitHub issue
+          </button>
+        </div>
+      </form>
+      <section class="submission-history" aria-label="Recent submissions">
+        <h3>Recent submissions</h3>
+        <div id="request-history" aria-live="polite"></div>
+      </section>
     </dialog>
     <dialog id="help-dialog">
       <h2>Around the town</h2>

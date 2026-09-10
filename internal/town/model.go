@@ -44,6 +44,7 @@ func SHA(v string) bool {
 type Config struct {
 	Repo          string             `json:"repo"`
 	Branch        string             `json:"branch,omitempty"`
+	Harness       string             `json:"harness,omitempty"`
 	Agent         runner.AgentConfig `json:"agent"`
 	Verify        []string           `json:"verify,omitempty"`
 	MergePolicy   string             `json:"merge_policy"`
@@ -56,6 +57,9 @@ func DefaultConfig(repo string) Config {
 	return Config{Repo: repo, MergePolicy: "bot", PollSeconds: 60, ReportSeconds: 1800, MaxCycles: 5}
 }
 func (c Config) Validate() error {
+	if err := validateAgent(c); err != nil {
+		return err
+	}
 	if !ValidRepo(c.Repo) {
 		return fmt.Errorf("repository must be OWNER/REPO")
 	}
@@ -77,6 +81,9 @@ type PublicConfig struct {
 	Branch      string `json:"branch"`
 	MergePolicy string `json:"merge_policy"`
 	MaxCycles   int    `json:"max_cycles"`
+	Harness     string `json:"harness"`
+	Model       string `json:"model"`
+	Effort      string `json:"effort"`
 }
 type Worker struct {
 	Role    Role      `json:"role"`
@@ -178,18 +185,20 @@ type Event struct {
 	Title string    `json:"title"`
 }
 type Town struct {
-	ID          string            `json:"id"`
-	Config      Config            `json:"config"`
-	Initialized bool              `json:"initialized"`
-	Workers     map[Role]*Worker  `json:"workers"`
-	Tasks       map[string]*Task  `json:"tasks"`
-	Owned       map[int]Ownership `json:"owned"`
-	Intents     map[int]*Intent   `json:"intents"`
-	Reports     []Report          `json:"reports"`
-	Head        string            `json:"head"`
-	LastSync    time.Time         `json:"last_sync"`
-	LastRelease string            `json:"last_release"`
-	Error       string            `json:"error,omitempty"`
+	ID          string                   `json:"id"`
+	Deleted     bool                     `json:"deleted,omitempty"`
+	Config      Config                   `json:"config"`
+	Initialized bool                     `json:"initialized"`
+	Workers     map[Role]*Worker         `json:"workers"`
+	Tasks       map[string]*Task         `json:"tasks"`
+	Owned       map[int]Ownership        `json:"owned"`
+	Intents     map[int]*Intent          `json:"intents"`
+	Requests    map[string]*IssueRequest `json:"requests,omitempty"`
+	Reports     []Report                 `json:"reports"`
+	Head        string                   `json:"head"`
+	LastSync    time.Time                `json:"last_sync"`
+	LastRelease string                   `json:"last_release"`
+	Error       string                   `json:"error,omitempty"`
 }
 type State struct {
 	Format int              `json:"format"`
@@ -208,7 +217,16 @@ func (s *State) Add(c Config) (*Town, error) {
 	}
 	id := strings.ToLower(c.Repo)
 	if _, ok := s.Towns[id]; ok {
-		return nil, fmt.Errorf("town already exists")
+		t := s.Towns[id]
+		if !t.Deleted {
+			return nil, fmt.Errorf("town already exists")
+		}
+		// Retain ownership, worktrees and uncertain writes when restoring a town.
+		// Restoration never resumes automation or pending issue submissions.
+		t.Deleted = false
+		t.Workers[Repo].Enabled = true
+		t.Workers[Repo].Next = time.Time{}
+		return t, nil
 	}
 	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, Reports: []Report{}}
 	for _, r := range Roles {
@@ -246,7 +264,22 @@ func (s State) Public() map[string]any {
 	var public map[string]any
 	_ = json.Unmarshal(b, &public)
 	for id, t := range s.Towns {
-		public["towns"].(map[string]any)[id].(map[string]any)["config"] = PublicConfig{t.Config.Repo, t.Config.Branch, t.Config.MergePolicy, t.Config.MaxCycles}
+		if t.Deleted {
+			delete(public["towns"].(map[string]any), id)
+			continue
+		}
+		public["towns"].(map[string]any)[id].(map[string]any)["config"] = t.Config.Public()
 	}
+	events := []Event{}
+	for _, e := range s.Events {
+		if t := s.Towns[e.Town]; t != nil && !t.Deleted {
+			events = append(events, e)
+		}
+	}
+	public["events"] = events
 	return public
+}
+
+func (c Config) Public() PublicConfig {
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort}
 }

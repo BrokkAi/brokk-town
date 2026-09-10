@@ -106,6 +106,61 @@ Pause finishes active work and stops scheduling more. Stop also cancels active
 work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
 uncertain external writes retain their saved intent and are reconciled first.
 
+## Town settings, requests, and deletion
+
+Visit a town and choose **Settings** to select Codex, Claude Agent, Gemini CLI,
+or a custom ACP command. **Load available choices** opens a short harness session
+without a work prompt and lists its advertised models and reasoning efforts.
+Choose a model first: available effort levels can depend on it. You can also
+enter an exact ACP selector value, or leave either field blank for the harness
+default. Unsupported selections fail visibly when the worker starts.
+
+Authenticate the harness in your terminal first. Town uses `codex-acp`,
+`claude-agent-acp`, or `gemini --acp` on PATH, falling back to the corresponding
+`@agentclientprotocol/codex-acp`, `@agentclientprotocol/claude-agent-acp`, or
+`@google/gemini-cli` npm package through `npx --yes`. Switching harnesses clears
+the previous harness's private authentication, command, and mode settings.
+Changes apply to the next worker run; active work retains its starting settings.
+
+```sh
+./bin/bt settings --repo BrokkAi/my-project --harness codex
+./bin/bt settings --repo BrokkAi/my-project --model MODEL_ID --effort EFFORT_ID
+./bin/bt settings --repo BrokkAi/my-project --model '' --effort ''
+./bin/bt settings --repo BrokkAi/my-project --harness custom --agent-command '["my-agent", "--acp"]'
+```
+
+Choose **New request**, select **Feature request** or **Bug report**, and describe
+the work. **Create GitHub issue** posts it to that town's repository and places
+the confirmed issue in the workshop queue. This works while workers are paused;
+start issue-bot when you want implementation to begin. Recent submissions show
+the confirmation status and a link to the issue. Demo submissions stay local.
+
+```sh
+./bin/bt request --repo BrokkAi/my-project --kind feature --title 'Add keyboard navigation' --body-file request.md
+# Use --kind bug for a bug report; --body-file - reads stdin.
+./bin/bt check-request --repo BrokkAi/my-project --request-id SAVED_ID
+```
+
+Requests have durable IDs, and the CLI prints the ID before sending. If the
+connection drops, reuse it with `--request-id` and the same content. The browser
+retains the submitted draft in that tab until acknowledgment. An uncertain GitHub
+POST is never automatically repeated: Town looks for its hidden receipt in all
+open and closed issues every five minutes. **Check GitHub for receipt** requests
+an earlier read. Inspect GitHub before manually filing an unconfirmed request again.
+
+To remove a town, choose **Settings → Delete town** and confirm, or run:
+
+```sh
+./bin/bt delete --repo BrokkAi/my-project
+```
+
+Deletion cancels its workers, cancels queued issue submissions, and removes it
+from the browser and terminal. GitHub repositories, issues, and PRs are preserved.
+Local history, uncertain writes, and private worktrees remain as recovery records.
+Adding the same repository again restores that history and its previous settings,
+with automation paused and the reporter enabled. Wait for stopping workers to
+finish before restoring a town.
+
 ## How work moves
 
 | House | Work and handoff |
@@ -144,7 +199,7 @@ agent command, verification command, and policy, then run:
 ./bin/bt serve --config /path/to/towns.json
 ```
 
-Configuration is a JSON array. Each entry supplies `repo`, optional `branch`,
+Configuration is a JSON array. Each entry supplies `repo`, optional `branch` and `harness`,
 `agent`, optional `verify` argument vector, `merge_policy`, `poll_seconds`,
 `report_seconds`, and `max_cycles`. The example lists all required values. Town
 uses the repository's default branch when omitted; an initialized town's branch
@@ -163,7 +218,8 @@ appends `demo`. A single writer lock, atomic snapshots, per-role bot state, and
 private worktrees keep towns separate. Events, logs, and reports have bounded
 recent histories; task/intent history persists. Browser access uses a per-service
 local key in a URL fragment. `connection.json` and state snapshots are mode 0600.
-Agent commands/environment values are omitted from public configuration snapshots.
+Agent commands/environment values are omitted from public configuration snapshots;
+the selected harness, model, and effort are visible.
 Local logs and worktrees can contain repository content; keep this directory private.
 
 If a push or merge response is lost, Town checks GitHub rather than assuming
@@ -189,7 +245,9 @@ browsers use the ordinary interface.
 Browser: `0` overview, `1`–`5` agent houses, `6` town hall, `?` help, Escape closes
 the inspector. Motion follows reduced-motion preferences and can be switched off.
 Terminal: `0` overview, Tab next town, `1`–`5` or `j`/`k` select a house, `s` start,
-`p` pause, `x` stop, `a` wake the selected town, `q` detach. Bracketed paste is
+`p` pause, `x` stop, `a` wake the selected town, `d` delete with `y`/`n` confirmation,
+`q` detach. Use `bt settings` and `bt request` for agent settings and new work, or
+the forms in the browser. Bracketed paste is
 ignored as commands. Network and agent work stay off the input/render loops.
 
 ```sh

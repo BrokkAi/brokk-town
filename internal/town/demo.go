@@ -45,7 +45,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 		case now := <-ticker.C:
 			if err := store.Update(func(s *State) error {
 				t := s.Towns["brokkai/orchard"]
-				if t == nil {
+				if t == nil || t.Deleted {
 					return nil
 				}
 				role := []Role{Bug, Bug, Issue, Review, Issue, Review, Review, Release, Repo}[step%9]

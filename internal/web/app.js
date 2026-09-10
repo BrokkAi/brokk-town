@@ -7,6 +7,8 @@ import {
   safeURL,
   townSummary,
 } from "./town.js";
+import { management } from "./manage.js";
+import { landscape, drawWorking, easeDelivery } from "./scenery.js";
 const $ = (s) => document.querySelector(s),
   esc = (value) =>
     String(value ?? "").replace(
@@ -51,8 +53,18 @@ const crops = [
   [512, 480, 512, 544],
   [1024, 512, 512, 512],
 ];
+let field = null,
+  fieldTown = null;
+const actorCrops = [
+  [116, 145, 333, 296],
+  [86, 145, 311, 293],
+  [175, 145, 213, 296],
+  [49, 77, 428, 327],
+  [62, 95, 434, 311],
+  [163, 110, 232, 306],
+];
 const indices = { bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5 };
-async function api(path, body) {
+async function api(path, body, signal) {
   const response = await fetch(path, {
     method: body ? "POST" : "GET",
     headers: {
@@ -60,6 +72,7 @@ async function api(path, body) {
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   });
   if (!response.ok) {
     const error = await response
@@ -72,6 +85,12 @@ async function api(path, body) {
 function town() {
   return state?.towns[selectedTown];
 }
+const renderManagement = management({
+  api,
+  getTown: town,
+  getState: () => state,
+  refresh: async () => receive(await api("/api/state")),
+});
 function showError(message) {
   $("#error").textContent = message;
   $("#error").hidden = !message;
@@ -175,6 +194,7 @@ function render() {
   renderHouses();
   renderInspection();
   renderJournal();
+  renderManagement();
 }
 function selectTown(id) {
   if (!state?.towns[id]) throw new Error("Unknown town");
@@ -222,7 +242,7 @@ function renderHouses() {
         count = t ? queueFor(t, role).length : 0,
         status = role === "hall" ? "Town reports" : w?.status || "paused",
         dot =
-          status === "working"
+          status === "working" || status === "pausing"
             ? "active"
             : status === "blocked" || status === "failed"
               ? "blocked"
@@ -340,44 +360,24 @@ function sprite(image, index, x, y, size) {
   const crop =
     image === buildings
       ? crops[index]
-      : [(index % 3) * 512, Math.floor(index / 3) * 512, 512, 512];
-  ctx.drawImage(image, ...crop, x - size / 2, y - size / 2, size, size);
+      : [
+          (index % 3) * 512 + actorCrops[index][0],
+          Math.floor(index / 3) * 512 + actorCrops[index][1],
+          ...actorCrops[index].slice(2),
+        ];
+  const width = image === buildings ? size : (size * crop[2]) / crop[3];
+  ctx.drawImage(image, ...crop, x - width / 2, y - size / 2, width, size);
 }
 function draw(now) {
   if (overview || document.hidden) {
     requestAnimationFrame(draw);
     return;
   }
-  ctx.clearRect(0, 0, 1120, 680);
-  ctx.fillStyle = "#18392a";
-  ctx.fillRect(0, 0, 1120, 680);
-  ctx.fillStyle = "#214331";
-  for (let i = 0; i < 320; i++) {
-    const x = (i * 131 + 43) % 1120,
-      y = (i * 97 + 13) % 680;
-    ctx.fillRect(x, y, 3, 2);
+  if (!field || fieldTown !== selectedTown) {
+    field = landscape(selectedTown);
+    fieldTown = selectedTown;
   }
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = "#506044";
-  ctx.lineWidth = 30;
-  ctx.beginPath();
-  ctx.moveTo(-20, 330);
-  ctx.lineTo(1110, 330);
-  ctx.moveTo(180, 230);
-  ctx.lineTo(180, 540);
-  ctx.lineTo(960, 540);
-  ctx.moveTo(555, 220);
-  ctx.lineTo(555, 550);
-  ctx.moveTo(930, 220);
-  ctx.lineTo(930, 550);
-  ctx.lineTo(1150, 550);
-  ctx.stroke();
-  ctx.setLineDash([5, 12]);
-  ctx.strokeStyle = "#758064";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.drawImage(field, 0, 0);
   const t = town();
   for (const [role, [x, y]] of Object.entries(positions)) {
     if (indices[role] === undefined) continue;
@@ -389,27 +389,49 @@ function draw(now) {
     }
     sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
     const w = t?.workers[role];
-    if (w?.status === "working") {
-      const bounce = motion ? Math.sin(now / 200) * 2 : 0;
-      sprite(actors, role === "review" ? 5 : 2, x + 80, y + 75 + bounce, 60);
-      ctx.fillStyle = "#c4f595";
-      ctx.fillRect(x + 65, y + 35, 4, 4);
-      if (motion) ctx.fillRect(x + 73, y + 28 + Math.sin(now / 160) * 4, 3, 3);
+    if (w?.status === "working" || w?.status === "pausing") {
+      drawWorking(ctx, role, x, y, now, motion, (index) =>
+        sprite(actors, index, 0, 0, 52),
+      );
     }
   }
+
   moving = moving.filter((m) => now - m.start < 6500);
   if (motion)
     for (const m of moving) {
       if (m.town !== selectedTown) continue;
-      const p = routePosition(m.from, m.to, (now - m.start) / 6500),
+      const p = routePosition(
+          m.from,
+          m.to,
+          easeDelivery((now - m.start) / 6500),
+        ),
         right = p.direction >= 0,
         truck = m.from === "outside" || m.to === "outside";
+      ctx.fillStyle = "#192b2270";
+      ctx.beginPath();
+      ctx.ellipse(p.x + 6, p.y + 25, truck ? 38 : 23, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      for (let i = 0; i < 3; i++) {
+        const dust = (now / 500 + i / 3) % 1;
+        ctx.fillStyle = `rgba(219,202,155,${(1 - dust) * 0.3})`;
+        ctx.beginPath();
+        ctx.ellipse(
+          p.x - (right ? 1 : -1) * (20 + dust * 25),
+          p.y + 22 - dust * 5,
+          2 + dust * 5,
+          2 + dust * 2,
+          0,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      }
       sprite(
         actors,
         truck ? (right ? 3 : 4) : right ? 0 : 1,
         p.x,
         p.y + Math.sin(now / 100) * 1.3,
-        truck ? 97 : 75,
+        truck ? 57 : 58,
       );
       ctx.fillStyle = "#0b1a10";
       ctx.fillRect(p.x - 34, p.y - 48, 68, 19);
@@ -466,9 +488,18 @@ function motionUI() {
 }
 $("#motion").onclick = () => {
   motion = !motion;
+  if (!motion) moving = [];
   motionUI();
 };
 motionUI();
+matchMedia("(prefers-reduced-motion: reduce)").addEventListener(
+  "change",
+  (e) => {
+    motion = !e.matches;
+    moving = [];
+    motionUI();
+  },
+);
 $("#help").onclick = () => $("#help-dialog").showModal();
 $("#close-help").onclick = () => $("#help-dialog").close();
 document.addEventListener("keydown", (e) => {
@@ -489,7 +520,11 @@ canvas.onclick = (e) => {
     x = ((e.clientX - r.left) * 1120) / r.width,
     y = ((e.clientY - r.top) * 680) / r.height;
   for (const m of moving) {
-    const p = routePosition(m.from, m.to, (performance.now() - m.start) / 6500);
+    const p = routePosition(
+      m.from,
+      m.to,
+      easeDelivery((performance.now() - m.start) / 6500),
+    );
     if (Math.hypot(x - p.x, y - p.y) < 50) {
       selectedTask = m.cargo;
       selectedHouse = indices[m.to] !== undefined ? m.to : "hall";

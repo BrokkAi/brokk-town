@@ -103,6 +103,7 @@ func tui(ctx context.Context, c connection) error {
 	selectedTown, selectedRole := 0, 0
 	overview := true
 	message := "Connecting to town service…"
+	pendingDelete := ""
 	var keys keyDecoder
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -132,11 +133,32 @@ func tui(ctx context.Context, c connection) error {
 				}
 				for _, key := range keys.feed(string(buffer[:n])) {
 					ids := townIDs(state)
+					if pendingDelete != "" && key != "q" && key != "ctrl+c" {
+						if key == "y" {
+							select {
+							case commands <- map[string]string{"town": pendingDelete, "role": "all", "action": "delete"}:
+								message = "Deleting town…"
+							default:
+								message = "A command is already pending"
+							}
+							pendingDelete = ""
+							continue
+						}
+						if key == "n" || key == "esc" {
+							pendingDelete = ""
+							message = "Deletion canceled"
+						}
+						continue
+					}
 					switch key {
 					case "q", "ctrl+c":
 						return nil
 					case "0":
 						overview = true
+					case "d":
+						if len(ids) > 0 && !overview {
+							pendingDelete = ids[selectedTown%len(ids)]
+						}
 					case "tab":
 						overview = false
 						if len(ids) > 0 {
@@ -178,7 +200,11 @@ func tui(ctx context.Context, c connection) error {
 		if overview {
 			role = -1
 		}
-		frame := renderTUI(state, selectedTown, role, width, height, message)
+		status := message
+		if pendingDelete != "" {
+			status = "Delete " + pendingDelete + "? y / n (GitHub stays intact)"
+		}
+		frame := renderTUI(state, selectedTown, role, width, height, status)
 		if frame != last {
 			if _, err = fmt.Print("\x1b[H" + strings.ReplaceAll(frame, "\n", "\x1b[K\r\n") + "\x1b[K\x1b[J"); err != nil {
 				return err
@@ -244,6 +270,7 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 		t := s.Towns[ids[townIndex]]
 		add(fmt.Sprintf(" %s   [%d/%d towns]   branch %s", t.Config.Repo, townIndex+1, len(ids), t.Config.Branch))
 		add(" 0: all towns    Tab: next town    1–5 / j,k: select house")
+		add(" Settings and new issues: bt settings / bt request, or bt web")
 		add("")
 		add("    HOUSE        STATUS       CURRENT WORK")
 		for i, r := range town.Roles {
@@ -304,6 +331,6 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 	}
 	add(message)
 	add(strings.Repeat("─", width))
-	add(" s start · p pause · x stop · a wake town · q detach (workers continue)")
+	add(" s start · p pause · x stop · a wake town · d delete · q detach")
 	return strings.Join(lines, "\n")
 }

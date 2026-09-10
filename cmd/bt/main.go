@@ -71,8 +71,16 @@ func run(ctx context.Context, args []string) error {
 	role := fs.String("role", "all", "bug, issue, review, release, repo, or all")
 	task := fs.String("task", "", "task ID for retry")
 	config := fs.String("config", "", "optional JSON array of town configs (serve only)")
+	harness := fs.String("harness", "", "codex, claude, gemini, or custom (add/settings)")
+	model := fs.String("model", "", "ACP model ID; empty uses harness default (add/settings)")
+	effort := fs.String("effort", "", "ACP reasoning effort; empty uses harness default (add/settings)")
+	agentCommand := fs.String("agent-command", "", "custom ACP command as a JSON argument array (add/settings)")
+	kind := fs.String("kind", "feature", "feature or bug (request)")
+	title := fs.String("title", "", "GitHub issue title (request)")
+	bodyFile := fs.String("body-file", "", "issue description file, or - for stdin (request)")
+	requestID := fs.String("request-id", "", "saved submission ID (request/check-request)")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|add|start|pause|stop|retry|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
+		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|add|delete|settings|request|check-request|start|pause|stop|retry|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -93,6 +101,24 @@ func run(ctx context.Context, args []string) error {
 	}
 	if command == "serve" {
 		return serve(ctx, abs, *listen, *demo, *config, *repo)
+	}
+	agent := map[string]any{}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "harness":
+			agent["harness"] = *harness
+		case "model":
+			agent["model"] = *model
+		case "effort":
+			agent["effort"] = *effort
+		}
+	})
+	if *agentCommand != "" {
+		var args []string
+		if err := json.Unmarshal([]byte(*agentCommand), &args); err != nil {
+			return fmt.Errorf("--agent-command must be a JSON argument array: %w", err)
+		}
+		agent["command"] = args
 	}
 	conn, err := readConnection(abs)
 	if err != nil {
@@ -117,8 +143,53 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("--repo OWNER/REPO is required")
 		}
 		var result any
-		return request(ctx, conn, "POST", "/api/towns", map[string]string{"repo": *repo}, &result)
-	case "start", "pause", "stop", "retry":
+		return request(ctx, conn, "POST", "/api/towns", map[string]any{"repo": *repo, "agent": agent}, &result)
+	case "settings":
+		if *repo == "" {
+			return errors.New("--repo OWNER/REPO is required")
+		}
+		var result any
+		return request(ctx, conn, "POST", "/api/settings", map[string]any{"town": strings.ToLower(*repo), "agent": agent}, &result)
+	case "request":
+		if *repo == "" || *title == "" || *bodyFile == "" {
+			return errors.New("--repo, --title, and --body-file are required")
+		}
+		var data []byte
+		var err error
+		if *bodyFile == "-" {
+			data, err = io.ReadAll(io.LimitReader(os.Stdin, 30001))
+		} else {
+			f, e := os.Open(*bodyFile)
+			if e != nil {
+				return e
+			}
+			defer f.Close()
+			data, err = io.ReadAll(io.LimitReader(f, 30001))
+		}
+		if err != nil {
+			return err
+		}
+		if *requestID == "" {
+			key := make([]byte, 16)
+			if _, err = rand.Read(key); err != nil {
+				return err
+			}
+			*requestID = hex.EncodeToString(key)
+		}
+		fmt.Println("Submission ID:", *requestID, "(reuse with --request-id if the connection is lost)")
+		var result town.IssueRequest
+		if err = request(ctx, conn, "POST", "/api/requests", map[string]string{"town": strings.ToLower(*repo), "id": *requestID, "kind": *kind, "title": *title, "body": string(data)}, &result); err != nil {
+			return err
+		}
+		fmt.Println("Submission:", result.Status, "— view its progress in Town or bt status")
+		return nil
+	case "check-request":
+		if *repo == "" || *requestID == "" {
+			return errors.New("--repo and --request-id are required")
+		}
+		var result any
+		return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
+	case "start", "pause", "stop", "retry", "delete":
 		if *repo == "" {
 			return errors.New("--repo OWNER/REPO is required")
 		}

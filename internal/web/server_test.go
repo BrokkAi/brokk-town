@@ -81,7 +81,7 @@ func TestLocalAPIAuthenticationOriginAndStrictInput(t *testing.T) {
 	if w.Code != 403 {
 		t.Fatal("DNS rebinding host accepted")
 	}
-	for _, path := range []string{"/", "/app.js", "/town.js", "/tools.js", "/assets/buildings-atlas.png", "/assets/actors-atlas.png"} {
+	for _, path := range []string{"/", "/app.js", "/town.js", "/tools.js", "/manage.js", "/scenery.js", "/assets/buildings-atlas.png", "/assets/actors-atlas.png"} {
 		r := call(t, h.URL, "GET", path, "", "", "")
 		if r.StatusCode != 200 {
 			t.Fatal("missing embedded asset", path)
@@ -89,6 +89,87 @@ func TestLocalAPIAuthenticationOriginAndStrictInput(t *testing.T) {
 		if r.Header.Get("Content-Security-Policy") == "" {
 			t.Fatal("missing CSP")
 		}
+	}
+}
+
+func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
+	s, h := fixture(t)
+	for _, path := range []string{"/api/settings", "/api/choices", "/api/requests", "/api/requests/check"} {
+		if r := call(t, h.URL, "POST", path, `{}`, "", ""); r.StatusCode != 401 {
+			t.Fatal(path, "missing authorization")
+		}
+		if r := call(t, h.URL, "POST", path, `{"injected":true}`, "test-key", ""); r.StatusCode != 400 {
+			t.Fatal(path, "not strict")
+		}
+	}
+	r := call(t, h.URL, "POST", "/api/towns", `{"repo":"acme/managed","agent":{"harness":"custom","command":["fake","private-argument"],"model":"chosen","effort":"high"}}`, "test-key", "")
+	if r.StatusCode != 201 {
+		t.Fatal(r.Status)
+	}
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{"effort":"low"}}`, "test-key", "")
+	if r.StatusCode != 200 {
+		t.Fatal(r.Status)
+	}
+	config := s.Store.Snapshot().Towns["acme/managed"].Config
+	if config.Agent.Model != "chosen" || config.Agent.Effort != "low" || config.Agent.Command[1] != "private-argument" {
+		t.Fatal(config)
+	}
+	r = call(t, h.URL, "GET", "/api/state", "", "test-key", "")
+	data, _ := io.ReadAll(r.Body)
+	if strings.Contains(string(data), "private-argument") || !strings.Contains(string(data), `"model":"chosen"`) {
+		t.Fatal("incorrect public settings", string(data))
+	}
+	r = call(t, h.URL, "POST", "/api/control", `{"town":"acme/managed","role":"all","action":"delete"}`, "test-key", "")
+	if r.StatusCode != 200 {
+		t.Fatal(r.Status)
+	}
+	r = call(t, h.URL, "GET", "/api/state", "", "test-key", "")
+	data, _ = io.ReadAll(r.Body)
+	if strings.Contains(string(data), "acme/managed") {
+		t.Fatal("deleted town or events still visible", string(data))
+	}
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{"model":"new"}}`, "test-key", "")
+	if r.StatusCode != 400 {
+		t.Fatal("updated deleted town")
+	}
+	if !s.Store.Snapshot().Towns["acme/managed"].Deleted {
+		t.Fatal("deleted recovery record not retained")
+	}
+}
+
+type issuePublisher struct{}
+
+func (issuePublisher) CreateIssue(context.Context, string, string, string) (town.RemoteIssue, error) {
+	panic("HTTP handler must enqueue, not post")
+}
+func (issuePublisher) FindRequest(context.Context, string, string) (*town.RemoteIssue, error) {
+	panic("HTTP handler must enqueue, not reconcile")
+}
+
+func TestRequestAPIQueuesExactlyOneIntentBeforeResponding(t *testing.T) {
+	s, h := fixture(t)
+	s.Supervisor.Publisher = issuePublisher{}
+	if r := call(t, h.URL, "POST", "/api/towns", `{"repo":"acme/managed"}`, "test-key", ""); r.StatusCode != 201 {
+		t.Fatal(r.Status)
+	}
+	body := `{"town":"acme/managed","id":"12345678123456781234567812345678","kind":"bug","title":"Escape <html>","body":"Steps:\n1. Paste literal $(echo test) and ` + "`code`" + `.\n2. Observe the issue."}`
+	for range 2 {
+		r := call(t, h.URL, "POST", "/api/requests", body, "test-key", "")
+		if r.StatusCode != 202 {
+			data, _ := io.ReadAll(r.Body)
+			t.Fatal(r.Status, string(data))
+		}
+		var request town.IssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Status != "queued" {
+			t.Fatal(request, err)
+		}
+	}
+	st := s.Store.Snapshot().Towns["acme/managed"]
+	if len(st.Requests) != 1 || st.Workers[town.Issue].Enabled {
+		t.Fatal("duplicate submission or implicit automation")
+	}
+	if r := call(t, h.URL, "POST", "/api/requests", strings.Replace(body, `"kind":"bug"`, `"kind":"invalid"`, 1), "test-key", ""); r.StatusCode != 400 {
+		t.Fatal("invalid kind accepted")
 	}
 }
 func TestEventStreamSnapshotAndCommittedUpdate(t *testing.T) {

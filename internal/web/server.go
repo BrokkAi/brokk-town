@@ -14,7 +14,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-//go:embed index.html style.css app.js town.js tools.js assets/*
+//go:embed index.html style.css app.js town.js tools.js manage.js scenery.js assets/*
 var files embed.FS
 
 type Server struct {
@@ -30,6 +30,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/towns", s.add)
+	mux.HandleFunc("POST /api/settings", s.settings)
+	mux.HandleFunc("POST /api/choices", s.choices)
+	mux.HandleFunc("POST /api/requests", s.submitRequest)
+	mux.HandleFunc("POST /api/requests/check", s.checkRequest)
 	mux.Handle("/", http.FileServerFS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -128,8 +132,9 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Repo        string `json:"repo"`
-		MergePolicy string `json:"merge_policy"`
+		Repo        string             `json:"repo"`
+		MergePolicy string             `json:"merge_policy"`
+		Agent       town.AgentSettings `json:"agent"`
 	}
 	if err := decode(w, r, &input); err != nil {
 		problem(w, err.Error(), 400)
@@ -143,20 +148,84 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	if input.MergePolicy != "" {
 		cfg.MergePolicy = input.MergePolicy
 	}
-	var id string
-	if err := s.Store.Update(func(st *town.State) error {
-		t, err := st.Add(cfg)
-		if err != nil {
-			return err
-		}
-		id = t.ID
-		st.Event(id, "town", "operator", "repo", "", "Town established; reporter is checking the repository", time.Now())
-		return nil
-	}); err != nil {
+	cfg, err := input.Agent.Apply(cfg)
+	if err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	id, err := s.Supervisor.Add(cfg)
+	if err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	respond(w, map[string]string{"id": id})
+}
+
+type settingsInput struct {
+	Town  string             `json:"town"`
+	Agent town.AgentSettings `json:"agent"`
+}
+
+func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
+	var input settingsInput
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	if err := s.Supervisor.Settings(input.Town, input.Agent); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	respond(w, map[string]bool{"ok": true})
+}
+func (s *Server) choices(w http.ResponseWriter, r *http.Request) {
+	var input settingsInput
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	choices, err := s.Supervisor.Choices(r.Context(), input.Town, input.Agent)
+	if err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	respond(w, choices)
+}
+func (s *Server) submitRequest(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Town  string `json:"town"`
+		ID    string `json:"id"`
+		Kind  string `json:"kind"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	result, err := s.Supervisor.SubmitRequest(input.Town, town.IssueRequest{ID: input.ID, Kind: input.Kind, Title: input.Title, Body: input.Body})
+	if err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	respond(w, result)
+}
+func (s *Server) checkRequest(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Town string `json:"town"`
+		ID   string `json:"id"`
+	}
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	if err := s.Supervisor.RecheckRequest(input.Town, input.ID); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	respond(w, map[string]bool{"ok": true})
 }

@@ -217,3 +217,31 @@ characters, and speeds. The application itself correctly restored its settings.
 - Packaging and offline install now isolate npm configuration and cache from
   the developer account; a user-level allow-scripts setting otherwise causes
   npm 12 to reject a project-scoped install even with --ignore-scripts.
+
+## Town management and scenery follow-up
+
+User requested town deletion, harness/model/effort selection, feature and bug
+requests that create issues, better working animation, and a landscaped field.
+
+- Implemented deletion through the shared command API, browser confirmation, CLI,
+  and TUI confirmation. Workers are canceled; local recovery tombstones retain
+  ownership, worktrees, and uncertain writes. Re-add waits for active cleanup and
+  restores the town with automation paused.
+- Added per-town Codex/Claude/Gemini/custom ACP settings and private-command
+  preservation. Available model and model-specific effort choices come from a
+  prompt-free ACP discovery session; demo discovery uses fixtures.
+- Added durable feature/bug submissions, authenticated API and CLI commands, a
+  browser form and receipt history, and a supervised GitHub issue publisher.
+  Uncertain POSTs only reconcile by a saved marker; they never blindly repost.
+  Demo requests are local, and submitting work does not enable paused workers.
+- Preserved original sprite atlases. Added cached procedural grass, dirt roads,
+  trees, rocks, flowers, and fences; larger actors, worker patrols, house effects,
+  eased delivery movement, shadows/dust, and reduced-motion handling.
+- Validation complete: `make check`, Go race tests/vet, frontend syntax and eight
+  behavior tests pass. Expanded `make smoke` covers CLI settings, literal issue
+  bodies, same-ID retry, demo choices, TUI deletion/cancel, and restart recovery.
+  Fake-agent tests cover model-specific effort discovery without prompts and
+  settings at dispatch; fake GitHub tests cover lost responses and reconciliation.
+  Chrome desktop QA verified the landscaped scene, saved harness/model/effort,
+  a demo bug receipt in the workshop, and deletion of the neighboring town.
+  No live GitHub writes, real bot work, or release publication were used.
