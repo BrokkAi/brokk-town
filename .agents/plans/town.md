@@ -201,7 +201,7 @@ characters, and speeds. The application itself correctly restored its settings.
   state and finalizes GitHub after npm verification. Independent archive checks
   compare unpacked bytes and permissions after validating published checksums.
 - Local validation passed: make check smoke (race, vet, frontend and demo
-  integration), 31 Python tests and actionlint. Committed candidate packaging
+  integration), Python regression tests and actionlint. Committed candidate packaging
   and exact-SHA Actions validation follow the preparation commit/PR.
 - Blocked: packages-publish permits only v* tags and there are no tags; preserve
   that policy until an administrator explicitly authorizes a reviewed preflight
@@ -211,3 +211,6 @@ characters, and speeds. The application itself correctly restored its settings.
   and independent provenance verification. The release authorization command
   fails closed on this missing evidence; no signing request or log entry was
   submitted. RELEASING.md records these limitations and the recovery commands.
+- Exact-version local packaging exposed npm 12's package-name-keyed JSON output;
+  accept both npm 11's single-record array and npm 12's keyed object while
+  rejecting wrong names, versions, extra records and unsafe filenames.

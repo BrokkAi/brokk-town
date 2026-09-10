@@ -11,12 +11,27 @@ import unittest
 from unittest.mock import patch
 
 import package_registry
+import package_installers
 import package_release as release
 import publish_release
 import release_checks as checks
 
 
 class ReleaseChecks(unittest.TestCase):
+    def test_npm_11_and_12_pack_metadata(self):
+        info = {"name": "@brokkai/brokk-town", "version": "0.1.0",
+                "filename": "package.tgz", "integrity": "sha512-example"}
+        for output in ([info], {info["name"]: info}):
+            self.assertEqual(package_installers.pack_record(json.dumps(output), info["name"], info["version"]), info)
+
+    def test_ambiguous_or_mismatched_npm_pack_metadata_fails(self):
+        info = {"name": "@brokkai/brokk-town", "version": "0.1.0",
+                "filename": "package.tgz", "integrity": "sha512-example"}
+        for output in ([], [info, info], {"other": info}, [dict(info, version="0.2.0")],
+                       [dict(info, filename="../escape.tgz")]):
+            with self.assertRaises(ValueError):
+                package_installers.pack_record(json.dumps(output), info["name"], info["version"])
+
     def test_recompression_is_equal_but_payload_and_modes_are_not(self):
         with tempfile.TemporaryDirectory() as temp:
             archive = Path(temp) / "test.tar.gz"
