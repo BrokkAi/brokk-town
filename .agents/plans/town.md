@@ -183,3 +183,31 @@ The remaining macOS smoke difference was precisely the transient PENDIN flag,
 which XNU sets when ICANON is restored. The smoke comparison accounts for that
 kernel-maintained state on macOS while checking all configured flags, control
 characters, and speeds. The application itself correctly restored its settings.
+
+## v0.1.0 publishability preflight (2026-09-10)
+
+- Preserved the npm-only 0.1.0-rc.1 bootstrap and all local history. The initial
+  release target 692830d already has successful exact-commit Linux/macOS CI;
+  no tags, GitHub releases or prior preparation PR existed at inspection.
+- Prepare on brb/release-ilamovjxd3ttri6z3cdpvpheqk and deliver through its PR to
+  master. No tag pushes, public releases, final assets or npm uploads are
+  authorized in this phase. Branch pushes run CI only.
+- Enumerated native GitHub assets, source/Go tag, four npm platform packages,
+  the npm launcher, npm/GitHub latest pointers, and npm's Sigstore provenance.
+  No other registry, container or hosted documentation targets were found.
+- Added a non-publishing exact-version build/verification path, actual Actions
+  publisher checks, strict remote run evidence checks and regression coverage.
+  Release orchestration validates all versions before uploads, retains partial
+  state and finalizes GitHub after npm verification. Independent archive checks
+  compare unpacked bytes and permissions after validating published checksums.
+- Local validation passed: make check smoke (race, vet, frontend and demo
+  integration), 31 Python tests and actionlint. Committed candidate packaging
+  and exact-SHA Actions validation follow the preparation commit/PR.
+- Blocked: packages-publish permits only v* tags and there are no tags; preserve
+  that policy until an administrator explicitly authorizes a reviewed preflight
+  branch. The local npm trust read returned 401. All five actual OIDC trust
+  configurations and createPackage permissions need same-job validation.
+- Remaining signing gate: establish non-publishing Fulcio/Rekor authorization
+  and independent provenance verification. The release authorization command
+  fails closed on this missing evidence; no signing request or log entry was
+  submitted. RELEASING.md records these limitations and the recovery commands.

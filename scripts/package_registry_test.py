@@ -14,6 +14,9 @@ import package_release as release
 
 class PackageRegistry(unittest.TestCase):
     def setUp(self):
+        commit = patch.object(release, "commit", return_value="a" * 40)
+        commit.start()
+        self.addCleanup(commit.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)

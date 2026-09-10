@@ -26,19 +26,35 @@ def fetch_json(url):
         raise
 
 
-def npm_exists(package):
+def npm_exists(package, tarball=None):
     name = urllib.parse.quote(package["name"], safe="")
     record = fetch_json(f"https://registry.npmjs.org/{name}/{package['version']}")
     if record is None:
         return False
-    if record.get("name") != package["name"] or record.get("version") != package["version"] or record.get("dist", {}).get("integrity") != package["integrity"]:
+    if record.get("name") != package["name"] or record.get("version") != package["version"]:
         raise ValueError(f"published npm package differs from staged bytes: {package['name']}")
+    if tarball is None:
+        if record.get("dist", {}).get("integrity") != package["integrity"]:
+            raise ValueError(f"published npm package differs from staged bytes: {package['name']}")
+        return True
+    url = record.get("dist", {}).get("tarball", "")
+    if urllib.parse.urlparse(url).scheme != "https" or urllib.parse.urlparse(url).hostname != "registry.npmjs.org":
+        raise ValueError("unexpected npm tarball origin")
+    with urllib.request.urlopen(url, timeout=60) as response:
+        data = response.read()
+    integrity = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
+    if integrity != record["dist"].get("integrity"):
+        raise ValueError("downloaded npm tarball fails registry integrity")
+    if release.archive_payload(data) != release.archive_payload(tarball.read_bytes()):
+        raise ValueError(f"published npm payload differs from expected build: {package['name']}")
     return True
 
 
-def run(command, directory):
+def validated_packages(directory):
     manifest = json.loads((directory / "npm/manifest.json").read_text())
     release.validate_tag(manifest["tag"])
+    if manifest["commit"] != release.commit():
+        raise ValueError("npm manifest must match the exact checkout commit")
     npm_version = manifest["tag"][1:]
     expected_names = {package_installers.NPM_ROOT} | {
         f"{package_installers.NPM_ROOT}-{system}-{arch}" for system in ("linux", "darwin") for arch in ("x64", "arm64")
@@ -54,8 +70,13 @@ def run(command, directory):
         integrity = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
         if release.digest(data) != package["sha256"] or integrity != package["integrity"]:
             raise ValueError(f"corrupt staged npm package: {package['filename']}")
+    return packages
+
+
+def run(command, directory):
+    packages = validated_packages(directory)
     # Discover conflicts in every destination before making the first write.
-    existing = {p["name"]: npm_exists(p) for p in packages}
+    existing = {p["name"]: npm_exists(p, directory / "npm" / p["filename"]) for p in packages}
     if command == "check":
         print("Package versions are available or identical. This checks availability, not publishing authorization.")
         return
@@ -71,7 +92,7 @@ def run(command, directory):
         if not existing[package["name"]]:
             subprocess.run(["npm", "publish", str((directory / "npm" / package["filename"]).resolve()),
                             "--access", "public", "--registry", "https://registry.npmjs.org",
-                            "--tag", "next" if "-" in npm_version else "latest"], check=True)
+                            "--tag", "next" if "-" in package["version"] else "latest"], check=True)
     print("Submitted npm packages; registry visibility may lag behind accepted uploads")
 
 
