@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import tarfile
@@ -14,6 +15,14 @@ import package_release as release
 
 ROOT = Path(__file__).resolve().parent.parent
 NPM_ROOT = "@brokkai/brokk-town"
+
+
+def npm_build_environment(directory):
+    # Packaging/offline tests must not inherit developer account settings.
+    env = {k: v for k, v in os.environ.items() if not k.lower().startswith("npm_config_")}
+    return dict(env, npm_config_userconfig=str(directory / "user.npmrc"),
+                npm_config_globalconfig=str(directory / "global.npmrc"),
+                npm_config_cache=str(directory / "npm-cache"))
 
 
 def write_json(path, value):
@@ -64,7 +73,7 @@ def package(tag, assets, output, sha):
                 path.chmod(0o755 if filename.startswith("bin/") else 0o644)
             result = subprocess.check_output([
                 "npm", "pack", "--ignore-scripts", "--json", "--pack-destination", str(npm_output.resolve()),
-            ], cwd=directory)
+            ], cwd=directory, env=npm_build_environment(staging))
             info = pack_record(result, name, npm_version)
             tarball = npm_output / info["filename"]
             licenses.check_npm(tarball)

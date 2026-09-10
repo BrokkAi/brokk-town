@@ -214,3 +214,6 @@ characters, and speeds. The application itself correctly restored its settings.
 - Exact-version local packaging exposed npm 12's package-name-keyed JSON output;
   accept both npm 11's single-record array and npm 12's keyed object while
   rejecting wrong names, versions, extra records and unsafe filenames.
+- Packaging and offline install now isolate npm configuration and cache from
+  the developer account; a user-level allow-scripts setting otherwise causes
+  npm 12 to reject a project-scoped install even with --ignore-scripts.
