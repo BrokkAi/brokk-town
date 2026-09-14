@@ -83,14 +83,14 @@ compiles the bots into `bt`; each dispatch starts the installed `bbb`, `bfb`,
 private Unix socket. Run `<command> version` and `<command> worker --help` to
 confirm a compatible release.
 
-Once compatible bot versions are published, install their npm distributions:
+Install the released Worker Protocol v1 npm distributions:
 
 ```sh
-npm install -g @brokkai/bug-bot \
-  @brokkai/feature-bot \
-  @brokkai/issue-bot \
-  @brokkai/review-bot \
-  @brokkai/release-bot
+npm install -g @brokkai/bug-bot@0.3.1 \
+  @brokkai/feature-bot@0.1.1 \
+  @brokkai/issue-bot@0.5.1 \
+  @brokkai/review-bot@0.2.1 \
+  @brokkai/release-bot@0.5.1
 ```
 
 Checksum-verified native bot releases are equally supported. The worker uses

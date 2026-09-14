@@ -18,20 +18,26 @@ self-signed HTTPS/mutual-TLS transport can be added without changing semantics.
   service-PATH directory without a Town restart; mid-dispatch replacement fails
   uncertainly. Worker subprocess output remains bounded and shutdown is graceful
   with a process-group cancellation fallback.
-- Coordinated local commits in all five bot repositories add an `internal/worker`
-  standard-library HTTP service and `<command> worker --socket PATH`: bug-bot
-  `d996364`, feature-bot `24222be`, issue-bot `d55f886`, release-bot `efd6477`,
-  and review-bot `3d55af7`. They retain their existing CLIs and adapt their
-  released Run/state APIs behind the public worker boundary. No bot branches were
-  pushed and no tags, packages, GitHub writes, or releases were made.
+- Coordinated commits in all five bot repositories add an `internal/worker`
+  standard-library HTTP service and `<command> worker --socket PATH`. They retain
+  their existing CLIs and adapt their released Run/state APIs behind the public
+  worker boundary. The user subsequently requested releases. Final exact-tag
+  releases and all 25 npm launcher/platform packages were verified:
+  bug-bot `v0.3.1`, feature-bot `v0.1.1`, issue-bot `v0.5.1`, release-bot
+  `v0.5.1`, and review-bot `v0.2.1`. A public npm installation smoke verified
+  all five launchers and `worker --help`.
 - Validation passed: Town `go test -race ./...`, `go vet ./...`, `make check`,
   and isolated `make smoke`; full race/vet suites for bug-bot, feature-bot,
   issue-bot, and review-bot; race/vet for release-bot's changed worker/cmd
   packages; all bot license, Python, and npm launcher tests; and a real
   cross-process initialize/shutdown smoke against all five locally built worker
-  binaries. Release-bot's full root-package race suite has two pre-existing
-  checkpoint failures reproduced identically on its untouched `bb530fa` baseline
-  in this environment, so the worker change did not introduce them.
+  binaries. Release-bot's full root-package race suite initially exposed two
+  pre-existing macOS `/var` versus `/private/var` failures; canonical checkout and
+  repository paths fixed them, and its complete suite now passes. GitHub twice
+  returned an `untagged-*` alias for release-bot drafts while the exact tag was
+  propagating; both published records were repaired to their exact tags, package
+  jobs completed, and release-bot `4a45936` now detects and repairs that alias
+  before staging assets.
 
 ## Per-bot agent profiles (2026-09-10)
 
