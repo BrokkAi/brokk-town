@@ -156,6 +156,38 @@ func TestIssueWorkerUsesVersionedUnixSocketProtocol(t *testing.T) {
 	}
 }
 
+func TestDefaultWorkersUseExactPinnedNpxPackages(t *testing.T) {
+	dir := t.TempDir()
+	npx := filepath.Join(dir, "npx")
+	capture := filepath.Join(dir, "args")
+	writeFakeWorker(t, npx, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TOWN_NPX_CAPTURE\"\nprintf '1.2.3\\n'\n")
+	resolvedNpx, err := filepath.EvalSymlinks(npx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TOWN_NPX_CAPTURE", capture)
+	workers := &BotWorkers{}
+	for role, packageSpec := range workerPackages {
+		bot, err := workers.externalBot(context.Background(), role)
+		if err != nil {
+			t.Fatalf("resolve %s: %v", role, err)
+		}
+		if bot.command != resolvedNpx || !reflect.DeepEqual(bot.args, []string{"--yes", packageSpec}) {
+			t.Fatalf("%s did not use exact pinned npx package: %+v", role, bot)
+		}
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, packageSpec := range workerPackages {
+		if !strings.Contains(string(data), "--yes "+packageSpec+" version\n") {
+			t.Fatalf("missing pinned invocation for %s: %s", packageSpec, data)
+		}
+	}
+}
+
 func TestWorkerVersionAndCapabilitiesAreChecked(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "fake-worker")

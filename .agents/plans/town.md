@@ -75,6 +75,18 @@ approach. Town v0.1.0 was published without weakening destination checks:
   archives, launcher, four platform packages, registry bytes, and all five
   independent SLSA/Fulcio/Rekor provenance bundles were verified publicly.
 
+## Self-contained worker startup patch (2026-09-14)
+
+- The v0.1.0 package installed Town itself but real workers expected separately
+  installed `bbb`, `bfb`, `bib`, `brv`, and `brb` executables. The user rejected
+  that surprising prerequisite and selected pinned npx execution.
+- Default dispatch now always invokes the exact compatible bot package through
+  `npx --yes`; it never selects an ambient or floating bot version. Explicit
+  command overrides remain internal test seams for fake workers.
+- Regression coverage asserts the exact package/version mapping for all five
+  roles. Release validation must include a fresh public Town-only installation
+  that starts each pinned worker service, not merely `bt --help`.
+
 ## Epic #30: simplified operations and scheduling capacity (2026-09-14)
 
 - Long Board queues use viewport-relative bounded scroll areas with persistent
