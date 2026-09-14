@@ -16,10 +16,13 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/BrokkAi/brokk-town/internal/harness"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
 	"github.com/BrokkAi/brokk-town/internal/town"
 	"github.com/BrokkAi/brokk-town/internal/web"
 )
@@ -40,6 +43,15 @@ func stateHome() string {
 	}
 	return filepath.Join(base, "brokk-town")
 }
+func buildVersion() string {
+	v := version
+	if v == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			v = info.Main.Version
+		}
+	}
+	return v
+}
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -55,13 +67,7 @@ func run(ctx context.Context, args []string) error {
 		args = args[1:]
 	}
 	if command == "version" {
-		v := version
-		if v == "dev" {
-			if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-				v = info.Main.Version
-			}
-		}
-		fmt.Println(v)
+		fmt.Println(buildVersion())
 		return nil
 	}
 	fs := flag.NewFlagSet("bt "+command, flag.ContinueOnError)
@@ -285,7 +291,11 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	client := &http.Client{Timeout: 35 * time.Second}
+	timeout := 35 * time.Second
+	if path == "/api/update" {
+		timeout = 130 * time.Second
+	}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -387,9 +397,51 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	gh := town.GitHubClient{}
 	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh}
 	supervisor := town.NewSupervisor(store, gh, workers)
-	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL}
+	var available atomic.Pointer[town.UpdateNotice]
+	var upgradeMu sync.Mutex
+	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Update: available.Load}
+	server.Upgrade = func(upgradeCtx context.Context) error {
+		upgradeMu.Lock()
+		defer upgradeMu.Unlock()
+		notice := available.Load()
+		if notice == nil {
+			return errors.New("no Town update is available")
+		}
+		installCtx, installCancel := context.WithTimeout(upgradeCtx, 2*time.Minute)
+		defer installCancel()
+		packageSpec := "@brokkai/brokk-town@" + notice.Latest
+		if _, e := osrun.Run(installCtx, dir, nil, "npm", "install", "--global", packageSpec); e != nil {
+			return fmt.Errorf("upgrade failed: %w", e)
+		}
+		available.Store(nil)
+		return nil
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// Registry I/O stays off HTTP, TUI, and render loops. Failure is deliberately
+	// quiet: inability to check must never prevent a local town from starting.
+	go func() {
+		client := &http.Client{Timeout: 8 * time.Second}
+		check := func() {
+			checkCtx, checkCancel := context.WithTimeout(ctx, 10*time.Second)
+			defer checkCancel()
+			notice, e := town.CheckUpdate(checkCtx, client, buildVersion())
+			if e == nil {
+				available.Store(notice)
+			}
+		}
+		check()
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				check()
+			}
+		}
+	}()
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
 	results := make(chan error, 2)
 	remaining := 2

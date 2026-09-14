@@ -284,6 +284,7 @@ type State struct {
 	Demo          bool             `json:"demo"`
 	Towns         map[string]*Town `json:"towns"`
 	Events        []Event          `json:"events"`
+	Update        *UpdateNotice    `json:"update,omitempty"`
 }
 
 func NewState(demo bool) State {

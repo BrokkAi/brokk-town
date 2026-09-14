@@ -190,6 +190,28 @@ function receive(next) {
   moving = moving.slice(-24);
   sequence = next.seq;
   state = next;
+  const update = $("#update-notice");
+  if (state.update) {
+    update.textContent = `Upgrade Town to ${state.update.latest}`;
+    update.title = state.update.command;
+    update.hidden = false;
+    update.onclick = async () => {
+      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nThe service will keep running; restart it afterward to use the new version.`)) return;
+      update.disabled = true;
+      update.textContent = "Upgrading Town…";
+      try {
+        await api("/api/update", {});
+        update.textContent = `Town ${state.update.latest} installed · restart service`;
+        update.title = "Restart bt serve to use the installed version";
+      } catch (error) {
+        update.disabled = false;
+        update.textContent = `Upgrade failed · try again`;
+        update.title = error.message;
+      }
+    };
+  } else {
+    update.hidden = true;
+  }
   if (!state.towns[selectedTown]) {
     selectedTown = Object.keys(state.towns)[0] || "";
     selectedTask = "";
