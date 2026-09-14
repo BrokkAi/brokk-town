@@ -226,22 +226,38 @@ def successful_run(run, sha, jobs, event):
         raise ValueError("missing or unsuccessful workflow jobs")
 
 
-def remote_evidence(sha, tag, gate, run_id):
-    run = api(f"actions/runs/{run_id}")
-    attempt = run["run_attempt"]
-    jobs = api(f"actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")["jobs"]
+def preflight_jobs(run, sha, tag, jobs, gate):
     if run.get("path") != ".github/workflows/" + WORKFLOW:
         raise ValueError("wrong release workflow")
     if run.get("display_title") != f"Release {tag} (publish=false)":
         raise ValueError("not a non-publishing preflight for the requested version")
-    successful_run(run, sha, jobs, "workflow_dispatch")
-    required = {"native / checks / test (ubuntu-latest)", "native / checks / test (macos-latest)",
-                "native / checks / workflows", "native / build", "packages"}
-    if {j["name"] for j in jobs} != required:
+    build_jobs = {"native / checks / test (ubuntu-latest)", "native / checks / test (macos-latest)",
+                  "native / checks / workflows", "native / build"}
+    required = build_jobs | {"packages"}
+    if len(jobs) != len(required) or {j["name"] for j in jobs} != required:
         raise ValueError("missing expected release jobs")
+    if gate == "authorization":
+        successful_run(run, sha, jobs, "workflow_dispatch")
+        return
+    # A failed publisher cannot invalidate completed packaging, but neither its
+    # failure nor a successful build constitutes publishing authorization.
+    if (run.get("head_sha") != sha or run.get("event") != "workflow_dispatch"
+            or run.get("status") != "completed" or run.get("conclusion") not in ("success", "failure")):
+        raise ValueError("wrong-commit, wrong-event or incomplete workflow run")
+    if any(j.get("status") != "completed" or j.get("conclusion") != "success"
+           for j in jobs if j["name"] in build_jobs):
+        raise ValueError("missing or unsuccessful release build jobs")
+
+
+def remote_evidence(sha, tag, gate, run_id):
+    run = api(f"actions/runs/{run_id}")
+    attempt = run["run_attempt"]
+    jobs = api(f"actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")["jobs"]
+    preflight_jobs(run, sha, tag, jobs, gate)
     artifact_name = f"release-candidate-{sha}-{tag}"
     artifacts = api(f"actions/runs/{run_id}/artifacts?per_page=100")["artifacts"]
-    if not any(a["name"] == artifact_name and not a["expired"] and a["size_in_bytes"] > 0 for a in artifacts):
+    candidates = [a for a in artifacts if a["name"] == artifact_name]
+    if len(candidates) != 1 or candidates[0]["expired"] or candidates[0]["size_in_bytes"] <= 0:
         raise ValueError("missing exact-version candidate artifact")
     with tempfile.TemporaryDirectory() as temp:
         subprocess.run(["gh", "run", "download", str(run_id), "--repo", GH_REPO,
@@ -262,6 +278,13 @@ def published(directory, sha, tag):
     validate_build(directory, sha, tag)
     github_version(directory, sha, tag, published=True)
     package_registry.run("verify", directory / "packages")
+    if "-" not in tag:
+        latest = api("releases/latest")
+        if latest.get("tag_name") != tag:
+            raise ValueError("GitHub latest release does not point to the prepared version")
+    raise RuntimeError("Sigstore provenance verification is not implemented: validate the exact npm "
+                       "payload, source commit/workflow, Fulcio certificate, certificate-transparency "
+                       "log and Rekor inclusion before certifying publication")
 
 
 def main():
