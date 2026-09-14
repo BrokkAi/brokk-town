@@ -432,16 +432,40 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 		}
 		return s.Delete(id)
 	}
-	if action != "start" && action != "pause" && action != "stop" && action != "retry" {
+	if action != "start" && action != "pause" && action != "stop" && action != "retry" && action != "admit" && action != "decline" {
 		return errors.New("unknown action")
 	}
-	if role != "all" && !ValidRole(role) {
+	if role != "all" && !ValidRole(role) && !((action == "admit" || action == "decline") && role == Hall) {
 		return errors.New("unknown role")
 	}
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
+		}
+		if action == "admit" || action == "decline" {
+			task := t.Tasks[taskID]
+			if task == nil || task.MayoralDecision != "pending" || task.Stage != "awaiting_mayor" || task.House != Hall {
+				return errors.New("task is not awaiting a Mayoral decision")
+			}
+			if action == "decline" {
+				task.MayoralDecision = "declined"
+				task.Stage = "declined"
+				task.Detail = "The Mayor declined this outside work. Town will not act on it."
+				st.Event(id, "decision", "hall", "outside", task.ID, "Mayor declined: "+task.Title, s.now())
+				return nil
+			}
+			task.MayoralDecision = "admitted"
+			task.Stage = "queued"
+			task.Detail = "The Mayor admitted this work to town."
+			target := Review
+			if task.Kind == "issue" {
+				target = Issue
+			}
+			task.House = target
+			t.Workers[target].Next = time.Time{}
+			st.Event(id, "decision", "hall", string(target), task.ID, "Mayor admitted: "+task.Title, s.now())
+			return nil
 		}
 		if action == "retry" {
 			task := t.Tasks[taskID]

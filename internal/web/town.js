@@ -61,7 +61,7 @@ export function queueFor(town, role) {
     .filter(
       (t) =>
         t.house === role &&
-        !["complete", "closed", "merged", "shipped", "implemented"].includes(t.stage),
+        !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
     )
     .sort(
       (a, b) =>
@@ -138,7 +138,7 @@ export function townSummary(town) {
     blocked: tasks.filter((t) => t.blocked).length,
     failed: workers.filter((w) => w.status === "failed").length,
     queued: tasks.filter(
-      (t) => !["complete", "closed", "merged", "shipped", "implemented"].includes(t.stage),
+      (t) => !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
     ).length,
     release: town.last_release || "No releases yet",
   };
@@ -152,6 +152,8 @@ export const taskStatuses = {
   draft: { label: "Draft", className: "draft" },
   working: { label: "Working", className: "working" },
   queued: { label: "Queued", className: "queued" },
+  awaiting_mayor: { label: "Mayoral decision", className: "waiting-github" },
+  declined: { label: "Declined by Mayor", className: "closed" },
   waiting_github: { label: "Waiting on GitHub", className: "waiting-github" },
   ready: { label: "Ready", className: "ready" },
   blocked: { label: "Blocked", className: "blocked" },
@@ -213,6 +215,7 @@ const terminalStages = new Set([
   "merged",
   "shipped",
   "implemented",
+  "declined",
 ]);
 const githubWaitingStages = new Set([
   "awaiting_author",
@@ -295,7 +298,7 @@ export function boardColumn(task) {
   const stage = normalized(task?.stage);
   const status = task?.status || stage;
   if (status === "shipped") return "shipped";
-  if (["complete", "merged", "closed", "implemented"].includes(status)) return "completed";
+  if (["complete", "merged", "closed", "implemented", "declined"].includes(status)) return "completed";
   if (status === "unreleased") return "ready";
   if (["blocked", "failed", "inconclusive", "uncertain_write"].includes(status)) return "blocked";
   if (status === "unknown") return "open";

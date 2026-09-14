@@ -146,8 +146,9 @@ func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
 	if config.Agent.Model != "chosen" || config.Agent.Effort != "low" || config.Agent.Command[1] != "private-argument" {
 		t.Fatal(config)
 	}
-	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"all"}`, "test-key", "")
-	if r.StatusCode != http.StatusOK || s.Store.Snapshot().Towns["acme/managed"].Config.MergePolicy != "all" {
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"all","mayoral_feature_review":false}`, "test-key", "")
+	updatedConfig := s.Store.Snapshot().Towns["acme/managed"].Config
+	if r.StatusCode != http.StatusOK || updatedConfig.MergePolicy != "all" || updatedConfig.ReviewsFeaturesWithMayor() {
 		t.Fatal("merge policy was not updated")
 	}
 	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"unsafe"}`, "test-key", "")

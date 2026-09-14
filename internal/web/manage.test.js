@@ -64,7 +64,7 @@ function fixture(extraAPI) {
     id: "acme/project",
     config: {
       repo: "acme/project", harness: "codex-acp", model: "default-model",
-      effort: "medium", harness_version: "1.0", bot_agents: {}, merge_policy: "bot",
+      effort: "medium", harness_version: "1.0", bot_agents: {}, merge_policy: "bot", mayoral_feature_review: true,
     },
   };
   const overrides = {
@@ -83,8 +83,9 @@ function fixture(extraAPI) {
     if (url === "/api/harnesses") return catalog;
     if (url === "/api/settings") {
       if (extraAPI) await extraAPI(url, body, signal);
-      const { role, agent, merge_policy } = body;
+      const { role, agent, merge_policy, mayoral_feature_review } = body;
       if (merge_policy) town.config.merge_policy = merge_policy;
+      if (mayoral_feature_review !== undefined) town.config.mayoral_feature_review = mayoral_feature_review;
       if (agent.inherit) delete overrides[role];
       else {
         const target = role ? (overrides[role] ||= {}) : town.config;
@@ -137,6 +138,7 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
     town: "acme/project", role: "review",
     agent: { harness: "claude-code", model: "next-review-model", effort: "xhigh", version: "1.5" },
     merge_policy: "bot",
+    mayoral_feature_review: true,
   });
   assert.equal(elements["settings-dialog"].open, true);
   assert.match(elements["settings-success"].textContent, /Review Bot saved/);

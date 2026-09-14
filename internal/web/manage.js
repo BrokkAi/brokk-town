@@ -295,6 +295,7 @@ export function management({ api, getTown, getState, refresh }) {
       .forEach((field) => { field.disabled = false; });
     $("#settings-repo").textContent = t.config.repo;
     $("#settings-merge-policy").value = t.config.merge_policy || "bot";
+    $("#settings-mayoral-feature-review").checked = t.config.mayoral_feature_review !== false;
     $("#settings-success").textContent = "";
     showProfile(Object.hasOwn(profileNames, role) ? role : "");
     $("#settings-dialog").showModal();
@@ -417,6 +418,7 @@ export function management({ api, getTown, getState, refresh }) {
           role,
           agent: readAgent(),
           merge_policy: $("#settings-merge-policy").value,
+          mayoral_feature_review: $("#settings-mayoral-feature-review").checked,
         });
         if (version === settingsVersion)
           $("#settings-success").textContent = `${profileNames[role]} saved.`;

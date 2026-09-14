@@ -91,7 +91,7 @@ func run(ctx context.Context, args []string) error {
 	requestID := fs.String("request-id", "", "saved submission ID (request/check-request)")
 	maxWorkers := fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
+		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|admit|decline|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -258,9 +258,15 @@ func run(ctx context.Context, args []string) error {
 		}
 		var result any
 		return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
-	case "start", "pause", "stop", "retry", "delete":
+	case "start", "pause", "stop", "retry", "delete", "admit", "decline":
 		if *repo == "" {
 			return errors.New("--repo OWNER/REPO is required")
+		}
+		if (command == "admit" || command == "decline") && *task == "" {
+			return errors.New("--task is required for a Mayoral decision")
+		}
+		if command == "admit" || command == "decline" {
+			*role = "hall"
 		}
 		var result any
 		return request(ctx, conn, "POST", "/api/control", map[string]string{"town": strings.ToLower(*repo), "role": *role, "action": command, "task": *task}, &result)

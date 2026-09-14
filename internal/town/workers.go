@@ -39,7 +39,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	}
 	switch r {
 	case Bug, Feature, Release:
-		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, 0, "", "", observe)
+		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, 0, 0, "", "", observe)
 		if err != nil {
 			return result, err
 		}
@@ -49,7 +49,11 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			result.PR = task.Number
 			return result, b.repair(ctx, t, task, observe, log)
 		}
-		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, 0, "", "", observe)
+		task := nextIssue(t)
+		if task == nil {
+			return result, nil
+		}
+		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, task.Number, 0, "", "", observe)
 		if workerResult.Issue != nil {
 			result.Owned = make(map[int]Ownership, len(workerResult.Issue.Owned))
 			for _, owned := range workerResult.Issue.Owned {
@@ -68,7 +72,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			return result, nil
 		}
 		result.PR = task.Number
-		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, task.Number, task.Base, task.Head, observe)
+		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, 0, task.Number, task.Base, task.Head, observe)
 		if err != nil {
 			return result, err
 		}
@@ -86,7 +90,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	return result, fmt.Errorf("unsupported worker %s", r)
 }
 
-func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, pr int, base, head string, observe func(Progress)) (workerResult, error) {
+func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, issue, pr int, base, head string, observe func(Progress)) (workerResult, error) {
 	bot, err := b.externalBot(ctx, role)
 	if err != nil {
 		return workerResult{}, err
@@ -96,7 +100,7 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 	request := workerRequest{
 		Protocol: workerProtocolVersion, Remote: remote, Branch: branch,
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
-		Agent: agent, Verify: t.Config.Verify, PR: pr, BaseSHA: base, HeadSHA: head,
+		Agent: agent, Verify: t.Config.Verify, Issue: issue, PR: pr, BaseSHA: base, HeadSHA: head,
 	}
 	return runWorker(ctx, bot, request, observe, nil)
 }
@@ -137,6 +141,20 @@ func nextTask(t *Town, role Role, stage string) *Task {
 		return tasks[0]
 	}
 	return nil
+}
+
+func nextIssue(t *Town) *Task {
+	tasks := []*Task{}
+	for _, task := range t.Tasks {
+		if task.Kind == "issue" && task.House == Issue && task.Stage == "queued" && !task.Blocked && !task.RetryAt.After(time.Now()) {
+			tasks = append(tasks, task)
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Number < tasks[j].Number })
+	if len(tasks) == 0 {
+		return nil
+	}
+	return tasks[0]
 }
 
 func (b *BotWorkers) remote(repo string) string {

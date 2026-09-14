@@ -145,7 +145,7 @@ func TestReconcileArrivalsRevisionAndReleaseAncestry(t *testing.T) {
 			routes[e.Cargo] = e.From + ">" + e.To
 		}
 	}
-	if routes["issue:3"] != "outside>issue" || routes["issue:4"] != "bug>issue" || routes["issue:6"] != "feature>issue" || routes["pr:5"] != "issue>review" || x.Tasks["issue:6"].External {
+	if routes["issue:3"] != "outside>hall" || routes["issue:4"] != "bug>issue" || routes["issue:6"] != "feature>hall" || routes["pr:5"] != "issue>review" || x.Tasks["issue:6"].External {
 		t.Fatal(routes)
 	}
 	task := x.Tasks["pr:5"]
@@ -458,7 +458,7 @@ func TestDemoIsIsolatedAndCompletesTheLoop(t *testing.T) {
 	go func() { done <- runDemo(ctx, s, time.Millisecond) }()
 	eventually(t, func() bool {
 		for _, e := range s.Snapshot().Events {
-			if e.From == "feature" && e.To == "issue" {
+			if e.From == "feature" && e.To == "hall" {
 				return true
 			}
 		}
@@ -474,7 +474,7 @@ func TestDemoIsIsolatedAndCompletesTheLoop(t *testing.T) {
 	for _, e := range st.Events {
 		routes[e.From+">"+e.To] = true
 	}
-	for _, r := range []string{"bug>issue", "feature>issue", "issue>review", "review>issue", "review>release", "release>outside"} {
+	for _, r := range []string{"bug>issue", "feature>hall", "issue>review", "review>issue", "review>release", "release>outside"} {
 		if !routes[r] {
 			t.Fatal("missing route", r)
 		}

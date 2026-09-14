@@ -267,6 +267,7 @@ const state = {
         "pr:1": { id: "pr:1", kind: "pr", number: 1, title: "Review this change", house: "review", stage: "awaiting_author" },
         "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Queue this change", house: "issue", stage: "queued" },
         "source:done": { id: "source:done", kind: "source", title: "Checked off in Slack", house: "issue", stage: "complete", source: { eligible: false } },
+        "issue:3": { id: "issue:3", kind: "issue", number: 3, title: "Outside request", house: "hall", stage: "awaiting_mayor", external: true, mayoral_decision: "pending" },
       },
       intents: {}, reports: [], events: [],
     },
@@ -344,6 +345,14 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements.board.hidden, false, "keyboard shortcut opens Board");
   document.dispatchEvent({ type: "keydown", key: "c", target: new Element("div") });
   assert.equal(elements.compact.hidden, false, "keyboard shortcut opens Compact");
+
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  const decision = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3");
+  assert.ok(decision, "Town Hall shows work awaiting the Mayor");
+  decision.onclick();
+  await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"')), true);
 
   elements["capacity-settings"].onclick();
   assert.equal(elements["capacity-dialog"].open, true);

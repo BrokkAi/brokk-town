@@ -1,14 +1,27 @@
 # Brokk Town implementation plan
 
+## Recoverable review outcomes (2026-09-14)
+
+- Reviewer execution/evidence failures are distinct from completed negative
+  reviews. Town retries reviewer failures up to five times, retains exact
+  expected/returned revision diagnostics internally, and exposes the actionable
+  failure after the budget is exhausted. An operator retry resets that budget.
+- A completed changes-needed review routes Town-owned PRs to Issue Bot for repair.
+  External PRs route to Town Hall for an explicit retry or decline decision, so
+  no review outcome can leave work in an operator-inaccessible terminal state.
+
 ## Editable external contribution policy (2026-09-14)
 
 - Town Settings exposes the persisted merge policy after onboarding, with clear
   external-PR ownership and eligibility language. Agent-profile and policy edits
   commit atomically through the authenticated settings API.
-- A requested Mayoral decision gate for newly observed external issues and PRs
-  requires exact issue targeting in the issue-worker protocol before Town can
-  safely admit one issue while leaving other outside work inert. Do not simulate
-  this with UI-only state; coordinate the protocol and pinned issue-bot release.
+- New external issues and PRs persist at Town Hall until the Mayor explicitly
+  admits or declines them. Feature Bot proposals use the same gate by default,
+  controlled by a Town Settings checkbox. Decisions are durable, create committed
+  events, and never modify GitHub themselves.
+- Admitted issues dispatch individually through Issue Bot's `exact-issue` worker
+  capability in pinned `@brokkai/issue-bot@0.5.2`, so pending or declined issues
+  cannot be selected accidentally.
 
 ## In-app Town update notice (2026-09-14)
 

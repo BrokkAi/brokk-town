@@ -21,6 +21,7 @@ const (
 	Review  Role = "review"
 	Release Role = "release"
 	Repo    Role = "repo"
+	Hall    Role = "hall"
 )
 
 var Roles = []Role{Bug, Issue, Review, Release, Repo, Feature}
@@ -28,9 +29,19 @@ var Roles = []Role{Bug, Issue, Review, Release, Repo, Feature}
 // AgentRoles excludes the reporter, which never starts an agent.
 var AgentRoles = []Role{Bug, Feature, Issue, Review, Release}
 
-func ValidAgentRole(r Role) bool { return r != Repo && ValidRole(r) }
+func ValidAgentRole(r Role) bool {
+	for _, v := range AgentRoles {
+		if r == v {
+			return true
+		}
+	}
+	return false
+}
 
 func ValidRole(r Role) bool {
+	if r == Hall {
+		return true
+	}
 	for _, v := range Roles {
 		if r == v {
 			return true
@@ -49,18 +60,19 @@ func SHA(v string) bool {
 }
 
 type Config struct {
-	Repo              string                  `json:"repo"`
-	Branch            string                  `json:"branch,omitempty"`
-	Harness           string                  `json:"harness,omitempty"`
-	HarnessDefinition *harness.Entry          `json:"harness_definition,omitempty"`
-	Agent             runner.AgentConfig      `json:"agent"`
-	BotAgents         map[Role]BotAgentConfig `json:"bot_agents,omitempty"`
-	Verify            []string                `json:"verify,omitempty"`
-	MergePolicy       string                  `json:"merge_policy"`
-	PollSeconds       int                     `json:"poll_seconds"`
-	ReportSeconds     int                     `json:"report_seconds"`
-	MaxCycles         int                     `json:"max_cycles"`
-	Funnels           FunnelConfigs           `json:"funnels,omitempty"`
+	Repo                 string                  `json:"repo"`
+	Branch               string                  `json:"branch,omitempty"`
+	Harness              string                  `json:"harness,omitempty"`
+	HarnessDefinition    *harness.Entry          `json:"harness_definition,omitempty"`
+	Agent                runner.AgentConfig      `json:"agent"`
+	BotAgents            map[Role]BotAgentConfig `json:"bot_agents,omitempty"`
+	Verify               []string                `json:"verify,omitempty"`
+	MergePolicy          string                  `json:"merge_policy"`
+	PollSeconds          int                     `json:"poll_seconds"`
+	ReportSeconds        int                     `json:"report_seconds"`
+	MaxCycles            int                     `json:"max_cycles"`
+	Funnels              FunnelConfigs           `json:"funnels,omitempty"`
+	MayoralFeatureReview *bool                   `json:"mayoral_feature_review,omitempty"`
 }
 
 // BotAgentConfig is a complete private selection. Omitted roles inherit the town
@@ -91,7 +103,11 @@ func (c Config) ForRole(role Role) Config {
 }
 
 func DefaultConfig(repo string) Config {
-	return Config{Repo: repo, MergePolicy: "bot", PollSeconds: 60, ReportSeconds: 1800, MaxCycles: 5}
+	review := true
+	return Config{Repo: repo, MergePolicy: "bot", PollSeconds: 60, ReportSeconds: 1800, MaxCycles: 5, MayoralFeatureReview: &review}
+}
+func (c Config) ReviewsFeaturesWithMayor() bool {
+	return c.MayoralFeatureReview == nil || *c.MayoralFeatureReview
 }
 func (c Config) Validate() error {
 	if err := validateAgent(c); err != nil {
@@ -125,16 +141,17 @@ func (c Config) Validate() error {
 
 // PublicConfig deliberately excludes agent environment values and command arguments.
 type PublicConfig struct {
-	Repo           string                        `json:"repo"`
-	Branch         string                        `json:"branch"`
-	MergePolicy    string                        `json:"merge_policy"`
-	MaxCycles      int                           `json:"max_cycles"`
-	Harness        string                        `json:"harness"`
-	Model          string                        `json:"model"`
-	Effort         string                        `json:"effort"`
-	HarnessVersion string                        `json:"harness_version,omitempty"`
-	BotAgents      map[Role]PublicBotAgentConfig `json:"bot_agents"`
-	Funnels        []PublicFunnelConfig          `json:"funnels,omitempty"`
+	Repo                 string                        `json:"repo"`
+	Branch               string                        `json:"branch"`
+	MergePolicy          string                        `json:"merge_policy"`
+	MaxCycles            int                           `json:"max_cycles"`
+	Harness              string                        `json:"harness"`
+	Model                string                        `json:"model"`
+	Effort               string                        `json:"effort"`
+	HarnessVersion       string                        `json:"harness_version,omitempty"`
+	BotAgents            map[Role]PublicBotAgentConfig `json:"bot_agents"`
+	Funnels              []PublicFunnelConfig          `json:"funnels,omitempty"`
+	MayoralFeatureReview bool                          `json:"mayoral_feature_review"`
 }
 
 type PublicBotAgentConfig struct {
@@ -192,27 +209,28 @@ func (a *Audit) Clean(base, head string) bool {
 }
 
 type Task struct {
-	ID          string            `json:"id"`
-	Kind        string            `json:"kind"`
-	Number      int               `json:"number,omitempty"`
-	Title       string            `json:"title"`
-	URL         string            `json:"url,omitempty"`
-	Stage       string            `json:"stage"`
-	House       Role              `json:"house"`
-	External    bool              `json:"external"`
-	Head        string            `json:"head,omitempty"`
-	Base        string            `json:"base,omitempty"`
-	Branch      string            `json:"branch,omitempty"`
-	Detail      string            `json:"detail,omitempty"`
-	Description string            `json:"description,omitempty"`
-	Updated     time.Time         `json:"updated"`
-	Audit       *Audit            `json:"audit,omitempty"`
-	Concerns    map[string]string `json:"concerns,omitempty"`
-	Cycles      int               `json:"cycles"`
-	Blocked     bool              `json:"blocked"`
-	Attempts    int               `json:"attempts"`
-	RetryAt     time.Time         `json:"retry_at,omitempty"`
-	Source      *WorkItem         `json:"source,omitempty"`
+	ID              string            `json:"id"`
+	Kind            string            `json:"kind"`
+	Number          int               `json:"number,omitempty"`
+	Title           string            `json:"title"`
+	URL             string            `json:"url,omitempty"`
+	Stage           string            `json:"stage"`
+	House           Role              `json:"house"`
+	External        bool              `json:"external"`
+	MayoralDecision string            `json:"mayoral_decision,omitempty"`
+	Head            string            `json:"head,omitempty"`
+	Base            string            `json:"base,omitempty"`
+	Branch          string            `json:"branch,omitempty"`
+	Detail          string            `json:"detail,omitempty"`
+	Description     string            `json:"description,omitempty"`
+	Updated         time.Time         `json:"updated"`
+	Audit           *Audit            `json:"audit,omitempty"`
+	Concerns        map[string]string `json:"concerns,omitempty"`
+	Cycles          int               `json:"cycles"`
+	Blocked         bool              `json:"blocked"`
+	Attempts        int               `json:"attempts"`
+	RetryAt         time.Time         `json:"retry_at,omitempty"`
+	Source          *WorkItem         `json:"source,omitempty"`
 }
 
 type FunnelSync struct {
@@ -397,5 +415,5 @@ func (c Config) Public() PublicConfig {
 	for _, funnel := range c.Funnels {
 		funnels = append(funnels, funnel.Public())
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, MayoralFeatureReview: c.ReviewsFeaturesWithMayor()}
 }

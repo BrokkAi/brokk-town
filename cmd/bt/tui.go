@@ -303,12 +303,18 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 				if task.Blocked {
 					blocked++
 				}
-				if task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
+				if task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" && task.Stage != "declined" {
 					queued++
 				}
 			}
 			add(" " + t.Config.Repo)
-			add(fmt.Sprintf("   %d working · %d queued · %d need attention · %s", busy, queued, blocked, t.LastRelease))
+			mayoral := 0
+			for _, task := range t.Tasks {
+				if task.MayoralDecision == "pending" {
+					mayoral++
+				}
+			}
+			add(fmt.Sprintf("   %d working · %d queued · %d Mayoral decisions · %d need attention · %s", busy, queued, mayoral, blocked, t.LastRelease))
 			if t.Error != "" {
 				add("   " + t.Error)
 			}
@@ -349,7 +355,7 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 		}
 		tasks := []*town.Task{}
 		for _, task := range t.Tasks {
-			if task.House == r && task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
+			if task.House == r && task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" && task.Stage != "declined" {
 				tasks = append(tasks, task)
 			}
 		}
