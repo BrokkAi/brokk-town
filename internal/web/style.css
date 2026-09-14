@@ -140,6 +140,226 @@ header {
 .header-space {
   flex: 1;
 }
+.view-switcher {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0a1710;
+}
+.view-switcher button {
+  border-color: transparent;
+  background: transparent;
+  padding: 6px 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.view-switcher button.selected,
+.view-switcher button[aria-selected="true"] {
+  color: #132312;
+  background: var(--green);
+}
+.capacity-summary {
+  color: #b5caae;
+  font: 11px var(--mono);
+  white-space: nowrap;
+}
+.operations-board,
+.operations-compact {
+  padding: 2px 0 30px;
+}
+.board-town,
+.compact-town {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #0d1e15;
+  padding: 15px;
+  margin: 0 0 14px;
+}
+.board-town > header,
+.compact-title {
+  height: auto;
+  border: 0;
+  background: transparent;
+  padding: 0 0 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.board-town h2,
+.compact-title h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+}
+.board-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 9px;
+  overflow-x: auto;
+}
+.board-workers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 0 12px;
+}
+.board-workers h3 {
+  width: 100%;
+  color: #9fb493;
+  font: 11px var(--mono);
+  letter-spacing: 1px;
+  margin: 0;
+}
+.board-worker {
+  min-width: 160px;
+  text-align: left;
+  padding: 7px 9px;
+  background: #172b1e;
+  border-color: #426340;
+}
+.board-worker.failed {
+  border-color: #955f49;
+}
+.board-worker strong,
+.board-worker small {
+  display: block;
+  font-size: 11px;
+}
+.board-worker small {
+  color: var(--muted);
+  margin-top: 4px;
+}
+.board-column {
+  min-height: 85px;
+  border-top: 2px solid #64815b;
+  padding-top: 7px;
+}
+.board-column h3 {
+  color: #b6c5ad;
+  font: 11px var(--mono);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.board-column h3 span {
+  color: var(--green);
+}
+.status-blocked,
+.status-failed,
+.status-inconclusive,
+.status-uncertain-write {
+  border-top-color: #c78261;
+}
+.status-chip {
+  display: inline-block;
+  border: 1px solid #4e6a4b;
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: #c9dfbf;
+  font: 10px var(--mono);
+}
+.status-chip.status-blocked,
+.status-chip.status-failed,
+.status-chip.status-inconclusive,
+.status-chip.status-uncertain-write,
+.status-chip.status-unknown {
+  border-color: #95664c;
+  color: #f0b596;
+}
+.status-chip.status-waiting-github {
+  border-color: #557da1;
+  color: #afd1ee;
+}
+.status-open { border-top-color: #6a8560; }
+.status-queued { border-top-color: #7a9463; }
+.status-in_progress { border-top-color: #85a961; }
+.status-review { border-top-color: #7098bd; }
+.status-ready { border-top-color: #b2c274; }
+.status-shipped { border-top-color: #59775f; }
+.status-waiting-github {
+  border-top-color: #6997bd;
+}
+.status-complete {
+  border-top-color: #58745b;
+}
+.board-task,
+.compact-task,
+.compact-worker {
+  width: 100%;
+  text-align: left;
+  border-radius: 5px;
+  margin-bottom: 6px;
+  padding: 8px;
+  background: #15281d;
+  border-color: #2b4733;
+}
+.board-task strong,
+.board-task small,
+.compact-task strong,
+.compact-task span,
+.compact-worker strong,
+.compact-worker small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-task strong,
+.compact-task strong {
+  font-size: 12px;
+  font-weight: 550;
+}
+.board-task small,
+.compact-task span,
+.compact-worker small {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 4px;
+}
+.compact-title > span {
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+.compact-workers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.compact-worker {
+  display: grid;
+  grid-template-columns: 9px 1fr;
+  column-gap: 7px;
+  align-items: center;
+  margin: 0;
+}
+.compact-worker strong,
+.compact-worker small {
+  grid-column: 2;
+}
+.compact-worker .dot {
+  grid-row: span 3;
+}
+.compact-tasks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
+}
+.compact-task {
+  margin: 0;
+  border-left: 3px solid #64815b;
+}
+.compact-task.status-blocked,
+.compact-task.status-failed,
+.compact-task.status-inconclusive,
+.compact-task.status-uncertain-write {
+  border-left-color: #c78261;
+}
+.compact-task.status-waiting-github {
+  border-left-color: #6997bd;
+}
 .badge {
   font-size: 12px;
   letter-spacing: 1px;
@@ -727,6 +947,56 @@ textarea {
   font-size: 12px;
 }
 @media (max-width: 760px) {
+  header {
+    height: auto;
+    min-height: 74px;
+    flex-wrap: wrap;
+    padding: 12px 15px;
+    gap: 8px 12px;
+  }
+  .header-space {
+    display: none;
+  }
+  .view-switcher {
+    order: 5;
+    width: 100%;
+  }
+  .view-switcher button {
+    flex: 1;
+  }
+  .capacity-summary {
+    margin-left: auto;
+  }
+  .app {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 12px 15px;
+  }
+  .sidebar nav {
+    display: flex;
+    overflow-x: auto;
+    margin-top: 8px;
+    gap: 6px;
+  }
+  .town-link {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 128px;
+    margin: 0;
+  }
+  .sidebar-bottom {
+    display: none;
+  }
+  main {
+    padding: 18px 15px 0;
+  }
+  .inspector {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
   .town-heading {
     flex-direction: column;
     align-items: flex-start;
@@ -748,6 +1018,13 @@ textarea {
   }
   .dialog-actions {
     flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
   }
 }
 @media (min-width: 1700px) {
@@ -796,8 +1073,8 @@ textarea {
 }
 @media (max-width: 760px) {
   header {
-    padding: 0 12px;
-    height: 64px;
+    padding: 10px 12px;
+    height: auto;
     gap: 9px;
   }
   .connection {
@@ -994,4 +1271,14 @@ textarea {
 }
 #all-towns {
   margin-bottom: 12px;
+}
+
+@media (max-width: 760px) {
+  .compact-workers { grid-template-columns: 1fr; }
+  .board-task strong, .board-task small,
+  .compact-task strong, .compact-task small,
+  .compact-worker strong, .compact-worker small {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
