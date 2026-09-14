@@ -90,8 +90,10 @@ destination checks:
   HTTPError.close test, reproduced from exact base 660a27d. Bifrost correctness
   policy execution panicked after 17.166s with `one semantic temporary has one
   transparent assignment source`; no policy cleanliness established.
-- Pending delivery checks: clean-commit native/npm offline packaging, ready PR
-  and terminal current-head CI. No live agents or test GitHub writes.
+- Clean commit 07fe207 passed native packaging for all four supported targets,
+  all five npm packages, and offline npm launch. Ready PR #31 links this work to
+  epic #30; current-head Linux/macOS/workflow CI delivery is tracked there.
+  No live agents, test GitHub writes, merge or release publication were used.
 
 ## Per-bot agent profiles (2026-09-10)
 
