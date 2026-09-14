@@ -145,7 +145,7 @@ func TestReconcileArrivalsRevisionAndReleaseAncestry(t *testing.T) {
 			routes[e.Cargo] = e.From + ">" + e.To
 		}
 	}
-	if routes["issue:3"] != "outside>issue" || routes["issue:4"] != "bug>issue" || routes["issue:6"] != "feature>issue" || routes["pr:5"] != "issue>review" || x.Tasks["issue:6"].External {
+	if routes["issue:3"] != "outside>hall" || routes["issue:4"] != "bug>issue" || routes["issue:6"] != "feature>hall" || routes["pr:5"] != "issue>review" || x.Tasks["issue:6"].External {
 		t.Fatal(routes)
 	}
 	task := x.Tasks["pr:5"]
@@ -360,6 +360,80 @@ func TestMergePersistsIntentAndChecksFreshEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestReviewFailuresRetryFiveTimesAndRemainOperatorRecoverable(t *testing.T) {
+	s := testStore(t, false)
+	x := setupPR(t, s, 1)
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		town.Workers[Review].Enabled = true
+		task := town.Tasks["pr:1"]
+		task.Stage, task.Audit = "queued", nil
+	})
+	failure := &ReviewAttemptError{Complete: false, ExpectedBase: baseSHA, ExpectedHead: headSHA}
+	sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{PR: 1}, failure
+	}))
+	for attempt := 1; attempt <= 5; attempt++ {
+		sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review)
+		town := s.Snapshot().Towns[x.ID]
+		task := town.Tasks["pr:1"]
+		if task.Attempts != attempt || task.Blocked != (attempt == 5) {
+			t.Fatalf("attempt %d: %+v", attempt, task)
+		}
+		if attempt < 5 && strings.Contains(task.Detail, "<missing>") {
+			t.Fatalf("detailed reviewer error exposed before retry budget exhausted: %q", task.Detail)
+		}
+	}
+	task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+	if !strings.Contains(task.Detail, "complete=false") || !strings.Contains(task.Detail, "<missing>") {
+		t.Fatalf("final failure omitted actionable evidence: %q", task.Detail)
+	}
+	if err := sup.Control(x.ID, Review, "retry", "pr:1"); err != nil {
+		t.Fatal(err)
+	}
+	task = s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+	if task.Blocked || task.Attempts != 0 || !task.RetryAt.IsZero() {
+		t.Fatalf("operator could not unblock review: %+v", task)
+	}
+}
+
+func TestCompletedNegativeReviewRoutesByOwnership(t *testing.T) {
+	for _, external := range []bool{false, true} {
+		t.Run(fmt.Sprint("external=", external), func(t *testing.T) {
+			s := testStore(t, false)
+			x := setupPR(t, s, 1)
+			negative := clean()
+			negative.Verdict = "changes_needed"
+			negative.Findings = []Finding{{ID: "new:defect", State: "open", Detail: "broken behavior"}}
+			update(t, s, func(st *State) {
+				town := st.Towns[x.ID]
+				town.Workers[Review].Enabled = true
+				task := town.Tasks["pr:1"]
+				task.Stage, task.Audit, task.External = "queued", nil, external
+			})
+			sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+				return RunResult{PR: 1, Audit: negative}, nil
+			}))
+			sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review)
+			task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+			if external {
+				if task.House != Hall || task.Stage != "awaiting_mayor" || task.MayoralDecision != "pending" {
+					t.Fatalf("external review did not reach Mayor: %+v", task)
+				}
+				if err := sup.Control(x.ID, Hall, "decline", task.ID); err != nil {
+					t.Fatal(err)
+				}
+				if got := s.Snapshot().Towns[x.ID].Tasks[task.ID]; got.Stage != "declined" {
+					t.Fatalf("Mayor could not resolve task: %+v", got)
+				}
+			} else if task.House != Issue || task.Stage != "fixes" {
+				t.Fatalf("owned review did not reach Issue Bot: %+v", task)
+			}
+		})
+	}
+}
+
 func TestSupervisorPauseFinishStopCancelAndTownIsolation(t *testing.T) {
 	s := testStore(t, false)
 	x := addTown(t, s)
@@ -458,7 +532,7 @@ func TestDemoIsIsolatedAndCompletesTheLoop(t *testing.T) {
 	go func() { done <- runDemo(ctx, s, time.Millisecond) }()
 	eventually(t, func() bool {
 		for _, e := range s.Snapshot().Events {
-			if e.From == "feature" && e.To == "issue" {
+			if e.From == "feature" && e.To == "hall" {
 				return true
 			}
 		}
@@ -474,7 +548,7 @@ func TestDemoIsIsolatedAndCompletesTheLoop(t *testing.T) {
 	for _, e := range st.Events {
 		routes[e.From+">"+e.To] = true
 	}
-	for _, r := range []string{"bug>issue", "feature>issue", "issue>review", "review>issue", "review>release", "release>outside"} {
+	for _, r := range []string{"bug>issue", "feature>hall", "issue>review", "review>issue", "review>release", "release>outside"} {
 		if !routes[r] {
 			t.Fatal("missing route", r)
 		}

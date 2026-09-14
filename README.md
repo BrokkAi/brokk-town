@@ -290,6 +290,13 @@ Animation never initiates a GitHub write. Reconnecting does not replay previousl
 seen deliveries. External PRs receive reviews but their branches are left to their
 authors; only locally recorded Town-created branches enter automatic repair.
 
+New external issues and PRs first wait at Town Hall for a durable Mayoral
+decision. **Admit** sends the work to Issue Bot or Review Bot; **Decline** keeps
+Town from acting on it without changing GitHub. Feature Bot proposals follow the
+same route by default and can be exempted in **Town Settings → External
+contributions**. The browser provides the primary decision UX; scripts may use
+`bt admit --repo OWNER/REPO --task issue:123` or `bt decline ...`.
+
 A review is bound to the exact base, head, PR description, and discussion snapshot. A suppressed
 duplicate comment is still a finding to check. Complete coverage, explicit
 resolution of every concern, and validation evidence are required for a clean
@@ -314,7 +321,8 @@ bot profiles, verification command, and policy, then run:
 
 Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
-`merge_policy`, `poll_seconds`, `report_seconds`, and `max_cycles`. The example
+`merge_policy`, `mayoral_feature_review`, `poll_seconds`, `report_seconds`, and
+`max_cycles`. The example
 lists all required values. To persist global capacity alongside the town list,
 use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
 remains accepted. When `serve --config` includes `max_workers`, that value

@@ -29,7 +29,7 @@ const workerProtocolVersion = 1
 var workerPackages = map[Role]string{
 	Bug:     "@brokkai/bug-bot@0.3.1",
 	Feature: "@brokkai/feature-bot@0.1.1",
-	Issue:   "@brokkai/issue-bot@0.5.1",
+	Issue:   "@brokkai/issue-bot@0.5.2",
 	Review:  "@brokkai/review-bot@0.2.1",
 	Release: "@brokkai/release-bot@0.5.1",
 }
@@ -39,7 +39,7 @@ var workerBotNames = map[Role]string{
 var workerCapabilities = map[Role][]string{
 	Bug:     {"run", "progress", "bug-scan"},
 	Feature: {"run", "progress", "feature-research"},
-	Issue:   {"run", "progress", "issue-result"},
+	Issue:   {"run", "progress", "issue-result", "exact-issue"},
 	Review:  {"run", "progress", "exact-revision-review"},
 	Release: {"run", "progress", "release"},
 }
@@ -71,6 +71,7 @@ type workerRequest struct {
 	Host           string             `json:"host"`
 	Agent          runner.AgentConfig `json:"agent"`
 	Verify         []string           `json:"verify,omitempty"`
+	Issue          int                `json:"issue,omitempty"`
 	PR             int                `json:"pr,omitempty"`
 	BaseSHA        string             `json:"base_sha,omitempty"`
 	HeadSHA        string             `json:"head_sha,omitempty"`

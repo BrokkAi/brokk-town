@@ -22,6 +22,7 @@
       },
       "verify": ["go", "test", "./..."],
       "merge_policy": "bot",
+      "mayoral_feature_review": true,
       "poll_seconds": 60,
       "report_seconds": 1800,
       "max_cycles": 5,

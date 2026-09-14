@@ -113,6 +113,15 @@ func validateState(s State, demo bool) error {
 			if task == nil || task.ID != key || !ValidRole(task.House) || task.Cycles < 0 || task.Attempts < 0 || (task.Head != "" && !SHA(task.Head)) || (task.Base != "" && !SHA(task.Base)) {
 				return errors.New("invalid task identity or revision")
 			}
+			if task.MayoralDecision != "" && task.MayoralDecision != "pending" && task.MayoralDecision != "admitted" && task.MayoralDecision != "declined" {
+				return errors.New("invalid Mayoral decision")
+			}
+			if task.MayoralDecision == "pending" && (task.House != Hall || task.Stage != "awaiting_mayor") {
+				return errors.New("pending Mayoral decision left Town Hall")
+			}
+			if task.MayoralDecision == "declined" && (task.House != Hall || task.Stage != "declined") {
+				return errors.New("declined Mayoral decision is not final")
+			}
 			switch task.Kind {
 			case "issue", "pr":
 				if task.Number < 1 || key != fmt.Sprintf("%s:%d", task.Kind, task.Number) {

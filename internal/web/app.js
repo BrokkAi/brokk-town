@@ -262,7 +262,7 @@ function renderCapacity() {
 }
 
 function queuedProfileText(task) {
-  if (["complete", "closed", "merged", "shipped", "implemented"].includes(task.stage)) return "";
+  if (["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(task.stage)) return "";
   return `Next profile: ${task.profile.harness} · ${task.profile.model || "default model"} · ${task.profile.effort || "default effort"}`;
 }
 function captureBoardViewport(board) {
@@ -577,7 +577,10 @@ function renderInspection() {
     const source = task.source,
       provenance = source?.provenance,
       sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
-    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${sourceSummary}<p>${esc(task.detail || "Following the next step through town.")}</p>${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
+    const mayorActions = task.mayoral_decision === "pending"
+      ? `<div class="inspector-actions"><button id="admit-task" class="primary">${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`
+      : "";
+    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${sourceSummary}<p>${esc(task.detail || "Following the next step through town.")}</p>${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${mayorActions}${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
     $("#back-house").onclick = () => {
       selectedTask = "";
       renderInspection();
@@ -585,10 +588,16 @@ function renderInspection() {
     if ($("#retry-task"))
       $("#retry-task").onclick = () =>
         command("retry", selectedHouse, selectedTask);
+    const decisionButtons = [...out.querySelectorAll("button")];
+    const admit = decisionButtons.find((button) => button.id === "admit-task"),
+      decline = decisionButtons.find((button) => button.id === "decline-task");
+    if (admit) admit.onclick = () => command("admit", "hall", selectedTask);
+    if (decline) decline.onclick = () => command("decline", "hall", selectedTask);
     return;
   }
   if (selectedHouse === "hall") {
-    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>News from repo-bot</h2><p class="muted">Repository changes, busy arrivals, and work that needs attention.</p>${
+    const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
+    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work and proposed features wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
@@ -599,6 +608,9 @@ function renderInspection() {
         .join("") ||
       '<p class="muted">The first report will arrive after the repository check.</p>'
     }`;
+    out.querySelectorAll("[data-task]").forEach((button) => {
+      button.onclick = () => { selectedTask = button.dataset.task; renderInspection(); };
+    });
     return;
   }
   const w = t.workers[selectedHouse],
