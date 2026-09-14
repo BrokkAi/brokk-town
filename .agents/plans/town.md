@@ -1,5 +1,15 @@
 # Brokk Town implementation plan
 
+## Editable external contribution policy (2026-09-14)
+
+- Town Settings exposes the persisted merge policy after onboarding, with clear
+  external-PR ownership and eligibility language. Agent-profile and policy edits
+  commit atomically through the authenticated settings API.
+- A requested Mayoral decision gate for newly observed external issues and PRs
+  requires exact issue targeting in the issue-worker protocol before Town can
+  safely admit one issue while leaving other outside work inert. Do not simulate
+  this with UI-only state; coordinate the protocol and pinned issue-bot release.
+
 ## In-app Town update notice (2026-09-14)
 
 - The service checks npm asynchronously at startup and every six hours, never in

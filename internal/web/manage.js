@@ -294,6 +294,7 @@ export function management({ api, getTown, getState, refresh }) {
     $("#settings-form").querySelectorAll("input,select,textarea,button")
       .forEach((field) => { field.disabled = false; });
     $("#settings-repo").textContent = t.config.repo;
+    $("#settings-merge-policy").value = t.config.merge_policy || "bot";
     $("#settings-success").textContent = "";
     showProfile(Object.hasOwn(profileNames, role) ? role : "");
     $("#settings-dialog").showModal();
@@ -411,7 +412,12 @@ export function management({ api, getTown, getState, refresh }) {
       settingsSaving = true;
       cancelChoices();
       try {
-        await api("/api/settings", { town: settingsTown, role, agent: readAgent() });
+        await api("/api/settings", {
+          town: settingsTown,
+          role,
+          agent: readAgent(),
+          merge_policy: $("#settings-merge-policy").value,
+        });
         if (version === settingsVersion)
           $("#settings-success").textContent = `${profileNames[role]} saved.`;
         await refresh();

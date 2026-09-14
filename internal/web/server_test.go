@@ -146,6 +146,14 @@ func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
 	if config.Agent.Model != "chosen" || config.Agent.Effort != "low" || config.Agent.Command[1] != "private-argument" {
 		t.Fatal(config)
 	}
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"all"}`, "test-key", "")
+	if r.StatusCode != http.StatusOK || s.Store.Snapshot().Towns["acme/managed"].Config.MergePolicy != "all" {
+		t.Fatal("merge policy was not updated")
+	}
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"unsafe"}`, "test-key", "")
+	if r.StatusCode != http.StatusBadRequest || s.Store.Snapshot().Towns["acme/managed"].Config.MergePolicy != "all" {
+		t.Fatal("invalid merge policy changed persisted settings")
+	}
 	r = call(t, h.URL, "GET", "/api/state", "", "test-key", "")
 	data, _ := io.ReadAll(r.Body)
 	if strings.Contains(string(data), "private-argument") || !strings.Contains(string(data), `"model":"chosen"`) {
