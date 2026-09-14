@@ -1,8 +1,6 @@
 name: Publish packages
-run-name: Release ${{ inputs.tag || github.ref_name }} (publish=${{ github.event_name == 'push' || inputs.publish }})
+run-name: Release ${{ inputs.tag }} (publish=${{ inputs.publish }})
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
@@ -10,7 +8,7 @@ on:
         required: true
         type: string
       publish:
-        description: Publish validated deliverables (false never uploads release assets or packages)
+        description: Publish validated deliverables from this exact existing tag (false never uploads release assets or packages)
         type: boolean
         default: false
 permissions:
@@ -46,7 +44,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Require exact existing tag for publication
-        if: github.event_name == 'push' || inputs.publish
+        if: inputs.publish
         env:
           RELEASE_REF: ${{ github.ref }}
         run: test "$RELEASE_REF" = "refs/tags/$RELEASE_TAG"
@@ -57,8 +55,8 @@ jobs:
       - name: Check every version before any final upload
         run: python3 scripts/release_checks.py version
       - name: Validate actual publisher without publishing
-        if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        if: inputs.publish != true
         run: python3 scripts/release_checks.py authorization
       - name: Recheck credentials, resume uploads, and finalize last
-        if: github.event_name == 'push' || inputs.publish
+        if: inputs.publish
         run: python3 scripts/publish_release.py

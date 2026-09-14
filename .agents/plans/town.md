@@ -39,6 +39,32 @@ self-signed HTTPS/mutual-TLS transport can be added without changing semantics.
   jobs completed, and release-bot `4a45936` now detects and repairs that alias
   before staging assets.
 
+## Town v0.1.0 authorization and provenance (2026-09-14)
+
+The user explicitly requested a new Town release using the external-worker
+approach. The remaining publication gate is being resolved without weakening
+destination checks:
+
+- `Publish packages` now publishes only by explicit `publish=true` dispatch from
+  an exact existing tag. A uniquely named non-final `v*` preflight tag supplies
+  the tag-only `packages-publish` environment while the workflow input remains
+  the proposed stable `v0.1.0`; no deployment-policy broadening is needed.
+- Authorization now validates GitHub contents access, all five npm package OIDC
+  exchanges and direct `createPackage` trust, then exercises the same job's
+  Sigstore authority with npm's bundled client. One clearly identified non-package
+  DSSE statement obtains a Fulcio certificate and Rekor entry; independent TUF
+  verification checks the chain, SCT, signature, inclusion proof, workflow
+  identity, repository, ref and exact commit.
+- Final npm publication explicitly requests provenance. Read-only publication
+  verification requires one SLSA v1 Fulcio/Rekor bundle for every one of the five
+  packages and independently checks its package PURL, tarball SHA-512, workflow,
+  tag ref and source commit. Missing or untrusted provenance fails; registry
+  signature/integrity checks remain in place.
+- Added regression coverage for Actions-only Sigstore execution, safe handling of
+  helper failures/evidence, publish order/flags, provenance metadata, request
+  construction and final fail-closed verification. The independent verifier was
+  also exercised against a real published Sigstore attestation and TUF root.
+
 ## Per-bot agent profiles (2026-09-10)
 
 User requested independent harness/model/reasoning choices for every bot, such as

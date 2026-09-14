@@ -35,12 +35,13 @@ archives and the Go proxy derive from the immutable source tag.
 ## Preflight: no publication
 
 Prepare on the job's unique release topic branch, fetch and merge origin/master
-when necessary, and deliver changes through a PR. Do not push a tag, dispatch
-`publish=true`, upload final release assets or packages, or bypass approvals.
-Only branch pushes trigger `CI`; `Publish packages` publishes on `v*` tag pushes
-or an explicit `publish=true` dispatch from the exact existing tag. `Release`
-is a reusable build workflow and has no publishing permissions or upload steps
-for final release assets. Actions candidate artifacts are build evidence only.
+when necessary, and deliver changes through a PR. During preparation, do not
+push a release tag, dispatch `publish=true`, upload final release assets or
+packages, or bypass approvals. Branch pushes trigger `CI`; `Publish packages`
+publishes only through an explicit `publish=true` dispatch from the exact
+existing tag. `Release` is a reusable build workflow and has no publishing
+permissions or upload steps for final release assets. Actions candidate
+artifacts are build evidence only.
 
 Run from a clean committed checkout with Go from `go.mod`, Node.js 24 and Python:
 
@@ -60,22 +61,32 @@ metadata/license/integrity validation and a real offline npm install/launch.
 and isolated demo HTTP/PTY integration; it never invokes live agents or GitHub.
 
 After the preparation PR is actually merged, fetch origin/master and detach at
-its actual merged commit in this checkout. Keep historical topic branches. Then:
+its actual merged commit in this checkout. Keep historical topic branches.
+`packages-publish` deliberately accepts only `v*` refs, so use a uniquely named
+non-final tag at that exact merged commit to obtain the environment's actual
+credentials without publishing or changing that policy:
 
 ```sh
+export RELEASE_COMMIT="$(git rev-parse HEAD)"
+export PREFLIGHT_TAG="v0.1.0-preflight.$(git rev-parse --short=8 "$RELEASE_COMMIT")"
+git tag "$PREFLIGHT_TAG" "$RELEASE_COMMIT"
+git push origin "$PREFLIGHT_TAG"
+
 gh workflow run publish-packages.yml --repo github.com/BrokkAi/brokk-town \
-  --ref master -f tag=v0.1.0 -F publish=false
+  --ref "$PREFLIGHT_TAG" -f tag=v0.1.0 -F publish=false
 ```
 
-Check the returned run's exact SHA: master can advance concurrently. A run at
-another commit cannot validate this candidate. Select the job's retained topic
-branch at the merged commit for dispatch if needed, without force-pushing.
+Check the returned run's exact SHA. The preflight ref is immutable and is not
+the release version; the workflow input remains `v0.1.0` so its candidate and
+destination checks describe the actual proposed release. A run at another commit
+cannot validate this candidate.
+
 The non-publishing path builds all deliverables before entering the actual
 `packages` publishing job in `packages-publish`. It does not require an existing
-tag, public release or registry version. It checks all version conflicts and
-uses only an asset-free disposable private GitHub draft to test contents-write
-permission, deleting the probe immediately. Deleting the probe does not
-invalidate successful evidence or remove actual release staging state.
+release tag, public release or registry version. It checks all version
+conflicts and uses only an asset-free disposable private GitHub draft to test
+contents-write permission, deleting the probe immediately. Deleting the probe
+does not invalidate successful evidence or remove actual release staging state.
 
 The npm check obtains the publishing job's GitHub OIDC identity, validates its
 commit/workflow/environment/expiry, exchanges it separately for all five
@@ -85,29 +96,32 @@ Tokens and identity documents are never printed or saved as build artifacts.
 See [npm's registry API](https://api-docs.npmjs.com/) and
 [trusted publishing](https://docs.npmjs.com/trusted-publishers/).
 
-## Current authorization blockers
+## Authorization gates
 
-**This preparation is not ready for publication.** On 2026-09-10, GitHub reported
-that `packages-publish` permits only `v*` tags, and no repository tags existed.
-An administrator must explicitly authorize a reviewed preflight branch in this
-same environment, retaining any required reviewers, before the non-publishing
-job can exercise its actual credentials. Do not create a tag to test access or
-silently broaden the deployment policy. Workflow/token changes use the PR path.
+On 2026-09-14, `packages-publish` permits only `v*` tags. The explicit-dispatch
+workflow plus the uniquely named preflight tag exercises that policy without
+broadening it. Do not create the final `v0.1.0` tag merely to test access and do
+not silently change the deployment policy. Workflow and token changes use the PR
+path.
 
-The documented prior npm trust setup is recovery evidence only. A local
-`npm trust list @brokkai/brokk-town --json` returned 401. An npm package maintainer
-must confirm all five trusted publishers permit direct publication from
-`BrokkAi/brokk-town`, `publish-packages.yml`, `packages-publish`. If npm refuses
-the trust read using exchanged OIDC tokens, provide a supported way for the
-same Actions context to inspect that permission; do not upload to test it.
+The npm check obtains the publishing job's GitHub OIDC identity, validates its
+commit/workflow/environment/expiry, exchanges it separately for all five
+package-scoped npm tokens, and reads direct-publish trust (`createPackage`)
+with those exact tokens. Staging-only permission, failed trust reads, local npm
+login state and unknown evidence fail closed. A successful token exchange alone
+is not publish authority and is never labeled as such.
 
-Sigstore authorization still needs a supported non-publishing check for both
-Fulcio and Rekor, plus independent provenance verification. The authorization
-entry point explicitly reports this unimplemented gate and prevents every final
-upload. Merely receiving an OIDC identity, reading public service metadata or
-running `npm publish --dry-run` is insufficient. Preserve provenance rather than
-turning it off to manufacture readiness. No signing probe or transparency-log
-entry was submitted during this preparation.
+Sigstore authorization is exercised with npm's bundled Sigstore client in the
+same publishing job. The helper submits one clearly identified non-publishing
+DSSE statement: Fulcio issues a short-lived signing certificate for that job's
+GitHub OIDC identity and Rekor records one transparency entry. Verification then
+reloads TUF trust material and independently checks the Fulcio chain/SCT, DSSE
+signature, inclusion proof, certificate identity, repository and exact commit.
+This is intentionally an external Sigstore destination; it is not an npm upload,
+`npm publish --dry-run`, or a metadata-only read. Final npm publication always
+requests provenance, and `published` later independently verifies one SLSA v1
+Fulcio/Rekor bundle for each of the five packages against its exact PURL,
+tarball SHA-512, workflow, tag ref and commit.
 
 ## Evidence commands
 
@@ -131,12 +145,11 @@ publishing authorization. Pending environment approval is a blocker, not success
 
 ## Publication and recovery (only after a separate publication request)
 
-Resolve every authorization blocker first. The publishing job repeats all
-version and credential checks before its first final upload. Publish the new tag
-at the prepared commit and follow `Publish packages`. If a tag is created with
-`GITHUB_TOKEN`, GitHub does not necessarily start another workflow: dispatch
-`publish-packages.yml` explicitly from that exact tag with its tag input and
-`publish=true`. Never assume an absent workflow run is successful.
+Resolve every authorization blocker first. Push the final tag at the prepared
+commit; tag pushing alone does not publish. Dispatch `publish-packages.yml`
+explicitly from that exact tag with its tag input and `publish=true`. The
+publishing job repeats every version and credential check before its first final
+upload. Never assume an absent workflow run is successful.
 
 `scripts/publish_release.py` recreates missing real staging independently of
 probe state, retains matching uploaded assets, refuses conflicts, uploads missing
@@ -160,6 +173,6 @@ python3 scripts/release_checks.py published --directory dist/candidate
 ```
 
 This verifies the exact tag commit, public finalized GitHub release, every native
-asset and all five npm packages. Independent Sigstore attestation verification
-must be added before this can certify the full destination list. A missing,
-partial or differing destination is an error even if the GitHub release exists.
+asset, all five npm packages and every package's independent Fulcio/Rekor SLSA
+provenance bundle. A missing, partial or differing destination is an error even
+if the GitHub release exists.
