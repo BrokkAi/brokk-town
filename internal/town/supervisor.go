@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type Supervisor struct {
 	GitHub    GitHub
 	Workers   Workers
 	Publisher IssuePublisher
+	Funnels   FunnelRegistry
 	Harnesses *harness.Catalog
 	mu        sync.Mutex
 	running   map[string]context.CancelFunc
@@ -39,7 +41,11 @@ type Supervisor struct {
 
 func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	publisher, _ := gh.(IssuePublisher)
-	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	registry := FunnelRegistry{}
+	if provider, ok := gh.(GitHubFunnelProvider); ok {
+		registry[ProviderID("github")] = &GitHubFunnel{Client: provider}
+	}
+	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -331,9 +337,44 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 }
 func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 	t = s.Store.Snapshot().Towns[t.ID]
+	// Funnel synchronization is source-neutral and commits typed health before
+	// legacy repository reconciliation. Existing PR/release authority remains on
+	// the mature GitHub path while issue intake migrates incrementally.
+	if len(t.Config.Funnels) > 0 {
+		if err := s.reconcileFunnels(ctx, t.ID); err != nil {
+			return err
+		}
+		t = s.Store.Snapshot().Towns[t.ID]
+	}
 	remote, err := s.GitHub.Snapshot(ctx, t.Config)
 	if err != nil {
 		return err
+	}
+	// When this repository has configured GitHub funnels, the normalized
+	// selector result is the issue inventory. PRs/releases continue through the
+	// existing exact-revision path.
+	selected := map[int]bool{}
+	hasGitHubFunnel := false
+	for _, config := range t.Config.Funnels {
+		if config.Enabled && config.Provider == ProviderID("github") && strings.EqualFold(config.Location["repository"], t.Config.Repo) {
+			hasGitHubFunnel = true
+		}
+	}
+	if hasGitHubFunnel {
+		for _, task := range t.Tasks {
+			if task.Source != nil && task.Source.Identity.Provider == ProviderID("github") && task.Source.Eligible {
+				if n, parseErr := strconv.Atoi(string(task.Source.Identity.Item)); parseErr == nil {
+					selected[n] = true
+				}
+			}
+		}
+		issues := remote.Issues[:0]
+		for _, issue := range remote.Issues {
+			if selected[issue.Number] {
+				issues = append(issues, issue)
+			}
+		}
+		remote.Issues = issues
 	}
 	remote.ObservedHeads = map[int]string{}
 	for _, task := range t.Tasks {

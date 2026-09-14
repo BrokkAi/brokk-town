@@ -19,6 +19,29 @@
   bounded, cancellable npm subprocess and asks for a restart. Offline or malformed
   registry responses are non-fatal.
 
+## Configurable source funnels (issue #34, 2026-09-14)
+
+- Add source-neutral discovery, refresh, capability, lifecycle, and receipt
+  contracts. Normalize stable `(funnel, provider, source item ID)` identity,
+  provenance/revision/cursor, eligibility, source state, explicit priority, and
+  typed incomplete/auth/rate-limit/partial/unsupported/uncertain outcomes.
+- Persist normalized source tasks, per-funnel sync health/cursors, and lifecycle
+  write intents separately from legacy GitHub PR/merge intents. Save before a
+  provider mutation; reconcile lost responses without treating absence as retry
+  authorization. Public projections omit credential references and values.
+- Put GitHub issue selection behind an adapter with query, selected issue, and
+  include/exclude label filters (#3 slice), plus configurable working/blocked
+  label mappings and revision rereads. Retain existing GitHub PR/review/release
+  authority paths during incremental migration.
+- Prove provider differences with an injected-HTTP Slack channel adapter for
+  paginated reads, reactions, bounded thread replies, read-only operation, and
+  private call-time credential resolution. Demo/tests never contact live sources.
+- Show normalized provenance, eligibility, external state, priority, revision,
+  sync time, capabilities, and typed source health through the shared snapshot,
+  browser inspector, TUI, and CLI status. Document trust and priority boundaries.
+- Validate focused fake adapters and restart/overlap/intent behavior, then run Go
+  race/vet, frontend, and integration gates before ready PR delivery.
+
 ## Versioned bot worker protocol (2026-09-14)
 
 The user requested live-upgradable external bots, accepted Unix sockets for the

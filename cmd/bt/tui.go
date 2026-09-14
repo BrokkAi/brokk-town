@@ -333,6 +333,17 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 		add("")
 		r := town.Roles[roleIndex]
 		add(" AT " + strings.ToUpper(string(r)) + "'S DOOR")
+		if r == town.Issue || r == town.Repo {
+			funnelIDs := make([]string, 0, len(t.FunnelSyncs))
+			for id := range t.FunnelSyncs {
+				funnelIDs = append(funnelIDs, string(id))
+			}
+			sort.Strings(funnelIDs)
+			for _, id := range funnelIDs {
+				sync := t.FunnelSyncs[town.FunnelID(id)]
+				add(fmt.Sprintf("   source %-14s %-10s %s", id, sync.Provider, sync.Outcome.Kind))
+			}
+		}
 		if r != town.Repo {
 			add(fmt.Sprintf(" Configure: bt settings --repo %s --role %s", t.Config.Repo, r))
 		}
@@ -348,7 +359,11 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 				add(fmt.Sprintf("   … %d more queued", len(tasks)-i))
 				break
 			}
-			add(fmt.Sprintf("   %-18s %s", task.Stage, task.Title))
+			source := ""
+			if task.Source != nil {
+				source = fmt.Sprintf(" [%s/%s; %s]", task.Source.Identity.Provider, task.Source.Identity.Funnel, task.Source.Priority.Policy)
+			}
+			add(fmt.Sprintf("   %-18s %s%s", task.Stage, task.Title, source))
 		}
 		if len(tasks) == 0 {
 			add("   Nothing waiting.")

@@ -358,6 +358,36 @@ local key in a URL fragment. `connection.json` and state snapshots are mode 0600
 Private agent commands, environment, and authentication configuration are omitted
 from public configuration snapshots for both town defaults and bot profiles;
 each bot's effective harness, model, and effort are visible.
+
+### Source funnels
+
+Optional `funnels` make issue intake source-neutral. Each named funnel declares a
+provider, validated location/filter, a local credential reference, explicit
+priority policy, overlap policy, and allowlisted lifecycle mappings. Credential
+references are resolved by adapters at request time; secret values never enter
+Town state, model prompts, events, logs, or public snapshots. Public state shows
+the safe funnel configuration and each normalized item's source identity, URL,
+revision, external state, eligibility, capabilities, priority policy, last sync,
+and typed outcome.
+
+GitHub funnels support query, `selected_issues`, and comma-separated
+`include_labels`/`exclude_labels`. Focused selections are read by issue identity
+instead of relying on search indexing. `working` and `blocked` mappings translate
+the normalized lifecycle into confirmed label changes. Slack is the second real
+adapter: it reads a configured channel through paginated Web API calls and maps
+configured lifecycle actions to reactions plus bounded thread replies. Slack
+tokens are obtained from a private resolver immediately before each request.
+Read-only funnels and empty per-transition mappings stay visibly unsupported.
+
+Lifecycle mutations use a durable intent before the provider call. A lost
+response remains `uncertain`; reconciliation is read-only and absence of a
+receipt never permits a duplicate label, reaction, comment, or thread reply.
+Incomplete reads, partial discovery, authentication failures, rate limits,
+unsupported actions, and uncertain writes remain distinct outcomes. Funnel
+declaration order is never scheduling priority. Overlapping source identities
+are retained, deduplicated, or rejected only according to the explicit overlap
+policy. Demo and tests use synthetic or fake providers and perform no live source
+or agent automation. See the complete JSON example for GitHub and Slack shapes.
 Local logs and worktrees can contain repository content; keep this directory private.
 
 If a push or merge response is lost, Town checks GitHub rather than assuming

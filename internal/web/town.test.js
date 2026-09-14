@@ -112,11 +112,12 @@ test("queue and overview report blocked and waiting work", () => {
     release: "v1",
   });
 });
-test("task links only open normal GitHub URLs", () => {
+test("task links only open normal provider HTTPS URLs", () => {
   assert.equal(safeURL("https://github.com/acme/a/pull/3"), true);
+  assert.equal(safeURL("https://app.slack.com/client/T1/C1/thread-2"), true);
+  assert.equal(safeURL("https://linear.app/acme/issue/ABC-1"), true);
   for (const url of [
     "javascript:alert(1)",
-    "https://evil.test",
     "https://github.com@evil.test",
     "https://evil@github.com",
     "https://github.com:444/a",

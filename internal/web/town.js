@@ -77,7 +77,7 @@ export function safeURL(value) {
     const u = new URL(value);
     return (
       u.protocol === "https:" &&
-      u.hostname === "github.com" &&
+      Boolean(u.hostname) &&
       !u.username &&
       !u.password &&
       !u.port

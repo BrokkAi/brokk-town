@@ -57,6 +57,14 @@ func Open(dir string, demo bool) (*Store, error) {
 						t.Workers[Feature] = &Worker{Role: Feature, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
 					}
 				}
+				if t != nil {
+					if t.FunnelIntents == nil {
+						t.FunnelIntents = map[string]*WriteIntent{}
+					}
+					if t.FunnelSyncs == nil {
+						t.FunnelSyncs = map[FunnelID]*FunnelSync{}
+					}
+				}
 			}
 			err = validateState(s.state, demo)
 		}
@@ -114,6 +122,10 @@ func validateState(s State, demo bool) error {
 				if !SHA(task.Head) || key != "commit:"+task.Head {
 					return errors.New("invalid commit identity")
 				}
+			case "source":
+				if task.Source == nil || key != "source:"+task.Source.Identity.Key() {
+					return errors.New("invalid source task identity")
+				}
 			default:
 				return errors.New("invalid task kind")
 			}
@@ -124,6 +136,11 @@ func validateState(s State, demo bool) error {
 				}
 				if !SHA(a.Base) || !SHA(a.Head) || validateAudit(a, evidence) != nil {
 					return errors.New("invalid saved audit")
+				}
+			}
+			if task.Source != nil {
+				if err := task.Source.Validate(); err != nil {
+					return errors.New("invalid funnel task")
 				}
 			}
 		}
@@ -152,6 +169,16 @@ func validateState(s State, demo bool) error {
 			}
 			if i.Kind == "repair" && (!SHA(i.NewHead) || i.Branch == "" || !filepath.IsAbs(i.Directory)) {
 				return errors.New("invalid saved repair")
+			}
+		}
+		for key, i := range t.FunnelIntents {
+			if i == nil || i.ID != key || i.Validate() != nil {
+				return errors.New("invalid funnel write intent")
+			}
+		}
+		for key, sync := range t.FunnelSyncs {
+			if sync == nil || sync.Funnel != key || sync.Provider == "" || sync.Outcome.Validate() != nil {
+				return errors.New("invalid funnel sync")
 			}
 		}
 	}
