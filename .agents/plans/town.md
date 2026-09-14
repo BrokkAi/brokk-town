@@ -42,8 +42,7 @@ self-signed HTTPS/mutual-TLS transport can be added without changing semantics.
 ## Town v0.1.0 authorization and provenance (2026-09-14)
 
 The user explicitly requested a new Town release using the external-worker
-approach. The remaining publication gate is being resolved without weakening
-destination checks:
+approach. Town v0.1.0 was published without weakening destination checks:
 
 - `Publish packages` now publishes only by explicit `publish=true` dispatch from
   an exact existing tag. A uniquely named non-final `v*` preflight tag supplies
@@ -69,6 +68,12 @@ destination checks:
   helper failures/evidence, publish order/flags, provenance metadata, request
   construction and final fail-closed verification. The independent verifier was
   also exercised against a real published Sigstore attestation and TUF root.
+- PR #35 merged the corrected npm authorization preflight at merge commit
+  `8006469e2b861513f469c4b481b551cc22ce1594`. Exact-commit preflight run
+  `34837196002` passed before the immutable `v0.1.0` tag was created. Publication
+  run `34837658974` then completed; the finalized GitHub release, four native
+  archives, launcher, four platform packages, registry bytes, and all five
+  independent SLSA/Fulcio/Rekor provenance bundles were verified publicly.
 
 ## Epic #30: simplified operations and scheduling capacity (2026-09-14)
 
