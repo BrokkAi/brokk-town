@@ -560,3 +560,11 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
 - Route completed negative reviews of external PRs back to the Mayor for an
   explicit admit/decline decision while owned PR feedback continues to Issue Bot.
 - Validate with fake workers and GitHub only; no live repository automation.
+
+## Explicit bot version upgrades (2026-09-14)
+
+- Publish the effective exact bot pins in each town's safe public configuration.
+- Show the selected bot's current pin in Settings and check npm's stable tag only
+  when the Mayor asks; never float or silently mutate a running configuration.
+- Save an explicitly selected semantic version per town and bot, then retain all
+  worker protocol, capability, reported-version, and exact-run checks.

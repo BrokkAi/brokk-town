@@ -238,17 +238,20 @@ func (s *Supervisor) Settings(id string, settings AgentSettings) error {
 // SettingsForRole changes one independent bot profile, or the town defaults when
 // role is empty. Inherit removes an override so future defaults apply again.
 func (s *Supervisor) SettingsForRole(id string, role Role, settings AgentSettings) error {
-	return s.SettingsForRoleAndPolicy(id, role, settings, nil, nil)
+	return s.SettingsForRoleAndPolicy(id, role, settings, nil, nil, nil)
 }
 
 // SettingsForRoleAndPolicy commits agent and merge-policy edits together so a
 // form submission cannot leave only half of the requested settings applied.
-func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, mayoralFeatureReview *bool) error {
+func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, mayoralFeatureReview *bool, botVersion *string) error {
 	if err := settings.validateRole(role); err != nil {
 		return err
 	}
 	if mergePolicy != nil && *mergePolicy != "bot" && *mergePolicy != "manual" && *mergePolicy != "all" {
 		return errors.New("merge policy must be bot, manual, or all")
+	}
+	if botVersion != nil && (role == "" || !workerVersionPattern.MatchString(*botVersion)) {
+		return errors.New("a bot role and semantic bot version are required")
 	}
 	return s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
@@ -261,6 +264,12 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 		if mayoralFeatureReview != nil {
 			value := *mayoralFeatureReview
 			t.Config.MayoralFeatureReview = &value
+		}
+		if botVersion != nil {
+			if t.Config.BotVersions == nil {
+				t.Config.BotVersions = map[Role]string{}
+			}
+			t.Config.BotVersions[role] = strings.TrimPrefix(*botVersion, "v")
 		}
 		switch {
 		case role == "":

@@ -44,6 +44,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/towns", s.add)
 	mux.HandleFunc("POST /api/settings", s.settings)
+	mux.HandleFunc("GET /api/bot-versions", s.botVersions)
 	mux.HandleFunc("POST /api/capacity", s.capacity)
 	mux.HandleFunc("POST /api/choices", s.choices)
 	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
@@ -221,6 +222,7 @@ type settingsInput struct {
 	Agent                town.AgentSettings `json:"agent"`
 	MergePolicy          *string            `json:"merge_policy,omitempty"`
 	MayoralFeatureReview *bool              `json:"mayoral_feature_review,omitempty"`
+	BotVersion           *string            `json:"bot_version,omitempty"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -229,11 +231,22 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.MayoralFeatureReview); err != nil {
+	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.MayoralFeatureReview, input.BotVersion); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}
 	respond(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) botVersions(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	versions, err := town.CheckBotVersions(ctx, http.DefaultClient)
+	if err != nil {
+		problem(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	respond(w, versions)
 }
 func (s *Server) choices(w http.ResponseWriter, r *http.Request) {
 	var input settingsInput

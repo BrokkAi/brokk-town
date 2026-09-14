@@ -257,7 +257,7 @@ const state = {
   towns: {
     "acme/project": {
       id: "acme/project",
-      config: { repo: "acme/project", branch: "main", bot_agents: {}, harness: "codex-acp", model: "m", effort: "medium" },
+      config: { repo: "acme/project", branch: "main", bot_agents: {}, bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1" }, harness: "codex-acp", model: "m", effort: "medium" },
       workers: {
         issue: { role: "issue", status: "working", enabled: true, task: "Implementing", logs: [], agent: { harness: "codex-acp", model: "m", effort: "medium" } },
         review: { role: "review", status: "waiting", enabled: true, next: "0001-01-01T00:00:00Z", logs: [] },

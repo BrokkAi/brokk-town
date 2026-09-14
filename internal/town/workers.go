@@ -111,7 +111,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 }
 
 func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, issue, pr int, base, head string, observe func(Progress)) (workerResult, error) {
-	bot, err := b.externalBot(ctx, role)
+	bot, err := b.externalBot(ctx, t.Config, role)
 	if err != nil {
 		return workerResult{}, err
 	}

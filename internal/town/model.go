@@ -66,6 +66,7 @@ type Config struct {
 	HarnessDefinition    *harness.Entry          `json:"harness_definition,omitempty"`
 	Agent                runner.AgentConfig      `json:"agent"`
 	BotAgents            map[Role]BotAgentConfig `json:"bot_agents,omitempty"`
+	BotVersions          map[Role]string         `json:"bot_versions,omitempty"`
 	Verify               []string                `json:"verify,omitempty"`
 	MergePolicy          string                  `json:"merge_policy"`
 	PollSeconds          int                     `json:"poll_seconds"`
@@ -121,6 +122,11 @@ func (c Config) Validate() error {
 			return fmt.Errorf("%s agent: %w", role, err)
 		}
 	}
+	for role, version := range c.BotVersions {
+		if !ValidAgentRole(role) || !workerVersionPattern.MatchString(version) {
+			return fmt.Errorf("invalid pinned bot version")
+		}
+	}
 	if !ValidRepo(c.Repo) {
 		return fmt.Errorf("repository must be OWNER/REPO")
 	}
@@ -150,6 +156,7 @@ type PublicConfig struct {
 	Effort               string                        `json:"effort"`
 	HarnessVersion       string                        `json:"harness_version,omitempty"`
 	BotAgents            map[Role]PublicBotAgentConfig `json:"bot_agents"`
+	BotVersions          map[Role]string               `json:"bot_versions"`
 	Funnels              []PublicFunnelConfig          `json:"funnels,omitempty"`
 	MayoralFeatureReview bool                          `json:"mayoral_feature_review"`
 }
@@ -415,5 +422,16 @@ func (c Config) Public() PublicConfig {
 	for _, funnel := range c.Funnels {
 		funnels = append(funnels, funnel.Public())
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, MayoralFeatureReview: c.ReviewsFeaturesWithMayor()}
+	versions := make(map[Role]string, len(AgentRoles))
+	for _, role := range AgentRoles {
+		versions[role] = c.BotVersion(role)
+	}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, MayoralFeatureReview: c.ReviewsFeaturesWithMayor()}
+}
+
+func (c Config) BotVersion(role Role) string {
+	if version := c.BotVersions[role]; version != "" {
+		return version
+	}
+	return workerDefaultVersions[role]
 }
