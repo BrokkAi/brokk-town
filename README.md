@@ -77,6 +77,12 @@ and npm:
 npm install -g @brokkai/brokk-town
 ```
 
+While the service is running, Town checks npm outside its input and render loops.
+When a newer stable release is available, the browser offers an **Upgrade Town**
+button and the TUI offers `u`. After confirmation, the service installs that exact
+version and asks for a restart. A failed or offline check never interrupts local
+operation.
+
 You can also build from source as above or install the current branch:
 
 ```sh

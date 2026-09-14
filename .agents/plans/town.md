@@ -1,5 +1,14 @@
 # Brokk Town implementation plan
 
+## In-app Town update notice (2026-09-14)
+
+- The service checks npm asynchronously at startup and every six hours, never in
+  an HTTP, input, or render loop. Stable semantic versions only are considered.
+- Browser and TUI clients offer an explicit upgrade action when a newer Town
+  release exists. The authenticated service installs that exact version with a
+  bounded, cancellable npm subprocess and asks for a restart. Offline or malformed
+  registry responses are non-fatal.
+
 ## Versioned bot worker protocol (2026-09-14)
 
 The user requested live-upgradable external bots, accepted Unix sockets for the

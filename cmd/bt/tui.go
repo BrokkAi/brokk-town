@@ -55,6 +55,7 @@ func tui(ctx context.Context, c connection) error {
 	snapshots := make(chan town.State, 1)
 	messages := make(chan string, 4)
 	commands := make(chan map[string]string, 4)
+	upgrades := make(chan struct{}, 1)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -88,6 +89,17 @@ func tui(ctx context.Context, c connection) error {
 				case messages <- message:
 				default:
 				}
+			case <-upgrades:
+				var result any
+				err := request(ctx, c, "POST", "/api/update", map[string]any{}, &result)
+				message := "Town upgraded · restart the service to use it"
+				if err != nil {
+					message = err.Error()
+				}
+				select {
+				case messages <- message:
+				default:
+				}
 			case <-ticker.C:
 			}
 		}
@@ -104,6 +116,7 @@ func tui(ctx context.Context, c connection) error {
 	overview := true
 	message := "Connecting to town service…"
 	pendingDelete := ""
+	pendingUpgrade := false
 	var keys keyDecoder
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -132,6 +145,25 @@ func tui(ctx context.Context, c connection) error {
 					return e
 				}
 				for _, key := range keys.feed(string(buffer[:n])) {
+					if pendingUpgrade {
+						pendingUpgrade = false
+						if key != "u" {
+							message = "Upgrade canceled"
+							continue
+						}
+						select {
+						case upgrades <- struct{}{}:
+							message = "Upgrading Town…"
+						default:
+							message = "An upgrade is already pending"
+						}
+						continue
+					}
+					if key == "u" && state.Update != nil {
+						pendingUpgrade = true
+						message = fmt.Sprintf("Install Town %s? press u again to confirm · any key cancels", state.Update.Latest)
+						continue
+					}
 					ids := townIDs(state)
 					if pendingDelete != "" && key != "q" && key != "ctrl+c" {
 						if key == "y" {
@@ -201,6 +233,9 @@ func tui(ctx context.Context, c connection) error {
 			role = -1
 		}
 		status := message
+		if status == "" && state.Update != nil {
+			status = fmt.Sprintf("Town %s available · press u to upgrade", state.Update.Latest)
+		}
 		if pendingDelete != "" {
 			status = "Delete " + pendingDelete + "? y / n (GitHub stays intact)"
 		}
@@ -348,6 +383,6 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 	}
 	add(message)
 	add(strings.Repeat("─", width))
-	add(" s start · p pause · x stop · a wake town · d delete · q detach")
+	add(" s start · p pause · x stop · a wake town · d delete · u upgrade · q detach")
 	return strings.Join(lines, "\n")
 }

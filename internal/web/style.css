@@ -141,6 +141,13 @@ header {
 .header-space {
   flex: 1;
 }
+.update-notice {
+  border-color: #75964f;
+  color: var(--green);
+  font-size: 12px;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
 .view-switcher {
   display: flex;
   gap: 2px;
