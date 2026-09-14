@@ -26,8 +26,12 @@ import (
 
 const workerProtocolVersion = 1
 
-var workerCommands = map[Role]string{
-	Bug: "bbb", Feature: "bfb", Issue: "bib", Review: "brv", Release: "brb",
+var workerPackages = map[Role]string{
+	Bug:     "@brokkai/bug-bot@0.3.1",
+	Feature: "@brokkai/feature-bot@0.1.1",
+	Issue:   "@brokkai/issue-bot@0.5.1",
+	Review:  "@brokkai/review-bot@0.2.1",
+	Release: "@brokkai/release-bot@0.5.1",
 }
 var workerBotNames = map[Role]string{
 	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot",
@@ -44,6 +48,7 @@ var workerVersionPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]
 type externalBot struct {
 	role    Role
 	command string
+	args    []string
 	version string
 	hash    string
 }
@@ -107,18 +112,21 @@ type workerEvent struct {
 }
 
 func (b *BotWorkers) externalBot(ctx context.Context, role Role) (externalBot, error) {
-	name, ok := workerCommands[role]
+	packageSpec, ok := workerPackages[role]
 	if !ok {
 		return externalBot{}, fmt.Errorf("unsupported worker %s", role)
 	}
+	name := "npx"
+	args := []string{"--yes", packageSpec}
 	if b.BotCommands != nil {
 		if override, ok := b.BotCommands[role]; ok && strings.TrimSpace(override) != "" {
 			name = strings.TrimSpace(override)
+			args = nil
 		}
 	}
 	path, err := exec.LookPath(name)
 	if err != nil {
-		return externalBot{}, fmt.Errorf("%s bot %q is not installed on the service PATH", role, name)
+		return externalBot{}, fmt.Errorf("start %s bot: %q is not installed on the service PATH", role, name)
 	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -128,11 +136,11 @@ func (b *BotWorkers) externalBot(ctx context.Context, role Role) (externalBot, e
 	if err != nil || !info.Mode().IsRegular() {
 		return externalBot{}, fmt.Errorf("%s bot is not a regular executable", role)
 	}
-	bot := externalBot{role: role, command: resolved}
+	bot := externalBot{role: role, command: resolved, args: args}
 	if bot.hash, err = fileHash(resolved); err != nil {
 		return externalBot{}, err
 	}
-	version, err := osrun.Run(ctx, "", nil, resolved, "version")
+	version, err := osrun.Run(ctx, "", nil, append([]string{resolved}, append(args, "version")...)...)
 	if err != nil {
 		return externalBot{}, fmt.Errorf("read %s bot version: %w", role, err)
 	}
@@ -162,7 +170,7 @@ func (b externalBot) verify(ctx context.Context) error {
 	if err := b.unchanged(); err != nil {
 		return err
 	}
-	version, err := osrun.Run(ctx, "", nil, b.command, "version")
+	version, err := osrun.Run(ctx, "", nil, append([]string{b.command}, append(b.args, "version")...)...)
 	if err != nil {
 		return fmt.Errorf("recheck %s bot version: %w", b.role, err)
 	}
@@ -196,7 +204,9 @@ func runWorker(ctx context.Context, bot externalBot, request workerRequest, obse
 	defer cancel()
 	stderr := &osrun.Tail{Capacity: 64 << 10}
 	stdout := &osrun.Tail{Capacity: 16 << 10}
-	cmd := osrun.StartCommand(serviceCtx, "", []string{bot.command, "worker", "--socket", socketPath}, nil)
+	command := append([]string{bot.command}, bot.args...)
+	command = append(command, "worker", "--socket", socketPath)
+	cmd := osrun.StartCommand(serviceCtx, "", command, nil)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err = cmd.Start(); err != nil {
 		return workerResult{}, fmt.Errorf("start %s bot worker: %w", bot.role, err)

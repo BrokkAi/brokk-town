@@ -101,24 +101,13 @@ for first-release setup, access checks, publishing, and recovery.
 
 ## Connect real repositories
 
-Install and authenticate `git`, GitHub CLI (`gh`), your chosen coding agent, and
-Brokk bot releases that advertise **Town Worker Protocol v1**. Town no longer
-compiles the bots into `bt`; each dispatch starts the installed `bbb`, `bfb`,
-`bib`, `brv`, or `brb` executable from the service PATH and communicates over a
-private Unix socket. Run `<command> version` and `<command> worker --help` to
-confirm a compatible release.
+Install and authenticate `git`, GitHub CLI (`gh`), Node.js/npm, and your chosen
+coding agent. Town does not require a separate bot installation: each dispatch
+uses `npx --yes` with an exact compatible release of bug-bot, feature-bot,
+issue-bot, review-bot, or release-bot, then communicates with it over a private
+Unix socket. Town never selects an ambient or floating bot version.
 
-Install the released Worker Protocol v1 npm distributions:
-
-```sh
-npm install -g @brokkai/bug-bot@0.3.1 \
-  @brokkai/feature-bot@0.1.1 \
-  @brokkai/issue-bot@0.5.1 \
-  @brokkai/review-bot@0.2.1 \
-  @brokkai/release-bot@0.5.1
-```
-
-Checksum-verified native bot releases are equally supported. The worker uses
+The worker uses
 standard-library HTTP/JSON, negotiates protocol and capabilities before work,
 streams contiguous progress events, and returns explicit typed results. It never
 requires Town to parse bot-private state. See
@@ -129,11 +118,10 @@ requires Node.js and `npx`. Choose another harness in Settings as described belo
 Git must already be able to clone and push your GitHub repositories; Town uses
 the current Git/gh credentials.
 
-Bot executables can be replaced while the Town service remains running. The next
-dispatch resolves PATH again and negotiates with the new service. An active
-dispatch pins its resolved path, executable hash, and reported version, then
-rechecks all three; a mid-dispatch replacement fails uncertainly and is resolved
-through durable bot state and GitHub reconciliation.
+Town resolves and hashes the `npx` executable for every dispatch and rechecks it
+and the pinned bot's reported version afterward. A mid-dispatch executable or
+version change fails uncertainly and is resolved through durable bot state and
+GitHub reconciliation.
 
 ```sh
 ./bin/bt serve --repo BrokkAi/my-project
