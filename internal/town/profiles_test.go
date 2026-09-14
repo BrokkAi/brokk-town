@@ -306,3 +306,46 @@ func TestDemoBotProfilesNeverLaunchAgents(t *testing.T) {
 	}
 	sup.schedule(context.Background())
 }
+
+func TestActivePublicProfileRemainsCapturedUntilWorkerFinishes(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		town.Initialized = true
+		town.Workers[Repo].Enabled = false
+		town.Workers[Bug].Enabled = true
+		town.Config.Agent.Model = "dispatch-model"
+		town.Config.Agent.Effort = "high"
+	})
+	entered, release := make(chan struct{}), make(chan struct{})
+	sup := NewSupervisor(s, nil, workerFunc(func(ctx context.Context, town *Town, role Role, _ func(Progress), _ *slog.Logger) (RunResult, error) {
+		close(entered)
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return RunResult{}, nil
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sup.schedule(ctx)
+	<-entered
+	model := "next-model"
+	if err := sup.SettingsForRole(x.ID, Bug, AgentSettings{Model: &model}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := s.Snapshot()
+	active := snapshot.Towns[x.ID].Workers[Bug].Agent
+	if active == nil || active.Model != "dispatch-model" || active.Effort != "high" {
+		t.Fatalf("lost dispatch profile: %+v", active)
+	}
+	if next := snapshot.Towns[x.ID].Config.Public().BotAgents[Bug]; next.Model != model {
+		t.Fatalf("next profile missing: %+v", next)
+	}
+	close(release)
+	sup.wg.Wait()
+	if s.Snapshot().Towns[x.ID].Workers[Bug].Agent != nil {
+		t.Fatal("finished worker retains active profile")
+	}
+}

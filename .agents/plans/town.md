@@ -65,6 +65,42 @@ destination checks:
   construction and final fail-closed verification. The independent verifier was
   also exercised against a real published Sigstore attestation and TUF root.
 
+## Epic #30: simplified operations and scheduling capacity (2026-09-14)
+
+- Long Board queues use viewport-relative bounded scroll areas with persistent
+  column headings, keyboard access, and scroll positions retained on live redraw.
+- Board scrollbars use recessed dark-green tracks and sage thumbs with hover
+  and active states, retaining native scrolling and system high-contrast colors.
+- User-requested name: Board and Compact display **"No Fun Dave" mode**, with
+  matching selector tooltips; the standard view names and shortcuts remain.
+- Isolated branch `codex/epic-30-operations-capacity`, based on fetched
+  `origin/master` at `660a27d`; canonical checkout remains untouched.
+- One persisted global service setting, default 4 and validated 1–64, controls
+  reserved non-reporter bot runs across towns. Reductions preserve active work;
+  increases and freed slots wake the existing scheduler. Reporter, durable issue
+  publishing and prompt-free model discovery remain outside this pool.
+- Town, Board and Compact consume the existing snapshot/SSE and command API.
+  Task stages and typed write/review evidence remain authoritative; projection
+  cannot certify GitHub outcomes. Active worker profiles are frozen at dispatch.
+- Luna ownership: browser assets/tests; CLI/TUI, demo and docs/smoke. Primary owns
+  scheduler, state/API contracts, integration and final verification.
+- Usage, spending limits and quota routing remain #6; Mjolnir stays an independent
+  ACP control plane, with no executor dependency or second scheduler introduced.
+- Implementation integrated and `make check smoke` passed: Go race/vet,
+  20 frontend behavior tests (including actual app handlers), syntax, licenses,
+  launcher and 33 packaging regressions, plus isolated CLI/API/TUI smoke.
+- Browser QA passed view switching, task/worker inspection, capacity saving,
+  persisted selection, keyboard tabs and 320/390px layouts. Fixed hidden
+  inspectors, task lookup, mobile header overlap and schedule text placement.
+- Validation uses bundled Python 3.12. Xcode Python 3.9 fails the unchanged mock
+  HTTPError.close test, reproduced from exact base 660a27d. Bifrost correctness
+  policy execution panicked after 17.166s with `one semantic temporary has one
+  transparent assignment source`; no policy cleanliness established.
+- Clean commit 07fe207 passed native packaging for all four supported targets,
+  all five npm packages, and offline npm launch. Ready PR #31 links this work to
+  epic #30; current-head Linux/macOS/workflow CI delivery is tracked there.
+  No live agents, test GitHub writes, merge or release publication were used.
+
 ## Per-bot agent profiles (2026-09-10)
 
 User requested independent harness/model/reasoning choices for every bot, such as

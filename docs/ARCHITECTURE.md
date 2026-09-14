@@ -7,8 +7,22 @@ state/commands to both clients. The service outlives client connections.
 
 A town ID is the lowercase GitHub repository slug. State is keyed by town, then
 issue/PR number or commit SHA. Branches and worktrees remain within the town.
-Four shared slots bound simultaneous non-reporter workers across repositories;
-repo reporters run separately. Each role has its own managed checkout and bot
+The service persists one global `service_config.max_workers` setting (default 4,
+validated from 1 through 64). It reserves simultaneous non-reporter workers
+across repositories; repo reporters, durable issue publishing, and prompt-free
+model discovery run separately. `state.capacity.active` is the live reservation
+count and `state.capacity.limit` is the configured limit. A demo derives active
+capacity from its simulated `working` and `pausing` workers; a live service
+reports scheduler reservations, so stale worker status cannot create a slot.
+Capacity edits are serialized with reservations. Lowering the limit cancels no
+runs and blocks new bot dispatch until usage is below the limit. Raising it and
+releasing a slot wake the scheduler immediately; every town/role remains
+exclusive. Reservations include startup and cancellation cleanup, including a
+deleted town until its worker exits. Runtime counts reset to zero on restart;
+only the configured limit is durable. Legacy state with no setting inherits 4;
+present invalid settings fail validation.
+
+Each role has its own managed checkout and bot
 state so independent houses do not share a working directory.
 
 The released bot executables remain responsible for their primary operations.
@@ -41,6 +55,34 @@ Pause disables scheduling while allowing active work to finish. Stop disables
 scheduling and cancels the worker context. The scheduler rechecks enabled state
 before entering a worker, preventing a stale scheduling snapshot from restarting
 an already-stopped house. Each worker has a deadline and a per-role next-run time.
+
+## Operator projections
+
+Town, Board, and Compact are three views over the same public snapshot and SSE
+cursor. Town keeps the animated houses and delivery paths for the selected
+repository. Board groups tasks into fixed Open, Queued, Review, Blocked, Ready,
+Shipped and Completed columns (empty columns are omitted). Drafts are Open;
+queued implementation and repair tasks stay Queued; author/check waits are
+Review. Ready review evidence and unreleased commits remain distinguishable.
+Only a confirmed `shipped` commit goes into Shipped. Merged PRs, closed work and
+implemented issues retain their exact badges in Completed.
+
+Worker cards separately show active runs and failures: a busy house does not
+prove which queued task its worker is processing. No exact task-to-session ID
+exists in the current worker progress contract. Compact lists every worker and
+task, including next-run eligibility, effective profiles and blockers. Unknown
+stages stay visibly unknown. Uncertain PR write intents are associated by PR
+identity; an issue with the same number cannot inherit a PR's intent.
+
+A selection opens the shared inspector without changing the all-town scope.
+The inspector names the repository and offers the existing controls. View and
+repository scope persist locally; SSE redraws retain task selection and keyboard
+focus by town, surface and identity. Snapshot updates never replay commands.
+Animation consumes committed events and may ease their presentation, but it
+never starts work, delays a command, or stands in for a GitHub mutation. Active
+worker profiles are frozen at dispatch in `worker.agent`; queued work shows the
+current public bot profile for its next dispatch. Completed tasks do not claim
+that today's profile describes their historical run.
 
 Town deletion marks a durable tombstone, disables scheduling, cancels queued
 issue submissions and running contexts, and filters the town and its events out
@@ -167,3 +209,20 @@ the feature study to the issue workshop. The initial inventory stays a baseline;
 repeated inventories do not replay arrivals. Existing saved towns gain an absent
 feature worker paused, preserving every other worker's settings. The closed demo
 simulates feature research and its confirmed delivery without an agent or GitHub.
+
+## ACP relationship and future execution
+
+Brokk Town is an operations view and scheduler for released Brokk bot libraries.
+It consumes ACP-compatible bot runs through those libraries; it does not depend
+on Mjolnir or `mj` as an executor and does not introduce a second ACP scheduler.
+Mjolnir remains an independent ACP control plane that can be used to run or
+inspect agents outside a town. Shared ACP conventions can improve interoperability,
+but a Town dispatch is owned by Town's durable state, worker reservation, and
+reconciliation rules.
+
+Adding a future general-purpose executor requires an explicit contract for
+ownership, cancellation, restart reconciliation, and the authority that owns
+capacity reservations. Until those rules are specified, Town keeps its fixed
+bot-role projection and does not expose programmable workflows. Usage quotas,
+budgets, and spending limits remain a separate issue-6 concern; the worker
+capacity setting is only a local concurrency bound.

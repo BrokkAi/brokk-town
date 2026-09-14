@@ -4,7 +4,8 @@ One repository, one little town. Brokk Town runs several repository towns from a
 local Go service, with an animated browser village and a compact terminal control
 panel. Each town owns its houses, queues, review loops, releases, and history.
 Branches and private worktrees belong to their repository's town. Your machine
-hosts the towns and shares four agent worker slots between them.
+hosts the towns and shares a configurable pool of agent worker slots between
+them (four by default, from one to 64).
 
 The browser shows worker houses, wheelbarrows carrying completed handoffs, trucks
 bringing external issues and PRs, and shipments leaving the release depot. Visit
@@ -35,13 +36,36 @@ Open the browser address printed by the service. In another terminal:
 
 Demo mode uses an isolated state directory and simulated activity in two towns.
 It never calls GitHub or launches agents. Orchard cycles through bug and feature discovery,
-implementation, review, repair, merge, release, and external arrivals. Paper-trail
-illustrates a quiet neighboring repository. Pause a house to hold its next step.
+implementation, review, repair, merge, release, and external arrivals. The initial
+board includes blocked, inconclusive, uncertain-write, queued, ready, and shipped
+fixtures, with active worker profiles available to inspect. Paper-trail illustrates
+a neighboring repository with a failed watchtower. Pause a house to hold its next step.
 
 The browser and TUI attach to the same service. Closing either leaves workers
 running. Stop the foreground service with Ctrl+C; it cancels and waits for workers
 before releasing the state lock. `bt` without a command opens the TUI of an
 already-running service. Use `bt web` to print its browser address again.
+
+The browser header switches among **Town**, **Board**, and **Compact** without
+restarting. Town keeps the animated houses first-class; Board groups durable work
+into fixed workflow columns with bounded, independently scrollable task lists;
+Compact lists worker activity, profiles, scheduling
+eligibility and tasks. Select **All towns** or a repository in the sidebar to
+change scope. View and scope survive reloads. Cards and rows open the shared
+inspector and controls, retaining repository context across SSE updates. Board
+column headings stay visible while scrolling; live updates preserve each column’s
+scroll position.
+
+Use **T**, **B**, or **C** to switch views, **0** for all towns, and **1–7** for
+houses. The view tabs also support arrow keys, Home and End. Tab/Enter open cards
+and controls; Escape closes the inspector. Narrow screens stack operations
+content and reduced-motion preferences keep the animated Town usable.
+
+Blocked, failed, inconclusive, uncertain-write and GitHub-waiting states retain
+separate labels. Active worker cards do not imply every task at that house is
+running. Merged PRs and implemented/closed tasks remain distinct from shipped
+commits; only release ancestry confirmed by repository reconciliation can mark
+a commit shipped. Columns, prompts and transitions are not programmable.
 
 ## Installation and releases
 
@@ -130,11 +154,19 @@ permissions. Use an isolated account or machine for repositories you don't trust
 ./bin/bt pause --repo BrokkAi/my-project --role all
 ./bin/bt stop --repo BrokkAi/my-project --role issue
 ./bin/bt status
+# Change the global pool; status also reports active and limit capacity.
+./bin/bt capacity --max-workers 2
 ```
 
 Pause finishes active work and stops scheduling more. Stop also cancels active
 work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
 uncertain external writes retain their saved intent and are reconciled first.
+
+Capacity is a persisted service setting shared by every town. It reserves only
+non-reporter bot runs; repo-bot, issue publishing, and prompt-free model choice
+discovery stay outside the pool. Lowering the limit lets current work finish and
+holds new dispatches until a slot is free. `bt capacity` requires `--max-workers N`,
+where `N` is an integer from 1 through 64.
 
 ## Town settings, requests, and deletion
 
@@ -284,10 +316,14 @@ bot profiles, verification command, and policy, then run:
 ./bin/bt serve --config /path/to/towns.json
 ```
 
-Configuration is a JSON array. Each entry supplies `repo`, optional `branch` and
+Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
 `merge_policy`, `poll_seconds`, `report_seconds`, and `max_cycles`. The example
-lists all required values. Town
+lists all required values. To persist global capacity alongside the town list,
+use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
+remains accepted. When `serve --config` includes `max_workers`, that value
+overrides the persisted service setting in the same atomic state update; an
+array config without it preserves the saved limit. Town
 uses the repository's default branch when omitted; an initialized town's branch
 cannot be changed in place. Omitted towns are retained when loading a config.
 Agent configuration uses acp-go's `command`, `environment`, `auth_method`, `mode`, `model`, and `effort` fields.

@@ -22,6 +22,13 @@
         ><span id="connection">Connecting</span>
       </div>
       <span id="mode" class="badge" hidden>DEMO</span>
+      <div id="view-switcher" class="view-switcher" role="tablist" aria-label="View">
+        <button type="button" data-view="town" role="tab" aria-selected="true">Town</button>
+        <button type="button" data-view="board" role="tab" aria-selected="false" title="&quot;No Fun Dave&quot; mode — Board">Board</button>
+        <button type="button" data-view="compact" role="tab" aria-selected="false" title="&quot;No Fun Dave&quot; mode — Compact">Compact</button>
+      </div>
+      <span id="capacity-summary" class="capacity-summary" role="status"></span>
+      <button id="capacity-settings" class="quiet" type="button">Capacity</button>
       <div class="header-space"></div>
       <button id="motion" class="quiet" aria-pressed="false">Motion on</button
       ><button id="new-town">＋ New town</button>
@@ -67,7 +74,10 @@
             running.</span
           >
         </div>
+        <p id="operations-mode" class="eyebrow" hidden>"No Fun Dave" mode</p>
         <section id="overview" aria-label="All repository towns"></section>
+        <section id="board" class="operations-board" aria-label="Operations board" hidden></section>
+        <section id="compact" class="operations-compact" aria-label="Compact operations view" hidden></section>
         <section class="world" aria-label="Agent town">
           <canvas
             id="world"
@@ -100,7 +110,7 @@
       </main>
       <aside id="inspector" class="inspector" aria-label="Selected house">
         <div class="inspector-top">
-          <span class="eyebrow">HOUSE INSPECTOR</span
+          <span class="eyebrow" id="inspector-town">HOUSE INSPECTOR</span
           ><button
             id="close-inspector"
             class="quiet"
@@ -161,6 +171,21 @@
         ><input id="token-input" type="password" autocomplete="off" required />
         <div class="dialog-actions">
           <button class="primary">Connect</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="capacity-dialog">
+      <form id="capacity-form">
+        <div class="eyebrow">TOWN OPERATIONS</div>
+        <h2>Worker capacity</h2>
+        <p class="muted">Set the maximum number of active bot workers across all towns. Lowering the limit lets active work finish before more bots start. Reporters and issue publishing use separate capacity.</p>
+        <label for="capacity-input">Maximum active workers</label>
+        <input id="capacity-input" name="max_workers" type="number" min="1" max="64" step="1" required />
+        <p id="capacity-current" class="muted" role="status"></p>
+        <div id="capacity-error" class="form-error" role="alert"></div>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-capacity" class="quiet">Cancel</button>
+          <button type="submit" class="primary">Save capacity</button>
         </div>
       </form>
     </dialog>
@@ -346,6 +371,7 @@
       <p><kbd>1</kbd>–<kbd>5</kbd> Visit agent houses</p>
       <p><kbd>6</kbd> Read the town hall reports</p>
       <p><kbd>7</kbd> Visit Feature Bot’s study</p>
+      <p><kbd>T</kbd> Town · <kbd>B</kbd> Board · <kbd>C</kbd> Compact</p>
       <p><kbd>Esc</kbd> Close a panel</p>
       <p>
         Click a delivery or queued task to inspect its contents. Pause lets

@@ -51,6 +51,17 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
 
         wait_for(lambda: len(snapshot()['towns']) == 2)
         assert snapshot()['demo'] is True
+        initial_capacity = snapshot()['capacity']
+        assert initial_capacity['limit'] == 4 and initial_capacity['active'] >= 0
+        capacity_cli = subprocess.check_output([binary, 'capacity', '--demo',
+            '--state-dir', directory, '--max-workers', '2'], text=True)
+        assert 'limit 2' in capacity_cli
+        assert snapshot()['service_config']['max_workers'] == 2
+        assert snapshot()['capacity']['limit'] == 2
+        invalid_capacity = subprocess.run([binary, 'capacity', '--demo',
+            '--state-dir', directory, '--max-workers', '65'],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert invalid_capacity.returncode != 0 and '--max-workers' in invalid_capacity.stderr
         for action in ['pause', 'start']:
             subprocess.run([binary, action, '--demo', '--state-dir', directory,
                             '--repo', 'BrokkAi/orchard', '--role', 'feature'],
@@ -199,6 +210,8 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         conn = json.loads(conn_path.read_text())
         state = snapshot()
         assert len(state['towns']) == 1
+        assert state['service_config']['max_workers'] == 2
+        assert state['capacity']['limit'] == 2
         assert state['towns']['brokkai/orchard']['config'] == managed['config']
         assert state['towns']['brokkai/orchard']['requests'][receipt['id']]['status'] == 'confirmed'
         saved = json.loads((root / 'demo' / 'state.json').read_text())
