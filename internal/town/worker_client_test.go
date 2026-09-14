@@ -170,8 +170,9 @@ func TestDefaultWorkersUseExactPinnedNpxPackages(t *testing.T) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TOWN_NPX_CAPTURE", capture)
 	workers := &BotWorkers{}
-	for role, packageSpec := range workerPackages {
-		bot, err := workers.externalBot(context.Background(), role)
+	for role, packageName := range workerPackageNames {
+		packageSpec := packageName + "@" + workerDefaultVersions[role]
+		bot, err := workers.externalBot(context.Background(), Config{}, role)
 		if err != nil {
 			t.Fatalf("resolve %s: %v", role, err)
 		}
@@ -183,10 +184,16 @@ func TestDefaultWorkersUseExactPinnedNpxPackages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, packageSpec := range workerPackages {
+	for role, packageName := range workerPackageNames {
+		packageSpec := packageName + "@" + workerDefaultVersions[role]
 		if !strings.Contains(string(data), "--yes "+packageSpec+" version\n") {
 			t.Fatalf("missing pinned invocation for %s: %s", packageSpec, data)
 		}
+	}
+	custom := Config{BotVersions: map[Role]string{Issue: "9.8.7"}}
+	bot, err := workers.externalBot(context.Background(), custom, Issue)
+	if err != nil || !reflect.DeepEqual(bot.args, []string{"--yes", "@brokkai/issue-bot@9.8.7"}) {
+		t.Fatalf("saved bot pin was not used: %+v %v", bot, err)
 	}
 }
 

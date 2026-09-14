@@ -112,6 +112,10 @@ coding agent. Town does not require a separate bot installation: each dispatch
 uses `npx --yes` with an exact compatible release of bug-bot, feature-bot,
 issue-bot, review-bot, or release-bot, then communicates with it over a private
 Unix socket. Town never selects an ambient or floating bot version.
+Each bot's Settings panel shows its current pin. **Check for bot update** reads
+npm's stable tag, and **Use VERSION** stages that exact version for the Mayor to
+save. The pin changes only for that town and takes effect on the bot's next run;
+capability and reported-version checks still run before any repository work.
 
 The worker uses
 standard-library HTTP/JSON, negotiates protocol and capabilities before work,
