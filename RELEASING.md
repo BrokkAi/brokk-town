@@ -89,10 +89,11 @@ contents-write permission, deleting the probe immediately. Deleting the probe
 does not invalidate successful evidence or remove actual release staging state.
 
 The npm check obtains the publishing job's GitHub OIDC identity, validates its
-commit/workflow/environment/expiry, exchanges it separately for all five
-package-scoped npm tokens and reads direct-publish trust (`createPackage`).
-Staging-only permission, failed trust reads and unknown evidence fail closed.
-Tokens and identity documents are never printed or saved as build artifacts.
+commit/workflow/environment/expiry, and exchanges it separately for all five
+package-scoped npm tokens. npm does not permit an OIDC exchange token to read
+package-governance trust configuration, so direct-versus-staged permission is
+enforced by the registry on publication and cannot be proven by a non-publishing
+request. Tokens and identity documents are never printed or saved as build artifacts.
 See [npm's registry API](https://api-docs.npmjs.com/) and
 [trusted publishing](https://docs.npmjs.com/trusted-publishers/).
 
@@ -105,11 +106,12 @@ not silently change the deployment policy. Workflow and token changes use the PR
 path.
 
 The npm check obtains the publishing job's GitHub OIDC identity, validates its
-commit/workflow/environment/expiry, exchanges it separately for all five
-package-scoped npm tokens, and reads direct-publish trust (`createPackage`)
-with those exact tokens. Staging-only permission, failed trust reads, local npm
-login state and unknown evidence fail closed. A successful token exchange alone
-is not publish authority and is never labeled as such.
+commit/workflow/environment/expiry, and exchanges it separately for all five
+package-scoped npm tokens. npm's governance API requires maintainer credentials
+and returns 401 for these deliberately narrow exchange tokens. The exchange is
+therefore treated as identity/package-scope evidence, not mislabeled as proof of
+direct-publish permission; the first registry upload remains the direct-permission
+gate. Local npm login state is ignored.
 
 Sigstore authorization is exercised with npm's bundled Sigstore client in the
 same publishing job. The helper submits one clearly identified non-publishing

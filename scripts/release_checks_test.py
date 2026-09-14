@@ -74,17 +74,6 @@ class ReleaseChecks(unittest.TestCase):
             with self.assertRaises(ValueError):
                 checks.successful_run(run, "a" * 40, invalid, "workflow_dispatch")
 
-    def test_staging_only_or_wrong_workflow_trust_is_not_direct_publish_authorization(self):
-        trust = {"type": "github", "claims": {"repository": checks.REPO,
-                 "workflow_ref": {"file": checks.WORKFLOW}, "environment": checks.ENVIRONMENT},
-                 "permissions": ["createPackage"]}
-        checks.validate_trust([trust])
-        for change in ({"permissions": ["createStagedPackage"]},
-                       {"claims": dict(trust["claims"], environment="other")},
-                       {"claims": dict(trust["claims"], workflow_ref={"file": "ci.yml"})}):
-            with self.assertRaises(ValueError):
-                checks.validate_trust([dict(trust, **change)])
-
     def test_npm_exchange_accepts_epoch_and_iso_expiry(self):
         now = datetime.now(timezone.utc)
         expected = {"token_type": "oidc", "token": "secret"}
@@ -97,6 +86,17 @@ class ReleaseChecks(unittest.TestCase):
         exchange = {"token_type": "oidc", "token": "secret", "expires": 0}
         with self.assertRaises(ValueError):
             checks.valid_npm_exchange(exchange)
+
+    def test_npm_authorization_uses_only_package_exchange_endpoint(self):
+        exchange = {"token_type": "oidc", "token": "secret",
+                    "expires": int(datetime.now(timezone.utc).timestamp() + 300)}
+        with patch.object(checks, "oidc_identity", return_value="identity"), \
+                patch.object(checks, "request_json", return_value=exchange) as request:
+            checks.npm_authorization("a" * 40)
+        self.assertEqual(request.call_count, len(checks.NPM_NAMES))
+        for call, name in zip(request.call_args_list, checks.NPM_NAMES):
+            self.assertIn("/oidc/token/exchange/package/", call.args[0])
+            self.assertEqual(call.args[1:], ("identity", "POST"))
 
     def test_oidc_must_bind_unexpired_identity_to_commit_and_environment(self):
         now = datetime.now(timezone.utc).timestamp()
