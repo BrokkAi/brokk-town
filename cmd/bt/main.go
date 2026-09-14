@@ -71,7 +71,7 @@ func run(ctx context.Context, args []string) error {
 	repo := fs.String("repo", "", "GitHub OWNER/REPO")
 	role := fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls; omit for town defaults in settings")
 	task := fs.String("task", "", "task ID for retry")
-	config := fs.String("config", "", "optional JSON array of town configs (serve only)")
+	config := fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
 	agentHarness := fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
 	harnessVersion := fs.String("harness-version", "", "select an exact catalog version (add/settings)")
 	refreshHarnesses := fs.Bool("refresh", false, "refresh the official ACP registry (harnesses)")
@@ -83,8 +83,9 @@ func run(ctx context.Context, args []string) error {
 	title := fs.String("title", "", "GitHub issue title (request)")
 	bodyFile := fs.String("body-file", "", "issue description file, or - for stdin (request)")
 	requestID := fs.String("request-id", "", "saved submission ID (request/check-request)")
+	maxWorkers := fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
+		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -105,6 +106,21 @@ func run(ctx context.Context, args []string) error {
 	}
 	if command == "serve" {
 		return serve(ctx, abs, *listen, *demo, *config, *repo)
+	}
+	if command == "capacity" {
+		if *maxWorkers < 1 || *maxWorkers > town.MaximumMaxWorkers {
+			return fmt.Errorf("--max-workers is required and must be between 1 and %d", town.MaximumMaxWorkers)
+		}
+		conn, err := readConnection(abs)
+		if err != nil {
+			return fmt.Errorf("town service is not available; run bt serve (or bt serve --demo): %w", err)
+		}
+		var capacity town.Capacity
+		if err := request(ctx, conn, "POST", "/api/capacity", town.ServiceConfig{MaxWorkers: *maxWorkers}, &capacity); err != nil {
+			return err
+		}
+		fmt.Printf("Capacity: %d active · limit %d\n", capacity.Active, capacity.Limit)
+		return nil
 	}
 	agent := map[string]any{}
 	roleSet := false
@@ -302,19 +318,21 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		if e != nil {
 			return e
 		}
-		var configs []town.Config
-		d := json.NewDecoder(strings.NewReader(string(data)))
-		d.DisallowUnknownFields()
-		if e = d.Decode(&configs); e != nil {
+		configs, maxWorkers, e := decodeConfigFile(data)
+		if e != nil {
 			return e
-		}
-		if d.Decode(new(any)) != io.EOF {
-			return errors.New("expected one config array")
 		}
 		if demo {
 			return errors.New("real config is not accepted in demo mode")
 		}
 		if e = store.Update(func(s *town.State) error {
+			if maxWorkers != nil {
+				cfg := town.ServiceConfig{MaxWorkers: *maxWorkers}
+				if err := cfg.Validate(); err != nil {
+					return err
+				}
+				s.ServiceConfig = cfg
+			}
 			for _, cfg := range configs {
 				if err := cfg.Validate(); err != nil {
 					return err
@@ -407,4 +425,54 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		return nil
 	}
 	return err
+}
+
+// decodeConfigFile accepts the original JSON array and the current object form
+// with one global max_workers value. Keeping the array form means existing town
+// files remain usable while the object form can persist service capacity beside
+// the town list.
+func decodeConfigFile(data []byte) ([]town.Config, *int, error) {
+	trimmed := strings.TrimSpace(string(data))
+	if strings.HasPrefix(trimmed, "[") {
+		var configs []town.Config
+		d := json.NewDecoder(strings.NewReader(trimmed))
+		d.DisallowUnknownFields()
+		if err := d.Decode(&configs); err != nil {
+			return nil, nil, err
+		}
+		if d.Decode(new(any)) != io.EOF {
+			return nil, nil, errors.New("expected one config array")
+		}
+		return configs, nil, nil
+	}
+	var file struct {
+		MaxWorkers json.RawMessage `json:"max_workers"`
+		Towns      []town.Config   `json:"towns"`
+	}
+	d := json.NewDecoder(strings.NewReader(trimmed))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&file); err != nil {
+		return nil, nil, err
+	}
+	if d.Decode(new(any)) != io.EOF {
+		return nil, nil, errors.New("expected one config object")
+	}
+	if file.Towns == nil {
+		return nil, nil, errors.New("config object requires a towns array")
+	}
+	var limit *int
+	if len(file.MaxWorkers) > 0 {
+		if string(file.MaxWorkers) == "null" {
+			return nil, nil, errors.New("max_workers cannot be null")
+		}
+		var value int
+		if err := json.Unmarshal(file.MaxWorkers, &value); err != nil {
+			return nil, nil, errors.New("max_workers must be an integer")
+		}
+		if err := (town.ServiceConfig{MaxWorkers: value}).Validate(); err != nil {
+			return nil, nil, err
+		}
+		limit = &value
+	}
+	return file.Towns, limit, nil
 }

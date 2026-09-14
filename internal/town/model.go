@@ -140,15 +140,16 @@ type PublicBotAgentConfig struct {
 	Inherited      bool   `json:"inherited"`
 }
 type Worker struct {
-	Role    Role      `json:"role"`
-	Enabled bool      `json:"enabled"`
-	Status  string    `json:"status"`
-	Phase   string    `json:"phase"`
-	Task    string    `json:"task"`
-	Error   string    `json:"error,omitempty"`
-	Updated time.Time `json:"updated"`
-	Next    time.Time `json:"next,omitempty"`
-	Logs    []Log     `json:"logs"`
+	Agent   *PublicBotAgentConfig `json:"agent,omitempty"`
+	Role    Role                  `json:"role"`
+	Enabled bool                  `json:"enabled"`
+	Status  string                `json:"status"`
+	Phase   string                `json:"phase"`
+	Task    string                `json:"task"`
+	Error   string                `json:"error,omitempty"`
+	Updated time.Time             `json:"updated"`
+	Next    time.Time             `json:"next,omitempty"`
+	Logs    []Log                 `json:"logs"`
 }
 type Log struct {
 	At    time.Time `json:"at"`
@@ -254,16 +255,39 @@ type Town struct {
 	LastRelease string                   `json:"last_release"`
 	Error       string                   `json:"error,omitempty"`
 }
+
+// ServiceConfig governs the single local scheduler across every town.
+const DefaultMaxWorkers = 4
+const MaximumMaxWorkers = 64
+
+type ServiceConfig struct {
+	MaxWorkers int `json:"max_workers"`
+}
+
+func (c ServiceConfig) Validate() error {
+	if c.MaxWorkers < 1 || c.MaxWorkers > MaximumMaxWorkers {
+		return fmt.Errorf("max_workers must be between 1 and %d", MaximumMaxWorkers)
+	}
+	return nil
+}
+
+type Capacity struct {
+	Active int `json:"active"`
+	Limit  int `json:"limit"`
+}
+
 type State struct {
-	Format int              `json:"format"`
-	Seq    uint64           `json:"seq"`
-	Demo   bool             `json:"demo"`
-	Towns  map[string]*Town `json:"towns"`
-	Events []Event          `json:"events"`
+	ServiceConfig ServiceConfig    `json:"service_config"`
+	Capacity      *Capacity        `json:"capacity,omitempty"`
+	Format        int              `json:"format"`
+	Seq           uint64           `json:"seq"`
+	Demo          bool             `json:"demo"`
+	Towns         map[string]*Town `json:"towns"`
+	Events        []Event          `json:"events"`
 }
 
 func NewState(demo bool) State {
-	return State{Format: 1, Demo: demo, Towns: map[string]*Town{}, Events: []Event{}}
+	return State{ServiceConfig: ServiceConfig{MaxWorkers: DefaultMaxWorkers}, Format: 1, Demo: demo, Towns: map[string]*Town{}, Events: []Event{}}
 }
 func (s *State) Add(c Config) (*Town, error) {
 	if err := c.Validate(); err != nil {

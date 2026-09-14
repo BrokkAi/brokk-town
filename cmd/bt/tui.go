@@ -238,7 +238,13 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 	if s.Demo {
 		mode = "DEMO · simulated"
 	}
-	add(" BROKK TOWN                                      " + mode)
+	active, limit := 0, town.DefaultMaxWorkers
+	if s.Capacity != nil {
+		active, limit = s.Capacity.Active, s.Capacity.Limit
+	} else if s.ServiceConfig.MaxWorkers > 0 {
+		limit = s.ServiceConfig.MaxWorkers
+	}
+	add(fmt.Sprintf(" BROKK TOWN                         %d/%d workers   %s", active, limit, mode))
 	add(strings.Repeat("─", width))
 	ids := townIDs(s)
 	if len(ids) == 0 {

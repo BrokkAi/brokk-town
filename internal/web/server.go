@@ -31,6 +31,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/towns", s.add)
 	mux.HandleFunc("POST /api/settings", s.settings)
+	mux.HandleFunc("POST /api/capacity", s.capacity)
 	mux.HandleFunc("POST /api/choices", s.choices)
 	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
 	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
@@ -244,4 +245,17 @@ func (s *Server) checkRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
+	var input town.ServiceConfig
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	if err := s.Supervisor.SetCapacity(input.MaxWorkers); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	respond(w, s.Store.Snapshot().Capacity)
 }
