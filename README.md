@@ -70,10 +70,11 @@ a commit shipped. Columns, prompts and transitions are not programmable.
 ## Installation and releases
 
 Source is published at [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town).
-The bootstrap prerelease is available on npm:
+The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.0)
+and npm:
 
 ```sh
-npm install -g @brokkai/brokk-town@next
+npm install -g @brokkai/brokk-town
 ```
 
 You can also build from source as above or install the current branch:
@@ -84,8 +85,8 @@ go install github.com/BrokkAi/brokk-town/cmd/bt@master
 
 The release pipeline builds checksum-verified Linux/macOS archives for amd64 and
 arm64, plus `@brokkai/brokk-town` and four native npm packages. All packages carry
-the project license, attribution, and complete third-party notices. The initial `0.1.0-rc.1` npm bootstrap is published. After the first stable GitHub
-release, the supported installer commands are:
+the project license, attribution, and complete third-party notices. The supported
+installer commands are:
 
 ```sh
 sh install.sh                       # From a checkout; defaults to ~/.local/bin
