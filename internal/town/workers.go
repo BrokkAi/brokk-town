@@ -20,6 +20,26 @@ type BotWorkers struct {
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
 }
 
+// ReviewAttemptError means the reviewer did not produce evidence Town can use.
+// It is retryable, but it is not a negative review of the pull request.
+type ReviewAttemptError struct {
+	Complete                   bool
+	ExpectedBase, ExpectedHead string
+	ReturnedBase, ReturnedHead string
+}
+
+func (e *ReviewAttemptError) Error() string {
+	return fmt.Sprintf("reviewer returned unusable evidence: complete=%t expected=%s/%s returned=%s/%s",
+		e.Complete, e.ExpectedBase, e.ExpectedHead, emptyRevision(e.ReturnedBase), emptyRevision(e.ReturnedHead))
+}
+
+func emptyRevision(value string) string {
+	if value == "" {
+		return "<missing>"
+	}
+	return value
+}
+
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (RunResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Hour)
 	defer cancel()
@@ -81,7 +101,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 		}
 		review := workerResult.Review
 		if !review.Complete || review.ExactBase != task.Base || review.ExactHead != task.Head {
-			return result, fmt.Errorf("no completed review for the exact base/head revision")
+			return result, &ReviewAttemptError{Complete: review.Complete, ExpectedBase: task.Base, ExpectedHead: task.Head, ReturnedBase: review.ExactBase, ReturnedHead: review.ExactHead}
 		}
 		observe(Progress{"certifying", "Checking all outstanding findings on this revision"})
 		result.Audit, err = b.certify(ctx, t, task, review.Findings, log)

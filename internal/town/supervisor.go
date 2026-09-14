@@ -261,6 +261,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			result, err = s.Workers.Run(ctx, t, r, observe, log)
 		}
 	}()
+	if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+		log.Error("worker attempt failed", "error", err)
+	}
 	close(updates)
 	close(progress)
 	<-done
@@ -280,7 +283,13 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		if !w.Enabled {
 			w.Status = "paused"
 		}
-		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+		reviewRetrying := err != nil && r == Review && result.PR > 0
+		if reviewRetrying {
+			if task := current.Tasks[fmt.Sprintf("pr:%d", result.PR)]; task != nil {
+				reviewRetrying = task.Attempts+1 < 5
+			}
+		}
+		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil && !reviewRetrying {
 			w.Status = "failed"
 			w.Error = err.Error()
 			w.Task = "Work paused: " + err.Error()
@@ -299,8 +308,20 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 				if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 					task.Attempts++
 					task.RetryAt = s.now().Add(15 * time.Minute)
-					task.Detail = err.Error()
-					task.Blocked = task.Attempts >= 3
+					limit := 3
+					if r == Review {
+						limit = 5
+					}
+					task.Blocked = task.Attempts >= limit
+					if task.Blocked {
+						task.Detail = err.Error()
+					} else if r == Review {
+						task.Detail = fmt.Sprintf("Reviewer attempt %d of %d did not complete; retry scheduled.", task.Attempts, limit)
+						w.Task = task.Detail
+						w.Error = ""
+					} else {
+						task.Detail = err.Error()
+					}
 				} else if result.Audit != nil && task.Head == result.Audit.Head && task.Base == result.Audit.Base && task.Description == result.Audit.Description {
 					task.Audit = result.Audit
 					if task.Concerns == nil {
@@ -317,8 +338,11 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 						st.Move(current, task, "ready", Review, "Review complete: ready for merge checks", s.now())
 					case "changes_needed":
 						if task.External {
-							task.Stage = "awaiting_author"
-							task.Detail = "Review feedback is ready for the external PR author."
+							task.Stage = "awaiting_mayor"
+							task.House = Hall
+							task.MayoralDecision = "pending"
+							task.Detail = "Review found changes are needed in this external PR. Decide whether Town should review it again or decline it."
+							st.Event(t.ID, "decision", "review", "hall", task.ID, "External PR needs a Mayoral decision: "+task.Title, s.now())
 						} else {
 							st.Move(current, task, "fixes", Issue, "Review feedback delivered to issue-bot", s.now())
 						}

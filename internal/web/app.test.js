@@ -310,7 +310,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements.world.hidden, true);
   assert.equal(elements.compact.hidden, true);
   const boardLists = elements.board.querySelectorAll("[data-board-list]");
-  assert.equal(boardLists.length, 3, "board exposes each populated column as its own list");
+  assert.equal(boardLists.length, 4, "board exposes each populated column as its own list");
   const queuedList = boardLists.find((list) => list.dataset.boardList.endsWith(":queued"));
   const reviewList = boardLists.find((list) => list.dataset.boardList.endsWith(":review"));
   queuedList.scrollTop = 113;

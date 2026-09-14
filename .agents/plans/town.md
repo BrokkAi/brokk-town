@@ -549,3 +549,14 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   unique PR, and validate the merged commit with a `publish=false` workflow run.
 - Do not create the final v0.1.2 tag, upload assets, publish npm packages, or
   dispatch the publishing path during this preflight phase.
+
+## Review attempt recovery (2026-09-14)
+
+- Treat incomplete or revision-mismatched reviewer output as a failed attempt,
+  never as a clean or negative review, and retain the exact returned evidence in
+  the terminal error for diagnosis.
+- Retry reviewer failures up to five times without exposing noisy intermediate
+  evidence or marking the whole worker failed; retain explicit operator recovery.
+- Route completed negative reviews of external PRs back to the Mayor for an
+  explicit admit/decline decision while owned PR feedback continues to Issue Bot.
+- Validate with fake workers and GitHub only; no live repository automation.
