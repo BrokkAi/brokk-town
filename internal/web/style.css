@@ -148,6 +148,16 @@ header {
   padding: 6px 9px;
   white-space: nowrap;
 }
+.settings-section {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1912;
+}
+.settings-section p:last-child {
+  margin-bottom: 0;
+}
 .view-switcher {
   display: flex;
   gap: 2px;

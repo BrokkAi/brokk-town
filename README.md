@@ -299,6 +299,7 @@ repair cycles become visible tasks needing attention.
 The default merge policy is `bot`: auto-merge eligible Town-created PRs. `manual`
 leaves merging to the operator; `all` also permits eligible external PRs. Town-managed merges require current clean Town evidence, GitHub mergeability, required checks
 and approvals. Town uses an expected-head squash merge, without admin bypass.
+Change this at any time under **Town Settings → External contributions**.
 Repositories that require a merge queue or prohibit squash merging need manual
 merges for now. GitHub is the final authority at write time.
 

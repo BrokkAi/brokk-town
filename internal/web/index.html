@@ -195,6 +195,20 @@
         <div class="eyebrow">YOUR AGENT TEAM</div>
         <h2>Town settings</h2>
         <p id="settings-repo" class="muted"></p>
+        <section class="settings-section" aria-labelledby="external-policy-heading">
+          <div class="eyebrow" id="external-policy-heading">EXTERNAL CONTRIBUTIONS</div>
+          <label for="settings-merge-policy">When a reviewed pull request is ready</label>
+          <select id="settings-merge-policy">
+            <option value="bot">Merge Town-created PRs only</option>
+            <option value="manual">Never merge automatically</option>
+            <option value="all">Merge Town-created and external PRs</option>
+          </select>
+          <p class="muted">
+            External PRs may be reviewed, but Town never edits contributor branches.
+            Every automatic merge still requires a clean exact-revision review,
+            GitHub mergeability, checks, and approvals.
+          </p>
+        </section>
         <div class="agent-profile">
           <label for="agent-role">Configure agent for</label>
           <select id="agent-role">

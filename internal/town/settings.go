@@ -238,13 +238,25 @@ func (s *Supervisor) Settings(id string, settings AgentSettings) error {
 // SettingsForRole changes one independent bot profile, or the town defaults when
 // role is empty. Inherit removes an override so future defaults apply again.
 func (s *Supervisor) SettingsForRole(id string, role Role, settings AgentSettings) error {
+	return s.SettingsForRoleAndPolicy(id, role, settings, nil)
+}
+
+// SettingsForRoleAndPolicy commits agent and merge-policy edits together so a
+// form submission cannot leave only half of the requested settings applied.
+func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string) error {
 	if err := settings.validateRole(role); err != nil {
 		return err
+	}
+	if mergePolicy != nil && *mergePolicy != "bot" && *mergePolicy != "manual" && *mergePolicy != "all" {
+		return errors.New("merge policy must be bot, manual, or all")
 	}
 	return s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
+		}
+		if mergePolicy != nil {
+			t.Config.MergePolicy = *mergePolicy
 		}
 		switch {
 		case role == "":
