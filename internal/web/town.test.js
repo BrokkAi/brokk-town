@@ -96,6 +96,7 @@ test("queue and overview report blocked and waiting work", () => {
       a: { house: "issue", stage: "fixes", blocked: true, number: 2 },
       b: { house: "issue", stage: "queued", number: 1 },
       c: { house: "release", stage: "shipped" },
+      d: { house: "issue", stage: "complete" },
     },
     workers: { bug: { status: "working" }, review: { status: "failed" } },
     last_release: "v1",
@@ -112,11 +113,12 @@ test("queue and overview report blocked and waiting work", () => {
     release: "v1",
   });
 });
-test("task links only open normal GitHub URLs", () => {
+test("task links only open normal provider HTTPS URLs", () => {
   assert.equal(safeURL("https://github.com/acme/a/pull/3"), true);
+  assert.equal(safeURL("https://app.slack.com/client/T1/C1/thread-2"), true);
+  assert.equal(safeURL("https://linear.app/acme/issue/ABC-1"), true);
   for (const url of [
     "javascript:alert(1)",
-    "https://evil.test",
     "https://github.com@evil.test",
     "https://evil@github.com",
     "https://github.com:444/a",
@@ -148,6 +150,7 @@ test("operations projection preserves distinct persisted task outcomes", () => {
       uncertain: { id: "uncertain", kind: "pr", title: "Uncertain", house: "issue", stage: "queued", number: 5 },
       github: { id: "github", title: "GitHub", house: "review", stage: "awaiting_author" },
       work: { id: "work", title: "Working", house: "issue", stage: "fixes" },
+      done: { id: "done", title: "Done", house: "issue", stage: "complete" },
     },
   };
   assert.equal(taskStatus(town, town.tasks.blocked), "blocked");
@@ -156,18 +159,21 @@ test("operations projection preserves distinct persisted task outcomes", () => {
   assert.equal(taskStatus(town, town.tasks.uncertain), "uncertain_write");
   assert.equal(taskStatus(town, town.tasks.github), "waiting_github");
   assert.equal(taskStatus(town, town.tasks.work), "queued");
+  assert.equal(taskStatus(town, town.tasks.done), "complete");
+  assert.equal(queueFor(town, "issue").some((task) => task.id === "done"), false);
   assert.equal(workerProfile(town, "issue", town.workers.issue).model, "active-model");
   assert.equal(workerProfile(town, "review", town.workers.review).model, "queued-model");
   const projection = projectTown(town);
   assert.equal(projection.attention, 4);
   assert.deepEqual(
     projection.tasks.map((task) => task.status),
-    ["blocked", "uncertain_write", "inconclusive", "failed", "queued", "waiting_github"],
+    ["blocked", "uncertain_write", "inconclusive", "failed", "queued", "waiting_github", "complete"],
   );
   assert.equal(projectState({ towns: { [town.id]: town } }, town.id).selected.town, town);
   assert.equal(projectTask(town, town.tasks.github).statusLabel, "Waiting on GitHub");
   assert.equal(boardColumn(projectTask(town, { ...town.tasks.github, stage: "shipped" })), "shipped");
   assert.equal(boardColumn(projectTask(town, { ...town.tasks.github, stage: "merged" })), "completed");
+  assert.equal(boardColumn(projectTask(town, town.tasks.done)), "completed");
   assert.equal(boardColumn(projectTask(town, { ...town.tasks.github, stage: "mystery" })), "open");
 });
 test("view and focus projections tolerate reconnect redraws", () => {

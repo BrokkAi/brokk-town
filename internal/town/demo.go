@@ -20,6 +20,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 		for _, repo := range []string{"BrokkAi/orchard", "BrokkAi/paper-trail"} {
 			c := DefaultConfig(repo)
 			c.Branch = "main"
+			c.Funnels = FunnelConfigs{{ID: "demo-github", Provider: "github", Location: SourceLocation{"repository": repo}, Enabled: true, PriorityPolicy: "demo-explicit", ReadOnly: true}, {ID: "demo-slack", Provider: "slack", Location: SourceLocation{"channel": "CDEMO"}, Enabled: true, PriorityPolicy: "demo-explicit", ReadOnly: true}}
 			t, _ := s.Add(c)
 			t.Initialized = true
 			t.Head = strings.Repeat("a", 40)
@@ -32,6 +33,15 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 			t.Report("A good morning in orchard", "The town is awake. Bug and feature investigations are underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
 			if repo == "BrokkAi/orchard" {
 				seedDemoBoard(s, t, time.Now())
+				now := time.Now()
+				id := WorkIdentity{Funnel: "demo-slack", Provider: "slack", Item: "1712345678.000100"}
+				item := WorkItem{Identity: id, Title: "Investigate the customer import report", Body: "Synthetic Slack intake for demo mode.", Status: WorkQueued, Eligible: true, Eligibility: "matched demo channel marker", Priority: Priority{Value: 20, Policy: "demo-explicit", Reason: "operator-set example"}, Provenance: Provenance{Identity: id, URL: "https://app.slack.com/client/TDEMO/CDEMO/thread", Revision: "demo-r1", ObservedAt: now, ExternalState: "message"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
+				doneSlackID := WorkIdentity{Funnel: "demo-slack", Provider: "slack", Item: "1712345678.000200"}
+				doneSlack := WorkItem{Identity: doneSlackID, Title: "Document the import workaround", Body: "Synthetic Slack item carrying a check-mark reaction.", Status: WorkComplete, Eligible: false, Eligibility: "done reaction observed at source", Priority: Priority{Policy: "demo-explicit"}, Provenance: Provenance{Identity: doneSlackID, URL: "https://app.slack.com/client/TDEMO/CDEMO/done", Revision: "demo-r2", ObservedAt: now, ExternalState: "message"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
+				_ = ReconcileFunnelPage(s, t, DiscoveryPage{Funnel: "demo-slack", Provider: "slack", Items: []WorkItem{item, doneSlack}, Complete: true, Outcome: Outcome{Kind: OutcomeComplete, Covered: true}, ObservedAt: now}, now)
+				doneGitHubID := WorkIdentity{Funnel: "demo-github", Provider: "github", Item: "706"}
+				doneGitHub := WorkItem{Identity: doneGitHubID, Title: "Retire the legacy import endpoint", Status: WorkClosed, Eligible: false, Eligibility: "issue is closed at source", Priority: Priority{Policy: "demo-explicit"}, Provenance: Provenance{Identity: doneGitHubID, URL: "https://github.com/BrokkAi/orchard/issues/706", Revision: "demo-r3", ObservedAt: now, ExternalState: "closed"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
+				_ = ReconcileFunnelPage(s, t, DiscoveryPage{Funnel: "demo-github", Provider: "github", Items: []WorkItem{doneGitHub}, Complete: true, Outcome: Outcome{Kind: OutcomeComplete, Covered: true}, ObservedAt: now}, now)
 			} else {
 				t.Workers[Repo].Status = "failed"
 				t.Workers[Repo].Error = "Demo inventory is waiting for an operator retry"

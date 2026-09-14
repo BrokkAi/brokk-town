@@ -24,7 +24,35 @@
       "merge_policy": "bot",
       "poll_seconds": 60,
       "report_seconds": 1800,
-      "max_cycles": 5
+      "max_cycles": 5,
+      "funnels": [
+        {
+          "id": "github-ready",
+          "provider": "github",
+          "location": {"repository": "BrokkAi/my-project"},
+          "filter": {"query": "is:issue", "include_labels": "agent-ready"},
+          "credentials": {"name": "github-default"},
+          "transitions": {
+            "working": [{"name": "labels", "parameters": {"add": "agent-in-progress"}}],
+            "blocked": [{"name": "labels", "parameters": {"add": "escalated", "remove": "agent-in-progress"}}]
+          },
+          "enabled": true,
+          "priority_policy": "source-priority"
+        },
+        {
+          "id": "slack-intake",
+          "provider": "slack",
+          "location": {"channel": "C0123456789"},
+          "filter": {"marker": "[town]"},
+          "credentials": {"name": "slack-workspace"},
+          "transitions": {
+            "working": [{"name": "reaction_and_thread", "parameters": {"reaction": "eyes"}}],
+            "blocked": [{"name": "reaction_and_thread", "parameters": {"reaction": "warning"}}]
+          },
+          "enabled": false,
+          "priority_policy": "operator-explicit"
+        }
+      ]
     }
   ]
 }

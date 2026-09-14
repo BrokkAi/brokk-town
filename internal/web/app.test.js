@@ -266,6 +266,7 @@ const state = {
       tasks: {
         "pr:1": { id: "pr:1", kind: "pr", number: 1, title: "Review this change", house: "review", stage: "awaiting_author" },
         "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Queue this change", house: "issue", stage: "queued" },
+        "source:done": { id: "source:done", kind: "source", title: "Checked off in Slack", house: "issue", stage: "complete", source: { eligible: false } },
       },
       intents: {}, reports: [], events: [],
     },
@@ -308,7 +309,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements.world.hidden, true);
   assert.equal(elements.compact.hidden, true);
   const boardLists = elements.board.querySelectorAll("[data-board-list]");
-  assert.equal(boardLists.length, 2, "board exposes each populated column as its own list");
+  assert.equal(boardLists.length, 3, "board exposes each populated column as its own list");
   const queuedList = boardLists.find((list) => list.dataset.boardList.endsWith(":queued"));
   const reviewList = boardLists.find((list) => list.dataset.boardList.endsWith(":review"));
   queuedList.scrollTop = 113;
@@ -324,6 +325,11 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
     .querySelectorAll("[data-board-task]")
     .find((task) => task.dataset.boardTask === "pr:1");
   assert.ok(boardTask, "board renders a task card from the snapshot");
+  const doneTask = elements.board
+    .querySelectorAll("[data-board-task]")
+    .find((task) => task.dataset.boardTask === "source:done");
+  assert.ok(doneTask, "board renders source-observed done work");
+  assert.doesNotMatch(doneTask.textContent, /Next profile:/, "done work does not advertise another dispatch");
   boardTask.onclick();
   assert.equal(elements.inspector.classList.contains("open"), true);
   assert.equal(elements.inspector.hidden, false, "board inspection is visible");

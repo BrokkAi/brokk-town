@@ -262,7 +262,7 @@ function renderCapacity() {
 }
 
 function queuedProfileText(task) {
-  if (["closed", "merged", "shipped", "implemented"].includes(task.stage)) return "";
+  if (["complete", "closed", "merged", "shipped", "implemented"].includes(task.stage)) return "";
   return `Next profile: ${task.profile.harness} · ${task.profile.model || "default model"} · ${task.profile.effort || "default effort"}`;
 }
 function captureBoardViewport(board) {
@@ -574,7 +574,10 @@ function renderInspection() {
   if (selectedTask && t.tasks[selectedTask]) {
     const task = t.tasks[selectedTask];
     const projected = projectTask(t, task);
-    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a>` : ""}<p>${esc(task.detail || "Following the next step through town.")}</p>${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
+    const source = task.source,
+      provenance = source?.provenance,
+      sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
+    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${sourceSummary}<p>${esc(task.detail || "Following the next step through town.")}</p>${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
     $("#back-house").onclick = () => {
       selectedTask = "";
       renderInspection();
@@ -603,10 +606,13 @@ function renderInspection() {
     queue = queueFor(t, selectedHouse);
   if (!w) return;
   const agent = projectedWorker.profile;
+  const funnelDetails = selectedHouse === "issue" || selectedHouse === "repo"
+    ? Object.values(t.funnel_syncs || {}).map((sync) => `<p class="muted"><strong>${esc(sync.funnel)}</strong> · ${esc(sync.provider)} · ${esc((sync.outcome?.kind || "incomplete").replaceAll("_", " "))}${sync.last_sync ? ` · ${esc(new Date(sync.last_sync).toLocaleString())}` : ""}${sync.outcome?.detail ? `<br>${esc(sync.outcome.detail)}` : ""}</p>`).join("")
+    : "";
   const agentDetails = selectedHouse === "repo"
     ? '<p class="muted">Reports repository state without an agent.</p>'
     : `<p class="muted">${projectedWorker.active ? "Active dispatch" : "Next run"}: ${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` ${esc(agent.harness_version)}` : ""} · ${esc(agent.model || "Default model")} · ${esc(agent.effort || "Default effort")}<br>${agent.source === "active" ? "Captured for this run" : agent.inherited === false ? "Own queued bot profile" : "Town defaults for queued work"}</p><button id="configure-agent" type="button">Configure agent</button>`;
-  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : "Waiting for work"))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${agentDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
+  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : "Waiting for work"))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${agentDetails}${funnelDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
     queue
       .slice(0, 40)
       .map(

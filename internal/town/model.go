@@ -60,6 +60,7 @@ type Config struct {
 	PollSeconds       int                     `json:"poll_seconds"`
 	ReportSeconds     int                     `json:"report_seconds"`
 	MaxCycles         int                     `json:"max_cycles"`
+	Funnels           FunnelConfigs           `json:"funnels,omitempty"`
 }
 
 // BotAgentConfig is a complete private selection. Omitted roles inherit the town
@@ -116,6 +117,9 @@ func (c Config) Validate() error {
 	if c.Branch != "" && (!branchName.MatchString(c.Branch) || strings.Contains(c.Branch, "..") || strings.Contains(c.Branch, "//") || strings.HasSuffix(c.Branch, "/") || strings.HasSuffix(c.Branch, ".") || strings.HasSuffix(c.Branch, ".lock")) {
 		return fmt.Errorf("invalid branch")
 	}
+	if err := c.Funnels.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -130,6 +134,7 @@ type PublicConfig struct {
 	Effort         string                        `json:"effort"`
 	HarnessVersion string                        `json:"harness_version,omitempty"`
 	BotAgents      map[Role]PublicBotAgentConfig `json:"bot_agents"`
+	Funnels        []PublicFunnelConfig          `json:"funnels,omitempty"`
 }
 
 type PublicBotAgentConfig struct {
@@ -207,6 +212,15 @@ type Task struct {
 	Blocked     bool              `json:"blocked"`
 	Attempts    int               `json:"attempts"`
 	RetryAt     time.Time         `json:"retry_at,omitempty"`
+	Source      *WorkItem         `json:"source,omitempty"`
+}
+
+type FunnelSync struct {
+	Funnel   FunnelID   `json:"funnel"`
+	Provider ProviderID `json:"provider"`
+	Cursor   Cursor     `json:"cursor,omitempty"`
+	LastSync time.Time  `json:"last_sync,omitempty"`
+	Outcome  Outcome    `json:"outcome"`
 }
 type Ownership struct {
 	Branch string `json:"branch"`
@@ -240,20 +254,22 @@ type Event struct {
 	Title string    `json:"title"`
 }
 type Town struct {
-	ID          string                   `json:"id"`
-	Deleted     bool                     `json:"deleted,omitempty"`
-	Config      Config                   `json:"config"`
-	Initialized bool                     `json:"initialized"`
-	Workers     map[Role]*Worker         `json:"workers"`
-	Tasks       map[string]*Task         `json:"tasks"`
-	Owned       map[int]Ownership        `json:"owned"`
-	Intents     map[int]*Intent          `json:"intents"`
-	Requests    map[string]*IssueRequest `json:"requests,omitempty"`
-	Reports     []Report                 `json:"reports"`
-	Head        string                   `json:"head"`
-	LastSync    time.Time                `json:"last_sync"`
-	LastRelease string                   `json:"last_release"`
-	Error       string                   `json:"error,omitempty"`
+	ID            string                   `json:"id"`
+	Deleted       bool                     `json:"deleted,omitempty"`
+	Config        Config                   `json:"config"`
+	Initialized   bool                     `json:"initialized"`
+	Workers       map[Role]*Worker         `json:"workers"`
+	Tasks         map[string]*Task         `json:"tasks"`
+	Owned         map[int]Ownership        `json:"owned"`
+	Intents       map[int]*Intent          `json:"intents"`
+	FunnelIntents map[string]*WriteIntent  `json:"funnel_intents,omitempty"`
+	FunnelSyncs   map[FunnelID]*FunnelSync `json:"funnel_syncs,omitempty"`
+	Requests      map[string]*IssueRequest `json:"requests,omitempty"`
+	Reports       []Report                 `json:"reports"`
+	Head          string                   `json:"head"`
+	LastSync      time.Time                `json:"last_sync"`
+	LastRelease   string                   `json:"last_release"`
+	Error         string                   `json:"error,omitempty"`
 }
 
 // ServiceConfig governs the single local scheduler across every town.
@@ -307,7 +323,7 @@ func (s *State) Add(c Config) (*Town, error) {
 		t.Workers[Repo].Next = time.Time{}
 		return t, nil
 	}
-	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, Reports: []Report{}}
+	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, FunnelIntents: map[string]*WriteIntent{}, FunnelSyncs: map[FunnelID]*FunnelSync{}, Reports: []Report{}}
 	for _, r := range Roles {
 		t.Workers[r] = &Worker{Role: r, Enabled: r == Repo, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
 	}
@@ -377,5 +393,9 @@ func (c Config) Public() PublicConfig {
 		}
 		bots[role] = PublicBotAgentConfig{Harness: cfg.harness(), Model: cfg.Agent.Model, Effort: cfg.Agent.Effort, HarnessVersion: botVersion, Inherited: !overridden}
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots}
+	funnels := make([]PublicFunnelConfig, 0, len(c.Funnels))
+	for _, funnel := range c.Funnels {
+		funnels = append(funnels, funnel.Public())
+	}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels}
 }
