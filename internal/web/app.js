@@ -3,6 +3,8 @@ import {
   houseNames,
   routePosition,
   queueFor,
+  issueJobDetails,
+  taskRetryEligible,
   visibleEvents,
   safeURL,
   townSummary,
@@ -264,7 +266,7 @@ function renderInspection() {
   }
   if (selectedTask && t.tasks[selectedTask]) {
     const task = t.tasks[selectedTask];
-    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line">${esc(task.stage.replaceAll("_", " "))} ${task.external ? "· external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a>` : ""}<p>${esc(task.detail || "Following the next step through town.")}</p>${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}</div>${task.blocked ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
+    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line">${esc(task.stage.replaceAll("_", " "))} ${task.external ? "· external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a>` : ""}<p>${esc(task.detail || "Following the next step through town.")}</p>${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}</div>${taskRetryEligible(task) ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
     $("#back-house").onclick = () => {
       selectedTask = "";
       renderInspection();

@@ -2,12 +2,11 @@ package town
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"sort"
-	"strconv"
-	"strings"
+	"sync"
 	"time"
 
 	bugbot "github.com/BrokkAi/bug-bot"
@@ -22,12 +21,16 @@ type BotWorkers struct {
 	GitHub       GitHub
 	remoteURL    func(string) string
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
+	issueMu      sync.Mutex // Serialize local job reads/imports and explicit retries.
 }
 
-func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (RunResult, error) {
+func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
+	if r == Issue {
+		// Durable outcomes matter even after cancellation or agent setup failure.
+		defer func() { err = errors.Join(err, b.SyncIssues(t)) }()
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Hour)
 	defer cancel()
-	result := RunResult{}
 	dir, state := Workspace(b.Root, t.ID, r)
 	remote := "https://github.com/" + t.Config.Repo + ".git"
 	agent, err := agentConfig(ctx, t.Config, b.Root)
@@ -53,42 +56,10 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			result.PR = task.Number
 			return result, b.repair(ctx, t, task, observe, log)
 		}
-		c := issuebot.DefaultConfig()
-		c.Remote = remote
-		c.Branch = t.Config.Branch
-		c.Directory = dir
-		c.StateDirectory = state
+		c := b.issueConfig(t)
 		c.Agent = agent
-		c.GitHub.Repo = t.Config.Repo
-		c.Draft = false
-		c.Verify = t.Config.Verify
 		ctx = issuebot.WithProgress(ctx, func(p issuebot.Progress) { observe(Progress{p.Phase, p.Task}) })
-		err := issuebot.Run(ctx, c, log, true)
-		saved, readErr := issuebot.ReadState(c)
-		if readErr != nil {
-			return result, readErr
-		}
-		result.Owned = map[int]Ownership{}
-		if saved != nil {
-			for _, job := range saved.Jobs {
-				if job.Status != "submitted" {
-					continue
-				}
-				u, e := url.Parse(job.URL)
-				if e != nil || u.Host != "github.com" {
-					continue
-				}
-				parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-				if len(parts) != 4 || !strings.EqualFold(strings.Join(parts[:2], "/"), t.Config.Repo) || parts[2] != "pull" {
-					continue
-				}
-				n, e := strconv.Atoi(parts[3])
-				if e == nil {
-					result.Owned[n] = Ownership{job.Branch, job.Issue.Number}
-				}
-			}
-		}
-		return result, err
+		return result, issuebot.Run(ctx, c, log, true)
 	case Review:
 		task := nextTask(t, Review, "queued")
 		if task == nil {

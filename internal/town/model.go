@@ -155,6 +155,19 @@ type Task struct {
 	Blocked     bool              `json:"blocked"`
 	Attempts    int               `json:"attempts"`
 	RetryAt     time.Time         `json:"retry_at,omitempty"`
+	IssueJob    *IssueJob         `json:"issue_job,omitempty"`
+}
+
+// IssueJob is the public, durable portion of issue-bot's local job. Claims,
+// worktree paths, issue bodies and agent configuration stay in the bot's state.
+type IssueJob struct {
+	Status        string `json:"status"`
+	LastError     string `json:"last_error,omitempty"`
+	ResultStatus  string `json:"result_status,omitempty"`
+	ResultDetail  string `json:"result_detail,omitempty"`
+	ClaimPending  bool   `json:"claim_pending"`
+	RetryEligible bool   `json:"retry_eligible"`
+	RetryDetail   string `json:"retry_detail"`
 }
 type Ownership struct {
 	Branch string `json:"branch"`

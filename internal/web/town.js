@@ -28,6 +28,24 @@ export function queueFor(town, role) {
         (a.number ?? 0) - (b.number ?? 0),
     );
 }
+export function issueJobDetails(task) {
+  const job = task.issue_job;
+  if (task.kind !== "issue" || !job) return [];
+  const details = [
+    `Issue-bot: ${job.status.replaceAll("_", " ")} · ${task.attempts || 0} attempts`,
+  ];
+  for (const detail of [job.last_error, job.result_detail, job.retry_detail]) {
+    if (detail && detail !== task.detail && !details.includes(detail))
+      details.push(detail);
+  }
+  return details;
+}
+export function taskRetryEligible(task) {
+  return !!(
+    task.blocked &&
+    (task.kind !== "issue" || task.issue_job?.retry_eligible)
+  );
+}
 export function visibleEvents(events, after, town) {
   return (events || []).filter((e) => e.seq > after && e.town === town);
 }
