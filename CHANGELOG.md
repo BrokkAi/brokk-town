@@ -3,6 +3,7 @@
 ## 0.1.0 — prepared, not published
 
 - Local multi-repository agent town with browser, terminal and CLI clients.
+- Versioned private Unix-socket worker protocol replaces compiled-in bot libraries and CLI state coupling.
 - Durable bot supervision, revision-bound review and merge gates, and isolated demo mode.
 - Linux and macOS binaries for amd64 and arm64, plus the npm launcher and platform packages.
 - Apache-2.0 licensing with reviewed dependency notices in every package.

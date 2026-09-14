@@ -76,11 +76,39 @@ for first-release setup, access checks, publishing, and recovery.
 
 ## Connect real repositories
 
-Install and authenticate `git`, GitHub CLI (`gh`), and your chosen coding agent.
+Install and authenticate `git`, GitHub CLI (`gh`), your chosen coding agent, and
+Brokk bot releases that advertise **Town Worker Protocol v1**. Town no longer
+compiles the bots into `bt`; each dispatch starts the installed `bbb`, `bfb`,
+`bib`, `brv`, or `brb` executable from the service PATH and communicates over a
+private Unix socket. Run `<command> version` and `<command> worker --help` to
+confirm a compatible release.
+
+Once compatible bot versions are published, install their npm distributions:
+
+```sh
+npm install -g @brokkai/bug-bot \
+  @brokkai/feature-bot \
+  @brokkai/issue-bot \
+  @brokkai/review-bot \
+  @brokkai/release-bot
+```
+
+Checksum-verified native bot releases are equally supported. The worker uses
+standard-library HTTP/JSON, negotiates protocol and capabilities before work,
+streams contiguous progress events, and returns explicit typed results. It never
+requires Town to parse bot-private state. See
+[docs/WORKER_PROTOCOL.md](docs/WORKER_PROTOCOL.md) for the contract.
+
 Town defaults to the official ACP registry’s `codex-acp` npm distribution, which
 requires Node.js and `npx`. Choose another harness in Settings as described below.
 Git must already be able to clone and push your GitHub repositories; Town uses
 the current Git/gh credentials.
+
+Bot executables can be replaced while the Town service remains running. The next
+dispatch resolves PATH again and negotiates with the new service. An active
+dispatch pins its resolved path, executable hash, and reported version, then
+rechecks all three; a mid-dispatch replacement fails uncertainly and is resolved
+through durable bot state and GitHub reconciliation.
 
 ```sh
 ./bin/bt serve --repo BrokkAi/my-project

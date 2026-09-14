@@ -11,12 +11,16 @@ Four shared slots bound simultaneous non-reporter workers across repositories;
 repo reporters run separately. Each role has its own managed checkout and bot
 state so independent houses do not share a working directory.
 
-The released bot libraries remain responsible for their primary operations.
-Town invokes one-shot `Run` calls with progress observers, gives issue-bot
-implementation-ready PR output, and adds an explicit repair path for its owned
-PRs. Review-bot's persisted investigation/verification results are inputs to a
-separate full-change certification. Town never treats a successful exit or zero
-new review comments as merge permission. Standalone bot repositories are unchanged.
+The released bot executables remain responsible for their primary operations.
+Town does not compile the bot packages into `bt` or read their private state
+files. Each primary dispatch starts the corresponding `bbb`, `bfb`, `bib`,
+`brv`, or `brb` worker service on a private Unix socket, negotiates protocol
+version and capabilities, streams ordered progress, and consumes only explicit
+public results. Issue-bot receives implementation-ready PR settings, and Town
+adds an explicit repair path for its owned PRs. Review-bot's exact-revision
+result is an input to a separate full-change certification. Town never treats a
+successful exit or zero new review comments as merge permission. The complete
+contract is specified in [WORKER_PROTOCOL.md](WORKER_PROTOCOL.md).
 
 ## Facts and concurrency
 
@@ -132,9 +136,11 @@ existing release-bot owns batching, release preparation, and publishing.
 Automated tests exercise state/restart, routing and duplicate suppression, review
 coverage, merge gates, lost-response intents, fake-agent local Git repair pushes,
 audit immutability, pause/stop, API authentication/SSE, terminal sizing/cancellation,
-frontend routing, and optional page-tool contracts. Demo integration must not
-receive live workers or GitHub handles. Tests do not prove an actual ACP model's
-judgment or a repository's live branch-protection/release configuration.
+frontend routing, optional page-tool contracts, and fake versioned Unix-socket
+workers that exercise initialization, capability negotiation, request identity,
+progress, typed results, sequence validation, and shutdown. Demo integration must
+not receive live workers or GitHub handles. Tests do not prove an actual ACP
+model's judgment or a repository's live branch-protection/release configuration.
 
 The interface is local and authenticated, not a multi-user security boundary.
 Agents execute repository commands under the service account. Prompts constrain
@@ -145,9 +151,9 @@ policies in a later iteration.
 
 ## Automatic feature discovery
 
-Feature-bot is a separate Go/ACP bot and `bfb` CLI, modeled on bug-bot. Town calls
-its shared library with the feature role's effective harness and an isolated
-feature workspace.
+Feature-bot is a separate Go/ACP bot and `bfb` CLI, modeled on bug-bot. Town
+starts its protocol worker with the feature role's effective harness and an
+isolated feature workspace.
 Both discovery workers wait 30 minutes between successful attempts and share the
 same global worker cap with implementation, review and release workers.
 Feature proposals require a user problem, current workflow, proposed behavior,

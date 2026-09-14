@@ -1,5 +1,38 @@
 # Brokk Town implementation plan
 
+## Versioned bot worker protocol (2026-09-14)
+
+The user requested live-upgradable external bots, accepted Unix sockets for the
+initial transport, and authorized corresponding bot-repository changes. A later
+self-signed HTTPS/mutual-TLS transport can be added without changing semantics.
+
+- Town now removes bug-bot, feature-bot, issue-bot, release-bot, and review-bot
+  Go dependencies. Primary roles launch their installed executables and speak
+  Worker Protocol v1 over a private mode-0600 Unix-domain HTTP socket.
+- Initialization exchanges protocol range, exact bot/service version, identity,
+  and capabilities before work. Runs use strict JSON requests and contiguous
+  newline-delimited progress/result/terminal events. Issue and review results are
+  explicit public protocol payloads; Town never parses bot-private state.
+- Town records and rechecks the resolved executable path, hash, and version.
+  PATH is resolved anew for each dispatch, allowing replacement in an existing
+  service-PATH directory without a Town restart; mid-dispatch replacement fails
+  uncertainly. Worker subprocess output remains bounded and shutdown is graceful
+  with a process-group cancellation fallback.
+- Coordinated local commits in all five bot repositories add an `internal/worker`
+  standard-library HTTP service and `<command> worker --socket PATH`: bug-bot
+  `d996364`, feature-bot `24222be`, issue-bot `d55f886`, release-bot `efd6477`,
+  and review-bot `3d55af7`. They retain their existing CLIs and adapt their
+  released Run/state APIs behind the public worker boundary. No bot branches were
+  pushed and no tags, packages, GitHub writes, or releases were made.
+- Validation passed: Town `go test -race ./...`, `go vet ./...`, `make check`,
+  and isolated `make smoke`; full race/vet suites for bug-bot, feature-bot,
+  issue-bot, and review-bot; race/vet for release-bot's changed worker/cmd
+  packages; all bot license, Python, and npm launcher tests; and a real
+  cross-process initialize/shutdown smoke against all five locally built worker
+  binaries. Release-bot's full root-package race suite has two pre-existing
+  checkpoint failures reproduced identically on its untouched `bb530fa` baseline
+  in this environment, so the worker change did not introduce them.
+
 ## Per-bot agent profiles (2026-09-10)
 
 User requested independent harness/model/reasoning choices for every bot, such as
