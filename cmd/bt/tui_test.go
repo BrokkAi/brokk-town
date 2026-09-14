@@ -51,6 +51,21 @@ func TestPastedCommandsNeverOperateTown(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+func TestNewTUIHandlesServiceBeforeFeatureUpgrade(t *testing.T) {
+	s := town.NewState(false)
+	x, _ := s.Add(town.DefaultConfig("acme/orchard"))
+	delete(x.Workers, town.Feature)
+	for role := range town.Roles {
+		frame := renderTUI(s, 0, role, 140, 40, "")
+		if !strings.Contains(frame, "Restart the town service") || !strings.Contains(frame, "unavailable") {
+			t.Fatal("missing upgrade guidance", frame)
+		}
+	}
+	if x.Workers[town.Feature] != nil {
+		t.Fatal("renderer changed the service snapshot")
+	}
+}
 func TestRequestCancellation(t *testing.T) {
 	started := make(chan struct{})
 	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(started); <-r.Context().Done() }))

@@ -284,5 +284,49 @@
         ]
       }
     ]
-  }
+  },
+  "standalone": [
+    {
+      "name": "feature-study",
+      "file": "feature-study.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "recommendedSourceRect": [
+        0,
+        0,
+        1254,
+        1254
+      ],
+      "opaqueCoreBoundsInSourceRect": [
+        163,
+        125,
+        1148,
+        1147
+      ],
+      "alphaPreserved": true
+    },
+    {
+      "name": "feature-reader",
+      "file": "feature-reader.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "recommendedSourceRect": [
+        0,
+        0,
+        1254,
+        1254
+      ],
+      "opaqueCoreBoundsInSourceRect": [
+        296,
+        17,
+        1012,
+        1225
+      ],
+      "alphaPreserved": true
+    }
+  ]
 }

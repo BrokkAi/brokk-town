@@ -57,15 +57,54 @@ class PackageRegistry(unittest.TestCase):
             calls = [call.args[0] for call in command.call_args_list]
             self.assertEqual(len(calls), 5)
             self.assertTrue(all(call[:2] == ["npm", "publish"] for call in calls[:5]))
+            self.assertTrue(all("--provenance" in call for call in calls[:5]))
             self.assertTrue(calls[4][2].endswith("package-0.tgz"))
 
     def test_identical_existing_packages_are_verified_without_upload(self):
         with patch.object(package_registry, "npm_exists", return_value=True), \
                 patch.object(package_registry, "npm_pointer", return_value="0.1.0"), \
+                patch.object(package_registry, "verify_provenance") as provenance, \
                 patch.object(package_registry.subprocess, "run") as command:
             package_registry.run("publish", self.root)
             package_registry.run("verify", self.root)
+            provenance.assert_called_once_with(self.root)
             command.assert_not_called()
+
+    def test_final_verification_requires_independent_provenance(self):
+        with patch.object(package_registry, "npm_exists", return_value=True), \
+                patch.object(package_registry, "npm_pointer", return_value="0.1.0"), \
+                patch.object(package_registry, "verify_provenance", side_effect=ValueError("missing provenance")):
+            with self.assertRaisesRegex(ValueError, "missing provenance"):
+                package_registry.run("verify", self.root)
+
+    def test_provenance_downloads_only_registry_attestations_and_builds_exact_request(self):
+        attestations = {"attestations": [{"predicateType": "https://slsa.dev/provenance/v1", "bundle": {}}]}
+        record = {"dist": {"attestations": {
+            "url": "https://registry.npmjs.org/-/npm/v1/attestations/example",
+            "provenance": {"predicateType": "https://slsa.dev/provenance/v1"},
+        }}}
+        with patch.object(package_registry, "fetch_json", return_value=record), \
+                patch.object(package_registry, "fetch_bytes", return_value=json.dumps(attestations).encode()) as fetch, \
+                patch.object(package_registry.subprocess, "run") as command:
+            requests = []
+
+            def inspect(*args, **kwargs):
+                run_command = args[0]
+                requests.append(json.loads(Path(run_command[2]).read_text()))
+                return package_registry.subprocess.CompletedProcess(run_command, 0)
+
+            command.side_effect = inspect
+            package_registry.verify_provenance(self.root)
+            self.assertEqual(fetch.call_count, 5)
+            request = requests[0]
+            self.assertEqual(request["commit"], "a" * 40)
+            self.assertEqual(request["ref"], "refs/tags/v0.1.0")
+            self.assertEqual(len(request["packages"]), 5)
+
+    def test_missing_registry_provenance_metadata_fails_closed(self):
+        with patch.object(package_registry, "fetch_json", return_value={"dist": {}}):
+            with self.assertRaisesRegex(ValueError, "provenance is missing"):
+                package_registry.verify_provenance(self.root)
 
     def test_changed_local_tarball_prevents_remote_reads(self):
         (self.root / "npm" / self.packages[0]["filename"]).write_bytes(b"corrupted")

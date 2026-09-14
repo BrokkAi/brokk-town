@@ -29,7 +29,14 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				w.Status = "waiting"
 				w.Task = "Watching the village"
 			}
-			t.Report("A good morning in orchard", "The town is awake. A bug investigation is underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
+			t.Report("A good morning in orchard", "The town is awake. Bug and feature investigations are underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
+			if repo == "BrokkAi/orchard" {
+				seedDemoBoard(s, t, time.Now())
+			} else {
+				t.Workers[Repo].Status = "failed"
+				t.Workers[Repo].Error = "Demo inventory is waiting for an operator retry"
+				t.Workers[Repo].Task = "Inspect the watchtower report"
+			}
 		}
 		return nil
 	}); err != nil {
@@ -48,11 +55,11 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				if t == nil || t.Deleted {
 					return nil
 				}
-				role := []Role{Bug, Bug, Issue, Review, Issue, Review, Review, Release, Repo}[step%9]
+				role := []Role{Bug, Bug, Issue, Review, Issue, Review, Review, Release, Repo, Feature, Feature}[step%11]
 				if !t.Workers[role].Enabled {
 					return nil
 				}
-				number := 142 + (step/9)%20
+				number := 142 + (step/11)%20
 				active := false
 				for _, w := range t.Workers {
 					if w.Enabled {
@@ -63,15 +70,18 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 						w.Phase = "idle"
 						w.Task = "Watching for the next delivery"
 					}
+					w.Agent = nil
 				}
 				if !active {
 					return nil
 				}
 				issueID := fmt.Sprintf("issue:%d", number)
 				prID := fmt.Sprintf("pr:%d", number+100)
-				switch step % 9 {
+				switch step % 11 {
 				case 0:
 					w := t.Workers[Bug]
+					p := t.Config.Public().BotAgents[Bug]
+					w.Agent = &p
 					w.Status = "working"
 					w.Task = "Investigating a dropped event during reconnect"
 					w.Phase = "investigating"
@@ -81,18 +91,24 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 					t.Tasks[issueID] = task
 					s.Event(t.ID, "delivery", "bug", "issue", issueID, "Bug-bot filed a verified issue", now)
 					t.Workers[Issue].Status = "working"
+					p := t.Config.Public().BotAgents[Issue]
+					t.Workers[Issue].Agent = &p
 					t.Workers[Issue].Task = "Building a regression test and a focused fix"
 				case 2:
 					t.Tasks[issueID].Stage = "implemented"
 					t.Tasks[prID] = &Task{ID: prID, Kind: "pr", Number: number + 100, Title: "Preserve the reconnect cursor", Stage: "queued", House: Review, Head: strings.Repeat("b", 40), Base: t.Head, Updated: now}
 					s.Event(t.ID, "delivery", "issue", "review", prID, "A new PR arrived at the observatory", now)
 					t.Workers[Review].Status = "working"
+					p := t.Config.Public().BotAgents[Review]
+					t.Workers[Review].Agent = &p
 					t.Workers[Review].Task = "Independently checking the change"
 				case 3:
 					task := t.Tasks[prID]
 					task.Detail = "The reconnect path still skips one event when the queue is full."
 					s.Move(t, task, "fixes", Issue, "Review-bot returned one finding", now)
 					t.Workers[Issue].Status = "working"
+					p := t.Config.Public().BotAgents[Issue]
+					t.Workers[Issue].Agent = &p
 					t.Workers[Issue].Task = "Repairing the remaining queue-full case"
 				case 4:
 					task := t.Tasks[prID]
@@ -100,6 +116,8 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 					task.Cycles++
 					s.Move(t, task, "queued", Review, "The revised PR is back for review", now)
 					t.Workers[Review].Status = "working"
+					p := t.Config.Public().BotAgents[Review]
+					t.Workers[Review].Agent = &p
 					t.Workers[Review].Task = "Verifying the fix and all previous findings"
 				case 5:
 					task := t.Tasks[prID]
@@ -110,6 +128,8 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 					s.Move(t, task, "merged", Release, "The merged change reached the release depot", now)
 					t.Tasks["commit:"+task.Head] = &Task{ID: "commit:" + task.Head, Kind: "commit", Title: task.Title, Head: task.Head, House: Release, Stage: "unreleased", Updated: now}
 					t.Workers[Release].Status = "working"
+					p := t.Config.Public().BotAgents[Release]
+					t.Workers[Release].Agent = &p
 					t.Workers[Release].Task = "Preparing the next shipment"
 				case 7:
 					t.LastRelease = fmt.Sprintf("v0.8.%d", 3+(number-142))
@@ -121,6 +141,19 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 					s.Event(t.ID, "delivery", "release", "outside", "release:"+t.LastRelease, "Shipment "+t.LastRelease+" left town", now)
 					t.Report("A shipment is on its way", "The reconnect fix passed its review loop and shipped. One issue moved from discovery through implementation, verification, merge, and release.", now)
 					s.Event(t.ID, "report", "repo", "hall", "", "Repo-bot brought the latest town report", now)
+				case 9:
+					w := t.Workers[Feature]
+					p := t.Config.Public().BotAgents[Feature]
+					w.Agent = &p
+					w.Status = "working"
+					w.Phase = "investigating"
+					w.Task = "Studying saved report workflows and comparing feature ideas"
+					s.Event(t.ID, "activity", "feature", "feature", "", "Feature-bot is researching a useful new capability", now)
+				case 10:
+					id := fmt.Sprintf("issue:%d", number+900)
+					t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 900, Title: "Save reusable report views", House: Issue, Stage: "queued", Updated: now, Detail: "Let operators save filters as named views. Acceptance: create, select, rename and delete views; restore the selected view after restart."}
+					s.Event(t.ID, "delivery", "feature", "issue", id, "Feature-bot filed an independently reviewed proposal", now)
+					t.Workers[Feature].Task = "Proposal filed; waiting for the next research session"
 				case 8:
 					id := fmt.Sprintf("issue:%d", number+500)
 					t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 500, Title: "Support a custom report schedule", House: Issue, Stage: "queued", External: true, Updated: now}
@@ -133,6 +166,10 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 					w.Updated = now
 					if !w.Enabled {
 						w.Status = "paused"
+					}
+					if ValidAgentRole(w.Role) && (w.Status == "working" || w.Status == "pausing") {
+						p := t.Config.Public().BotAgents[w.Role]
+						w.Agent = &p
 					}
 					if w.Status == "working" {
 						w.Logs = append(w.Logs, Log{now, "INFO", w.Task})
@@ -149,4 +186,38 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 			}
 		}
 	}
+}
+
+// seedDemoBoard gives a new demo an immediately inspectable operations board.
+// These are durable-looking fixtures only: Demo never supplies GitHub or agent
+// handles, and the normal scheduler is disabled for demo stores.
+func seedDemoBoard(s *State, t *Town, now time.Time) {
+	base := strings.Repeat("a", 40)
+	sha := func(ch string) string { return strings.Repeat(ch, 40) }
+	t.Tasks["issue:701"] = &Task{ID: "issue:701", Kind: "issue", Number: 701, Title: "Recover a dropped event cursor", Stage: "queued", House: Issue, Blocked: true, Detail: "Blocked on a reproducible race report.", Updated: now}
+	t.Tasks["pr:702"] = &Task{ID: "pr:702", Kind: "pr", Number: 702, Title: "Clarify reconnect ownership", Stage: "inconclusive", House: Review, Head: sha("b"), Base: base, Audit: &Audit{Base: base, Head: sha("b"), Verdict: "inconclusive", Complete: false, Summary: "The review session could not establish complete coverage.", Checks: []string{"Review evidence is incomplete"}, Findings: []Finding{}}, Updated: now}
+	t.Tasks["pr:703"] = &Task{ID: "pr:703", Kind: "pr", Number: 703, Title: "Persist the reconnect cursor", Stage: "queued", House: Review, Head: sha("c"), Base: base, Updated: now}
+	t.Intents[703] = &Intent{Kind: "merge", PR: 703, Base: base, Head: sha("c"), Status: "uncertain", Detail: "Demo merge response was lost; reconcile before retrying.", At: now}
+	t.Tasks["issue:704"] = &Task{ID: "issue:704", Kind: "issue", Number: 704, Title: "Add saved report views", Stage: "queued", House: Issue, Detail: "A queued issue waiting for the workshop.", Updated: now}
+	t.Tasks["pr:705"] = &Task{ID: "pr:705", Kind: "pr", Number: 705, Title: "Make reconnect tests deterministic", Stage: "ready", House: Review, Head: sha("d"), Base: base, Audit: &Audit{Base: base, Head: sha("d"), Verdict: "clean", Complete: true, Summary: "The full change passed the independent review.", Checks: []string{"Reconnect regression tests passed"}, Findings: []Finding{}}, Updated: now}
+	t.Tasks["commit:"+sha("e")] = &Task{ID: "commit:" + sha("e"), Kind: "commit", Title: "Ship the cursor recovery", Stage: "shipped", House: Release, Head: sha("e"), Updated: now}
+
+	// Active profiles make dispatch provenance visible in the first frame. The
+	// profile is public by design; private command and environment values never
+	// enter a demo snapshot.
+	profile := t.Config.Public().BotAgents[Bug]
+	t.Workers[Bug].Agent = &profile
+	t.Workers[Bug].Enabled = true
+	t.Workers[Bug].Status = "working"
+	t.Workers[Bug].Phase = "investigating"
+	t.Workers[Bug].Task = "Investigating a dropped event during reconnect"
+	t.Workers[Review].Agent = func() *PublicBotAgentConfig { p := t.Config.Public().BotAgents[Review]; return &p }()
+	t.Workers[Review].Enabled = true
+	t.Workers[Review].Status = "pausing"
+	t.Workers[Review].Phase = "waiting"
+	t.Workers[Review].Task = "Holding the review slot for operator inspection"
+	s.Event(t.ID, "delivery", "outside", "issue", "issue:704", "A queued issue is waiting in the workshop", now)
+	s.Event(t.ID, "delivery", "review", "hall", "pr:702", "An inconclusive review needs attention", now)
+	s.Event(t.ID, "delivery", "merge", "hall", "pr:703", "An uncertain merge is awaiting reconciliation", now)
+	s.Event(t.ID, "delivery", "release", "outside", "release:v0.8.3", "A previous shipment left town", now)
 }

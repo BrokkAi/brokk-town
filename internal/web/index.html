@@ -22,6 +22,13 @@
         ><span id="connection">Connecting</span>
       </div>
       <span id="mode" class="badge" hidden>DEMO</span>
+      <div id="view-switcher" class="view-switcher" role="tablist" aria-label="View">
+        <button type="button" data-view="town" role="tab" aria-selected="true">Town</button>
+        <button type="button" data-view="board" role="tab" aria-selected="false" title="&quot;No Fun Dave&quot; mode — Board">Board</button>
+        <button type="button" data-view="compact" role="tab" aria-selected="false" title="&quot;No Fun Dave&quot; mode — Compact">Compact</button>
+      </div>
+      <span id="capacity-summary" class="capacity-summary" role="status"></span>
+      <button id="capacity-settings" class="quiet" type="button">Capacity</button>
       <div class="header-space"></div>
       <button id="motion" class="quiet" aria-pressed="false">Motion on</button
       ><button id="new-town">＋ New town</button>
@@ -67,7 +74,10 @@
             running.</span
           >
         </div>
+        <p id="operations-mode" class="eyebrow" hidden>"No Fun Dave" mode</p>
         <section id="overview" aria-label="All repository towns"></section>
+        <section id="board" class="operations-board" aria-label="Operations board" hidden></section>
+        <section id="compact" class="operations-compact" aria-label="Compact operations view" hidden></section>
         <section class="world" aria-label="Agent town">
           <canvas
             id="world"
@@ -100,7 +110,7 @@
       </main>
       <aside id="inspector" class="inspector" aria-label="Selected house">
         <div class="inspector-top">
-          <span class="eyebrow">HOUSE INSPECTOR</span
+          <span class="eyebrow" id="inspector-town">HOUSE INSPECTOR</span
           ><button
             id="close-inspector"
             class="quiet"
@@ -164,11 +174,43 @@
         </div>
       </form>
     </dialog>
+    <dialog id="capacity-dialog">
+      <form id="capacity-form">
+        <div class="eyebrow">TOWN OPERATIONS</div>
+        <h2>Worker capacity</h2>
+        <p class="muted">Set the maximum number of active bot workers across all towns. Lowering the limit lets active work finish before more bots start. Reporters and issue publishing use separate capacity.</p>
+        <label for="capacity-input">Maximum active workers</label>
+        <input id="capacity-input" name="max_workers" type="number" min="1" max="64" step="1" required />
+        <p id="capacity-current" class="muted" role="status"></p>
+        <div id="capacity-error" class="form-error" role="alert"></div>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-capacity" class="quiet">Cancel</button>
+          <button type="submit" class="primary">Save capacity</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="settings-dialog" class="wide-dialog">
       <form id="settings-form">
         <div class="eyebrow">YOUR AGENT TEAM</div>
         <h2>Town settings</h2>
         <p id="settings-repo" class="muted"></p>
+        <div class="agent-profile">
+          <label for="agent-role">Configure agent for</label>
+          <select id="agent-role">
+            <option value="">Town defaults</option>
+            <option value="bug">Bug Bot</option>
+            <option value="feature">Feature Bot</option>
+            <option value="issue">Issue Bot</option>
+            <option value="review">Review Bot</option>
+            <option value="release">Release Bot</option>
+          </select>
+          <div class="profile-actions">
+            <p id="agent-profile-status" class="muted" role="status"></p>
+            <button id="inherit-agent" type="button" class="quiet" hidden>
+              Use town defaults
+            </button>
+          </div>
+        </div>
         <label for="harness-input">Coding harness</label>
         <select id="harness-input">
           <option value="custom">Custom ACP command</option>
@@ -239,20 +281,24 @@
         <p class="muted">
           Load choices prepares and briefly starts the harness without assigning
           work. It may need you to log in through its CLI first. Leave model or
-          effort blank to use its default.
+          effort blank to use its default. Use the exact model and effort IDs
+          advertised by the selected harness.
         </p>
-        <p class="muted">
-          These settings apply to all four bots on their next run. Active work
-          finishes with its current settings.
+        <p id="agent-profile-note" class="muted"></p>
+        <p class="muted profile-draft-note">
+          Save each profile before closing. Unsaved edits stay here when you
+          switch bots. Closing discards unsaved edits. Active work finishes with
+          its current settings.
         </p>
+        <div id="settings-success" role="status"></div>
         <div id="settings-error" class="form-error" role="alert"></div>
         <div class="dialog-actions">
           <button id="open-delete" type="button" class="danger quiet">
             Delete town</button
           ><span class="spacer"></span
           ><button type="button" data-close="settings-dialog" class="quiet">
-            Cancel</button
-          ><button class="primary" type="submit">Save settings</button>
+            Close</button
+          ><button id="save-agent" class="primary" type="submit">Save town defaults</button>
         </div>
       </form>
     </dialog>
@@ -324,6 +370,8 @@
       <p><kbd>0</kbd> All towns</p>
       <p><kbd>1</kbd>–<kbd>5</kbd> Visit agent houses</p>
       <p><kbd>6</kbd> Read the town hall reports</p>
+      <p><kbd>7</kbd> Visit Feature Bot’s study</p>
+      <p><kbd>T</kbd> Town · <kbd>B</kbd> Board · <kbd>C</kbd> Compact</p>
       <p><kbd>Esc</kbd> Close a panel</p>
       <p>
         Click a delivery or queued task to inspect its contents. Pause lets

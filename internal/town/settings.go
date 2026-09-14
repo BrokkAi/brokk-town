@@ -22,6 +22,22 @@ type AgentSettings struct {
 	Effort  *string   `json:"effort,omitempty"`
 	Command *[]string `json:"command,omitempty"`
 	Version *string   `json:"version,omitempty"`
+	Inherit bool      `json:"inherit,omitempty"`
+}
+
+func (a AgentSettings) validateRole(role Role) error {
+	if role != "" && !ValidAgentRole(role) {
+		return errors.New("agent settings require bug, feature, issue, review, or release")
+	}
+	if a.Inherit {
+		if role == "" {
+			return errors.New("town defaults cannot inherit agent settings")
+		}
+		if a.Harness != nil || a.Model != nil || a.Effort != nil || a.Command != nil || a.Version != nil {
+			return errors.New("inherit cannot be combined with agent overrides")
+		}
+	}
+	return nil
 }
 
 func (c Config) harness() string {
@@ -59,6 +75,10 @@ func validateAgent(c Config) error {
 }
 
 func (a AgentSettings) Apply(c Config) (Config, error) {
+	if a.Inherit {
+		return c, errors.New("inherit requires a specific bot role")
+	}
+	c = clone(c)
 	if a.Harness != nil {
 		if harness.Canonical(*a.Harness) != c.harness() {
 			// Authentication and mode belong to the selected harness.
@@ -116,6 +136,21 @@ func agentConfig(ctx context.Context, c Config, root string) (runner.AgentConfig
 // Prepare records the selected registry definition without downloading or
 // launching anything. Network refreshes cannot change a saved selection.
 func (s *Supervisor) Prepare(c Config, settings AgentSettings) (Config, error) {
+	cfg, err := s.prepareAgent(c, settings)
+	if err != nil {
+		return cfg, err
+	}
+	for role, a := range cfg.BotAgents {
+		bot, err := s.prepareAgent(cfg.withAgent(a), AgentSettings{})
+		if err != nil {
+			return cfg, fmt.Errorf("%s agent: %w", role, err)
+		}
+		cfg.BotAgents[role] = bot.botAgent()
+	}
+	return cfg, cfg.Validate()
+}
+
+func (s *Supervisor) prepareAgent(c Config, settings AgentSettings) (Config, error) {
 	cfg, err := settings.Apply(c)
 	if err != nil {
 		return cfg, err
@@ -151,7 +186,11 @@ func (s *Supervisor) Add(c Config) (string, error) {
 		if st.Demo {
 			return errors.New("use a live service to add real repositories")
 		}
-		t, err := st.Add(c)
+		cfg, err := s.Prepare(c, AgentSettings{})
+		if err != nil {
+			return err
+		}
+		t, err := st.Add(cfg)
 		if err != nil {
 			return err
 		}
@@ -193,17 +232,47 @@ func (s *Supervisor) Delete(id string) error {
 }
 
 func (s *Supervisor) Settings(id string, settings AgentSettings) error {
+	return s.SettingsForRole(id, "", settings)
+}
+
+// SettingsForRole changes one independent bot profile, or the town defaults when
+// role is empty. Inherit removes an override so future defaults apply again.
+func (s *Supervisor) SettingsForRole(id string, role Role, settings AgentSettings) error {
+	if err := settings.validateRole(role); err != nil {
+		return err
+	}
 	return s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
 		}
-		cfg, err := s.Prepare(t.Config, settings)
-		if err != nil {
-			return err
+		switch {
+		case role == "":
+			cfg, err := s.Prepare(t.Config, settings)
+			if err != nil {
+				return err
+			}
+			t.Config = cfg
+		case settings.Inherit:
+			delete(t.Config.BotAgents, role)
+		default:
+			cfg, err := s.prepareAgent(t.Config.ForRole(role), settings)
+			if err != nil {
+				return err
+			}
+			if t.Config.BotAgents == nil {
+				t.Config.BotAgents = map[Role]BotAgentConfig{}
+			}
+			t.Config.BotAgents[role] = cfg.botAgent()
 		}
-		t.Config = cfg
-		st.Event(id, "settings", "operator", "hall", "", "Agent settings saved for the next worker run", s.now())
+		target, title := "hall", "Town agent defaults saved for the next worker run"
+		if role != "" {
+			target, title = string(role), string(role)+" agent settings saved for the next worker run"
+			if settings.Inherit {
+				title = string(role) + " now inherits the town agent defaults"
+			}
+		}
+		st.Event(id, "settings", "operator", target, "", title, s.now())
 		return nil
 	})
 }
@@ -300,6 +369,13 @@ func ProbeAgent(ctx context.Context, cfg Config, roots ...string) (AgentChoices,
 }
 
 func (s *Supervisor) Choices(ctx context.Context, id string, settings AgentSettings) (AgentChoices, error) {
+	return s.ChoicesForRole(ctx, id, "", settings)
+}
+
+func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, settings AgentSettings) (AgentChoices, error) {
+	if err := settings.validateRole(role); err != nil {
+		return AgentChoices{}, err
+	}
 	s.mu.Lock()
 	if ctx.Err() != nil {
 		s.mu.Unlock()
@@ -310,7 +386,10 @@ func (s *Supervisor) Choices(ctx context.Context, id string, settings AgentSetti
 		s.mu.Unlock()
 		return AgentChoices{}, errors.New("unknown town")
 	}
-	cfg, err := s.Prepare(t.Config, settings)
+	if settings.Inherit {
+		role, settings = "", AgentSettings{}
+	}
+	cfg, err := s.prepareAgent(t.Config.ForRole(role), settings)
 	if err != nil {
 		s.mu.Unlock()
 		return AgentChoices{}, err

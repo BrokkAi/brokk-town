@@ -1,5 +1,155 @@
 # Brokk Town implementation plan
 
+## Versioned bot worker protocol (2026-09-14)
+
+The user requested live-upgradable external bots, accepted Unix sockets for the
+initial transport, and authorized corresponding bot-repository changes. A later
+self-signed HTTPS/mutual-TLS transport can be added without changing semantics.
+
+- Town now removes bug-bot, feature-bot, issue-bot, release-bot, and review-bot
+  Go dependencies. Primary roles launch their installed executables and speak
+  Worker Protocol v1 over a private mode-0600 Unix-domain HTTP socket.
+- Initialization exchanges protocol range, exact bot/service version, identity,
+  and capabilities before work. Runs use strict JSON requests and contiguous
+  newline-delimited progress/result/terminal events. Issue and review results are
+  explicit public protocol payloads; Town never parses bot-private state.
+- Town records and rechecks the resolved executable path, hash, and version.
+  PATH is resolved anew for each dispatch, allowing replacement in an existing
+  service-PATH directory without a Town restart; mid-dispatch replacement fails
+  uncertainly. Worker subprocess output remains bounded and shutdown is graceful
+  with a process-group cancellation fallback.
+- Coordinated commits in all five bot repositories add an `internal/worker`
+  standard-library HTTP service and `<command> worker --socket PATH`. They retain
+  their existing CLIs and adapt their released Run/state APIs behind the public
+  worker boundary. The user subsequently requested releases. Final exact-tag
+  releases and all 25 npm launcher/platform packages were verified:
+  bug-bot `v0.3.1`, feature-bot `v0.1.1`, issue-bot `v0.5.1`, release-bot
+  `v0.5.1`, and review-bot `v0.2.1`. A public npm installation smoke verified
+  all five launchers and `worker --help`.
+- Validation passed: Town `go test -race ./...`, `go vet ./...`, `make check`,
+  and isolated `make smoke`; full race/vet suites for bug-bot, feature-bot,
+  issue-bot, and review-bot; race/vet for release-bot's changed worker/cmd
+  packages; all bot license, Python, and npm launcher tests; and a real
+  cross-process initialize/shutdown smoke against all five locally built worker
+  binaries. Release-bot's full root-package race suite initially exposed two
+  pre-existing macOS `/var` versus `/private/var` failures; canonical checkout and
+  repository paths fixed them, and its complete suite now passes. GitHub twice
+  returned an `untagged-*` alias for release-bot drafts while the exact tag was
+  propagating; both published records were repaired to their exact tags, package
+  jobs completed, and release-bot `4a45936` now detects and repairs that alias
+  before staging assets.
+
+## Town v0.1.0 authorization and provenance (2026-09-14)
+
+The user explicitly requested a new Town release using the external-worker
+approach. Town v0.1.0 was published without weakening destination checks:
+
+- `Publish packages` now publishes only by explicit `publish=true` dispatch from
+  an exact existing tag. A uniquely named non-final `v*` preflight tag supplies
+  the tag-only `packages-publish` environment while the workflow input remains
+  the proposed stable `v0.1.0`; no deployment-policy broadening is needed.
+- Authorization now validates GitHub contents access and all five npm package
+  OIDC exchanges, then exercises the same job's
+  Sigstore authority with npm's bundled client. One clearly identified non-package
+  DSSE statement obtains a Fulcio certificate and Rekor entry; independent TUF
+  verification checks the chain, SCT, signature, inclusion proof, workflow
+  identity, repository, ref and exact commit.
+- The second preflight proved all builds and version checks but exposed an invalid
+  assumption in the authorization code: npm OIDC exchange tokens cannot read the
+  maintainer-only trust-governance endpoint and correctly receive HTTP 401. The
+  check now records package-scoped exchange evidence without claiming it proves
+  direct-versus-staged permission; npm enforces that distinction on publication.
+- Final npm publication explicitly requests provenance. Read-only publication
+  verification requires one SLSA v1 Fulcio/Rekor bundle for every one of the five
+  packages and independently checks its package PURL, tarball SHA-512, workflow,
+  tag ref and source commit. Missing or untrusted provenance fails; registry
+  signature/integrity checks remain in place.
+- Added regression coverage for Actions-only Sigstore execution, safe handling of
+  helper failures/evidence, publish order/flags, provenance metadata, request
+  construction and final fail-closed verification. The independent verifier was
+  also exercised against a real published Sigstore attestation and TUF root.
+- PR #35 merged the corrected npm authorization preflight at merge commit
+  `8006469e2b861513f469c4b481b551cc22ce1594`. Exact-commit preflight run
+  `34837196002` passed before the immutable `v0.1.0` tag was created. Publication
+  run `34837658974` then completed; the finalized GitHub release, four native
+  archives, launcher, four platform packages, registry bytes, and all five
+  independent SLSA/Fulcio/Rekor provenance bundles were verified publicly.
+
+## Self-contained worker startup patch (2026-09-14)
+
+- The v0.1.0 package installed Town itself but real workers expected separately
+  installed `bbb`, `bfb`, `bib`, `brv`, and `brb` executables. The user rejected
+  that surprising prerequisite and selected pinned npx execution.
+- Default dispatch now always invokes the exact compatible bot package through
+  `npx --yes`; it never selects an ambient or floating bot version. Explicit
+  command overrides remain internal test seams for fake workers.
+- Regression coverage asserts the exact package/version mapping for all five
+  roles. Release validation must include a fresh public Town-only installation
+  that starts each pinned worker service, not merely `bt --help`.
+
+## Epic #30: simplified operations and scheduling capacity (2026-09-14)
+
+- Long Board queues use viewport-relative bounded scroll areas with persistent
+  column headings, keyboard access, and scroll positions retained on live redraw.
+- Board scrollbars use recessed dark-green tracks and sage thumbs with hover
+  and active states, retaining native scrolling and system high-contrast colors.
+- User-requested name: Board and Compact display **"No Fun Dave" mode**, with
+  matching selector tooltips; the standard view names and shortcuts remain.
+- Isolated branch `codex/epic-30-operations-capacity`, based on fetched
+  `origin/master` at `660a27d`; canonical checkout remains untouched.
+- One persisted global service setting, default 4 and validated 1–64, controls
+  reserved non-reporter bot runs across towns. Reductions preserve active work;
+  increases and freed slots wake the existing scheduler. Reporter, durable issue
+  publishing and prompt-free model discovery remain outside this pool.
+- Town, Board and Compact consume the existing snapshot/SSE and command API.
+  Task stages and typed write/review evidence remain authoritative; projection
+  cannot certify GitHub outcomes. Active worker profiles are frozen at dispatch.
+- Luna ownership: browser assets/tests; CLI/TUI, demo and docs/smoke. Primary owns
+  scheduler, state/API contracts, integration and final verification.
+- Usage, spending limits and quota routing remain #6; Mjolnir stays an independent
+  ACP control plane, with no executor dependency or second scheduler introduced.
+- Implementation integrated and `make check smoke` passed: Go race/vet,
+  20 frontend behavior tests (including actual app handlers), syntax, licenses,
+  launcher and 33 packaging regressions, plus isolated CLI/API/TUI smoke.
+- Browser QA passed view switching, task/worker inspection, capacity saving,
+  persisted selection, keyboard tabs and 320/390px layouts. Fixed hidden
+  inspectors, task lookup, mobile header overlap and schedule text placement.
+- Validation uses bundled Python 3.12. Xcode Python 3.9 fails the unchanged mock
+  HTTPError.close test, reproduced from exact base 660a27d. Bifrost correctness
+  policy execution panicked after 17.166s with `one semantic temporary has one
+  transparent assignment source`; no policy cleanliness established.
+- Clean commit 07fe207 passed native packaging for all four supported targets,
+  all five npm packages, and offline npm launch. Ready PR #31 links this work to
+  epic #30; current-head Linux/macOS/workflow CI delivery is tracked there.
+  No live agents, test GitHub writes, merge or release publication were used.
+
+## Per-bot agent profiles (2026-09-10)
+
+User requested independent harness/model/reasoning choices for every bot, such as
+Claude for review, Codex for issue implementation, and an OpenRouter-backed agent
+for releases.
+
+- Preserved town-wide agent settings as defaults; added complete private profiles
+  for bug, feature, issue, review, and release bots, with explicit inheritance
+  reset. Repo-bot performs repository reporting without an agent.
+- Persisted per-profile harness versions, commands, authentication, environment,
+  model and effort. The selected bot resolves at dispatch; active runs retain
+  their settings, and nested repair/review sessions reuse the prepared launch.
+  Public state exposes only harness/version/model/effort and inheritance.
+- Added browser profile selection and bot-inspector access, authenticated API and
+  CLI role selection/reset, documentation and a multi-profile config example.
+- Validation passed: `make check` (Go race tests/vet, 15 frontend behavior tests,
+  syntax, launcher, packaging and license checks) and isolated `make smoke` with
+  CLI/API profile isolation, defaults/reset and restart persistence. Fake agents
+  cover private config preservation, dispatch/nested sessions, and model choices.
+- In-app browser demo QA verified Claude review, Codex issue and OpenCode release
+  profiles, saved versions, offline choices, reset isolation and reload/inspector
+  display, with no browser errors. Unsaved drafts survive switching profiles;
+  pending inheritance resets must be saved before further customization so old
+  private commands/authentication cannot survive a reset followed by an edit.
+- Changes stay local on the current branch. No live service restart, real bot
+  automation, GitHub writes or release publication were used for development.
+
 ## Product
 
 A town application that runs and supervises the Brokk bots. Houses represent
@@ -279,3 +429,53 @@ and foundev/draupnir instead of a fixed three-agent selector.
   refresh/discovery do not run agents or access the network. No live bot work,
   GitHub writes, or publication was used. Actual provider authentication remains
   the user's harness setup; the tests use fake agents and downloaded fixtures.
+
+## Feature-bot discovery and distribution (2026-09-10)
+
+User requested a separate feature-bot closely modeled on the latest bug-bot,
+including native/npm packaging, matching GitHub Actions, and a studious graphic.
+Pulled master in both Town and bug-bot before beginning. Standalone source is committed and published from the separate sibling
+/Users/ryansvihla/code/feature-bot checkout.
+
+- Adapt bug-bot's discovery, independent review, full issue-history comparison,
+  exact revision checks and durable publication intents for useful new features.
+  Require user problem/value, scope, acceptance criteria and repository evidence;
+  reject defects, existing/rejected requests, unsupported or uncertain proposals.
+- Preserve the standalone Go/ACP library, bfb CLI/TUI, installer, four native
+  targets, five @brokkai/feature-bot npm packages and three pinned Actions workflows.
+- Integrate the feature role into Town's shared controls, supervision, 30-minute
+  cadence, receipt-driven issue deliveries and isolated demo. Migrate existing
+  state by adding only an absent feature worker, paused by default.
+- Add original studious study/reader artwork and a seven-building browser layout.
+- Validate with fake GitHub/ACP, race/vet, frontend checks and demo integration;
+  validate complete standalone packaging/offline install before external setup.
+- User explicitly authorized the public repository and initial prerelease, then
+  clarified the established bootstrap flow: npm publish, user follows its approval
+  link and enables the five-minute window, then CLI scripts configure trusted
+  publishers and matching owners. Use that flow for subsequent npm bootstraps;
+  do not drive account setup through browser automation.
+- Created public BrokkAi/feature-bot with bug-bot's effective GitHub collaborators,
+  workflow permissions and packages-publish environment. Published v0.1.0-rc.1
+  at df984949176eb3865414897b9a2ff7de954a8ce2, with six native GitHub assets and
+  five npm packages under next. Every published artifact matches the validated
+  local bytes. All five trusted publishers were configured by npm CLI and read
+  back, with createPackage/createStagedPackage permissions matching bug-bot;
+  effective npm owners are foundev and bigslopdave on every package.
+- Town pins the published v0.1.0-rc.1 library without local replacements. Updated
+  reviewed dependency notices. Full make check smoke passes (Go race/vet,
+  frontend and launcher tests, package/license regressions, isolated CLI/API/TUI
+  integration). Independent review found and fixed new-CLI/old-service TUI
+  compatibility; missing feature workers display restart guidance.
+- Browser QA passed at 1440, 390 and 320 pixels with controls, keyboard 7,
+  reduced motion, PNG serving and no errors/overflow. Both original studious
+  RGBA sprites preserve their generated alpha; prompts and provenance are saved.
+- Final public npm install launched bfb v0.1.0-rc.1. Exact-source Linux/macOS CI
+  passed on both master and the release tag. The existing-release package
+  validation workflow 34498883724 passed, rebuilt identical npm packages from
+  the published native assets, verified registry integrity, and saved its
+  validated package artifact. The redundant tag-triggered publisher was canceled
+  after its checks passed because the bootstrap release was already published.
+- Final standalone source is df98494. Published artifacts and the five-package
+  owner/trust audit are retained in feature-bot/dist (ignored). Town integration
+  is committed on its current master branch; no Town release was published and
+  the user's existing live service was not restarted or enabled by this work.

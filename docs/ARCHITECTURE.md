@@ -7,16 +7,34 @@ state/commands to both clients. The service outlives client connections.
 
 A town ID is the lowercase GitHub repository slug. State is keyed by town, then
 issue/PR number or commit SHA. Branches and worktrees remain within the town.
-Four shared slots bound simultaneous non-reporter workers across repositories;
-repo reporters run separately. Each role has its own managed checkout and bot
+The service persists one global `service_config.max_workers` setting (default 4,
+validated from 1 through 64). It reserves simultaneous non-reporter workers
+across repositories; repo reporters, durable issue publishing, and prompt-free
+model discovery run separately. `state.capacity.active` is the live reservation
+count and `state.capacity.limit` is the configured limit. A demo derives active
+capacity from its simulated `working` and `pausing` workers; a live service
+reports scheduler reservations, so stale worker status cannot create a slot.
+Capacity edits are serialized with reservations. Lowering the limit cancels no
+runs and blocks new bot dispatch until usage is below the limit. Raising it and
+releasing a slot wake the scheduler immediately; every town/role remains
+exclusive. Reservations include startup and cancellation cleanup, including a
+deleted town until its worker exits. Runtime counts reset to zero on restart;
+only the configured limit is durable. Legacy state with no setting inherits 4;
+present invalid settings fail validation.
+
+Each role has its own managed checkout and bot
 state so independent houses do not share a working directory.
 
-The released bot libraries remain responsible for their primary operations.
-Town invokes one-shot `Run` calls with progress observers, gives issue-bot
-implementation-ready PR output, and adds an explicit repair path for its owned
-PRs. Review-bot's persisted investigation/verification results are inputs to a
-separate full-change certification. Town never treats a successful exit or zero
-new review comments as merge permission. Standalone bot repositories are unchanged.
+The released bot executables remain responsible for their primary operations.
+Town does not compile the bot packages into `bt` or read their private state
+files. Each primary dispatch starts the corresponding `bbb`, `bfb`, `bib`,
+`brv`, or `brb` worker service on a private Unix socket, negotiates protocol
+version and capabilities, streams ordered progress, and consumes only explicit
+public results. Issue-bot receives implementation-ready PR settings, and Town
+adds an explicit repair path for its owned PRs. Review-bot's exact-revision
+result is an input to a separate full-change certification. Town never treats a
+successful exit or zero new review comments as merge permission. The complete
+contract is specified in [WORKER_PROTOCOL.md](WORKER_PROTOCOL.md).
 
 ## Facts and concurrency
 
@@ -38,26 +56,66 @@ scheduling and cancels the worker context. The scheduler rechecks enabled state
 before entering a worker, preventing a stale scheduling snapshot from restarting
 an already-stopped house. Each worker has a deadline and a per-role next-run time.
 
+## Operator projections
+
+Town, Board, and Compact are three views over the same public snapshot and SSE
+cursor. Town keeps the animated houses and delivery paths for the selected
+repository. Board groups tasks into fixed Open, Queued, Review, Blocked, Ready,
+Shipped and Completed columns (empty columns are omitted). Drafts are Open;
+queued implementation and repair tasks stay Queued; author/check waits are
+Review. Ready review evidence and unreleased commits remain distinguishable.
+Only a confirmed `shipped` commit goes into Shipped. Merged PRs, closed work and
+implemented issues retain their exact badges in Completed.
+
+Worker cards separately show active runs and failures: a busy house does not
+prove which queued task its worker is processing. No exact task-to-session ID
+exists in the current worker progress contract. Compact lists every worker and
+task, including next-run eligibility, effective profiles and blockers. Unknown
+stages stay visibly unknown. Uncertain PR write intents are associated by PR
+identity; an issue with the same number cannot inherit a PR's intent.
+
+A selection opens the shared inspector without changing the all-town scope.
+The inspector names the repository and offers the existing controls. View and
+repository scope persist locally; SSE redraws retain task selection and keyboard
+focus by town, surface and identity. Snapshot updates never replay commands.
+Animation consumes committed events and may ease their presentation, but it
+never starts work, delays a command, or stands in for a GitHub mutation. Active
+worker profiles are frozen at dispatch in `worker.agent`; queued work shows the
+current public bot profile for its next dispatch. Completed tasks do not claim
+that today's profile describes their historical run.
+
 Town deletion marks a durable tombstone, disables scheduling, cancels queued
 issue submissions and running contexts, and filters the town and its events out
 of public snapshots. Final worker results still commit to its recovery record.
 Re-adding waits for workers to stop, then restores the same identity, history, and
 private worktrees with automation disabled.
 
+Town config retains a default harness and ACP agent configuration, plus optional
+complete `bot_agents` profiles for bug, feature, issue, review, and release roles.
+An absent role inherits the town defaults; an explicit profile owns its harness,
+launch definition, model, effort, command, environment, authentication, and mode.
+Blank selectors use that profile's harness defaults. Repo-bot has no agent.
 Agent settings preserve private command/authentication fields when changing only
-model or effort; switching harnesses resets harness-specific configuration.
-Dispatch takes a fresh config snapshot so queued work uses the latest settings.
+model or effort; switching harnesses resets harness-specific configuration only
+within the selected profile. Resetting a role removes its profile, restoring
+inheritance. Public snapshots expose effective per-bot harness/model/effort and
+inheritance state while omitting private ACP fields and full launch definitions.
+Dispatch takes a fresh, role-resolved config snapshot so queued work uses the
+latest settings. Running workers and their nested ACP sessions retain their
+starting profile; issue repairs use issue-bot's profile and review certification
+uses review-bot's profile.
 `internal/harness` reads the official ACP registry v1 index, retaining a bundled
 offline snapshot and an atomic, validated cache. Authenticated API/CLI refreshes
 run independently of town scheduling. The browser displays the cached catalog
 immediately and refreshes stale entries in the background. Anvil, Muse ACP, and
 Draupnir are explicit supplements resolved from PATH, with setup notes.
 
-Selecting a harness persists its full launch definition in private town config;
-public snapshots expose only the ID and version. Catalog refreshes never mutate
-saved definitions. A user can explicitly select the new version. Legacy towns
-pin their definition at settings save or first dispatch. Package runners receive
-the registry's exact package, arguments, and environment without a shell. Native
+Selecting a harness persists its full launch definition in the selected private
+profile; public snapshots expose only the ID and version. Catalog refreshes never
+mutate saved definitions. A user can explicitly select the new version. Legacy
+towns retain their defaults and pin the definition at settings save or first
+dispatch. Package runners receive the registry's exact package, arguments, and
+environment without a shell. Native
 archives install in a private cache keyed by definition and platform, using a
 cross-process lock, bounded downloads/extraction, optional registry checksums,
 path/link validation, and atomic publication. Preparation runs in worker or
@@ -65,8 +123,9 @@ choice-request contexts, not in render or scheduling loops. Installed supplement
 commands retain the user's version. Registry definitions pin launch recipes;
 upstream mutable package tags or release assets remain upstream-controlled.
 
-Choice discovery first prepares the harness with a three-minute bound, then uses
-a temporary ACP session with a 45-second bound, no prompt, and no client tools.
+Choice discovery resolves the selected role's profile and first prepares its
+harness with a three-minute bound, then uses a temporary ACP session with a
+45-second bound, no prompt, and no client tools.
 Model selection precedes reading model-specific effort options. Demo discovery
 uses fixtures and never starts a process; demo registry refreshes never access
 the network. Nested bot sessions reuse the prepared launch from their run.
@@ -119,9 +178,11 @@ existing release-bot owns batching, release preparation, and publishing.
 Automated tests exercise state/restart, routing and duplicate suppression, review
 coverage, merge gates, lost-response intents, fake-agent local Git repair pushes,
 audit immutability, pause/stop, API authentication/SSE, terminal sizing/cancellation,
-frontend routing, and optional page-tool contracts. Demo integration must not
-receive live workers or GitHub handles. Tests do not prove an actual ACP model's
-judgment or a repository's live branch-protection/release configuration.
+frontend routing, optional page-tool contracts, and fake versioned Unix-socket
+workers that exercise initialization, capability negotiation, request identity,
+progress, typed results, sequence validation, and shutdown. Demo integration must
+not receive live workers or GitHub handles. Tests do not prove an actual ACP
+model's judgment or a repository's live branch-protection/release configuration.
 
 The interface is local and authenticated, not a multi-user security boundary.
 Agents execute repository commands under the service account. Prompts constrain
@@ -129,3 +190,39 @@ the intended workflow, but they are not an OS sandbox. Isolate untrusted work at
 the operating-system level. The first implementation polls complete GitHub
 inventories; large repositories may need incremental synchronization and archival
 policies in a later iteration.
+
+## Automatic feature discovery
+
+Feature-bot is a separate Go/ACP bot and `bfb` CLI, modeled on bug-bot. Town
+starts its protocol worker with the feature role's effective harness and an
+isolated feature workspace.
+Both discovery workers wait 30 minutes between successful attempts and share the
+same global worker cap with implementation, review and release workers.
+Feature proposals require a user problem, current workflow, proposed behavior,
+user value, bounded scope, testable acceptance criteria and repository evidence.
+The bot independently reviews the proposal and compares all existing issue
+history before publishing through a durable request intent.
+
+Town never turns a successful discovery exit into an issue delivery. Only the
+GitHub inventory's observed `feature-bot` receipt marker routes a new issue from
+the feature study to the issue workshop. The initial inventory stays a baseline;
+repeated inventories do not replay arrivals. Existing saved towns gain an absent
+feature worker paused, preserving every other worker's settings. The closed demo
+simulates feature research and its confirmed delivery without an agent or GitHub.
+
+## ACP relationship and future execution
+
+Brokk Town is an operations view and scheduler for released Brokk bot libraries.
+It consumes ACP-compatible bot runs through those libraries; it does not depend
+on Mjolnir or `mj` as an executor and does not introduce a second ACP scheduler.
+Mjolnir remains an independent ACP control plane that can be used to run or
+inspect agents outside a town. Shared ACP conventions can improve interoperability,
+but a Town dispatch is owned by Town's durable state, worker reservation, and
+reconciliation rules.
+
+Adding a future general-purpose executor requires an explicit contract for
+ownership, cancellation, restart reconciliation, and the authority that owns
+capacity reservations. Until those rules are specified, Town keeps its fixed
+bot-role projection and does not expose programmable workflows. Usage quotas,
+budgets, and spending limits remain a separate issue-6 concern; the worker
+capacity setting is only a local concurrency bound.

@@ -1,13 +1,30 @@
-[
-  {
-    "repo": "BrokkAi/my-project",
-    "branch": "main",
-    "harness": "codex",
-    "agent": {"model": "", "effort": ""},
-    "verify": ["go", "test", "./..."],
-    "merge_policy": "bot",
-    "poll_seconds": 60,
-    "report_seconds": 1800,
-    "max_cycles": 5
-  }
-]
+{
+  "max_workers": 4,
+  "towns": [
+    {
+      "repo": "BrokkAi/my-project",
+      "branch": "main",
+      "harness": "codex",
+      "agent": {"model": "", "effort": ""},
+      "bot_agents": {
+        "review": {
+          "harness": "claude",
+          "agent": {"model": "", "effort": ""}
+        },
+        "issue": {
+          "harness": "codex",
+          "agent": {"model": "", "effort": ""}
+        },
+        "release": {
+          "harness": "opencode",
+          "agent": {"model": "", "effort": ""}
+        }
+      },
+      "verify": ["go", "test", "./..."],
+      "merge_policy": "bot",
+      "poll_seconds": 60,
+      "report_seconds": 1800,
+      "max_cycles": 5
+    }
+  ]
+}
