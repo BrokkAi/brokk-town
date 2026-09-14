@@ -49,12 +49,17 @@ destination checks:
   an exact existing tag. A uniquely named non-final `v*` preflight tag supplies
   the tag-only `packages-publish` environment while the workflow input remains
   the proposed stable `v0.1.0`; no deployment-policy broadening is needed.
-- Authorization now validates GitHub contents access, all five npm package OIDC
-  exchanges and direct `createPackage` trust, then exercises the same job's
+- Authorization now validates GitHub contents access and all five npm package
+  OIDC exchanges, then exercises the same job's
   Sigstore authority with npm's bundled client. One clearly identified non-package
   DSSE statement obtains a Fulcio certificate and Rekor entry; independent TUF
   verification checks the chain, SCT, signature, inclusion proof, workflow
   identity, repository, ref and exact commit.
+- The second preflight proved all builds and version checks but exposed an invalid
+  assumption in the authorization code: npm OIDC exchange tokens cannot read the
+  maintainer-only trust-governance endpoint and correctly receive HTTP 401. The
+  check now records package-scoped exchange evidence without claiming it proves
+  direct-versus-staged permission; npm enforces that distinction on publication.
 - Final npm publication explicitly requests provenance. Read-only publication
   verification requires one SLSA v1 Fulcio/Rekor bundle for every one of the five
   packages and independently checks its package PURL, tarball SHA-512, workflow,
