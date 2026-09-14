@@ -69,6 +69,8 @@ destination checks:
 
 - Long Board queues use viewport-relative bounded scroll areas with persistent
   column headings, keyboard access, and scroll positions retained on live redraw.
+- Board scrollbars use recessed dark-green tracks and sage thumbs with hover
+  and active states, retaining native scrolling and system high-contrast colors.
 - User-requested name: Board and Compact display **"No Fun Dave" mode**, with
   matching selector tooltips; the standard view names and shortcuts remain.
 - Isolated branch `codex/epic-30-operations-capacity`, based on fetched

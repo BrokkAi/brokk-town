@@ -246,6 +246,62 @@ header {
   padding: 1px 4px 1px 0;
   scrollbar-gutter: stable;
 }
+.board-column-list,
+.board-columns {
+  scrollbar-color: #64815b #0a1710;
+  scrollbar-width: thin;
+}
+@supports selector(::-webkit-scrollbar) {
+  .board-column-list,
+  .board-columns {
+    scrollbar-color: auto;
+    scrollbar-width: auto;
+  }
+  .board-column-list::-webkit-scrollbar,
+  .board-columns::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  .board-column-list::-webkit-scrollbar-track,
+  .board-columns::-webkit-scrollbar-track {
+    background: #0a1710;
+    border-radius: 8px;
+  }
+  .board-column-list::-webkit-scrollbar-thumb,
+  .board-columns::-webkit-scrollbar-thumb {
+    background: #64815b;
+    border: 3px solid #0a1710;
+    border-radius: 8px;
+    min-height: 32px;
+  }
+  .board-column-list::-webkit-scrollbar-thumb:hover,
+  .board-columns::-webkit-scrollbar-thumb:hover {
+    background: #9fb88c;
+  }
+  .board-column-list::-webkit-scrollbar-thumb:active,
+  .board-columns::-webkit-scrollbar-thumb:active {
+    background: var(--green);
+  }
+  .board-column-list::-webkit-scrollbar-corner,
+  .board-columns::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+@media (forced-colors: active) {
+  .board-column-list,
+  .board-columns {
+    scrollbar-color: auto;
+  }
+  .board-column-list::-webkit-scrollbar-thumb,
+  .board-columns::-webkit-scrollbar-thumb {
+    background: ButtonText;
+    border-color: Canvas;
+  }
+  .board-column-list::-webkit-scrollbar-track,
+  .board-columns::-webkit-scrollbar-track {
+    background: Canvas;
+  }
+}
 .board-column h3 {
   color: #b6c5ad;
   font: 11px var(--mono);
