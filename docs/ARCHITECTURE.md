@@ -11,12 +11,21 @@ Four shared slots bound simultaneous non-reporter workers across repositories;
 repo reporters run separately. Each role has its own managed checkout and bot
 state so independent houses do not share a working directory.
 
-The released bot libraries remain responsible for their primary operations.
-Town invokes one-shot `Run` calls with progress observers, gives issue-bot
-implementation-ready PR output, and adds an explicit repair path for its owned
-PRs. Review-bot's persisted investigation/verification results are inputs to a
-separate full-change certification. Town never treats a successful exit or zero
-new review comments as merge permission. Standalone bot repositories are unchanged.
+The released bot CLIs remain responsible for their primary operations. Town does
+not import their Go libraries or compile them into `bt`. Every primary worker
+dispatch resolves `bbb`, `bfb`, `bib`, `brv`, or `brb` from PATH, records the
+resolved path, executable hash, and reported version, writes a strict private
+one-shot JSON configuration, and launches the external process without a shell.
+The temporary configuration is private and removed after the process exits;
+stdout and structured stderr retain fixed tails rather than unbounded buffers.
+It rechecks the path, hash, and version after dispatch, rejecting an upgrade that
+replaced the bot while that dispatch owned it. Bounded structured logs become
+worker progress; final issue and review ownership still comes from each bot's
+durable state. Town gives issue-bot implementation-ready PR output and adds an
+explicit repair path for its owned PRs. Review-bot's persisted
+investigation/verification results are inputs to a separate full-change
+certification. Town never treats a successful exit or zero new review comments as
+merge permission. Standalone bot repositories are unchanged.
 
 ## Facts and concurrency
 
@@ -132,7 +141,8 @@ existing release-bot owns batching, release preparation, and publishing.
 Automated tests exercise state/restart, routing and duplicate suppression, review
 coverage, merge gates, lost-response intents, fake-agent local Git repair pushes,
 audit immutability, pause/stop, API authentication/SSE, terminal sizing/cancellation,
-frontend routing, and optional page-tool contracts. Demo integration must not
+frontend routing, optional page-tool contracts, and fake external bot CLIs that
+write durable state or mutate themselves mid-dispatch. Demo integration must not
 receive live workers or GitHub handles. Tests do not prove an actual ACP model's
 judgment or a repository's live branch-protection/release configuration.
 
@@ -145,8 +155,8 @@ policies in a later iteration.
 
 ## Automatic feature discovery
 
-Feature-bot is a separate Go/ACP bot and `bfb` CLI, modeled on bug-bot. Town calls
-its shared library with the feature role's effective harness and an isolated
+Feature-bot is a separate Go/ACP bot and `bfb` CLI, modeled on bug-bot. Town runs
+the external CLI with the feature role's effective harness and an isolated
 feature workspace.
 Both discovery workers wait 30 minutes between successful attempts and share the
 same global worker cap with implementation, review and release workers.
