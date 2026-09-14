@@ -15,8 +15,7 @@ without visiting each repository.
 [![CI](https://github.com/BrokkAi/brokk-town/actions/workflows/ci.yml/badge.svg)](https://github.com/BrokkAi/brokk-town/actions/workflows/ci.yml)
 
 This is the first local implementation. The browser UI is embedded in the Go
-binary; Node.js is only needed for UI development checks, agents, and bot CLIs
-installed through npm.
+binary; Node.js is only needed for UI development checks and agents that use it.
 Linux and macOS are supported. No hosted service is required.
 
 ## Try the town
@@ -77,35 +76,11 @@ for first-release setup, access checks, publishing, and recovery.
 
 ## Connect real repositories
 
-Install and authenticate `git`, GitHub CLI (`gh`), your chosen coding agent, and
-the released Brokk bot CLIs. Town no longer compiles the bots into `bt`; it
-launches `bbb`, `bfb`, `bib`, `brv`, and `brb` from the service PATH. The
-currently supported npm distributions are:
-
-```sh
-npm install -g @brokkai/bug-bot@0.2.1 \
-  @brokkai/feature-bot@0.1.0-rc.1 \
-  @brokkai/issue-bot@0.4.0 \
-  @brokkai/review-bot@0.1.0 \
-  @brokkai/release-bot@0.4.0
-```
-
-You can also install each repository's checksum-verified native release. Run
-`bbb version`, `bfb version`, `bib version`, `brv version`, and `brb version`
-to check the installations. A source build that reports `dev` is not a release
-revision and is rejected.
-
+Install and authenticate `git`, GitHub CLI (`gh`), and your chosen coding agent.
 Town defaults to the official ACP registry’s `codex-acp` npm distribution, which
 requires Node.js and `npx`. Choose another harness in Settings as described below.
 Git must already be able to clone and push your GitHub repositories; Town uses
 the current Git/gh credentials.
-
-Bot CLIs can be upgraded while the Town service stays running. A new worker
-dispatch resolves the command from PATH again; install the replacement in a
-directory already represented by the service's PATH. An active dispatch pins its
-resolved path, executable hash, and reported version, then rechecks all three.
-If an upgrade replaces a bot mid-dispatch, that dispatch fails uncertainly and
-the next dispatch uses the newly installed revision after GitHub reconciliation.
 
 ```sh
 ./bin/bt serve --repo BrokkAi/my-project

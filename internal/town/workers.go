@@ -2,21 +2,25 @@ package town
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"os"
+	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
-	"github.com/BrokkAi/acp-go/runner"
+	bugbot "github.com/BrokkAi/bug-bot"
+	featurebot "github.com/BrokkAi/feature-bot"
+	issuebot "github.com/BrokkAi/issue-bot"
+	releasebot "github.com/BrokkAi/release-bot"
+	reviewbot "github.com/BrokkAi/review-bot"
 )
 
 type BotWorkers struct {
 	Root         string
 	Store        *Store
 	GitHub       GitHub
-	BotCommands  map[Role]string
 	remoteURL    func(string) string
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
 }
@@ -28,7 +32,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	t = clone(t)
 	t.Config = t.Config.ForRole(r)
 	dir, state := Workspace(b.Root, t.ID, r)
-	remote := b.remote(t.Config.Repo)
+	remote := "https://github.com/" + t.Config.Repo + ".git"
 	agent, err := agentConfig(ctx, t.Config, b.Root)
 	if err != nil {
 		return result, err
@@ -42,39 +46,88 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	}
 	switch r {
 	case Bug:
-		return result, b.runBot(ctx, t, r, agent, dir, state, remote, 0, observe, log)
+		c := bugbot.DefaultConfig()
+		c.Remote = remote
+		c.Branch = t.Config.Branch
+		c.Directory = dir
+		c.StateDirectory = state
+		c.Agent = agent
+		c.GitHub.Repo = t.Config.Repo
+		c.Verify = t.Config.Verify
+		ctx = bugbot.WithProgress(ctx, func(p bugbot.Progress) { observe(Progress{p.Phase, p.Task}) })
+		return result, bugbot.Run(ctx, c, log, true)
 	case Feature:
-		return result, b.runBot(ctx, t, r, agent, dir, state, remote, 0, observe, log)
+		c := featurebot.DefaultConfig()
+		c.Remote = remote
+		c.Branch = t.Config.Branch
+		c.Directory = dir
+		c.StateDirectory = state
+		c.Agent = agent
+		c.GitHub.Repo = t.Config.Repo
+		c.Verify = t.Config.Verify
+		ctx = featurebot.WithProgress(ctx, func(p featurebot.Progress) { observe(Progress{p.Phase, p.Task}) })
+		return result, featurebot.Run(ctx, c, log, true)
 	case Issue:
 		if task := nextTask(t, Issue, "fixes"); task != nil {
 			result.PR = task.Number
 			return result, b.repair(ctx, t, task, observe, log)
 		}
-		branch := t.Config.Branch
-		if branch == "" {
-			branch = "master"
-		}
-		runErr := b.runBot(ctx, t, r, agent, dir, state, remote, 0, observe, log)
-		saved, readErr := readIssueExternalState(state, remote, branch, dir, t.Config.Repo)
+		c := issuebot.DefaultConfig()
+		c.Remote = remote
+		c.Branch = t.Config.Branch
+		c.Directory = dir
+		c.StateDirectory = state
+		c.Agent = agent
+		c.GitHub.Repo = t.Config.Repo
+		c.Draft = false
+		c.Verify = t.Config.Verify
+		ctx = issuebot.WithProgress(ctx, func(p issuebot.Progress) { observe(Progress{p.Phase, p.Task}) })
+		err := issuebot.Run(ctx, c, log, true)
+		saved, readErr := issuebot.ReadState(c)
 		if readErr != nil {
 			return result, readErr
 		}
-		result.Owned = issueOwnership(saved, t.Config.Repo)
-		return result, runErr
+		result.Owned = map[int]Ownership{}
+		if saved != nil {
+			for _, job := range saved.Jobs {
+				if job.Status != "submitted" {
+					continue
+				}
+				u, e := url.Parse(job.URL)
+				if e != nil || u.Host != "github.com" {
+					continue
+				}
+				parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+				if len(parts) != 4 || !strings.EqualFold(strings.Join(parts[:2], "/"), t.Config.Repo) || parts[2] != "pull" {
+					continue
+				}
+				n, e := strconv.Atoi(parts[3])
+				if e == nil {
+					result.Owned[n] = Ownership{job.Branch, job.Issue.Number}
+				}
+			}
+		}
+		return result, err
 	case Review:
 		task := nextTask(t, Review, "queued")
 		if task == nil {
 			return result, nil
 		}
 		result.PR = task.Number
-		if err := b.runBot(ctx, t, r, agent, dir, state, remote, task.Number, observe, log); err != nil {
+		c := reviewbot.DefaultConfig()
+		c.Remote = remote
+		c.Branch = t.Config.Branch
+		c.Directory = dir
+		c.StateDirectory = state
+		c.Agent = agent
+		c.GitHub.Repo = t.Config.Repo
+		c.PR = task.Number
+		c.Verify = t.Config.Verify
+		ctx = reviewbot.WithProgress(ctx, func(p reviewbot.Progress) { observe(Progress{p.Phase, p.Task}) })
+		if err := reviewbot.Run(ctx, c, log, true); err != nil {
 			return result, err
 		}
-		branch := t.Config.Branch
-		if branch == "" {
-			branch = "master"
-		}
-		saved, err := readReviewExternalState(state, remote, branch, dir, t.Config.Repo)
+		saved, err := reviewbot.ReadState(c)
 		if err != nil {
 			return result, err
 		}
@@ -82,6 +135,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			return result, fmt.Errorf("review did not produce a durable result")
 		}
 		complete := false
+		known := map[string]string{}
 		for _, job := range saved.Jobs {
 			if job.PR.Number != task.Number || job.DryRun {
 				continue
@@ -89,34 +143,33 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			if job.PR.Head.SHA == task.Head && job.PR.Base.SHA == task.Base && job.Status == "submitted" {
 				complete = true
 			}
+			for _, candidate := range job.Candidates {
+				if candidate.Verdict == "invalid" {
+					continue
+				}
+				id := Key(candidate.Finding.Path + candidate.Finding.Title + candidate.Finding.Trigger)
+				known[id] = fmt.Sprintf("%s: %s\n%s\nTrigger: %s\nEvidence: %s\nVerifier: %s", candidate.Finding.Path, candidate.Finding.Title, candidate.Finding.Explanation, candidate.Finding.Trigger, strings.Join(candidate.Finding.Evidence, "; "), candidate.Reason)
+			}
 		}
 		if !complete {
 			return result, fmt.Errorf("no completed review for the exact base/head revision")
 		}
 		observe(Progress{"certifying", "Checking all outstanding findings on this revision"})
-		result.Audit, err = b.certify(ctx, t, task, reviewKnownFindings(saved), log)
+		result.Audit, err = b.certify(ctx, t, task, known, log)
 		return result, err
 	case Release:
-		return result, b.runBot(ctx, t, r, agent, dir, state, remote, 0, observe, log)
+		c := releasebot.DefaultConfig()
+		c.Remote = remote
+		c.Branch = t.Config.Branch
+		c.Directory = dir
+		c.StateDirectory = state
+		c.Agent = agent
+		c.GitHub.Repo = t.Config.Repo
+		c.Verify = t.Config.Verify
+		ctx = releasebot.WithProgress(ctx, func(p releasebot.Progress) { observe(Progress{p.Phase, p.Task}) })
+		return result, releasebot.Run(ctx, c, log, true, false)
 	}
 	return result, fmt.Errorf("unsupported worker %s", r)
-}
-
-func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, pr int, observe func(Progress), log *slog.Logger) error {
-	bot, err := b.externalBot(ctx, role)
-	if err != nil {
-		return err
-	}
-	log.Info("Using external bot", "role", string(role), "version", bot.version)
-	observe(Progress{Phase: "starting", Task: "Using " + string(role) + "-bot " + bot.version})
-	config, err := writeExternalConfig(state, agent, bot, t, dir, remote, pr)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(config)
-	runErr := runExternalBot(ctx, bot, config, observe, log)
-	verifyErr := bot.verify(ctx)
-	return errors.Join(runErr, verifyErr)
 }
 func nextTask(t *Town, role Role, stage string) *Task {
 	tasks := []*Task{}

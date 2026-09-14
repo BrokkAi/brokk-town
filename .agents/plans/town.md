@@ -1,34 +1,5 @@
 # Brokk Town implementation plan
 
-## External bot CLIs (2026-09-14)
-
-The user requested removing compiled-in bot versions so bot releases can be
-upgraded while the local service remains live.
-
-- Removed Go dependencies on bug-bot, feature-bot, issue-bot, release-bot, and
-  review-bot. Primary workers now resolve and launch their released `bbb`,
-  `bfb`, `bib`, `brv`, and `brb` CLIs from PATH without a shell.
-- Each dispatch writes an isolated, strict one-shot bot JSON config containing
-  the role workspace, durable state, effective agent profile, repository identity,
-  verify policy, and role defaults. Configs are private and removed after exit.
-  stdout and structured stderr are bounded; useful JSON log records feed worker
-  progress.
-- Each dispatch resolves and records the bot path, executable hash, and release
-  version before work and rechecks all three afterward. Mid-dispatch replacement
-  fails rather than attributing work to mixed revisions. PATH is resolved again
-  on the next dispatch, so replacing a release in an existing service-PATH
-  directory upgrades live without restarting Town. Source `dev` builds are
-  rejected.
-- Issue ownership and exact-revision review evidence are read only from the
-  external bots' durable state. Review state is identity/revision/publication
-  validated before certification; successful exits and zero new findings remain
-  insufficient. Fake external CLIs cover config passing, durable ownership,
-  progress, cleanup, and self-mutation rejection.
-- Validation passed: `go test -race ./...`, `go vet ./...`, `make check` (race,
-  vet, frontend behavior/syntax, launcher, packaging/license and script checks),
-  and isolated `make smoke`. Fake external CLIs and fake agents cover the new
-  dispatch path without real GitHub writes or live bot automation.
-
 ## Per-bot agent profiles (2026-09-10)
 
 User requested independent harness/model/reasoning choices for every bot, such as
