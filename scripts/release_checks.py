@@ -177,15 +177,28 @@ def validate_trust(configs):
         raise ValueError("npm trust lacks exact repository/workflow/environment and direct publish permission")
 
 
+def valid_npm_exchange(exchange):
+    expiry = exchange.get("expires")
+    if isinstance(expiry, int):
+        expires = datetime.fromtimestamp(expiry, timezone.utc)
+    elif isinstance(expiry, str):
+        expires = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+    else:
+        expires = None
+    if exchange.get("token_type") != "oidc" or not exchange.get("token") or expires is None:
+        raise ValueError("npm did not issue a valid unexpired package-scoped OIDC token")
+    if expires <= datetime.now(timezone.utc):
+        raise ValueError("npm did not issue a valid unexpired package-scoped OIDC token")
+    return exchange
+
+
 def npm_authorization(sha):
     identity = oidc_identity(sha, "npm:registry.npmjs.org")
     for name in NPM_NAMES:
         encoded = urllib.parse.quote(name, safe="")
         exchange = request_json("https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/" + encoded,
                                 identity, "POST")
-        expires = datetime.fromisoformat(exchange["expires"].replace("Z", "+00:00"))
-        if exchange.get("token_type") != "oidc" or not exchange.get("token") or expires <= datetime.now(timezone.utc):
-            raise ValueError("npm did not issue a valid unexpired package-scoped OIDC token")
+        valid_npm_exchange(exchange)
         # Exchange can also grant staging-only rights. Require explicit direct-publish trust.
         # If npm denies this read to exchanged tokens, fail closed; do not use an upload as a probe.
         validate_trust(request_json("https://registry.npmjs.org/-/package/" + encoded + "/trust", exchange["token"]))

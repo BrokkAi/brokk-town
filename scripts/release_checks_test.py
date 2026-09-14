@@ -1,5 +1,6 @@
 import base64
 from datetime import datetime, timezone
+from datetime import timedelta
 import gzip
 import io
 import json
@@ -83,6 +84,19 @@ class ReleaseChecks(unittest.TestCase):
                        {"claims": dict(trust["claims"], workflow_ref={"file": "ci.yml"})}):
             with self.assertRaises(ValueError):
                 checks.validate_trust([dict(trust, **change)])
+
+    def test_npm_exchange_accepts_epoch_and_iso_expiry(self):
+        now = datetime.now(timezone.utc)
+        expected = {"token_type": "oidc", "token": "secret"}
+        for expiry, value in ((int(now.timestamp() + 300), now.timestamp() + 300),
+                              ((now + timedelta(seconds=300)).isoformat().replace("+00:00", "Z"), None)):
+            exchange = dict(expected, expires=expiry)
+            self.assertTrue(checks.valid_npm_exchange(exchange))
+
+    def test_expired_npm_exchange_fails(self):
+        exchange = {"token_type": "oidc", "token": "secret", "expires": 0}
+        with self.assertRaises(ValueError):
+            checks.valid_npm_exchange(exchange)
 
     def test_oidc_must_bind_unexpired_identity_to_commit_and_environment(self):
         now = datetime.now(timezone.utc).timestamp()
