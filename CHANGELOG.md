@@ -3,6 +3,7 @@
 ## 0.1.2 — pending
 
 - Offer pinned Brokk Town upgrades through the browser and terminal interfaces.
+- Make the external pull-request ownership policy editable in Town settings.
 - Harden partial-release recovery when native archives were produced by a
   different compressor but contain identical files and executable modes.
 - Fail closed when npm `latest`/`next` pointers do not match an already-present
