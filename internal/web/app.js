@@ -222,6 +222,7 @@ function selectView(mode) {
 }
 
 function renderViewSwitcher() {
+  $("#operations-mode").hidden = viewMode === "town";
   document.querySelectorAll("#view-switcher [data-view]").forEach((button) => {
     const selected = button.dataset.view === viewMode;
     button.tabIndex = selected ? 0 : -1;
