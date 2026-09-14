@@ -67,7 +67,7 @@ destination checks:
 
 ## Epic #30: simplified operations and scheduling capacity (2026-09-14)
 
-- User-requested name: Board and Compact display “No Fun Dave mode”, with
+- User-requested name: Board and Compact display **"No Fun Dave" mode**, with
   matching selector tooltips; the standard view names and shortcuts remain.
 - Isolated branch `codex/epic-30-operations-capacity`, based on fetched
   `origin/master` at `660a27d`; canonical checkout remains untouched.
