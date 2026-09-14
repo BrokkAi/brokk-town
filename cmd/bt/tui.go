@@ -303,7 +303,7 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 				if task.Blocked {
 					blocked++
 				}
-				if task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
+				if task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
 					queued++
 				}
 			}
@@ -349,7 +349,7 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 		}
 		tasks := []*town.Task{}
 		for _, task := range t.Tasks {
-			if task.House == r && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
+			if task.House == r && task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
 				tasks = append(tasks, task)
 			}
 		}

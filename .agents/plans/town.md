@@ -39,6 +39,10 @@
 - Show normalized provenance, eligibility, external state, priority, revision,
   sync time, capabilities, and typed source health through the shared snapshot,
   browser inspector, TUI, and CLI status. Document trust and priority boundaries.
+- Treat provider-native completion as a terminal inbound observation: Slack check
+  reactions and closed GitHub issues remain auditable but ineligible, and appear
+  in the Completed board column. Never infer done from an absent item in an
+  incomplete source read.
 - Validate focused fake adapters and restart/overlap/intent behavior, then run Go
   race/vet, frontend, and integration gates before ready PR delivery.
 

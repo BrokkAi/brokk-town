@@ -262,7 +262,7 @@ function renderCapacity() {
 }
 
 function queuedProfileText(task) {
-  if (["closed", "merged", "shipped", "implemented"].includes(task.stage)) return "";
+  if (["complete", "closed", "merged", "shipped", "implemented"].includes(task.stage)) return "";
   return `Next profile: ${task.profile.harness} · ${task.profile.model || "default model"} · ${task.profile.effort || "default effort"}`;
 }
 function captureBoardViewport(board) {

@@ -871,10 +871,16 @@ func slackMessageTitle(message SlackMessage) string {
 }
 
 func slackMessageStatus(message SlackMessage) WorkStatus {
+	// Completion wins regardless of reaction order. Slack does not promise an
+	// ordering that would make a construction reaction more authoritative than
+	// a later check mark.
+	for _, reaction := range message.Reactions {
+		if reaction.Count != 0 && (strings.EqualFold(reaction.Name, "white_check_mark") || strings.EqualFold(reaction.Name, "heavy_check_mark")) {
+			return WorkComplete
+		}
+	}
 	for _, reaction := range message.Reactions {
 		switch strings.ToLower(reaction.Name) {
-		case "white_check_mark", "heavy_check_mark":
-			return WorkComplete
 		case "construction":
 			return WorkWorking
 		case "x", "no_entry", "warning":
@@ -888,9 +894,15 @@ func slackMessageStatus(message SlackMessage) WorkStatus {
 
 func (f *SlackFunnel) slackWorkItem(config FunnelConfig, message SlackMessage, cursor string) WorkItem {
 	identity := WorkIdentity{Funnel: config.ID, Provider: f.Provider(), Item: SourceItemID(message.TS)}
+	status := slackMessageStatus(message)
+	eligible := !status.Terminal()
+	eligibility := "matched configured Slack marker"
+	if !eligible {
+		eligibility = "done reaction observed at source"
+	}
 	return WorkItem{
 		Identity: identity, Title: slackMessageTitle(message), Body: message.Text,
-		Status: slackMessageStatus(message), Eligible: true,
+		Status: status, Eligible: eligible, Eligibility: eligibility,
 		Priority:     Priority{Policy: config.PriorityPolicy},
 		Provenance:   Provenance{Identity: identity, ObservedAt: time.Now(), Revision: slackMessageRevision(message), Cursor: Cursor(cursor), ExternalState: message.Type},
 		Capabilities: f.capabilitySet(config),

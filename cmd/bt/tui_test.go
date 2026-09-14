@@ -18,6 +18,7 @@ func TestTerminalFramesFitAndNeutralizeControls(t *testing.T) {
 	_, _ = s.Add(town.DefaultConfig("acme/paper-trail"))
 	x.Workers[town.Bug].Task = "危険\x1b[2J 👩‍💻 é"
 	x.Report("New arrivals", "10 issues arrived", time.Now())
+	x.Tasks["source:done"] = &town.Task{ID: "source:done", Kind: "source", Title: "Checked off in Slack", House: town.Issue, Stage: "complete"}
 	for _, size := range [][2]int{{120, 35}, {80, 24}, {25, 10}, {10, 3}, {1, 1}} {
 		for _, role := range []int{-1, 0, 3} {
 			frame := renderTUI(s, 0, role, size[0], size[1], "status")
@@ -38,6 +39,13 @@ func TestTerminalFramesFitAndNeutralizeControls(t *testing.T) {
 	overview := renderTUI(s, 0, -1, 100, 30, "")
 	if !strings.Contains(overview, "acme/orchard") || !strings.Contains(overview, "acme/paper-trail") {
 		t.Fatal("overview omitted a town")
+	}
+	if strings.Contains(overview, "1 queued") {
+		t.Fatal("done source item was counted as queued", overview)
+	}
+	issue := renderTUI(s, 0, 1, 100, 30, "")
+	if strings.Contains(issue, "Checked off in Slack") {
+		t.Fatal("done source item remained at the issue-bot door", issue)
 	}
 }
 func TestPastedCommandsNeverOperateTown(t *testing.T) {

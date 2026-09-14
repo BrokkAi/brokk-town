@@ -253,3 +253,21 @@ func TestConfiguredGitHubFunnelImplementsNormalizedContract(t *testing.T) {
 		t.Fatalf("normalized lifecycle failed: %#v %v", result, err)
 	}
 }
+
+func TestGitHubClosedIssueIsDoneAndIneligible(t *testing.T) {
+	config := FunnelConfig{ID: "github-done", Provider: "github", Location: SourceLocation{"repository": "Acme/Orchard"}, Enabled: true, ReadOnly: true, PriorityPolicy: "source-status"}
+	for _, test := range []struct {
+		state    string
+		status   WorkStatus
+		eligible bool
+	}{
+		{state: "closed", status: WorkClosed, eligible: false},
+		{state: "CLOSED", status: WorkClosed, eligible: false},
+		{state: "open", status: WorkQueued, eligible: true},
+	} {
+		item := githubWorkItem(config, GitHubFunnelItem{SourceID: "7", Title: "work", State: test.state, Revision: "r1"})
+		if item.Status != test.status || item.Eligible != test.eligible {
+			t.Fatalf("state %q became status=%s eligible=%v", test.state, item.Status, item.Eligible)
+		}
+	}
+}

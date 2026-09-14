@@ -37,6 +37,11 @@ func TestDemoSeedsInspectableBoardAndNoPrivateAgentData(t *testing.T) {
 			t.Fatalf("demo omitted %s stage", stage)
 		}
 	}
+	for _, stage := range []string{"complete", "closed"} {
+		if !stages[stage] {
+			t.Fatalf("demo omitted %s done-funnel stage", stage)
+		}
+	}
 	if !blocked {
 		t.Fatal("demo omitted blocked work")
 	}

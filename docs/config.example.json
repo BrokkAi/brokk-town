@@ -30,7 +30,7 @@
           "id": "github-ready",
           "provider": "github",
           "location": {"repository": "BrokkAi/my-project"},
-          "filter": {"query": "is:issue is:open", "include_labels": "agent-ready"},
+          "filter": {"query": "is:issue", "include_labels": "agent-ready"},
           "credentials": {"name": "github-default"},
           "transitions": {
             "working": [{"name": "labels", "parameters": {"add": "agent-in-progress"}}],

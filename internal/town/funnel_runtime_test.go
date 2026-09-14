@@ -59,3 +59,33 @@ func TestIncompleteFunnelPageNeverBecomesCleanQueue(t *testing.T) {
 		t.Fatalf("incomplete empty read was flattened: %#v", sync)
 	}
 }
+
+func TestDoneFunnelItemsAreRetainedWithoutArrivalDelivery(t *testing.T) {
+	state := NewState(false)
+	town, _ := state.Add(DefaultConfig("acme/orchard"))
+	town.Initialized = true
+	now := time.Unix(200, 0).UTC()
+	for _, test := range []struct {
+		name     string
+		provider ProviderID
+		status   WorkStatus
+	}{
+		{name: "Slack check reaction", provider: "slack", status: WorkComplete},
+		{name: "GitHub closed issue", provider: "github", status: WorkClosed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			id := WorkIdentity{Funnel: FunnelID("done-" + string(test.provider)), Provider: test.provider, Item: SourceItemID(test.name)}
+			item := WorkItem{Identity: id, Title: test.name, Status: test.status, Eligible: false, Eligibility: "done at source", Priority: Priority{Policy: "source-status"}, Provenance: Provenance{Identity: id, Revision: "r1", ObservedAt: now, ExternalState: string(test.status)}, Capabilities: CapabilitySet{}}
+			if err := ReconcileFunnelPage(&state, town, DiscoveryPage{Funnel: id.Funnel, Provider: id.Provider, Items: []WorkItem{item}, Complete: true, Outcome: Outcome{Kind: OutcomeComplete, Covered: true}, ObservedAt: now}, now); err != nil {
+				t.Fatal(err)
+			}
+			task := town.Tasks["source:"+id.Key()]
+			if task == nil || task.Stage != string(test.status) || task.Source == nil || task.Source.Eligible {
+				t.Fatalf("done source evidence not retained: %#v", task)
+			}
+		})
+	}
+	if len(state.Events) != 0 {
+		t.Fatalf("done observations emitted arrivals: %#v", state.Events)
+	}
+}

@@ -681,10 +681,15 @@ func (f *GitHubFunnel) Capabilities(_ context.Context, request CapabilityRequest
 func githubWorkItem(config FunnelConfig, item GitHubFunnelItem) WorkItem {
 	identity := WorkIdentity{Funnel: config.ID, Provider: ProviderID("github"), Item: SourceItemID(item.SourceID)}
 	status := WorkQueued
-	if item.State == "closed" {
+	if strings.EqualFold(item.State, "closed") {
 		status = WorkClosed
 	}
-	return WorkItem{Identity: identity, Title: item.Title, Body: item.Body, Status: status, Eligible: item.State == "open" && !item.Locked, Eligibility: "matched configured GitHub selector", Priority: Priority{Policy: config.PriorityPolicy}, Provenance: Provenance{Identity: identity, URL: item.URL, Revision: Revision(item.Revision), Cursor: Cursor(item.Cursor), ObservedAt: time.Now(), ExternalState: item.State}, Capabilities: githubCapabilities(config)}
+	eligible := strings.EqualFold(item.State, "open") && !item.Locked
+	eligibility := "matched configured GitHub selector"
+	if status.Terminal() {
+		eligibility = "issue is closed at source"
+	}
+	return WorkItem{Identity: identity, Title: item.Title, Body: item.Body, Status: status, Eligible: eligible, Eligibility: eligibility, Priority: Priority{Policy: config.PriorityPolicy}, Provenance: Provenance{Identity: identity, URL: item.URL, Revision: Revision(item.Revision), Cursor: Cursor(item.Cursor), ObservedAt: time.Now(), ExternalState: item.State}, Capabilities: githubCapabilities(config)}
 }
 
 func (f *GitHubFunnel) Discover(ctx context.Context, request DiscoveryRequest) (DiscoveryPage, error) {

@@ -184,6 +184,32 @@ func TestConfiguredSlackFunnelImplementsNormalizedDiscovery(t *testing.T) {
 	}
 }
 
+func TestSlackCheckReactionIsDoneAndIneligible(t *testing.T) {
+	config := FunnelConfig{ID: "slack-ready", Provider: "slack", Location: SourceLocation{"channel": "C123"}, Filter: SourceFilter{"marker": "[town]"}, Enabled: true, ReadOnly: true, PriorityPolicy: "operator-explicit"}
+	for _, test := range []struct {
+		name      string
+		reactions []SlackReaction
+		status    WorkStatus
+		eligible  bool
+	}{
+		{name: "white check", reactions: []SlackReaction{{Name: "construction", Count: 1}, {Name: "white_check_mark", Count: 1}}, status: WorkComplete, eligible: false},
+		{name: "heavy check", reactions: []SlackReaction{{Name: "heavy_check_mark", Count: 2}}, status: WorkComplete, eligible: false},
+		{name: "removed check", reactions: []SlackReaction{{Name: "white_check_mark", Count: 0}}, status: WorkQueued, eligible: true},
+		{name: "other emoji", reactions: []SlackReaction{{Name: "thumbsup", Count: 1}}, status: WorkQueued, eligible: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := NewConfiguredSlackFunnel(config, &slackFakeHTTP{}, func(context.Context) (SlackCredential, error) { return SlackCredential{}, nil })
+			item := adapter.slackWorkItem(config, SlackMessage{TS: "10.000", Type: "message", Text: "[town] investigate", Reactions: test.reactions}, "")
+			if item.Status != test.status || item.Eligible != test.eligible {
+				t.Fatalf("status=%s eligible=%v, want %s %v", item.Status, item.Eligible, test.status, test.eligible)
+			}
+			if item.Provenance.ExternalState != "message" {
+				t.Fatalf("provider message type was not preserved: %#v", item.Provenance)
+			}
+		})
+	}
+}
+
 func TestSlackAuthAndRateLimitAreTyped(t *testing.T) {
 	for _, test := range []struct {
 		name     string

@@ -83,6 +83,26 @@ func TestWorkIdentityIncludesFunnelAndStableProvenance(t *testing.T) {
 	}
 }
 
+func TestTerminalWorkStatusCannotRemainEligible(t *testing.T) {
+	for _, status := range []WorkStatus{WorkComplete, WorkClosed} {
+		item := testWorkItem(testIdentity("done", "provider", string(status)))
+		item.Status = status
+		if !status.Terminal() {
+			t.Fatalf("%s was not terminal", status)
+		}
+		if err := item.Validate(); err == nil || !strings.Contains(err.Error(), "cannot remain eligible") {
+			t.Fatalf("%s remained eligible: %v", status, err)
+		}
+		item.Eligible = false
+		if err := item.Validate(); err != nil {
+			t.Fatalf("valid terminal %s rejected: %v", status, err)
+		}
+	}
+	if WorkQueued.Terminal() {
+		t.Fatal("queued work was terminal")
+	}
+}
+
 func TestFunnelValidationRejectsCredentialsAndImplicitPriority(t *testing.T) {
 	if err := (FunnelConfig{ID: "x", Provider: "slack", Location: SourceLocation{"channel": "C1"}}).Validate(); err == nil {
 		t.Fatal("funnel without explicit priority policy was accepted")

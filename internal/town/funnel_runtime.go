@@ -97,7 +97,7 @@ func ReconcileFunnelPage(s *State, t *Town, page DiscoveryPage, now time.Time) e
 		if task == nil {
 			task = &Task{ID: id, Kind: kind, Number: number, Title: item.Title, URL: item.Provenance.URL, Stage: string(item.Status), House: Issue, External: true, Updated: now, Source: &item}
 			t.Tasks[id] = task
-			if t.Initialized && item.Status != WorkClosed {
+			if t.Initialized && !item.Status.Terminal() {
 				s.Event(t.ID, "delivery", "outside", "issue", id, "Work arrived through "+string(item.Identity.Funnel)+": "+item.Title, now)
 			}
 		} else {

@@ -118,6 +118,12 @@ func (s WorkStatus) valid() bool {
 	}
 }
 
+// Terminal reports source-observed completion. Terminal work remains in the
+// durable inventory for provenance and audit, but must not be dispatched.
+func (s WorkStatus) Terminal() bool {
+	return s == WorkComplete || s == WorkClosed
+}
+
 // Priority is separate from discovery order. Every item has an explicit
 // policy, including the intentional "unprioritized" policy for adapters that
 // do not select work by priority.
@@ -168,6 +174,9 @@ func (w WorkItem) Validate() error {
 	}
 	if !w.Status.valid() {
 		return fmt.Errorf("unknown normalized work status %q", w.Status)
+	}
+	if w.Status.Terminal() && w.Eligible {
+		return errors.New("terminal work item cannot remain eligible")
 	}
 	if err := w.Priority.Validate(); err != nil {
 		return err
