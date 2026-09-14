@@ -138,6 +138,21 @@ class Element {
       button._surface = this;
       this.children.push(button);
     }
+    // Board list containers are the only non-button descendants needed by
+    // this shim. Keep them shallow: app.js only needs their identity, focus,
+    // and scroll offsets to exercise redraw preservation.
+    const lists = /<div\b([^>]*\bdata-board-list="[^"]+"[^>]*)>[\s\S]*?<\/div>/gi;
+    for (const match of html.matchAll(lists)) {
+      const list = new Element("div");
+      for (const attr of match[1].matchAll(/([\w-]+)="([^"]*)"/g)) {
+        const [, name, value] = attr;
+        if (name === "class") list.className = value;
+        else if (name === "id") list.id = value;
+        else if (name.startsWith("data-")) list.dataset[name.slice(5).replaceAll(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
+      }
+      list._surface = this;
+      this.children.push(list);
+    }
   }
   get innerHTML() {
     return this._html || "";
@@ -248,6 +263,7 @@ const state = {
       },
       tasks: {
         "pr:1": { id: "pr:1", kind: "pr", number: 1, title: "Review this change", house: "review", stage: "awaiting_author" },
+        "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Queue this change", house: "issue", stage: "queued" },
       },
       intents: {}, reports: [], events: [],
     },
@@ -258,10 +274,11 @@ const state = {
 test("app handlers render views, inspect work, preserve focused capacity input, and retain keyboard control", async () => {
   const elements = installFixture();
   const requests = [];
-  let releaseSecond;
+  let releaseSecond, releaseThird;
   const messages = [
     `data: ${JSON.stringify(state)}\n\n`,
     new Promise((resolve) => { releaseSecond = () => resolve(`data: ${JSON.stringify({ ...state, seq: 2, capacity: { active: 2, limit: 7 } })}\n\n`); }),
+    new Promise((resolve) => { releaseThird = () => resolve(`data: ${JSON.stringify({ ...state, seq: 3, capacity: { active: 3, limit: 8 } })}\n\n`); }),
   ];
   globalThis.fetch = async (url, options = {}) => {
     requests.push({ url, options });
@@ -283,7 +300,22 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements.board.hidden, false);
   assert.equal(elements.world.hidden, true);
   assert.equal(elements.compact.hidden, true);
-  const boardTask = elements.board.querySelector("[data-board-task]");
+  const boardLists = elements.board.querySelectorAll("[data-board-list]");
+  assert.equal(boardLists.length, 2, "board exposes each populated column as its own list");
+  const queuedList = boardLists.find((list) => list.dataset.boardList.endsWith(":queued"));
+  const reviewList = boardLists.find((list) => list.dataset.boardList.endsWith(":review"));
+  queuedList.scrollTop = 113;
+  reviewList.scrollTop = 29;
+  queuedList.focus();
+  releaseSecond();
+  await new Promise((resolve) => setImmediate(resolve));
+  const redrawnLists = elements.board.querySelectorAll("[data-board-list]");
+  assert.equal(redrawnLists.find((list) => list.dataset.boardList.endsWith(":queued")).scrollTop, 113, "queued list scroll survives SSE redraw");
+  assert.equal(redrawnLists.find((list) => list.dataset.boardList.endsWith(":review")).scrollTop, 29, "review list keeps its independent scroll position");
+  assert.equal(document.activeElement.dataset.boardList, queuedList.dataset.boardList, "focused board list survives SSE redraw");
+  const boardTask = elements.board
+    .querySelectorAll("[data-board-task]")
+    .find((task) => task.dataset.boardTask === "pr:1");
   assert.ok(boardTask, "board renders a task card from the snapshot");
   boardTask.onclick();
   assert.equal(elements.inspector.classList.contains("open"), true);
@@ -304,7 +336,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements["capacity-dialog"].open, true);
   elements["capacity-input"].focus();
   elements["capacity-input"].value = "9";
-  releaseSecond();
+  releaseThird();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(elements["capacity-input"].value, "9", "focused draft survives SSE redraw");
   await elements["capacity-form"].onsubmit({

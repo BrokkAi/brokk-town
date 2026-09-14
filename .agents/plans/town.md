@@ -67,6 +67,8 @@ destination checks:
 
 ## Epic #30: simplified operations and scheduling capacity (2026-09-14)
 
+- Long Board queues use viewport-relative bounded scroll areas with persistent
+  column headings, keyboard access, and scroll positions retained on live redraw.
 - User-requested name: Board and Compact display **"No Fun Dave" mode**, with
   matching selector tooltips; the standard view names and shortcuts remain.
 - Isolated branch `codex/epic-30-operations-capacity`, based on fetched

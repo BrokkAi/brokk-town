@@ -66,7 +66,8 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+[tabindex="0"]:focus-visible {
   outline: 2px solid var(--green);
   outline-offset: 3px;
 }
@@ -196,8 +197,10 @@ header {
 .board-columns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: start;
   gap: 9px;
   overflow-x: auto;
+  padding-bottom: 2px;
 }
 .board-workers {
   display: flex;
@@ -235,6 +238,13 @@ header {
   min-height: 85px;
   border-top: 2px solid #64815b;
   padding-top: 7px;
+}
+.board-column-list {
+  max-height: min(55vh, 34rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1px 4px 1px 0;
+  scrollbar-gutter: stable;
 }
 .board-column h3 {
   color: #b6c5ad;

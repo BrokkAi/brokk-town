@@ -48,10 +48,13 @@ already-running service. Use `bt web` to print its browser address again.
 
 The browser header switches among **Town**, **Board**, and **Compact** without
 restarting. Town keeps the animated houses first-class; Board groups durable work
-into fixed workflow columns; Compact lists worker activity, profiles, scheduling
+into fixed workflow columns with bounded, independently scrollable task lists;
+Compact lists worker activity, profiles, scheduling
 eligibility and tasks. Select **All towns** or a repository in the sidebar to
 change scope. View and scope survive reloads. Cards and rows open the shared
-inspector and controls, retaining repository context across SSE updates.
+inspector and controls, retaining repository context across SSE updates. Board
+column headings stay visible while scrolling; live updates preserve each column’s
+scroll position.
 
 Use **T**, **B**, or **C** to switch views, **0** for all towns, and **1–7** for
 houses. The view tabs also support arrow keys, Home and End. Tab/Enter open cards

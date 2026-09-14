@@ -243,12 +243,54 @@ function queuedProfileText(task) {
   if (["closed", "merged", "shipped", "implemented"].includes(task.stage)) return "";
   return `Next profile: ${task.profile.harness} · ${task.profile.model || "default model"} · ${task.profile.effort || "default effort"}`;
 }
+function captureBoardViewport(board) {
+  const townColumns = new Map(
+    [...board.querySelectorAll("[data-board-columns]")].map((columns) => [
+      columns.dataset.boardColumns,
+      { left: columns.scrollLeft, top: columns.scrollTop },
+    ]),
+  );
+  const taskLists = new Map(
+    [...board.querySelectorAll("[data-board-list]")].map((list) => [
+      list.dataset.boardList,
+      { left: list.scrollLeft, top: list.scrollTop },
+    ]),
+  );
+  return {
+    townColumns,
+    taskLists,
+    focusedList: document.activeElement?.dataset?.boardList || "",
+  };
+}
+function restoreBoardViewport(board, viewport) {
+  board.querySelectorAll("[data-board-columns]").forEach((columns) => {
+    const position = viewport.townColumns.get(columns.dataset.boardColumns);
+    if (position) {
+      columns.scrollLeft = position.left;
+      columns.scrollTop = position.top;
+    }
+  });
+  board.querySelectorAll("[data-board-list]").forEach((list) => {
+    const position = viewport.taskLists.get(list.dataset.boardList);
+    if (position) {
+      list.scrollLeft = position.left;
+      list.scrollTop = position.top;
+    }
+  });
+  if (viewport.focusedList) {
+    [...board.querySelectorAll("[data-board-list]")]
+      .find((list) => list.dataset.boardList === viewport.focusedList)
+      ?.focus({ preventScroll: true });
+  }
+}
 function renderBoard() {
+  const board = $("#board");
+  const viewport = captureBoardViewport(board);
   const projection = projectState(state, selectedTown);
   const towns = overview
     ? projection.towns
     : projection.towns.filter((item) => item.town?.id === selectedTown);
-  $("#board").innerHTML = towns.length
+  board.innerHTML = towns.length
     ? towns
         .map((item) => {
           const townName = item.town?.config?.repo || item.town?.id || "Town";
@@ -261,22 +303,23 @@ function renderBoard() {
               const tasks = item.tasks.filter((task) => boardColumn(task) === column.id);
               if (!tasks.length) return "";
               const classes = tasks.map((task) => task.statusClass).join(" ");
-              return `<div class="board-column status-${esc(column.id)} ${esc(classes)}"><h3>${esc(column.label)} <span>${tasks.length}</span></h3>${tasks
+              const listKey = `${item.town.id}:${column.id}`;
+              return `<div class="board-column status-${esc(column.id)} ${esc(classes)}"><h3>${esc(column.label)} <span>${tasks.length}</span></h3><div class="board-column-list" data-board-list="${esc(listKey)}" role="region" tabindex="0" aria-label="${esc(`${townName} ${column.label} tasks`)}">${tasks
                 .map(
                   (task) =>
                     `<button class="board-task" data-board-town="${esc(item.town.id)}" data-board-task="${esc(task.id)}" data-board-house="${esc(task.house || "hall")}"><strong>${esc(task.title || task.id)}</strong><small><span class="status-chip status-${esc(task.statusClass)}">${esc(task.statusLabel)}</span> · ${esc(task.house || "town")}${task.number ? ` · #${task.number}` : ""}</small><small>${esc(queuedProfileText(task))}</small></button>`,
                 )
-                .join("")}</div>`;
+                .join("")}</div></div>`;
             })
             .join("");
-          return `<article class="board-town"><header><div><span class="eyebrow">${esc(townName.split("/")[0] || "TOWN")}</span><h2>${esc(townName.split("/").slice(1).join("/") || townName)}</h2></div><button class="quiet board-visit" data-board-visit="${esc(item.town.id)}">Open town →</button></header>${workerCards ? `<div class="board-workers"><h3>Workers</h3>${workerCards}</div>` : ""}<div class="board-columns">${cards || '<p class="muted">No work recorded yet.</p>'}</div></article>`;
+          return `<article class="board-town"><header><div><span class="eyebrow">${esc(townName.split("/")[0] || "TOWN")}</span><h2>${esc(townName.split("/").slice(1).join("/") || townName)}</h2></div><button class="quiet board-visit" data-board-visit="${esc(item.town.id)}">Open town →</button></header>${workerCards ? `<div class="board-workers"><h3>Workers</h3>${workerCards}</div>` : ""}<div class="board-columns" data-board-columns="${esc(item.town.id)}">${cards || '<p class="muted">No work recorded yet.</p>'}</div></article>`;
         })
         .join("")
     : '<div class="overview-empty"><h2>No towns to show.</h2><p>Add a repository to start tracking operations.</p></div>';
-  $("#board")
+  board
     .querySelectorAll("[data-board-visit]")
     .forEach((button) => (button.onclick = () => { selectView("town"); selectTown(button.dataset.boardVisit); }));
-  $("#board")
+  board
     .querySelectorAll("[data-board-task], [data-board-house]")
     .forEach(
       (button) =>
@@ -284,6 +327,7 @@ function renderBoard() {
           inspectOperation(button.dataset.boardTown, button.dataset.boardHouse, button.dataset.boardTask);
         }),
     );
+  restoreBoardViewport(board, viewport);
 }
 
 function renderCompact() {
@@ -381,7 +425,7 @@ function render() {
     const restored = [...(root?.querySelectorAll("button") || [])].find((button) =>
       focusMatches(button, focus),
     );
-    restored?.focus();
+    restored?.focus({ preventScroll: true });
   }
 }
 function selectTown(id) {
