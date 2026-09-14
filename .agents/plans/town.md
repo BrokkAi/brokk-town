@@ -479,3 +479,14 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   owner/trust audit are retained in feature-bot/dist (ignored). Town integration
   is committed on its current master branch; no Town release was published and
   the user's existing live service was not restarted or enabled by this work.
+
+## v0.1.2 release preparation (2026-09-14)
+
+- Reconcile the job target and its recovered release-verification changes with
+  the already-published v0.1.1 baseline without moving existing tags.
+- Preserve upstream npm/Sigstore provenance validation while hardening native
+  archive recovery, npm dist-tag verification, and exact-run build evidence.
+- Run the complete local checks, deliver the preparation through the job's
+  unique PR, and validate the merged commit with a `publish=false` workflow run.
+- Do not create the final v0.1.2 tag, upload assets, publish npm packages, or
+  dispatch the publishing path during this preflight phase.
