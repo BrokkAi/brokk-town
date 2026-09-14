@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -108,6 +109,37 @@ class ReleaseChecks(unittest.TestCase):
             checks.github_authorization("a" * 40)
             self.assertEqual(api.call_args_list[-1].args, ("releases/1", "DELETE"))
             self.assertTrue(api.call_args_list[1].args[2]["draft"])
+
+    def test_sigstore_preflight_requires_actual_job_and_parses_only_safe_evidence(self):
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": checks.REPO, "GITHUB_JOB": "packages",
+               "GITHUB_SHA": "a" * 40}
+        success = subprocess.CompletedProcess([], 0, json.dumps(
+            {"fulcio": True, "rekor": True, "logIndex": "123", "integratedTime": "456"}
+        ), "")
+        with patch.dict(os.environ, env), patch.object(checks.subprocess, "run", return_value=success) as command:
+            checks.sigstore_authorization("a" * 40)
+            self.assertIn("sigstore_preflight.cjs", command.call_args.args[0][1])
+        for change in ({"GITHUB_ACTIONS": "false"}, {"GITHUB_JOB": "native"},
+                       {"GITHUB_SHA": "b" * 40}):
+            with patch.dict(os.environ, dict(env, **change)), \
+                    patch.object(checks.subprocess, "run") as command:
+                with self.assertRaisesRegex(ValueError, "actual Actions"):
+                    checks.sigstore_authorization("a" * 40)
+                command.assert_not_called()
+        for evidence in ({}, {"fulcio": True, "rekor": True, "logIndex": None, "integratedTime": 1},
+                         {"fulcio": True, "rekor": False, "logIndex": 1, "integratedTime": 1}):
+            invalid = subprocess.CompletedProcess([], 0, json.dumps(evidence), "")
+            with patch.dict(os.environ, env), patch.object(checks.subprocess, "run", return_value=invalid):
+                with self.assertRaisesRegex(RuntimeError, "incomplete|invalid"):
+                    checks.sigstore_authorization("a" * 40)
+
+    def test_failed_sigstore_preflight_does_not_forward_client_output(self):
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": checks.REPO, "GITHUB_JOB": "packages",
+               "GITHUB_SHA": "a" * 40}
+        failure = subprocess.CompletedProcess([], 1, "", "sensitive diagnostics")
+        with patch.dict(os.environ, env), patch.object(checks.subprocess, "run", return_value=failure):
+            with self.assertRaisesRegex(RuntimeError, "Fulcio/Rekor preflight failed"):
+                checks.sigstore_authorization("a" * 40)
 
     def test_wrong_tag_or_permission_failure_prevents_all_uploads(self):
         with patch.dict(os.environ, {"GITHUB_REF": "refs/tags/v0.1.0"}), \
