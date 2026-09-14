@@ -9,9 +9,11 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type Store struct {
+	active  int // Runtime reservations, never persisted or inferred from worker status.
 	mu      sync.RWMutex
 	state   State
 	path    string
@@ -36,6 +38,26 @@ func Open(dir string, demo bool) (*Store, error) {
 	if err == nil {
 		err = json.Unmarshal(b, &s.state)
 		if err == nil {
+			// Only an absent setting migrates to the default. A present empty,
+			// null, or invalid configuration must fail validation.
+			var fields map[string]json.RawMessage
+			err = json.Unmarshal(b, &fields)
+			if raw, present := fields["service_config"]; present && err == nil {
+				s.state.ServiceConfig = ServiceConfig{}
+				err = json.Unmarshal(raw, &s.state.ServiceConfig)
+			}
+			s.state.Capacity = nil
+		}
+		if err == nil {
+			// Older towns predate feature discovery. Add only the absent role,
+			// paused, without enabling new automation or repairing corrupt workers.
+			for _, t := range s.state.Towns {
+				if t != nil && t.Workers != nil {
+					if _, present := t.Workers[Feature]; !present {
+						t.Workers[Feature] = &Worker{Role: Feature, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
+					}
+				}
+			}
 			err = validateState(s.state, demo)
 		}
 	}
@@ -46,6 +68,7 @@ func Open(dir string, demo bool) (*Store, error) {
 	// Worker processes cannot survive a service restart; durable intents can.
 	for _, t := range s.state.Towns {
 		for _, w := range t.Workers {
+			w.Agent = nil
 			if w.Enabled {
 				w.Status = "waiting"
 			} else {
@@ -56,6 +79,9 @@ func Open(dir string, demo bool) (*Store, error) {
 	return s, nil
 }
 func validateState(s State, demo bool) error {
+	if err := s.ServiceConfig.Validate(); err != nil {
+		return err
+	}
 	if s.Format != 1 || s.Demo != demo || s.Towns == nil {
 		return errors.New("state format or demo mode mismatch; use a separate state directory")
 	}
@@ -142,7 +168,53 @@ func (s *Store) Close() error {
 	s.lock = nil
 	return err
 }
-func (s *Store) Snapshot() State        { s.mu.RLock(); defer s.mu.RUnlock(); return clone(s.state) }
+func (s *Store) Snapshot() State {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := clone(s.state)
+	active := s.active
+	if out.Demo {
+		active = 0
+		for _, t := range out.Towns {
+			if t.Deleted {
+				continue
+			}
+			for role, w := range t.Workers {
+				if ValidAgentRole(role) && (w.Status == "working" || w.Status == "pausing") {
+					active++
+				}
+			}
+		}
+	}
+	out.Capacity = &Capacity{Active: active, Limit: out.ServiceConfig.MaxWorkers}
+	return out
+}
+
+// dispatchEligibility reads only scheduling fields rather than cloning all task
+// history for each candidate. Caller serializes reservations and capacity edits.
+func (s *Store) dispatchEligibility(id string, role Role, now time.Time) (bool, int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t := s.state.Towns[id]
+	if t == nil || t.Deleted || (role != Repo && !t.Initialized) {
+		return false, s.state.ServiceConfig.MaxWorkers
+	}
+	w := t.Workers[role]
+	return w != nil && w.Enabled && !w.Next.After(now), s.state.ServiceConfig.MaxWorkers
+}
+
+// setActive publishes reservation changes through the same snapshot stream.
+// The supervisor calls this under its scheduler mutex.
+func (s *Store) setActive(active int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == active {
+		return
+	}
+	s.active = active
+	close(s.changed)
+	s.changed = make(chan struct{})
+}
 func (s *Store) Watch() <-chan struct{} { s.mu.RLock(); defer s.mu.RUnlock(); return s.changed }
 func (s *Store) Update(fn func(*State) error) error {
 	s.mu.Lock()

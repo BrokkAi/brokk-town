@@ -31,6 +31,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/towns", s.add)
 	mux.HandleFunc("POST /api/settings", s.settings)
+	mux.HandleFunc("POST /api/capacity", s.capacity)
 	mux.HandleFunc("POST /api/choices", s.choices)
 	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
 	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
@@ -180,6 +181,7 @@ func (s *Server) refreshHarnesses(w http.ResponseWriter, r *http.Request) {
 
 type settingsInput struct {
 	Town  string             `json:"town"`
+	Role  town.Role          `json:"role,omitempty"`
 	Agent town.AgentSettings `json:"agent"`
 }
 
@@ -189,7 +191,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.Settings(input.Town, input.Agent); err != nil {
+	if err := s.Supervisor.SettingsForRole(input.Town, input.Role, input.Agent); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}
@@ -201,7 +203,7 @@ func (s *Server) choices(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	choices, err := s.Supervisor.Choices(r.Context(), input.Town, input.Agent)
+	choices, err := s.Supervisor.ChoicesForRole(r.Context(), input.Town, input.Role, input.Agent)
 	if err != nil {
 		problem(w, err.Error(), 400)
 		return
@@ -243,4 +245,17 @@ func (s *Server) checkRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
+	var input town.ServiceConfig
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	if err := s.Supervisor.SetCapacity(input.MaxWorkers); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	respond(w, s.Store.Snapshot().Capacity)
 }

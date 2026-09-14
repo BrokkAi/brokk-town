@@ -170,7 +170,7 @@ func tui(ctx context.Context, c connection) error {
 					case "k", "up":
 						overview = false
 						selectedRole = (selectedRole + len(town.Roles) - 1) % len(town.Roles)
-					case "1", "2", "3", "4", "5":
+					case "1", "2", "3", "4", "5", "6":
 						overview = false
 						selectedRole = int(key[0] - '1')
 					case "s", "p", "x", "a":
@@ -221,6 +221,14 @@ func townIDs(s town.State) []string {
 	sort.Strings(ids)
 	return ids
 }
+func displayWorker(t *town.Town, role town.Role) *town.Worker {
+	if w := t.Workers[role]; w != nil {
+		return w
+	}
+	// A new CLI can connect to a service that has not restarted since upgrade.
+	return &town.Worker{Role: role, Status: "unavailable", Task: "Restart the town service to use this worker"}
+}
+
 func renderTUI(s town.State, townIndex, roleIndex, width, height int, message string) string {
 	width = max(1, width)
 	height = max(1, height)
@@ -230,14 +238,20 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 	if s.Demo {
 		mode = "DEMO · simulated"
 	}
-	add(" BROKK TOWN                                      " + mode)
+	active, limit := 0, town.DefaultMaxWorkers
+	if s.Capacity != nil {
+		active, limit = s.Capacity.Active, s.Capacity.Limit
+	} else if s.ServiceConfig.MaxWorkers > 0 {
+		limit = s.ServiceConfig.MaxWorkers
+	}
+	add(fmt.Sprintf(" BROKK TOWN                         %d/%d workers   %s", active, limit, mode))
 	add(strings.Repeat("─", width))
 	ids := townIDs(s)
 	if len(ids) == 0 {
 		add(" No towns yet. Use bt add --repo OWNER/REPO or visit bt web.")
 	} else if roleIndex == -1 {
 		add(" ALL TOWNS · one repository per town")
-		add(" Tab: visit town   1–5: visit selected house   0: overview")
+		add(" Tab: visit town   1–6: visit selected house   0: overview")
 		add("")
 		for _, id := range ids {
 			t := s.Towns[id]
@@ -269,12 +283,12 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 		townIndex = townIndex % len(ids)
 		t := s.Towns[ids[townIndex]]
 		add(fmt.Sprintf(" %s   [%d/%d towns]   branch %s", t.Config.Repo, townIndex+1, len(ids), t.Config.Branch))
-		add(" 0: all towns    Tab: next town    1–5 / j,k: select house")
+		add(" 0: all towns    Tab: next town    1–6 / j,k: select house")
 		add(" Settings and new issues: bt settings / bt request, or bt web")
 		add("")
 		add("    HOUSE        STATUS       CURRENT WORK")
 		for i, r := range town.Roles {
-			w := t.Workers[r]
+			w := displayWorker(t, r)
 			mark := " "
 			if i == roleIndex {
 				mark = ">"
@@ -284,6 +298,9 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 		add("")
 		r := town.Roles[roleIndex]
 		add(" AT " + strings.ToUpper(string(r)) + "'S DOOR")
+		if r != town.Repo {
+			add(fmt.Sprintf(" Configure: bt settings --repo %s --role %s", t.Config.Repo, r))
+		}
 		tasks := []*town.Task{}
 		for _, task := range t.Tasks {
 			if task.House == r && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
@@ -316,7 +333,7 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 			add("   Nothing waiting.")
 		}
 		add("")
-		w := t.Workers[r]
+		w := displayWorker(t, r)
 		if w.Error != "" {
 			add(" ATTENTION: " + w.Error)
 		}

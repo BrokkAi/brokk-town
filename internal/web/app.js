@@ -1,6 +1,7 @@
 import {
   positions,
   houseNames,
+  houseShortcuts,
   routePosition,
   queueFor,
   issueJobDetails,
@@ -8,6 +9,16 @@ import {
   visibleEvents,
   safeURL,
   townSummary,
+  taskStatuses,
+  projectTask,
+  projectState,
+  projectWorker,
+  boardColumns,
+  boardColumn,
+  normalizeView,
+  focusIdentity,
+  focusMatches,
+  scheduleLabel,
 } from "./town.js";
 import { management } from "./manage.js";
 import { landscape, drawWorking, easeDelivery } from "./scenery.js";
@@ -32,9 +43,29 @@ if (token) {
   sessionStorage.setItem("brokk-town-token", token);
   history.replaceState(null, "", location.pathname);
 }
-let overview = true;
+let overview = (() => {
+  try { return localStorage.getItem("brokk-town-scope") !== "town"; }
+  catch { return true; }
+})();
+function saveScope() {
+  try { localStorage.setItem("brokk-town-scope", overview ? "all" : "town"); }
+  catch {}
+}
+let viewMode = (() => {
+  try {
+    return normalizeView(localStorage.getItem("brokk-town-view"));
+  } catch {
+    return "town";
+  }
+})();
 let state = null,
-  selectedTown = "",
+  selectedTown = (() => {
+    try {
+      return localStorage.getItem("brokk-town-selected") || "";
+    } catch {
+      return "";
+    }
+  })(),
   selectedHouse = "hall",
   selectedTask = "",
   sequence = null,
@@ -44,9 +75,13 @@ let state = null,
 const canvas = $("#world"),
   ctx = canvas.getContext("2d"),
   buildings = new Image(),
-  actors = new Image();
+  actors = new Image(),
+  featureStudy = new Image(),
+  featureReader = new Image();
 buildings.src = "/assets/buildings-atlas.png";
 actors.src = "/assets/actors-atlas.png";
+featureStudy.src = "/assets/feature-study.png";
+featureReader.src = "/assets/feature-reader.png";
 const crops = [
   [0, 0, 512, 512],
   [512, 0, 512, 480],
@@ -65,7 +100,9 @@ const actorCrops = [
   [62, 95, 434, 311],
   [163, 110, 232, 306],
 ];
-const indices = { bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5 };
+const indices = {
+  bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5, feature: 6,
+};
 async function api(path, body, signal) {
   const response = await fetch(path, {
     method: body ? "POST" : "GET",
@@ -87,11 +124,14 @@ async function api(path, body, signal) {
 function town() {
   return state?.towns[selectedTown];
 }
+async function refreshState() {
+  receive(await api("/api/state"));
+}
 const renderManagement = management({
   api,
   getTown: town,
   getState: () => state,
-  refresh: async () => receive(await api("/api/state")),
+  refresh: refreshState,
 });
 function showError(message) {
   $("#error").textContent = message;
@@ -143,7 +183,7 @@ async function connect() {
 function receive(next) {
   if (sequence !== null && next.seq >= sequence) {
     for (const event of visibleEvents(next.events, sequence, selectedTown)) {
-      if (event.kind === "delivery" && !overview && motion && !document.hidden)
+      if (event.kind === "delivery" && viewMode === "town" && !overview && motion && !document.hidden)
         moving.push({ ...event, start: performance.now() });
     }
   } else {
@@ -152,19 +192,202 @@ function receive(next) {
   moving = moving.slice(-24);
   sequence = next.seq;
   state = next;
-  if (!state.towns[selectedTown])
+  if (!state.towns[selectedTown]) {
     selectedTown = Object.keys(state.towns)[0] || "";
+    selectedTask = "";
+  }
+  if (selectedTask && !state.towns[selectedTown]?.tasks[selectedTask]) selectedTask = "";
   render();
+}
+
+function capacityInfo() {
+  const capacity = state?.capacity || {};
+  const service = state?.service_config || {};
+  const active = Number(capacity.active ?? 0);
+  const limit = Number(capacity.limit ?? service.max_workers ?? 4);
+  return {
+    active: Number.isFinite(active) ? active : 0,
+    limit: Number.isFinite(limit) && limit > 0 ? limit : 4,
+  };
+}
+
+function selectView(mode) {
+  mode = normalizeView(mode);
+  viewMode = mode;
+  moving = [];
+  try {
+    localStorage.setItem("brokk-town-view", mode);
+  } catch {
+    /* Private browsing may disable persistence; the in-memory selector remains usable. */
+  }
+  render();
+}
+
+function renderViewSwitcher() {
+  $("#operations-mode").hidden = viewMode === "town";
+  document.querySelectorAll("#view-switcher [data-view]").forEach((button) => {
+    const selected = button.dataset.view === viewMode;
+    button.tabIndex = selected ? 0 : -1;
+    button.setAttribute("aria-selected", String(selected));
+    button.classList.toggle("selected", selected);
+  });
+}
+
+function renderCapacity() {
+  const { active, limit } = capacityInfo();
+  $("#capacity-summary").textContent = `${active}/${limit} workers`;
+  $("#capacity-current").textContent = `${active} active · limit ${limit}`;
+  if (!$("#capacity-dialog").open)
+    $("#capacity-input").value = String(limit);
+}
+
+function queuedProfileText(task) {
+  if (["closed", "merged", "shipped", "implemented"].includes(task.stage)) return "";
+  return `Next profile: ${task.profile.harness} · ${task.profile.model || "default model"} · ${task.profile.effort || "default effort"}`;
+}
+function captureBoardViewport(board) {
+  const townColumns = new Map(
+    [...board.querySelectorAll("[data-board-columns]")].map((columns) => [
+      columns.dataset.boardColumns,
+      { left: columns.scrollLeft, top: columns.scrollTop },
+    ]),
+  );
+  const taskLists = new Map(
+    [...board.querySelectorAll("[data-board-list]")].map((list) => [
+      list.dataset.boardList,
+      { left: list.scrollLeft, top: list.scrollTop },
+    ]),
+  );
+  return {
+    townColumns,
+    taskLists,
+    focusedList: document.activeElement?.dataset?.boardList || "",
+  };
+}
+function restoreBoardViewport(board, viewport) {
+  board.querySelectorAll("[data-board-columns]").forEach((columns) => {
+    const position = viewport.townColumns.get(columns.dataset.boardColumns);
+    if (position) {
+      columns.scrollLeft = position.left;
+      columns.scrollTop = position.top;
+    }
+  });
+  board.querySelectorAll("[data-board-list]").forEach((list) => {
+    const position = viewport.taskLists.get(list.dataset.boardList);
+    if (position) {
+      list.scrollLeft = position.left;
+      list.scrollTop = position.top;
+    }
+  });
+  if (viewport.focusedList) {
+    [...board.querySelectorAll("[data-board-list]")]
+      .find((list) => list.dataset.boardList === viewport.focusedList)
+      ?.focus({ preventScroll: true });
+  }
+}
+function renderBoard() {
+  const board = $("#board");
+  const viewport = captureBoardViewport(board);
+  const projection = projectState(state, selectedTown);
+  const towns = overview
+    ? projection.towns
+    : projection.towns.filter((item) => item.town?.id === selectedTown);
+  board.innerHTML = towns.length
+    ? towns
+        .map((item) => {
+          const townName = item.town?.config?.repo || item.town?.id || "Town";
+          const workerCards = item.workers
+            .filter((worker) => worker.active || worker.status === "failed" || worker.status === "pausing")
+            .map((worker) => `<button class="board-worker ${worker.status === "failed" ? "failed" : ""}" data-board-town="${esc(item.town.id)}" data-board-house="${esc(worker.role)}"><strong>${esc(worker.role)} · ${esc(worker.status)}</strong><small>${esc(worker.profile.harness)} · ${esc(worker.profile.model || "default")} · ${esc(worker.profile.effort || "default")}</small></button>`)
+            .join("");
+          const cards = boardColumns
+            .map((column) => {
+              const tasks = item.tasks.filter((task) => boardColumn(task) === column.id);
+              if (!tasks.length) return "";
+              const classes = tasks.map((task) => task.statusClass).join(" ");
+              const listKey = `${item.town.id}:${column.id}`;
+              return `<div class="board-column status-${esc(column.id)} ${esc(classes)}"><h3>${esc(column.label)} <span>${tasks.length}</span></h3><div class="board-column-list" data-board-list="${esc(listKey)}" role="region" tabindex="0" aria-label="${esc(`${townName} ${column.label} tasks`)}">${tasks
+                .map(
+                  (task) =>
+                    `<button class="board-task" data-board-town="${esc(item.town.id)}" data-board-task="${esc(task.id)}" data-board-house="${esc(task.house || "hall")}"><strong>${esc(task.title || task.id)}</strong><small><span class="status-chip status-${esc(task.statusClass)}">${esc(task.statusLabel)}</span> · ${esc(task.house || "town")}${task.number ? ` · #${task.number}` : ""}</small><small>${esc(queuedProfileText(task))}</small></button>`,
+                )
+                .join("")}</div></div>`;
+            })
+            .join("");
+          return `<article class="board-town"><header><div><span class="eyebrow">${esc(townName.split("/")[0] || "TOWN")}</span><h2>${esc(townName.split("/").slice(1).join("/") || townName)}</h2></div><button class="quiet board-visit" data-board-visit="${esc(item.town.id)}">Open town →</button></header>${workerCards ? `<div class="board-workers"><h3>Workers</h3>${workerCards}</div>` : ""}<div class="board-columns" data-board-columns="${esc(item.town.id)}">${cards || '<p class="muted">No work recorded yet.</p>'}</div></article>`;
+        })
+        .join("")
+    : '<div class="overview-empty"><h2>No towns to show.</h2><p>Add a repository to start tracking operations.</p></div>';
+  board
+    .querySelectorAll("[data-board-visit]")
+    .forEach((button) => (button.onclick = () => { selectView("town"); selectTown(button.dataset.boardVisit); }));
+  board
+    .querySelectorAll("[data-board-task], [data-board-house]")
+    .forEach(
+      (button) =>
+        (button.onclick = () => {
+          inspectOperation(button.dataset.boardTown, button.dataset.boardHouse, button.dataset.boardTask);
+        }),
+    );
+  restoreBoardViewport(board, viewport);
+}
+
+function renderCompact() {
+  const projection = projectState(state, selectedTown);
+  const towns = overview
+    ? projection.towns
+    : projection.towns.filter((item) => item.town?.id === selectedTown);
+  $("#compact").innerHTML = towns
+    .map((item) => {
+      const repo = item.town?.config?.repo || item.town?.id || "Town";
+      return `<article class="compact-town"><div class="compact-title"><h2>${esc(repo)}</h2><span>${item.active} active · ${item.attention} attention</span></div><div class="compact-workers">${item.workers
+        .map(
+          (worker) =>
+            `<button class="compact-worker" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(worker.role)}"><i class="dot ${worker.active ? "active" : worker.status === "failed" ? "blocked" : "waiting"}"></i><strong>${esc(worker.role)}</strong><small>${esc(worker.status)} · ${worker.role === "repo" ? "No agent" : `${esc(worker.profile.harness)}${worker.profile.harness_version ? ` ${esc(worker.profile.harness_version)}` : ""} · ${esc(worker.profile.model || "default")} · ${esc(worker.profile.effort || "default")}`}</small><small>${esc(scheduleLabel(worker))}</small></button>`,
+        )
+        .join("")}</div><div class="compact-tasks">${item.tasks
+        .map(
+          (task) =>
+            `<button class="compact-task status-${esc(task.statusClass)}" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(task.house || "hall")}" data-compact-task="${esc(task.id)}"><span>${esc(task.statusLabel)}</span><strong>${esc(task.title || task.id)}</strong><small>${esc(queuedProfileText(task))}</small></button>`,
+        )
+        .join("") || '<span class="muted">No open work.</span>'}</div></article>`;
+    })
+    .join("") || '<div class="overview-empty"><h2>No towns to show.</h2></div>';
+  $("#compact")
+    .querySelectorAll("[data-compact-house]")
+    .forEach(
+      (button) =>
+        (button.onclick = () => {
+          inspectOperation(button.dataset.compactTown, button.dataset.compactHouse, button.dataset.compactTask);
+        }),
+    );
+}
+function inspectOperation(id, role, task = "") {
+  if (!state?.towns[id]) return;
+  selectedTown = id;
+  selectedHouse = role;
+  selectedTask = task;
+  $("#inspector").classList.add("open");
+  render();
+  $("#close-inspector").focus();
+}
+function closeInspector() {
+  $("#inspector").classList.remove("open");
+  if (state) renderOverview();
 }
 function chooseHouse(role) {
   overview = false;
+  saveScope();
   selectedHouse = role;
   selectedTask = "";
   $("#inspector").classList.add("open");
   render();
 }
 function render() {
+  const focus = focusIdentity(document.activeElement);
   const t = town();
+  renderViewSwitcher();
+  renderCapacity();
   $("#mode").hidden = !state.demo;
   $("#demo-note").hidden = !state.demo;
   $("#empty").hidden = !!t;
@@ -192,25 +415,43 @@ function render() {
         }),
     );
   renderOverview();
+  renderBoard();
+  renderCompact();
   showError(t?.error || "");
   renderHouses();
   renderInspection();
   renderJournal();
   renderManagement();
+  if (focus) {
+    const root = document.querySelector(`#${focus.surface}`);
+    const restored = [...(root?.querySelectorAll("button") || [])].find((button) =>
+      focusMatches(button, focus),
+    );
+    restored?.focus({ preventScroll: true });
+  }
 }
 function selectTown(id) {
   if (!state?.towns[id]) throw new Error("Unknown town");
   selectedTown = id;
+  try {
+    localStorage.setItem("brokk-town-selected", id);
+  } catch {
+    /* Keep the selection for this session when persistence is unavailable. */
+  }
   selectedTask = "";
   moving = [];
   overview = false;
+  saveScope();
   render();
 }
 function renderOverview() {
-  $("#overview").hidden = !overview;
-  $(".world").hidden = overview;
-  $(".activity").hidden = overview;
-  $("#inspector").hidden = overview;
+  const operations = viewMode !== "town";
+  $("#overview").hidden = !overview || operations;
+  $("#board").hidden = viewMode !== "board";
+  $("#compact").hidden = viewMode !== "compact";
+  $(".world").hidden = overview || operations;
+  $(".activity").hidden = overview || operations;
+  $("#inspector").hidden = operations ? !$("#inspector").classList.contains("open") : overview;
   $(".town-controls").hidden = overview;
   $("#all-towns").classList.toggle("selected", overview);
   if (!overview) return;
@@ -232,8 +473,52 @@ function renderOverview() {
 }
 $("#all-towns").onclick = () => {
   overview = true;
+  saveScope();
   moving = [];
   if (state) render();
+};
+
+document.querySelectorAll("#view-switcher [data-view]").forEach((button) => {
+  button.onclick = () => selectView(button.dataset.view);
+  button.onkeydown = (event) => {
+    const modes = ["town", "board", "compact"];
+    let index = modes.indexOf(button.dataset.view);
+    if (event.key === "ArrowRight") index = (index + 1) % modes.length;
+    else if (event.key === "ArrowLeft") index = (index + modes.length - 1) % modes.length;
+    else if (event.key === "Home") index = 0;
+    else if (event.key === "End") index = modes.length - 1;
+    else return;
+    event.preventDefault();
+    selectView(modes[index]);
+    document.querySelector(`#view-switcher [data-view="${modes[index]}"]`).focus();
+  };
+});
+
+$("#capacity-settings").onclick = () => {
+  renderCapacity();
+  $("#capacity-error").textContent = "";
+  $("#capacity-dialog").showModal();
+};
+$("#cancel-capacity").onclick = () => $("#capacity-dialog").close();
+$("#capacity-form").onsubmit = async (event) => {
+  event.preventDefault();
+  const value = Number($("#capacity-input").value);
+  if (!Number.isInteger(value) || value < 1 || value > 64) {
+    $("#capacity-error").textContent = "Capacity must be an integer from 1 to 64.";
+    return;
+  }
+  const submit = event.submitter;
+  submit.disabled = true;
+  $("#capacity-error").textContent = "";
+  try {
+    await api("/api/capacity", { max_workers: value });
+    $("#capacity-dialog").close();
+    await refreshState();
+  } catch (error) {
+    $("#capacity-error").textContent = error.message;
+  } finally {
+    submit.disabled = false;
+  }
 };
 function renderHouses() {
   const t = town();
@@ -241,15 +526,16 @@ function renderHouses() {
     .filter(([role]) => indices[role] !== undefined)
     .map(([role, [x, y]]) => {
       const w = t?.workers[role],
+        worker = projectWorker(t, role, w),
         count = t ? queueFor(t, role).length : 0,
-        status = role === "hall" ? "Town reports" : w?.status || "paused",
+        status = role === "hall" ? "Town reports" : worker.status,
         dot =
           status === "working" || status === "pausing"
             ? "active"
             : status === "blocked" || status === "failed"
               ? "blocked"
               : "waiting";
-      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}"><span class="house-label"><strong>${houseNames[role]}${count ? `<span class="count">${count}</span>` : ""}</strong><small><i class="dot ${dot}"></i>${esc(status.replaceAll("_", " "))}</small></span></button>`;
+      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}" title="${houseNames[role]} · ${esc(status.replaceAll("_", " "))}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}${count ? `<span class="count">${count}</span>` : ""}</strong><small><i class="dot ${dot}"></i>${esc(status.replaceAll("_", " "))}</small></span></button>`;
     })
     .join("");
   $("#houses")
@@ -259,6 +545,7 @@ function renderHouses() {
 function renderInspection() {
   const t = town(),
     out = $("#inspection");
+  $("#inspector-town").textContent = t?.config.repo || "House inspector";
   if (!t) {
     out.innerHTML =
       '<h2>Take a look around</h2><p class="muted">Add a repository to establish the first town.</p>';
@@ -266,7 +553,8 @@ function renderInspection() {
   }
   if (selectedTask && t.tasks[selectedTask]) {
     const task = t.tasks[selectedTask];
-    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line">${esc(task.stage.replaceAll("_", " "))} ${task.external ? "· external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a>` : ""}<p>${esc(task.detail || "Following the next step through town.")}</p>${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}</div>${taskRetryEligible(task) ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
+    const projected = projectTask(t, task);
+    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a>` : ""}<p>${esc(task.detail || "Following the next step through town.")}</p>${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
     $("#back-house").onclick = () => {
       selectedTask = "";
       renderInspection();
@@ -291,9 +579,14 @@ function renderInspection() {
     return;
   }
   const w = t.workers[selectedHouse],
+    projectedWorker = projectWorker(t, selectedHouse, w),
     queue = queueFor(t, selectedHouse);
   if (!w) return;
-  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || "Waiting for work")}</p><div class="status-line"><i class="dot ${w.status === "working" ? "active" : w.status === "failed" ? "blocked" : "waiting"}"></i>${esc(w.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
+  const agent = projectedWorker.profile;
+  const agentDetails = selectedHouse === "repo"
+    ? '<p class="muted">Reports repository state without an agent.</p>'
+    : `<p class="muted">${projectedWorker.active ? "Active dispatch" : "Next run"}: ${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` ${esc(agent.harness_version)}` : ""} · ${esc(agent.model || "Default model")} · ${esc(agent.effort || "Default effort")}<br>${agent.source === "active" ? "Captured for this run" : agent.inherited === false ? "Own queued bot profile" : "Town defaults for queued work"}</p><button id="configure-agent" type="button">Configure agent</button>`;
+  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : "Waiting for work"))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${agentDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
     queue
       .slice(0, 40)
       .map(
@@ -309,6 +602,10 @@ function renderInspection() {
         .join("\n"),
     ) || "No activity yet."
   }</div>`;
+  const configure = out.querySelector("#configure-agent");
+  if (configure) configure.onclick = () => document.dispatchEvent(
+    new CustomEvent("open-settings", { detail: { role: selectedHouse } }),
+  );
   out
     .querySelectorAll("[data-action]")
     .forEach(
@@ -370,8 +667,13 @@ function sprite(image, index, x, y, size) {
   const width = image === buildings ? size : (size * crop[2]) / crop[3];
   ctx.drawImage(image, ...crop, x - width / 2, y - size / 2, width, size);
 }
+function singleSprite(image, x, y, height) {
+  if (!image.complete || !image.naturalWidth) return;
+  const width = (height * image.naturalWidth) / image.naturalHeight;
+  ctx.drawImage(image, x - width / 2, y - height / 2, width, height);
+}
 function draw(now) {
-  if (overview || document.hidden) {
+  if (overview || viewMode !== "town" || document.hidden) {
     requestAnimationFrame(draw);
     return;
   }
@@ -389,11 +691,14 @@ function draw(now) {
       ctx.ellipse(x, y + 72, 118, 28, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
+    if (role === "feature") singleSprite(featureStudy, x, y, 235);
+    else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
     const w = t?.workers[role];
     if (w?.status === "working" || w?.status === "pausing") {
       drawWorking(ctx, role, x, y, now, motion, (index) =>
-        sprite(actors, index, 0, 0, 52),
+        index === "feature"
+          ? singleSprite(featureReader, 0, 0, 58)
+          : sprite(actors, index, 0, 0, 52),
       );
     }
   }
@@ -451,7 +756,7 @@ function draw(now) {
 }
 $("#start-all").onclick = () => command("start");
 $("#pause-all").onclick = () => command("pause");
-$("#close-inspector").onclick = () => $("#inspector").classList.remove("open");
+$("#close-inspector").onclick = closeInspector;
 for (const id of ["new-town", "empty-add"])
   $("#" + id).onclick = () => {
     $("#add-error").textContent = "";
@@ -505,17 +810,17 @@ matchMedia("(prefers-reduced-motion: reduce)").addEventListener(
 $("#help").onclick = () => $("#help-dialog").showModal();
 $("#close-help").onclick = () => $("#help-dialog").close();
 document.addEventListener("keydown", (e) => {
-  if (e.target.matches("input,select,textarea") || $("dialog[open]")) return;
+  if (e.target.matches("input,select,textarea") || $("dialog[open]") || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "0") {
     $("#all-towns").click();
     return;
   }
   if (e.key === "?") $("#help-dialog").showModal();
-  if (e.key === "Escape") $("#inspector").classList.remove("open");
-  if (/^[1-6]$/.test(e.key))
-    chooseHouse(
-      ["bug", "issue", "review", "release", "repo", "hall"][Number(e.key) - 1],
-    );
+  if (e.key.toLowerCase() === "t") selectView("town");
+  if (e.key.toLowerCase() === "b") selectView("board");
+  if (e.key.toLowerCase() === "c") selectView("compact");
+  if (e.key === "Escape") closeInspector();
+  if (/^[1-7]$/.test(e.key)) chooseHouse(houseShortcuts[Number(e.key) - 1]);
 });
 canvas.onclick = (e) => {
   const r = canvas.getBoundingClientRect(),

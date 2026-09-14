@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +25,14 @@ def fetch_json(url):
         if error.code == 404:
             return None
         raise
+
+
+def fetch_bytes(url):
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname != "registry.npmjs.org":
+        raise ValueError("unexpected npm attestation origin")
+    with urllib.request.urlopen(url, timeout=60) as response:
+        return response.read()
 
 
 def npm_exists(package, tarball=None):
@@ -73,6 +82,38 @@ def validated_packages(directory):
     return packages
 
 
+def verify_provenance(directory):
+    packages = validated_packages(directory)
+    records = []
+    for package in packages:
+        encoded = urllib.parse.quote(package["name"], safe="")
+        record = fetch_json(f"https://registry.npmjs.org/{encoded}/{package['version']}")
+        metadata = record.get("dist", {}).get("attestations") if record else None
+        provenance = metadata.get("provenance") if isinstance(metadata, dict) else None
+        url = metadata.get("url") if isinstance(metadata, dict) else None
+        predicate = provenance.get("predicateType") if isinstance(provenance, dict) else None
+        if not url or predicate != "https://slsa.dev/provenance/v1":
+            raise ValueError(f"publication is incomplete: npm provenance is missing: {package['name']}")
+        payload = json.loads(fetch_bytes(url))
+        entries = payload.get("attestations") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            raise ValueError(f"publication is incomplete: npm provenance is malformed: {package['name']}")
+        algorithm, encoded_digest = package["integrity"].split("-", 1)
+        if algorithm != "sha512":
+            raise ValueError(f"unexpected npm integrity algorithm: {package['name']}")
+        digest = base64.b64decode(encoded_digest, validate=True).hex()
+        records.append({"name": package["name"], "version": package["version"], "sha512": digest,
+                        "attestations": entries})
+    manifest = json.loads((directory / "npm/manifest.json").read_text())
+    request = {"commit": manifest["commit"], "ref": "refs/tags/" + manifest["tag"], "packages": records}
+    with tempfile.TemporaryDirectory() as temporary:
+        request_path = Path(temporary) / "provenance.json"
+        request_path.write_text(json.dumps(request))
+        subprocess.run(["node", str(Path(__file__).resolve().parent / "verify_sigstore_bundles.cjs"),
+                        str(request_path)], check=True)
+    print("All five npm packages have independently verified SLSA provenance")
+
+
 def run(command, directory):
     packages = validated_packages(directory)
     # Discover conflicts in every destination before making the first write.
@@ -83,6 +124,7 @@ def run(command, directory):
     if command == "verify":
         if not all(existing.values()):
             raise ValueError("publication is incomplete: an npm package is missing")
+        verify_provenance(directory)
         print("All five npm packages match the staged bytes")
         return
     # Submit platform packages before the root launcher. A successful upload
@@ -92,6 +134,7 @@ def run(command, directory):
         if not existing[package["name"]]:
             subprocess.run(["npm", "publish", str((directory / "npm" / package["filename"]).resolve()),
                             "--access", "public", "--registry", "https://registry.npmjs.org",
+                            "--provenance",
                             "--tag", "next" if "-" in package["version"] else "latest"], check=True)
     print("Submitted npm packages; registry visibility may lag behind accepted uploads")
 

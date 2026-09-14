@@ -23,24 +23,27 @@ type RunResult struct {
 type Workers interface {
 	Run(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error)
 }
+type issueStateWorkers interface {
+	SyncIssues(*Town) error
+	RetryIssue(*Town, int) error
+}
 type Supervisor struct {
-	MaxWorkers int
-	Store      *Store
-	GitHub     GitHub
-	Workers    Workers
-	Publisher  IssuePublisher
-	Harnesses  *harness.Catalog
-	mu         sync.Mutex
-	running    map[string]context.CancelFunc
-	wg         sync.WaitGroup
-	wake       chan struct{}
-	fatal      chan error
-	now        func() time.Time
+	Store     *Store
+	GitHub    GitHub
+	Workers   Workers
+	Publisher IssuePublisher
+	Harnesses *harness.Catalog
+	mu        sync.Mutex
+	running   map[string]context.CancelFunc
+	wg        sync.WaitGroup
+	wake      chan struct{}
+	fatal     chan error
+	now       func() time.Time
 }
 
 func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	publisher, _ := gh.(IssuePublisher)
-	return &Supervisor{MaxWorkers: 4, Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -89,23 +92,25 @@ func (s *Supervisor) schedule(ctx context.Context) {
 			}
 			key := t.ID + ":" + string(r)
 			s.mu.Lock()
-			_, busy := s.running[key]
-			active := 0
-			for key := range s.running {
-				if !strings.HasSuffix(key, ":repo") && !strings.HasSuffix(key, ":requests") {
-					active++
-				}
+			// Recheck eligibility and the current limit under the same lock as
+			// capacity edits; a stale scheduling pass cannot undo a reduction.
+			eligible, limit := s.Store.dispatchEligibility(t.ID, r, s.now())
+			if !eligible || ctx.Err() != nil {
+				s.mu.Unlock()
+				continue
 			}
-			if r != Repo && active >= max(1, s.MaxWorkers) {
+			_, busy := s.running[key]
+			if r != Repo && s.activeWorkers() >= limit {
 				busy = true
 			}
 			if !busy {
 				child, cancel := context.WithCancel(ctx)
 				s.running[key] = cancel
+				s.Store.setActive(s.activeWorkers())
 				s.wg.Add(1)
 				go func(t *Town, r Role, key string) {
 					defer s.wg.Done()
-					defer func() { s.mu.Lock(); delete(s.running, key); s.mu.Unlock() }()
+					defer func() { cancel(); s.releaseWorker(key) }()
 					s.execute(child, t, r)
 				}(t, r, key)
 			}
@@ -113,6 +118,50 @@ func (s *Supervisor) schedule(ctx context.Context) {
 		}
 	}
 }
+
+// activeWorkers counts only scheduled bot roles. Reporters, issue publishing,
+// and prompt-free model discovery do not belong to the agent worker pool.
+// Caller holds s.mu.
+func (s *Supervisor) activeWorkers() int {
+	active := 0
+	for key := range s.running {
+		_, role, ok := strings.Cut(key, ":")
+		if ok && ValidAgentRole(Role(role)) {
+			active++
+		}
+	}
+	return active
+}
+func (s *Supervisor) notifyScheduler() {
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+func (s *Supervisor) releaseWorker(key string) {
+	s.mu.Lock()
+	delete(s.running, key)
+	s.Store.setActive(s.activeWorkers())
+	s.mu.Unlock()
+	s.notifyScheduler()
+}
+
+// SetCapacity commits before waking scheduling. Existing runs keep their slots
+// until cleanup finishes even if the new limit is lower than current usage.
+func (s *Supervisor) SetCapacity(limit int) error {
+	cfg := ServiceConfig{MaxWorkers: limit}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	err := s.Store.Update(func(st *State) error { st.ServiceConfig = cfg; return nil })
+	s.mu.Unlock()
+	if err == nil {
+		s.notifyScheduler()
+	}
+	return err
+}
+
 func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	now := s.now()
 	if err := s.Store.Update(func(st *State) error {
@@ -130,6 +179,11 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		}
 		// Resolve settings at actual dispatch, not from an older scheduler snapshot.
 		t = clone(current)
+		if r != Repo {
+			profile := current.Config.Public().BotAgents[r]
+			w.Agent = &profile
+			t.Config = t.Config.ForRole(r)
+		}
 		w.Status = "working"
 		w.Error = ""
 		w.Updated = now
@@ -211,10 +265,11 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	s.update(func(st *State) error {
 		current := st.Towns[t.ID]
 		w := current.Workers[r]
+		w.Agent = nil
 		w.Status = "waiting"
 		w.Updated = s.now()
 		w.Next = s.now().Add(time.Duration(current.Config.PollSeconds) * time.Second)
-		if r == Bug {
+		if r == Bug || r == Feature {
 			w.Next = s.now().Add(30 * time.Minute)
 		}
 		if r == Release {
@@ -279,6 +334,11 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	})
 }
 func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
+	if workers, ok := s.Workers.(issueStateWorkers); ok {
+		if err := workers.SyncIssues(t); err != nil {
+			return fmt.Errorf("import issue-bot jobs: %w", err)
+		}
+	}
 	t = s.Store.Snapshot().Towns[t.ID]
 	remote, err := s.GitHub.Snapshot(ctx, t.Config)
 	if err != nil {
@@ -325,13 +385,21 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 			remote.Released[sha] = included
 		}
 	}
-	return s.Store.Update(func(st *State) error {
+	if err := s.Store.Update(func(st *State) error {
 		Reconcile(st, st.Towns[t.ID], remote, s.now())
 		w := st.Towns[t.ID].Workers[Repo]
 		w.Task = "Repository inventory is current"
 		w.Phase = "reporting"
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	if workers, ok := s.Workers.(issueStateWorkers); ok {
+		if err := workers.SyncIssues(s.Store.Snapshot().Towns[t.ID]); err != nil {
+			return fmt.Errorf("preserve issue-bot jobs after inventory: %w", err)
+		}
+	}
+	return nil
 }
 func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
 	if action == "delete" {
@@ -345,6 +413,29 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 	}
 	if role != "all" && !ValidRole(role) {
 		return errors.New("unknown role")
+	}
+	if action == "retry" {
+		snapshot := s.Store.Snapshot()
+		t := snapshot.Towns[id]
+		if t == nil || t.Deleted {
+			return errors.New("unknown town")
+		}
+		task := t.Tasks[taskID]
+		if task == nil {
+			return errors.New("unknown task")
+		}
+		if task.Kind == "issue" {
+			if task.IssueJob == nil || !task.IssueJob.RetryEligible {
+				return errors.New("issue is not eligible for retry")
+			}
+			workers, ok := s.Workers.(issueStateWorkers)
+			if !ok {
+				return errors.New("issue worker does not support durable retries")
+			}
+			if err := workers.RetryIssue(t, task.Number); err != nil {
+				return fmt.Errorf("retry issue-bot job: %w", err)
+			}
+		}
 	}
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
@@ -362,6 +453,13 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 			task.Blocked = false
 			task.Attempts = 0
 			task.RetryAt = time.Time{}
+			if task.Kind == "issue" {
+				task.Stage = "queued"
+				task.Detail = "Waiting for issue-bot to retry the saved work."
+				task.IssueJob.Status = "pending"
+				task.IssueJob.RetryEligible = false
+				task.IssueJob.RetryDetail = "Retry requested; issue-bot will recheck GitHub before continuing."
+			}
 			if task.Stage == "inconclusive" {
 				task.Audit = nil
 				task.Stage = "queued"

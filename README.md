@@ -4,7 +4,8 @@ One repository, one little town. Brokk Town runs several repository towns from a
 local Go service, with an animated browser village and a compact terminal control
 panel. Each town owns its houses, queues, review loops, releases, and history.
 Branches and private worktrees belong to their repository's town. Your machine
-hosts the towns and shares four agent worker slots between them.
+hosts the towns and shares a configurable pool of agent worker slots between
+them (four by default, from one to 64).
 
 The browser shows worker houses, wheelbarrows carrying completed handoffs, trucks
 bringing external issues and PRs, and shipments leaving the release depot. Visit
@@ -34,22 +35,46 @@ Open the browser address printed by the service. In another terminal:
 ```
 
 Demo mode uses an isolated state directory and simulated activity in two towns.
-It never calls GitHub or launches agents. Orchard cycles through bug discovery,
-implementation, review, repair, merge, release, and external arrivals. Paper-trail
-illustrates a quiet neighboring repository. Pause a house to hold its next step.
+It never calls GitHub or launches agents. Orchard cycles through bug and feature discovery,
+implementation, review, repair, merge, release, and external arrivals. The initial
+board includes blocked, inconclusive, uncertain-write, queued, ready, and shipped
+fixtures, with active worker profiles available to inspect. Paper-trail illustrates
+a neighboring repository with a failed watchtower. Pause a house to hold its next step.
 
 The browser and TUI attach to the same service. Closing either leaves workers
 running. Stop the foreground service with Ctrl+C; it cancels and waits for workers
 before releasing the state lock. `bt` without a command opens the TUI of an
 already-running service. Use `bt web` to print its browser address again.
 
+The browser header switches among **Town**, **Board**, and **Compact** without
+restarting. Town keeps the animated houses first-class; Board groups durable work
+into fixed workflow columns with bounded, independently scrollable task lists;
+Compact lists worker activity, profiles, scheduling
+eligibility and tasks. Select **All towns** or a repository in the sidebar to
+change scope. View and scope survive reloads. Cards and rows open the shared
+inspector and controls, retaining repository context across SSE updates. Board
+column headings stay visible while scrolling; live updates preserve each column’s
+scroll position.
+
+Use **T**, **B**, or **C** to switch views, **0** for all towns, and **1–7** for
+houses. The view tabs also support arrow keys, Home and End. Tab/Enter open cards
+and controls; Escape closes the inspector. Narrow screens stack operations
+content and reduced-motion preferences keep the animated Town usable.
+
+Blocked, failed, inconclusive, uncertain-write and GitHub-waiting states retain
+separate labels. Active worker cards do not imply every task at that house is
+running. Merged PRs and implemented/closed tasks remain distinct from shipped
+commits; only release ancestry confirmed by repository reconciliation can mark
+a commit shipped. Columns, prompts and transitions are not programmable.
+
 ## Installation and releases
 
 Source is published at [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town).
-The bootstrap prerelease is available on npm:
+The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.0)
+and npm:
 
 ```sh
-npm install -g @brokkai/brokk-town@next
+npm install -g @brokkai/brokk-town
 ```
 
 You can also build from source as above or install the current branch:
@@ -60,8 +85,8 @@ go install github.com/BrokkAi/brokk-town/cmd/bt@master
 
 The release pipeline builds checksum-verified Linux/macOS archives for amd64 and
 arm64, plus `@brokkai/brokk-town` and four native npm packages. All packages carry
-the project license, attribution, and complete third-party notices. The initial `0.1.0-rc.1` npm bootstrap is published. After the first stable GitHub
-release, the supported installer commands are:
+the project license, attribution, and complete third-party notices. The supported
+installer commands are:
 
 ```sh
 sh install.sh                       # From a checkout; defaults to ~/.local/bin
@@ -76,11 +101,30 @@ for first-release setup, access checks, publishing, and recovery.
 
 ## Connect real repositories
 
-Install and authenticate `git`, GitHub CLI (`gh`), and your chosen coding agent.
+Install and authenticate `git`, GitHub CLI (`gh`), Node.js/npm, and your chosen
+coding agent. Town does not require a separate bot installation: each dispatch
+uses `npx --yes` with an exact compatible release of bug-bot, feature-bot,
+issue-bot, review-bot, or release-bot, then communicates with it over a private
+Unix socket. Town never selects an ambient or floating bot version.
+
+The worker uses
+standard-library HTTP/JSON, negotiates protocol and capabilities before work,
+streams contiguous progress events, and returns explicit typed results. It never
+requires Town to parse bot-private state. Until the worker protocol carries job
+outcomes, Town uses the same pinned issue-bot release's validated public state
+API to import blocked/submitted scheduling metadata and perform explicit retries.
+See
+[docs/WORKER_PROTOCOL.md](docs/WORKER_PROTOCOL.md) for the contract.
+
 Town defaults to the official ACP registry’s `codex-acp` npm distribution, which
 requires Node.js and `npx`. Choose another harness in Settings as described below.
 Git must already be able to clone and push your GitHub repositories; Town uses
 the current Git/gh credentials.
+
+Town resolves and hashes the `npx` executable for every dispatch and rechecks it
+and the pinned bot's reported version afterward. A mid-dispatch executable or
+version change fails uncertainly and is resolved through durable bot state and
+GitHub reconciliation.
 
 ```sh
 ./bin/bt serve --repo BrokkAi/my-project
@@ -89,7 +133,7 @@ the current Git/gh credentials.
 ./bin/bt tui
 ```
 
-New towns start with the four automation workers **paused**. Repo-bot starts its
+New towns start with the five automation workers **paused**. Repo-bot starts its
 read-only inventory. Inspect the town, then start individual workers or choose
 **Wake the town**. Starting workers authorizes their real work: filing issues,
 creating and repairing PRs, posting reviews, merging under the configured policy,
@@ -98,26 +142,42 @@ permissions. Use an isolated account or machine for repositories you don't trust
 
 ```sh
 ./bin/bt start --repo BrokkAi/my-project --role bug
+./bin/bt start --repo BrokkAi/my-project --role feature
 ./bin/bt pause --repo BrokkAi/my-project --role all
 ./bin/bt stop --repo BrokkAi/my-project --role issue
 ./bin/bt status
+# Change the global pool; status also reports active and limit capacity.
+./bin/bt capacity --max-workers 2
 ```
 
 Pause finishes active work and stops scheduling more. Stop also cancels active
 work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
 uncertain external writes retain their saved intent and are reconciled first.
 
+Capacity is a persisted service setting shared by every town. It reserves only
+non-reporter bot runs; repo-bot, issue publishing, and prompt-free model choice
+discovery stay outside the pool. Lowering the limit lets current work finish and
+holds new dispatches until a slot is free. `bt capacity` requires `--max-workers N`,
+where `N` is an integer from 1 through 64.
+
 ## Town settings, requests, and deletion
 
-Visit a town and choose **Settings** to select any agent from the
+Visit a town and choose **Settings**, then use **Configure agent for** to select
+the bot and configure its agent, model, and reasoning effort independently. Bug,
+feature, issue, review, and release bots can each use a different profile. Bots
+without a profile inherit **Town defaults**. Choose **Use town defaults** and save
+to remove a bot's independent profile. Save each changed profile before closing
+Settings. Repo-bot only reports repository state and does not use an agent.
+
+For each profile, select any agent from the
 [official ACP registry](https://agentclientprotocol.com/get-started/registry),
 plus **Anvil**, **Muse ACP**, **Draupnir**, or a custom ACP command. The full
 catalog loads from a bundled snapshot or local cache, then refreshes in the
 background when stale. **Refresh registry** checks for new agents and versions;
 failed refreshes preserve the last usable catalog. Demo stays offline.
 
-Selecting a registry agent saves its version and launch definition with the town.
-Refreshing the catalog does not upgrade existing towns. To upgrade, choose
+Selecting a registry agent saves its version and launch definition with that
+profile. Refreshing the catalog does not upgrade saved profiles. To upgrade, choose
 **Use registry version** in Settings, or pass the version shown by `bt harnesses`
 to `--harness-version`. Active work retains its starting settings.
 
@@ -139,27 +199,43 @@ The additional harnesses use the executable installed on the service's PATH:
 These three use your installed versions. Their project links and setup notes
 also appear in Settings. A custom command supports other local ACP agents.
 
-**Load available choices** prepares and briefly starts the selected harness
+**Load available choices** prepares and briefly starts the selected bot's harness
 without a work prompt, then lists its advertised models and reasoning efforts.
 Authenticate it in your terminal first. Choose a model before effort: available
 effort levels can depend on it. You can also enter an exact ACP selector value,
 or leave either field blank for the harness default. Unsupported selections fail
 visibly when the worker starts. Switching harnesses clears the previous harness's
-private authentication, command, and mode settings. Changes apply to the next
-worker run.
+private authentication, command, and mode settings in the selected profile.
+Changing town defaults affects bots that inherit them; independent profiles keep
+their settings. Changes apply to the next worker run.
 
 ```sh
 ./bin/bt harnesses --refresh
-./bin/bt settings --repo BrokkAi/my-project --harness opencode
-./bin/bt settings --repo BrokkAi/my-project --harness BrokkAi/anvil
-./bin/bt settings --repo BrokkAi/my-project --harness muse-acp
-./bin/bt settings --repo BrokkAi/my-project --harness draupnir
-./bin/bt settings --repo BrokkAi/my-project --model MODEL_ID --effort EFFORT_ID
-./bin/bt settings --repo BrokkAi/my-project --model '' --effort ''
-./bin/bt settings --repo BrokkAi/my-project --harness custom --agent-command '["my-agent", "--acp"]'
+# Without --role, change the town defaults.
+./bin/bt settings --repo BrokkAi/my-project --harness codex
+# Give each bot its own harness and exact selectors from available choices.
+./bin/bt settings --repo BrokkAi/my-project --role review --harness claude --model MODEL_ID --effort EFFORT_ID
+./bin/bt settings --repo BrokkAi/my-project --role issue --harness codex --model MODEL_ID --effort EFFORT_ID
+./bin/bt settings --repo BrokkAi/my-project --role release --harness opencode --model MODEL_ID
+./bin/bt settings --repo BrokkAi/my-project --role bug --harness BrokkAi/anvil
+./bin/bt settings --repo BrokkAi/my-project --role feature --harness custom --agent-command '["my-agent", "--acp"]'
+# Blank selectors use this profile's harness defaults.
+./bin/bt settings --repo BrokkAi/my-project --role review --model '' --effort ''
+# Remove the review profile and follow the town defaults again.
+./bin/bt settings --repo BrokkAi/my-project --role review --inherit
 ```
 
 `codex` and `claude` remain aliases for `codex-acp` and `claude-acp`.
+The model and effort IDs above are placeholders: use the exact values advertised
+by the selected harness. An effort such as `xhigh` is available only when that
+harness and model support it.
+
+For an OpenRouter-backed release bot, select **OpenCode** as its harness,
+authenticate OpenRouter in OpenCode with `/connect`, then load the release bot's
+available choices and select the desired OpenRouter model. OpenCode provides the
+ACP agent and OpenRouter supplies its model. See
+[OpenCode's OpenRouter setup](https://opencode.ai/docs/providers/#openrouter) and
+[ACP support](https://opencode.ai/docs/acp/).
 
 Choose **New request**, select **Feature request** or **Bug report**, and describe
 the work. **Create GitHub issue** posts it to that town's repository and places
@@ -198,6 +274,7 @@ finish before restoring a town.
 | House | Work and handoff |
 | --- | --- |
 | Bug greenhouse | Runs bug-bot's investigation and verification; observed filed issues travel to issue-bot. |
+| Feature study | Runs feature-bot to discover useful new capabilities, independently review their value and feasibility, and compare existing requests; confirmed feature issues travel to issue-bot. |
 | Issue workshop | Runs issue-bot on eligible issues, opens implementation-ready PRs, and repairs Town-owned PR branches from review feedback. |
 | Review observatory | Runs review-bot, independently checks the full change and every retained finding, then returns fixes or waits for merge requirements. |
 | Release depot | Runs release-bot's batching and publishing policy. Confirmed merged/direct commits accumulate here; a published stable release ships only commits proven to be its ancestors. |
@@ -225,24 +302,48 @@ merges for now. GitHub is the final authority at write time.
 ## Configuration and recovery
 
 Copy [docs/config.example.json](docs/config.example.json), edit the repository,
-agent command, verification command, and policy, then run:
+bot profiles, verification command, and policy, then run:
 
 ```sh
 ./bin/bt serve --config /path/to/towns.json
 ```
 
-Configuration is a JSON array. Each entry supplies `repo`, optional `branch` and `harness`,
-`agent`, optional `verify` argument vector, `merge_policy`, `poll_seconds`,
-`report_seconds`, and `max_cycles`. The example lists all required values. Town
+Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
+`harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
+`merge_policy`, `poll_seconds`, `report_seconds`, and `max_cycles`. The example
+lists all required values. To persist global capacity alongside the town list,
+use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
+remains accepted. When `serve --config` includes `max_workers`, that value
+overrides the persisted service setting in the same atomic state update; an
+array config without it preserves the saved limit. Town
 uses the repository's default branch when omitted; an initialized town's branch
 cannot be changed in place. Omitted towns are retained when loading a config.
 Agent configuration uses acp-go's `command`, `environment`, `auth_method`, `mode`, `model`, and `effort` fields.
 
+The top-level `harness` and `agent` define town defaults. `bot_agents` maps any of
+`bug`, `feature`, `issue`, `review`, and `release` to a complete profile containing
+its own `harness` and `agent`, with an optional saved `harness_definition`.
+An absent role follows the town defaults. A configured role is independent:
+blank model or effort uses its harness default, and omitted agent fields do not
+inherit private command, environment, or authentication values from the town.
+The example gives review-bot Claude Code, issue-bot Codex, and release-bot OpenCode;
+bug-bot and feature-bot inherit the town defaults. Select models and efforts after
+authenticating each harness. Verification and scheduling settings remain shared
+at town level.
+
 Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet reports
-use `report_seconds` (1800). Bug-bot runs at most every 30 minutes; release-bot
+use `report_seconds` (1800). Bug-bot and feature-bot run at most every 30 minutes; release-bot
 checks every five minutes and retains its own quiet window, minimum gap, and
 batching decisions. Each worker attempt has a two-hour deadline. Repair cycles
 default to five; failed PR attempts back off and block after three failures.
+
+Feature-bot uses its own effective ACP harness, model, and effort, plus the town's
+optional verifier, with a private workspace and durable publication state.
+It proposes scoped features with user value, repository evidence and acceptance
+criteria. A separate review rejects duplicate, already implemented, rejected or
+uncertain proposals before filing. Its verifier receives `FEATURE_COMMIT` and
+`FEATURE_FINDING`; shared verification commands must support the selected bot's
+environment. New and upgraded towns keep feature discovery paused until started.
 
 Private state defaults to `$XDG_STATE_HOME/brokk-town` or
 `~/.local/state/brokk-town`. `--state-dir` selects another directory; `--demo`
@@ -250,8 +351,9 @@ appends `demo`. A single writer lock, atomic snapshots, per-role bot state, and
 private worktrees keep towns separate. Events, logs, and reports have bounded
 recent histories; task/intent history persists. Browser access uses a per-service
 local key in a URL fragment. `connection.json` and state snapshots are mode 0600.
-Agent commands/environment values are omitted from public configuration snapshots;
-the selected harness, model, and effort are visible.
+Private agent commands, environment, and authentication configuration are omitted
+from public configuration snapshots for both town defaults and bot profiles;
+each bot's effective harness, model, and effort are visible.
 Local logs and worktrees can contain repository content; keep this directory private.
 
 If a push or merge response is lost, Town checks GitHub rather than assuming

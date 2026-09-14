@@ -16,13 +16,19 @@ type Role string
 
 const (
 	Bug     Role = "bug"
+	Feature Role = "feature"
 	Issue   Role = "issue"
 	Review  Role = "review"
 	Release Role = "release"
 	Repo    Role = "repo"
 )
 
-var Roles = []Role{Bug, Issue, Review, Release, Repo}
+var Roles = []Role{Bug, Issue, Review, Release, Repo, Feature}
+
+// AgentRoles excludes the reporter, which never starts an agent.
+var AgentRoles = []Role{Bug, Feature, Issue, Review, Release}
+
+func ValidAgentRole(r Role) bool { return r != Repo && ValidRole(r) }
 
 func ValidRole(r Role) bool {
 	for _, v := range Roles {
@@ -43,16 +49,44 @@ func SHA(v string) bool {
 }
 
 type Config struct {
-	Repo              string             `json:"repo"`
-	Branch            string             `json:"branch,omitempty"`
+	Repo              string                  `json:"repo"`
+	Branch            string                  `json:"branch,omitempty"`
+	Harness           string                  `json:"harness,omitempty"`
+	HarnessDefinition *harness.Entry          `json:"harness_definition,omitempty"`
+	Agent             runner.AgentConfig      `json:"agent"`
+	BotAgents         map[Role]BotAgentConfig `json:"bot_agents,omitempty"`
+	Verify            []string                `json:"verify,omitempty"`
+	MergePolicy       string                  `json:"merge_policy"`
+	PollSeconds       int                     `json:"poll_seconds"`
+	ReportSeconds     int                     `json:"report_seconds"`
+	MaxCycles         int                     `json:"max_cycles"`
+}
+
+// BotAgentConfig is a complete private selection. Omitted roles inherit the town
+// default; present profiles stay independent when that default changes.
+type BotAgentConfig struct {
 	Harness           string             `json:"harness,omitempty"`
 	HarnessDefinition *harness.Entry     `json:"harness_definition,omitempty"`
 	Agent             runner.AgentConfig `json:"agent"`
-	Verify            []string           `json:"verify,omitempty"`
-	MergePolicy       string             `json:"merge_policy"`
-	PollSeconds       int                `json:"poll_seconds"`
-	ReportSeconds     int                `json:"report_seconds"`
-	MaxCycles         int                `json:"max_cycles"`
+}
+
+func (c Config) botAgent() BotAgentConfig {
+	return BotAgentConfig{Harness: c.Harness, HarnessDefinition: c.HarnessDefinition, Agent: c.Agent}
+}
+
+func (c Config) withAgent(a BotAgentConfig) Config {
+	c.Harness, c.HarnessDefinition, c.Agent = a.Harness, a.HarnessDefinition, a.Agent
+	return c
+}
+
+// ForRole resolves a stored town configuration into an isolated configuration for
+// one bot dispatch. Call it on the town configuration, before resolving a harness.
+func (c Config) ForRole(role Role) Config {
+	c = clone(c)
+	if a, ok := c.BotAgents[role]; ok {
+		c = c.withAgent(a)
+	}
+	return c
 }
 
 func DefaultConfig(repo string) Config {
@@ -61,6 +95,14 @@ func DefaultConfig(repo string) Config {
 func (c Config) Validate() error {
 	if err := validateAgent(c); err != nil {
 		return err
+	}
+	for role, a := range c.BotAgents {
+		if !ValidAgentRole(role) {
+			return fmt.Errorf("agent settings require a bot role: %q", role)
+		}
+		if err := validateAgent(c.withAgent(a)); err != nil {
+			return fmt.Errorf("%s agent: %w", role, err)
+		}
 	}
 	if !ValidRepo(c.Repo) {
 		return fmt.Errorf("repository must be OWNER/REPO")
@@ -79,25 +121,35 @@ func (c Config) Validate() error {
 
 // PublicConfig deliberately excludes agent environment values and command arguments.
 type PublicConfig struct {
-	Repo           string `json:"repo"`
-	Branch         string `json:"branch"`
-	MergePolicy    string `json:"merge_policy"`
-	MaxCycles      int    `json:"max_cycles"`
+	Repo           string                        `json:"repo"`
+	Branch         string                        `json:"branch"`
+	MergePolicy    string                        `json:"merge_policy"`
+	MaxCycles      int                           `json:"max_cycles"`
+	Harness        string                        `json:"harness"`
+	Model          string                        `json:"model"`
+	Effort         string                        `json:"effort"`
+	HarnessVersion string                        `json:"harness_version,omitempty"`
+	BotAgents      map[Role]PublicBotAgentConfig `json:"bot_agents"`
+}
+
+type PublicBotAgentConfig struct {
 	Harness        string `json:"harness"`
 	Model          string `json:"model"`
 	Effort         string `json:"effort"`
 	HarnessVersion string `json:"harness_version,omitempty"`
+	Inherited      bool   `json:"inherited"`
 }
 type Worker struct {
-	Role    Role      `json:"role"`
-	Enabled bool      `json:"enabled"`
-	Status  string    `json:"status"`
-	Phase   string    `json:"phase"`
-	Task    string    `json:"task"`
-	Error   string    `json:"error,omitempty"`
-	Updated time.Time `json:"updated"`
-	Next    time.Time `json:"next,omitempty"`
-	Logs    []Log     `json:"logs"`
+	Agent   *PublicBotAgentConfig `json:"agent,omitempty"`
+	Role    Role                  `json:"role"`
+	Enabled bool                  `json:"enabled"`
+	Status  string                `json:"status"`
+	Phase   string                `json:"phase"`
+	Task    string                `json:"task"`
+	Error   string                `json:"error,omitempty"`
+	Updated time.Time             `json:"updated"`
+	Next    time.Time             `json:"next,omitempty"`
+	Logs    []Log                 `json:"logs"`
 }
 type Log struct {
 	At    time.Time `json:"at"`
@@ -216,16 +268,39 @@ type Town struct {
 	LastRelease string                   `json:"last_release"`
 	Error       string                   `json:"error,omitempty"`
 }
+
+// ServiceConfig governs the single local scheduler across every town.
+const DefaultMaxWorkers = 4
+const MaximumMaxWorkers = 64
+
+type ServiceConfig struct {
+	MaxWorkers int `json:"max_workers"`
+}
+
+func (c ServiceConfig) Validate() error {
+	if c.MaxWorkers < 1 || c.MaxWorkers > MaximumMaxWorkers {
+		return fmt.Errorf("max_workers must be between 1 and %d", MaximumMaxWorkers)
+	}
+	return nil
+}
+
+type Capacity struct {
+	Active int `json:"active"`
+	Limit  int `json:"limit"`
+}
+
 type State struct {
-	Format int              `json:"format"`
-	Seq    uint64           `json:"seq"`
-	Demo   bool             `json:"demo"`
-	Towns  map[string]*Town `json:"towns"`
-	Events []Event          `json:"events"`
+	ServiceConfig ServiceConfig    `json:"service_config"`
+	Capacity      *Capacity        `json:"capacity,omitempty"`
+	Format        int              `json:"format"`
+	Seq           uint64           `json:"seq"`
+	Demo          bool             `json:"demo"`
+	Towns         map[string]*Town `json:"towns"`
+	Events        []Event          `json:"events"`
 }
 
 func NewState(demo bool) State {
-	return State{Format: 1, Demo: demo, Towns: map[string]*Town{}, Events: []Event{}}
+	return State{ServiceConfig: ServiceConfig{MaxWorkers: DefaultMaxWorkers}, Format: 1, Demo: demo, Towns: map[string]*Town{}, Events: []Event{}}
 }
 func (s *State) Add(c Config) (*Town, error) {
 	if err := c.Validate(); err != nil {
@@ -301,5 +376,18 @@ func (c Config) Public() PublicConfig {
 	if c.HarnessDefinition != nil {
 		version = c.HarnessDefinition.Version
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version}
+	bots := make(map[Role]PublicBotAgentConfig, len(AgentRoles))
+	for _, role := range AgentRoles {
+		cfg := c
+		a, overridden := c.BotAgents[role]
+		if overridden {
+			cfg = c.withAgent(a)
+		}
+		botVersion := ""
+		if cfg.HarnessDefinition != nil {
+			botVersion = cfg.HarnessDefinition.Version
+		}
+		bots[role] = PublicBotAgentConfig{Harness: cfg.harness(), Model: cfg.Agent.Model, Effort: cfg.Agent.Effort, HarnessVersion: botVersion, Inherited: !overridden}
+	}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots}
 }

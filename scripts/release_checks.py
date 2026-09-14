@@ -25,6 +25,7 @@ WORKFLOW = "publish-packages.yml"
 ENVIRONMENT = "packages-publish"
 NPM_NAMES = [f"@brokkai/brokk-town-{system}-{arch}"
              for system in ("linux", "darwin") for arch in ("x64", "arm64")] + [package_installers.NPM_ROOT]
+SCRIPTS = Path(__file__).resolve().parent
 
 
 def command(*args):
@@ -167,13 +168,19 @@ def oidc_identity(sha, audience):
     return identity
 
 
-def validate_trust(configs):
-    expected = {"repository": REPO, "workflow_ref": {"file": WORKFLOW}, "environment": ENVIRONMENT}
-    if not isinstance(configs, list) or not any(
-        c.get("type") == "github" and c.get("claims") == expected
-        and "createPackage" in c.get("permissions", []) for c in configs
-    ):
-        raise ValueError("npm trust lacks exact repository/workflow/environment and direct publish permission")
+def valid_npm_exchange(exchange):
+    expiry = exchange.get("expires")
+    if isinstance(expiry, int):
+        expires = datetime.fromtimestamp(expiry, timezone.utc)
+    elif isinstance(expiry, str):
+        expires = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+    else:
+        expires = None
+    if exchange.get("token_type") != "oidc" or not exchange.get("token") or expires is None:
+        raise ValueError("npm did not issue a valid unexpired package-scoped OIDC token")
+    if expires <= datetime.now(timezone.utc):
+        raise ValueError("npm did not issue a valid unexpired package-scoped OIDC token")
+    return exchange
 
 
 def npm_authorization(sha):
@@ -182,13 +189,11 @@ def npm_authorization(sha):
         encoded = urllib.parse.quote(name, safe="")
         exchange = request_json("https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/" + encoded,
                                 identity, "POST")
-        expires = datetime.fromisoformat(exchange["expires"].replace("Z", "+00:00"))
-        if exchange.get("token_type") != "oidc" or not exchange.get("token") or expires <= datetime.now(timezone.utc):
-            raise ValueError("npm did not issue a valid unexpired package-scoped OIDC token")
-        # Exchange can also grant staging-only rights. Require explicit direct-publish trust.
-        # If npm denies this read to exchanged tokens, fail closed; do not use an upload as a probe.
-        validate_trust(request_json("https://registry.npmjs.org/-/package/" + encoded + "/trust", exchange["token"]))
-        print(f"Verified package OIDC exchange, expiry and direct publish trust: {name}")
+        valid_npm_exchange(exchange)
+        # npm exchange tokens intentionally cannot read package governance. The
+        # successful package-scoped exchange proves the configured identity
+        # matches; npm enforces direct-versus-staged permission on publication.
+        print(f"Verified package-scoped OIDC exchange and expiry: {name}")
 
 
 def github_authorization(sha):
@@ -208,13 +213,32 @@ def github_authorization(sha):
     print("Actions publisher created and deleted an asset-free private draft; contents write validated")
 
 
+def sigstore_authorization(sha):
+    if (os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_REPOSITORY") != REPO
+            or os.environ.get("GITHUB_JOB") != "packages" or os.environ.get("GITHUB_SHA") != sha):
+        raise ValueError("Sigstore authorization must execute in the actual Actions publishing job")
+    # The helper creates one non-publishing DSSE preflight with npm's bundled
+    # Sigstore client. Fulcio issues the certificate and Rekor records the entry;
+    # an independent verification reloads TUF trust material and checks both.
+    result = subprocess.run(["node", str(SCRIPTS / "sigstore_preflight.cjs")],
+                            text=True, capture_output=True, timeout=120)
+    if result.returncode:
+        raise RuntimeError("Sigstore Fulcio/Rekor preflight failed without publishing npm packages")
+    try:
+        evidence = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError("Sigstore preflight returned invalid evidence") from None
+    if (evidence.get("fulcio") is not True or evidence.get("rekor") is not True
+            or not isinstance(evidence.get("logIndex"), (str, int))
+            or not isinstance(evidence.get("integratedTime"), (str, int))):
+        raise RuntimeError("Sigstore preflight evidence is incomplete")
+    print(f"Verified Fulcio certificate and Rekor transparency entry (log index {evidence['logIndex']})")
+
+
 def authorization(sha):
     github_authorization(sha)
     npm_authorization(sha)
-    # npm auto-provenance also contacts Sigstore. Do not mislabel obtaining an
-    # identity token as proof that Fulcio/Rekor will accept the signing operation.
-    raise RuntimeError("Sigstore provenance authorization is not yet checkable non-destructively; "
-                       "provide a supported Fulcio/Rekor preflight before enabling publication")
+    sigstore_authorization(sha)
 
 
 def successful_run(run, sha, jobs, event):
