@@ -32,18 +32,22 @@ def publish(directory, sha, tag):
     if not record["draft"]:
         raise ValueError("release changed concurrently; re-run read-only verification")
     existing = {a["name"] for a in checks.api(f"releases/{record['id']}/assets?per_page=100")}
+    uploaded = set()
     for asset in sorted((directory / "native").iterdir()):
         if asset.name not in existing:
             subprocess.run(["gh", "release", "upload", tag, str(asset), "--repo", checks.GH_REPO], check=True)
-    # Upload integrity compares with exact staged bytes within this job.
+            uploaded.add(asset.name)
+    # New uploads must preserve this job's exact staged bytes. Retained assets
+    # may use a different compressor, so validate their manifest and payloads.
     with tempfile.TemporaryDirectory() as temp:
         subprocess.run(["gh", "release", "download", tag, "--repo", checks.GH_REPO, "--dir", temp], check=True)
         actual = Path(temp)
         if {p.name for p in actual.iterdir()} != {p.name for p in (directory / "native").iterdir()}:
             raise ValueError("incomplete staged native upload")
-        for asset in (directory / "native").iterdir():
-            if (actual / asset.name).read_bytes() != asset.read_bytes():
-                raise ValueError(f"upload integrity mismatch: {asset.name}")
+        for name in uploaded:
+            if (actual / name).read_bytes() != (directory / "native" / name).read_bytes():
+                raise ValueError(f"upload integrity mismatch: {name}")
+        checks.release.compare_assets(tag, actual, directory / "native", sha)
     package_registry.run("publish", directory / "packages")
     for attempt in range(40):
         try:

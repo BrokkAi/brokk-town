@@ -70,7 +70,7 @@ a commit shipped. Columns, prompts and transitions are not programmable.
 ## Installation and releases
 
 Source is published at [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town).
-The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.0)
+The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.1)
 and npm:
 
 ```sh
