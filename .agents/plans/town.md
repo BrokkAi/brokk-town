@@ -13,6 +13,25 @@
   re-enabling work. Show blocked jobs first with actionable detail in browser
   and TUI attention surfaces, and retain idempotent submitted ownership import.
 
+## Editable external contribution policy (2026-09-14)
+
+- Town Settings exposes the persisted merge policy after onboarding, with clear
+  external-PR ownership and eligibility language. Agent-profile and policy edits
+  commit atomically through the authenticated settings API.
+- A requested Mayoral decision gate for newly observed external issues and PRs
+  requires exact issue targeting in the issue-worker protocol before Town can
+  safely admit one issue while leaving other outside work inert. Do not simulate
+  this with UI-only state; coordinate the protocol and pinned issue-bot release.
+
+## In-app Town update notice (2026-09-14)
+
+- The service checks npm asynchronously at startup and every six hours, never in
+  an HTTP, input, or render loop. Stable semantic versions only are considered.
+- Browser and TUI clients offer an explicit upgrade action when a newer Town
+  release exists. The authenticated service installs that exact version with a
+  bounded, cancellable npm subprocess and asks for a restart. Offline or malformed
+  registry responses are non-fatal.
+
 ## Versioned bot worker protocol (2026-09-14)
 
 The user requested live-upgradable external bots, accepted Unix sockets for the

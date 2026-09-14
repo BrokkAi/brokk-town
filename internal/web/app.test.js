@@ -244,6 +244,7 @@ function installFixture() {
   globalThis.sessionStorage = { getItem: () => null, setItem() {} };
   globalThis.location = { hash: "#token=test-key", pathname: "/" };
   globalThis.history = { replaceState() {} };
+  globalThis.confirm = () => true;
   return elements;
 }
 
@@ -252,6 +253,7 @@ const state = {
   demo: true,
   capacity: { active: 1, limit: 4 },
   service_config: { max_workers: 4 },
+  update: { current: "1.0.0", latest: "1.1.0", command: "npm install -g @brokkai/brokk-town@1.1.0" },
   towns: {
     "acme/project": {
       id: "acme/project",
@@ -287,6 +289,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
       return { ok: true, body: { getReader: () => ({ read: async () => index < messages.length ? { value: new TextEncoder().encode(await messages[index++]), done: false } : { done: true } }) } };
     }
     if (url === "/api/capacity") return { ok: true, json: async () => state.capacity };
+    if (url === "/api/update") return { ok: true, json: async () => ({ ok: true, restart_required: true }) };
     if (url === "/api/state") return { ok: true, json: async () => state };
     if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: true, agents: [] }) };
     return { ok: true, json: async () => ({}) };
@@ -294,6 +297,10 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   await import(`./app.js?dom-test=${Date.now()}`);
   for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
   assert.equal(elements["capacity-summary"].textContent, "1/4 workers");
+  assert.equal(elements["update-notice"].textContent, "Upgrade Town to 1.1.0");
+  await elements["update-notice"].onclick();
+  assert.equal(requests.some((request) => request.url === "/api/update"), true);
+  assert.match(elements["update-notice"].textContent, /installed/);
 
   const views = document.querySelectorAll("#view-switcher [data-view]");
   views.find((button) => button.dataset.view === "board").onclick();

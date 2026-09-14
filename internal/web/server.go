@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
@@ -22,11 +23,23 @@ type Server struct {
 	Supervisor *town.Supervisor
 	Token      string
 	Origin     string
+	Update     func() *town.UpdateNotice
+	Upgrade    func(context.Context) error
+}
+
+func (s *Server) publicState() map[string]any {
+	state := s.Store.Snapshot().Public()
+	if s.Update != nil {
+		if update := s.Update(); update != nil {
+			state["update"] = update
+		}
+	}
+	return state
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Store.Snapshot().Public()) })
+	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, s.publicState()) })
 	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/towns", s.add)
@@ -37,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
 	mux.HandleFunc("POST /api/requests", s.submitRequest)
 	mux.HandleFunc("POST /api/requests/check", s.checkRequest)
+	mux.HandleFunc("POST /api/update", s.upgrade)
 	mux.Handle("/", http.FileServerFS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -61,6 +75,22 @@ func (s *Server) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
+	var input struct{}
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.Upgrade == nil {
+		problem(w, "no Town update is available", http.StatusConflict)
+		return
+	}
+	if err := s.Upgrade(r.Context()); err != nil {
+		problem(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	respond(w, map[string]any{"ok": true, "restart_required": true})
 }
 func respond(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -99,7 +129,13 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	for {
 		changed := s.Store.Watch()
 		snapshot := s.Store.Snapshot()
-		data, err := json.Marshal(snapshot.Public())
+		state := snapshot.Public()
+		if s.Update != nil {
+			if update := s.Update(); update != nil {
+				state["update"] = update
+			}
+		}
+		data, err := json.Marshal(state)
 		if err != nil {
 			return
 		}
@@ -180,9 +216,10 @@ func (s *Server) refreshHarnesses(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsInput struct {
-	Town  string             `json:"town"`
-	Role  town.Role          `json:"role,omitempty"`
-	Agent town.AgentSettings `json:"agent"`
+	Town        string             `json:"town"`
+	Role        town.Role          `json:"role,omitempty"`
+	Agent       town.AgentSettings `json:"agent"`
+	MergePolicy *string            `json:"merge_policy,omitempty"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +228,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.SettingsForRole(input.Town, input.Role, input.Agent); err != nil {
+	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

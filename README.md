@@ -77,6 +77,12 @@ and npm:
 npm install -g @brokkai/brokk-town
 ```
 
+While the service is running, Town checks npm outside its input and render loops.
+When a newer stable release is available, the browser offers an **Upgrade Town**
+button and the TUI offers `u`. After confirmation, the service installs that exact
+version and asks for a restart. A failed or offline check never interrupts local
+operation.
+
 You can also build from source as above or install the current branch:
 
 ```sh
@@ -296,6 +302,7 @@ repair cycles become visible tasks needing attention.
 The default merge policy is `bot`: auto-merge eligible Town-created PRs. `manual`
 leaves merging to the operator; `all` also permits eligible external PRs. Town-managed merges require current clean Town evidence, GitHub mergeability, required checks
 and approvals. Town uses an expected-head squash merge, without admin bypass.
+Change this at any time under **Town Settings → External contributions**.
 Repositories that require a merge queue or prohibit squash merging need manual
 merges for now. GitHub is the final authority at write time.
 

@@ -97,6 +97,33 @@ func TestLocalAPIAuthenticationOriginAndStrictInput(t *testing.T) {
 	}
 }
 
+func TestUpdateIsOfferedAndInstalledThroughAuthenticatedAPI(t *testing.T) {
+	s, h := fixture(t)
+	notice := &town.UpdateNotice{Current: "1.0.0", Latest: "1.1.0", Command: "npm install -g @brokkai/brokk-town@1.1.0"}
+	s.Update = func() *town.UpdateNotice { return notice }
+	called := false
+	s.Upgrade = func(context.Context) error { called = true; return nil }
+
+	response := call(t, h.URL, http.MethodGet, "/api/state", "", "test-key", "")
+	var state struct {
+		Update *town.UpdateNotice `json:"update"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Update == nil || state.Update.Latest != "1.1.0" {
+		t.Fatalf("update missing from public state: %+v", state.Update)
+	}
+	unauthorized := call(t, h.URL, http.MethodPost, "/api/update", `{}`, "", "")
+	if unauthorized.StatusCode != http.StatusUnauthorized || called {
+		t.Fatal("unauthenticated upgrade was accepted")
+	}
+	installed := call(t, h.URL, http.MethodPost, "/api/update", `{}`, "test-key", "")
+	if installed.StatusCode != http.StatusOK || !called {
+		t.Fatalf("authenticated upgrade failed: status=%d called=%v", installed.StatusCode, called)
+	}
+}
+
 func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
 	s, h := fixture(t)
 	for _, path := range []string{"/api/settings", "/api/choices", "/api/requests", "/api/requests/check", "/api/harnesses/refresh"} {
@@ -118,6 +145,14 @@ func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
 	config := s.Store.Snapshot().Towns["acme/managed"].Config
 	if config.Agent.Model != "chosen" || config.Agent.Effort != "low" || config.Agent.Command[1] != "private-argument" {
 		t.Fatal(config)
+	}
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"all"}`, "test-key", "")
+	if r.StatusCode != http.StatusOK || s.Store.Snapshot().Towns["acme/managed"].Config.MergePolicy != "all" {
+		t.Fatal("merge policy was not updated")
+	}
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"unsafe"}`, "test-key", "")
+	if r.StatusCode != http.StatusBadRequest || s.Store.Snapshot().Towns["acme/managed"].Config.MergePolicy != "all" {
+		t.Fatal("invalid merge policy changed persisted settings")
 	}
 	r = call(t, h.URL, "GET", "/api/state", "", "test-key", "")
 	data, _ := io.ReadAll(r.Body)
