@@ -584,3 +584,19 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   when the Mayor asks; never float or silently mutate a running configuration.
 - Save an explicitly selected semantic version per town and bot, then retain all
   worker protocol, capability, reported-version, and exact-run checks.
+
+## Master conflict recovery (2026-09-15)
+
+- Resolve the interrupted pull/rebase onto `1886354`: local commits `4aa63ee`
+  (Mayoral intake) and `54190d3` (review recovery) already landed through PR #43
+  as `4c23680` and `5188b98`, with upstream compatibility fixes. Skip both
+  duplicate replays, preserving the upstream implementation and original local
+  history in `backup/master-before-conflict-recovery-20260915`.
+- Audit remaining work: bot control gating, source/version UX, cross-town inbox,
+  bot upgrade decisions, and repair-push confirmation are on pushed branches
+  outside master. Service/bot handoff and shared agent defaults/onboarding also
+  have uncommitted changes in separate worktrees; leave that work intact.
+- `make check smoke` passed: Go race/vet, frontend syntax and tests,
+  packaging/license checks, and isolated demo CLI/API/TUI integration.
+  Commit this recovery record and push master; no release or live bot
+  automation is part of this recovery.
