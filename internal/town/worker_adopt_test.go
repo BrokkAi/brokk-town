@@ -389,6 +389,38 @@ func TestSupervisorAdoptsPersistedRunsBeforeScheduling(t *testing.T) {
 	}
 }
 
+func TestSupervisorStopsPersistedReleaseRunUnderManualPolicy(t *testing.T) {
+	store := testStore(t, false)
+	town := addTown(t, store)
+	handle := WorkerRun{Bot: "release-bot", Version: "0.5.1", Command: "/usr/local/bin/npx", Hash: "abc", PID: 4246, Socket: "/tmp/bt-worker-release/worker.sock", Output: "/tmp/bt-worker-release/worker.log", Detachable: true, Started: time.Now(), Deadline: time.Now().Add(time.Hour)}
+	update(t, store, func(state *State) {
+		current := state.Towns[town.ID]
+		current.Config.MergePolicy = "manual"
+		worker := current.Workers[Release]
+		worker.Enabled, worker.Status, worker.Run = true, "working", &handle
+	})
+	workers := &adoptingWorker{
+		workerFunc: func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+			return RunResult{}, nil
+		},
+		adopted: make(chan WorkerRun, 1), stops: make(chan bool, 1),
+	}
+	supervisor := NewSupervisor(store, nil, workers)
+	supervisor.adopt(context.Background())
+	select {
+	case got := <-workers.adopted:
+		if got.Bot != "release-bot" {
+			t.Fatalf("adopted wrong worker: %+v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("manual release run was left orphaned")
+	}
+	if !<-workers.stops {
+		t.Fatal("persisted release run was resumed under manual policy")
+	}
+	supervisor.wg.Wait()
+}
+
 func TestSupervisorEndsOrphanOfDeletedTown(t *testing.T) {
 	s := testStore(t, false)
 	x := addTown(t, s)

@@ -248,7 +248,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		if adopt != nil {
 			// A deleted town's orphan is ended; every other handle is resumed,
 			// even for a paused house, because pause lets active work finish.
-			if current.Deleted {
+			// Manual policy is the exception: an older persisted Release Bot
+			// must be identified and stopped before it can merge preparation PRs.
+			if current.Deleted || (r == Release && current.Config.MergePolicy == "manual") {
 				abandon = true
 				return nil
 			}
@@ -482,8 +484,8 @@ func (s *Supervisor) adoptRun(ctx context.Context, t *Town, r Role, run WorkerRu
 	return adopter.Adopt(ctx, t, r, run, observe, log)
 }
 
-// abandon ends an orphaned bot process whose town was deleted and drops its
-// handle. Stop semantics apply: the process is killed after identity is proven.
+// abandon ends a persisted bot process that no longer has authority to run and
+// drops its handle. Stop semantics apply after the worker identity is proven.
 func (s *Supervisor) abandon(ctx context.Context, t *Town, r Role, run WorkerRun) {
 	if adopter, ok := s.Workers.(Adopter); ok {
 		stopped, cancel := context.WithCancelCause(ctx)
@@ -677,8 +679,20 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 				continue
 			}
 			w := t.Workers[r]
+			if action == "start" && r == Release && t.Config.MergePolicy == "manual" {
+				if role == Release {
+					return manualReleaseError()
+				}
+				w.Enabled = false
+				w.Status = "paused"
+				w.Task = manualReleaseTask
+				continue
+			}
 			w.Enabled = action == "start"
 			if w.Enabled {
+				if w.Task == manualReleaseTask {
+					w.Task = "Ready when you are"
+				}
 				w.Next = time.Time{}
 				w.Error = ""
 				w.Status = "waiting"
@@ -718,6 +732,9 @@ func (s *Supervisor) retryRelease(id string) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
+		}
+		if t.Config.MergePolicy == "manual" {
+			return manualReleaseError()
 		}
 		w := t.Workers[Release]
 		if w == nil {

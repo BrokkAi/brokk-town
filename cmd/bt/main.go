@@ -148,7 +148,7 @@ func run(ctx context.Context, args []string) error {
 	listen := fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
 	demo := fs.Bool("demo", false, "isolated simulated town (serve only)")
 	repo := fs.String("repo", "", "GitHub OWNER/REPO")
-	role := fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls; omit for town defaults in settings")
+	role := fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls (start all wakes all five, except release under manual merge policy); omit for town defaults in settings")
 	task := fs.String("task", "", "task ID for retry; omit with --role release to reset the release bot's exhausted attempt budget")
 	config := fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
 	agentHarness := fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
@@ -164,7 +164,7 @@ func run(ctx context.Context, args []string) error {
 	requestID := fs.String("request-id", "", "saved submission ID (request/check-request)")
 	maxWorkers := fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|web|status|service|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|admit|decline|delay|serve|version] [options]\n\nRun bt for the terminal panel or bt web for the browser address; either starts the town service when it is down and keeps it registered with your login session.\nAdd --demo for a simulated town. Use bt service to inspect, stop, or unregister the service, and bt serve to run it in the foreground.\n")
+		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|web|status|service|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|admit|decline|delay|serve|version] [options]\n\nTown starts and manages bot workers internally; separate bot CLIs are not companion processes. New towns pause Bug, Feature, Issue, Review, and Release Bots and run Repo Bot read-only. Enabled houses resume after restarts.\nRun bt for the terminal panel or bt web for the browser address; either starts the town service when it is down and keeps it registered with your login session.\nAdd --demo for a simulated town. Use bt service to inspect, stop, or unregister the service, and bt serve to run it in the foreground.\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {

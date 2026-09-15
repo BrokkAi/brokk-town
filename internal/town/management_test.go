@@ -53,6 +53,96 @@ func TestSettingsApplyAtDispatchAndDoNotChangeActiveRun(t *testing.T) {
 	}
 }
 
+func TestNewTownWorkersStartSafelyAndEnabledStateSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := DefaultConfig("acme/orchard")
+	config.Branch = "main"
+	if err = store.Update(func(state *State) error {
+		town, addErr := state.Add(config)
+		if addErr != nil {
+			return addErr
+		}
+		for _, role := range AgentRoles {
+			if town.Workers[role].Enabled || town.Workers[role].Status != "paused" {
+				t.Fatalf("%s did not start paused: %+v", role, town.Workers[role])
+			}
+		}
+		if !town.Workers[Repo].Enabled {
+			t.Fatal("read-only repo worker did not start enabled")
+		}
+		town.Workers[Issue].Enabled = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	town := store.Snapshot().Towns["acme/orchard"]
+	if !town.Workers[Issue].Enabled || town.Workers[Issue].Status != "waiting" || town.Workers[Bug].Enabled {
+		t.Fatalf("restart did not preserve enabled houses: issue=%+v bug=%+v", town.Workers[Issue], town.Workers[Bug])
+	}
+}
+
+func TestManualMergePolicyPreventsReleaseWorkerCombinations(t *testing.T) {
+	store := testStore(t, false)
+	town := addTown(t, store)
+	update(t, store, func(state *State) {
+		worker := state.Towns[town.ID].Workers[Release]
+		worker.Enabled = true
+		worker.Status = "waiting"
+	})
+	manual := "manual"
+	supervisor := NewSupervisor(store, nil, nil)
+	if err := supervisor.SettingsForRoleAndPolicy(town.ID, "", AgentSettings{}, &manual, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if worker := store.Snapshot().Towns[town.ID].Workers[Release]; worker.Enabled || worker.Status != "paused" {
+		t.Fatalf("manual policy did not pause an enabled release worker: %+v", worker)
+	}
+	if err := supervisor.Control(town.ID, "all", "start", ""); err != nil {
+		t.Fatal(err)
+	}
+	town = store.Snapshot().Towns[town.ID]
+	for _, role := range []Role{Bug, Feature, Issue, Review} {
+		if !town.Workers[role].Enabled {
+			t.Fatalf("town-wide wake omitted %s", role)
+		}
+	}
+	if town.Workers[Release].Enabled || !strings.Contains(town.Workers[Release].Task, "manual merge policy") {
+		t.Fatalf("town-wide wake enabled release authority: %+v", town.Workers[Release])
+	}
+	if ok, _ := store.dispatchEligibility(town.ID, Release, time.Now()); ok {
+		t.Fatal("manual release worker was eligible for scheduling")
+	}
+	if err := supervisor.Control(town.ID, Release, "start", ""); err == nil || !strings.Contains(err.Error(), "release-preparation") {
+		t.Fatalf("direct release start was accepted: %v", err)
+	}
+	if err := supervisor.Control(town.ID, Release, "retry", ""); err == nil || !strings.Contains(err.Error(), "release-preparation") {
+		t.Fatalf("release retry was accepted: %v", err)
+	}
+	bot := "bot"
+	if err := supervisor.SettingsForRoleAndPolicy(town.ID, "", AgentSettings{}, &bot, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Control(town.ID, Release, "start", ""); err != nil {
+		t.Fatal(err)
+	}
+	update(t, store, func(state *State) { state.Towns[town.ID].Config.MergePolicy = "manual" })
+	if worker := store.Snapshot().Towns[town.ID].Workers[Release]; worker.Enabled || worker.Status != "paused" {
+		t.Fatalf("config-file style policy update retained release authority: %+v", worker)
+	}
+}
+
 func TestAgentSettingsPreservePrivateConfigAndSwitchHarness(t *testing.T) {
 	s := testStore(t, false)
 	x := addTown(t, s)

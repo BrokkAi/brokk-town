@@ -48,6 +48,22 @@ func TestTerminalFramesFitAndNeutralizeControls(t *testing.T) {
 	if strings.Contains(issue, "Checked off in Slack") {
 		t.Fatal("done source item remained at the issue-bot door", issue)
 	}
+	if !strings.Contains(issue, "Authority:") || !strings.Contains(issue, "create pull requests") {
+		t.Fatal("issue house omitted write authority", issue)
+	}
+}
+
+func TestTUIShowsManualReleaseBoundaryAndWakeSet(t *testing.T) {
+	state := town.NewState(false)
+	config := town.DefaultConfig("acme/orchard")
+	config.MergePolicy = "manual"
+	_, _ = state.Add(config)
+	frame := renderTUI(state, "", 0, 3, 140, 35, "")
+	for _, want := range []string{"release-preparation pull requests", "Paused while every merge is manual", "wake available workers"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("manual release authority omitted %q: %s", want, frame)
+		}
+	}
 }
 func TestPastedCommandsNeverOperateTown(t *testing.T) {
 	var d keyDecoder

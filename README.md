@@ -190,10 +190,13 @@ GitHub reconciliation.
 ./bin/bt tui
 ```
 
-New towns start with the five automation workers **paused**. Repo-bot starts its
-read-only inventory. The town header shows whether the town is paused, awake,
+Town starts and manages the bot libraries internally; the standalone bot CLIs are
+not companion processes. New towns start with Bug Bot, Feature Bot, Issue Bot,
+Review Bot, and Release Bot **paused**. Repo Bot starts its read-only inventory.
+The town header shows whether the town is paused, awake,
 or partly awake, and its button offers the action that changes that state.
-Inspect the town, then start individual workers or choose **Wake the town**.
+Inspect the town, then start individual workers or choose **Wake the town**, which
+enables all five automation workers (except Release Bot under manual merge policy).
 Starting workers authorizes their real work: filing issues,
 creating and repairing PRs, posting reviews, merging under the configured policy,
 and publishing releases. Agents and verification commands run with your local
@@ -371,7 +374,10 @@ result. New commits invalidate review readiness. Uncertain reviews and exhausted
 repair cycles become visible tasks needing attention.
 
 The default merge policy is `bot`: auto-merge eligible Town-created PRs. `manual`
-leaves merging to the operator; `all` also permits eligible external PRs. Town-managed merges require current clean Town evidence, GitHub mergeability, required checks
+leaves every merge to the operator; because the current Release Bot protocol cannot
+limit its authority to publish while forbidding its release-preparation PR merges,
+Town pauses Release Bot and rejects attempts to start or retry it under this policy.
+`all` also permits eligible external PRs. Town-managed merges require current clean Town evidence, GitHub mergeability, required checks
 and approvals. Town uses an expected-head squash merge, without admin bypass.
 Change this at any time under **Town Settings → External contributions**.
 Repositories that require a merge queue or prohibit squash merging need manual

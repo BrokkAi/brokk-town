@@ -67,6 +67,7 @@ func Open(dir string, demo bool) (*Store, error) {
 					if t.FunnelSyncs == nil {
 						t.FunnelSyncs = map[FunnelID]*FunnelSync{}
 					}
+					enforceManualReleasePolicy(t)
 				}
 			}
 			err = validateState(s.state, demo)
@@ -260,6 +261,9 @@ func (s *Store) dispatchEligibility(id string, role Role, now time.Time) (bool, 
 	if t == nil || t.Deleted || (role != Repo && !t.Initialized) {
 		return false, s.state.ServiceConfig.MaxWorkers
 	}
+	if role == Release && t.Config.MergePolicy == "manual" {
+		return false, s.state.ServiceConfig.MaxWorkers
+	}
 	w := t.Workers[role]
 	return w != nil && w.Enabled && !w.Next.After(now), s.state.ServiceConfig.MaxWorkers
 }
@@ -286,6 +290,9 @@ func (s *Store) Update(fn func(*State) error) error {
 	next := clone(s.state)
 	if err := fn(&next); err != nil {
 		return err
+	}
+	for _, town := range next.Towns {
+		enforceManualReleasePolicy(town)
 	}
 	if err := validateState(next, s.state.Demo); err != nil {
 		return err

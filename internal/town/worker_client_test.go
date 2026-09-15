@@ -3,6 +3,7 @@ package town
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -372,5 +373,25 @@ func TestReleaseRetryUsesWorkerAPIBeforeRun(t *testing.T) {
 	x.Workers[Release].RetryRequested = true
 	if _, err = workers.Run(context.Background(), x, Release, func(Progress) {}, logger); err == nil || !strings.Contains(err.Error(), `does not advertise "retry"`) {
 		t.Fatalf("missing retry capability was accepted: %v", err)
+	}
+}
+
+func TestManualMergePolicyDoesNotStartFakeReleaseWorker(t *testing.T) {
+	dir := t.TempDir()
+	capture := filepath.Join(dir, "capture.json")
+	t.Setenv("TOWN_WORKER_TEST_CAPTURE", capture)
+	store := testStore(t, false)
+	town := addTown(t, store)
+	town.Config.MergePolicy = "manual"
+	workers := &BotWorkers{
+		Root: dir, Store: store,
+		BotCommands: map[Role]string{Release: filepath.Join(dir, "worker-that-must-not-start")},
+	}
+	_, err := workers.Run(context.Background(), town, Release, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "release-preparation") {
+		t.Fatalf("manual release dispatch was accepted: %v", err)
+	}
+	if _, statErr := os.Stat(capture); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("fake release worker received a request: %v", statErr)
 	}
 }
