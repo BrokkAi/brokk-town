@@ -444,12 +444,8 @@ TOWN_REPAIR {"summary":"Changes addressing each finding","checks":["actual check
 	if _, err = git(ctx, tree.dir, "push", "origin", head+":refs/heads/"+p.Head.Ref); err != nil {
 		return err
 	}
-	confirmed, err := b.GitHub.Pull(ctx, t.Config.Repo, p.Number)
-	if err != nil {
+	if err = b.confirmPush(ctx, t, tree.dir, p.Number, p.Head.Ref, head, log); err != nil {
 		return err
-	}
-	if confirmed.Head.SHA != head {
-		return errors.New("repair push not confirmed at the exact head")
 	}
 	err = b.confirmRepair(t.ID, task.ID, intent)
 	preserve = err != nil
@@ -525,14 +521,59 @@ func (b *BotWorkers) resumeRepair(ctx context.Context, t *Town, task *Task, p Pu
 	if _, err := git(ctx, dir, "push", b.remote(t.Config.Repo), i.NewHead+":refs/heads/"+i.Branch); err != nil {
 		return err
 	}
-	fresh, err := b.GitHub.Pull(ctx, t.Config.Repo, p.Number)
-	if err != nil {
+	if err := b.confirmPush(ctx, t, dir, p.Number, i.Branch, i.NewHead, slog.Default()); err != nil {
 		return err
 	}
-	if fresh.Head.SHA != i.NewHead {
-		return errors.New("saved repair push not confirmed")
-	}
 	return b.confirmRepair(t.ID, task.ID, i)
+}
+
+// Repair publication waits this long for GitHub's pull request object to show
+// the pushed commit. The remote branch ref is the authority on whether the push
+// landed; the pull request head follows it asynchronously, so an immediate read
+// can lag by seconds and must not fail a publish that already succeeded.
+const repairConfirmWait = 15 * time.Second
+
+// confirmPush proves the exact commit is the remote branch head, then waits a
+// bounded time for the pull request to reflect it. A branch that is not at the
+// pushed commit leaves the saved intent uncertain for operator reconciliation.
+func (b *BotWorkers) confirmPush(ctx context.Context, t *Town, dir string, n int, branch, head string, log *slog.Logger) error {
+	out, err := git(ctx, dir, "ls-remote", "--exit-code", "--", b.remote(t.Config.Repo), "refs/heads/"+branch)
+	if err != nil {
+		return fmt.Errorf("repair push not confirmed: %w", err)
+	}
+	fields := strings.Fields(out)
+	if len(fields) == 0 || fields[0] != head {
+		return fmt.Errorf("repair push not confirmed at the exact head: %s is at %q", branch, strings.Join(fields, " "))
+	}
+	wait := b.confirmWait
+	if wait == 0 {
+		wait = repairConfirmWait
+	}
+	interval := b.confirmInterval
+	if interval == 0 {
+		interval = 500 * time.Millisecond
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		p, err := b.GitHub.Pull(ctx, t.Config.Repo, n)
+		if err != nil {
+			return err
+		}
+		if p.Head.SHA == head {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			log.Warn("pull request head lags the pushed branch; confirming from the remote ref", "pr", n, "branch", branch, "head", head, "reported", p.Head.SHA)
+			return nil
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 func (b *BotWorkers) confirmRepair(id, taskID string, i *Intent) error {
 	return b.Store.Update(func(st *State) error {

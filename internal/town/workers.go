@@ -19,6 +19,11 @@ type BotWorkers struct {
 	BotCommands  map[Role]string
 	remoteURL    func(string) string
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
+	// confirmWait and confirmInterval bound how long a repair publish waits
+	// for GitHub's pull request head to catch up with the pushed branch.
+	// Zero values use the production defaults.
+	confirmWait     time.Duration
+	confirmInterval time.Duration
 }
 
 func (b *BotWorkers) CanRetryIssue(t *Town, issue int) (bool, error) {
