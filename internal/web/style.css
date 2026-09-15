@@ -939,6 +939,55 @@ canvas {
   font: 11px var(--mono);
   color: #869e7d;
 }
+.outcome-period,
+.judgment-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.outcome-period span {
+  font: 11px var(--mono);
+  color: #9fb294;
+  margin-right: 4px;
+}
+.outcome-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 12px 0;
+}
+.outcome-metrics span {
+  padding: 8px;
+  background: #183424;
+  border: 1px solid #35583a;
+  border-radius: 5px;
+  font: 10px var(--mono);
+  color: #9fb294;
+}
+.outcome-metrics strong {
+  display: block;
+  color: #e6eee0;
+  font-size: 18px;
+}
+.outcome-row {
+  border-top: 1px solid #29452f;
+  padding: 10px 0;
+}
+.outcome-row time {
+  display: block;
+  color: #869e7d;
+  font: 10px var(--mono);
+}
+.outcome-row p {
+  margin: 4px 0;
+  font-size: 12px;
+  color: #b5c5ae;
+}
+.judgment-actions button {
+  padding: 5px 8px;
+  font-size: 11px;
+}
 #demo-note {
   font: 11px var(--mono);
   color: #d8cf8b;

@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -77,6 +78,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/requests", s.submitRequest)
 	mux.HandleFunc("POST /api/requests/check", s.checkRequest)
 	mux.HandleFunc("POST /api/task-detail", s.taskDetail)
+	mux.HandleFunc("GET /api/outcomes", s.outcomes)
+	mux.HandleFunc("POST /api/outcomes/judgment", s.outcomeJudgment)
 	mux.HandleFunc("POST /api/update", s.upgrade)
 	mux.HandleFunc("POST /api/restart", s.restart)
 	mux.Handle("/", http.FileServerFS(files))
@@ -106,6 +109,92 @@ func (s *Server) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) outcomes(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	to := now.Add(time.Nanosecond)
+	from := now.Add(-7 * 24 * time.Hour)
+	var err error
+	if value := r.URL.Query().Get("from"); value != "" {
+		from, err = time.Parse(time.RFC3339, value)
+	}
+	if err == nil {
+		if value := r.URL.Query().Get("to"); value != "" {
+			to, err = time.Parse(time.RFC3339, value)
+		}
+	}
+	if err != nil {
+		problem(w, "from and to must be RFC3339 timestamps", http.StatusBadRequest)
+		return
+	}
+	report, err := town.BuildOutcomeReport(s.Store.Snapshot(), strings.ToLower(r.URL.Query().Get("town")), from, to, now)
+	if err != nil {
+		problem(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if r.URL.Query().Get("format") != "csv" {
+		respond(w, report)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="town-outcomes.csv"`)
+	csvRow(w, []string{"town", "id", "at", "class", "kind", "status", "role", "task_id", "related_task_id", "revision", "url", "detail", "elapsed_ms", "input_tokens", "output_tokens", "cost_usd", "judgment", "explanation"})
+	for _, record := range report.Records {
+		elapsed, input, output, cost := "unknown", "unknown", "unknown", "unknown"
+		if record.ElapsedMS != nil {
+			elapsed = strconv.FormatInt(*record.ElapsedMS, 10)
+		}
+		if record.Usage != nil {
+			input, output = strconv.FormatInt(record.Usage.InputTokens, 10), strconv.FormatInt(record.Usage.OutputTokens, 10)
+		}
+		if record.CostUSD != nil {
+			cost = strconv.FormatFloat(*record.CostUSD, 'f', -1, 64)
+		}
+		judgment, explanation := "unjudged", ""
+		if record.Judgment != nil {
+			judgment, explanation = record.Judgment.Value, record.Judgment.Explanation
+		}
+		csvRow(w, []string{record.Town, record.ID, record.At.Format(time.RFC3339Nano), record.Class, record.Kind, record.Status, string(record.Role), record.TaskID, record.RelatedTaskID, record.Revision, record.URL, record.Detail, elapsed, input, output, cost, judgment, explanation})
+	}
+}
+
+func csvRow(w io.Writer, fields []string) {
+	for i, field := range fields {
+		if i > 0 {
+			_, _ = io.WriteString(w, ",")
+		}
+		if strings.ContainsAny(field, ",\"\r\n") {
+			field = `"` + strings.ReplaceAll(field, `"`, `""`) + `"`
+		}
+		_, _ = io.WriteString(w, field)
+	}
+	_, _ = io.WriteString(w, "\n")
+}
+
+func (s *Server) outcomeJudgment(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Town        string `json:"town"`
+		Outcome     string `json:"outcome"`
+		Value       string `json:"value"`
+		Explanation string `json:"explanation"`
+	}
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	err := s.Store.Update(func(state *town.State) error {
+		current := state.Towns[strings.ToLower(input.Town)]
+		if current == nil || current.Deleted {
+			return fmt.Errorf("unknown town")
+		}
+		return current.JudgeOutcome(input.Outcome, input.Value, input.Explanation, time.Now())
+	})
+	if err != nil {
+		problem(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	respond(w, map[string]bool{"ok": true})
 }
 func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
 	var input struct{}

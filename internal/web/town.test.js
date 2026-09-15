@@ -7,6 +7,7 @@ import {
   roadSegments,
   routePosition,
   visibleEvents,
+  outcomeReport,
   queueFor,
   issueJobDetails,
   taskRetryEligible,
@@ -37,6 +38,20 @@ test("deliveries resume after cursor and stay in their repository", () => {
   ];
   assert.deepEqual(visibleEvents(events, 1, "a"), [events[2]]);
   assert.deepEqual(visibleEvents(events, 3, "a"), []);
+});
+test("outcome report separates submitted artifacts from confirmed outcomes and judgments", () => {
+  const records = [
+    { id: "a", at: "2026-09-14T10:00:00Z", kind: "worker_attempt" },
+    { id: "b", at: "2026-09-14T10:01:00Z", kind: "finding_filed", judgment: { value: "useful" } },
+    { id: "c", at: "2026-09-14T10:02:00Z", kind: "implementation_pr" },
+    { id: "d", at: "2026-09-14T10:03:00Z", kind: "repair_round" },
+    { id: "e", at: "2026-09-14T10:04:00Z", kind: "merge" },
+    { id: "f", at: "2026-09-14T10:05:00Z", kind: "release" },
+    { id: "old", at: "2026-08-01T00:00:00Z", kind: "blocked" },
+  ];
+  const report = outcomeReport(records, new Date("2026-09-01T00:00:00Z"));
+  assert.deepEqual(report.summary, { attempts: 1, findings: 1, submitted: 1, merged: 1, repairs: 1, blocked: 0, releases: 1, useful: 1, falsePositives: 0, unjudged: 0 });
+  assert.equal(report.records.length, 6);
 });
 test("all delivery routes have finite continuous endpoints", () => {
   for (const [from, to] of [

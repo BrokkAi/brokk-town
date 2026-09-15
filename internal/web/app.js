@@ -7,6 +7,7 @@ import {
   issueJobDetails,
   taskRetryEligible,
   visibleEvents,
+  outcomeReport,
   safeURL,
   townSummary,
   taskStatuses,
@@ -80,6 +81,7 @@ let state = null,
   servedVersion = "";
 let liveDetail = null;
 let liveDetailEpoch = 0;
+let outcomeDays = 7;
 function clearLiveDetail() {
   liveDetail = null;
   liveDetailEpoch++;
@@ -145,6 +147,19 @@ async function api(path, body, signal) {
     throw new Error(error.error || response.statusText);
   }
   return response.json();
+}
+
+async function exportOutcomes(days) {
+  const from = new Date(Date.now() - days * 86400000).toISOString();
+  const query = new URLSearchParams({ town: selectedTown, from, format: "csv" });
+  const response = await fetch(`/api/outcomes?${query}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || response.statusText);
+  const href = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = `${selectedTown.replace("/", "-")}-outcomes-${days}d.csv`;
+  link.click();
+  URL.revokeObjectURL(href);
 }
 function town() {
   return state?.towns[selectedTown];
@@ -708,7 +723,15 @@ function renderInspection() {
   }
   if (selectedHouse === "hall") {
     const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
-    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work, proposed features and bot updates wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind === "upgrade" ? "bot update" : task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>News from repo-bot</h2>${
+    const outcomes = outcomeReport(t.outcomes || [], new Date(Date.now() - outcomeDays * 86400000));
+    const metric = (value, label) => `<span><strong>${value}</strong>${label}</span>`;
+    const outcomeRows = outcomes.records.slice().reverse().slice(0, 50).map((record) => {
+      const unknown = record.elapsed_ms == null ? "elapsed unknown" : `${Math.round(record.elapsed_ms / 1000)}s`;
+      const judgment = record.judgment ? `${record.judgment.value.replaceAll("_", " ")}: ${record.judgment.explanation}` : "unjudged";
+      const judge = record.kind === "finding_filed" ? `<span class="judgment-actions"><button data-judgment="useful" data-outcome="${esc(record.id)}">Useful</button><button data-judgment="false_positive" data-outcome="${esc(record.id)}">False positive</button></span>` : "";
+      return `<article class="outcome-row"><time>${esc(new Date(record.at).toLocaleString())}</time><strong>${esc(record.kind.replaceAll("_", " "))}</strong><p>${esc(record.status)} · ${esc(record.task_id || "run-wide")} · ${esc(unknown)} · usage ${record.usage == null ? "unknown" : esc(`${record.usage.input_tokens} in / ${record.usage.output_tokens} out`)} · cost ${record.cost_usd == null ? "unknown" : esc(`$${record.cost_usd}`)}</p>${record.kind === "finding_filed" ? `<p>Usefulness: ${esc(judgment)}</p>${judge}` : ""}</article>`;
+    }).join("");
+    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work, proposed features and bot updates wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind === "upgrade" ? "bot update" : task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 3650].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 3650 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
@@ -721,6 +744,22 @@ function renderInspection() {
     }`;
     out.querySelectorAll("[data-task]").forEach((button) => {
       button.onclick = () => { selectedTask = button.dataset.task; renderInspection(); };
+    });
+    out.querySelectorAll("[data-outcome-days]").forEach((button) => {
+      button.onclick = () => { outcomeDays = Number(button.dataset.outcomeDays); renderInspection(); };
+    });
+    out.querySelectorAll("[data-export-outcomes]").forEach((button) => {
+      button.onclick = () => exportOutcomes(Number(button.dataset.exportOutcomes)).catch((error) => showError(error.message));
+    });
+    out.querySelectorAll("[data-judgment]").forEach((button) => {
+      button.onclick = async () => {
+        const explanation = globalThis.prompt("Explain this usefulness judgment:");
+        if (!explanation?.trim()) return;
+        try {
+          await api("/api/outcomes/judgment", { town: selectedTown, outcome: button.dataset.outcome, value: button.dataset.judgment, explanation: explanation.trim() });
+          await refreshState();
+        } catch (error) { showError(error.message); }
+      };
     });
     return;
   }
