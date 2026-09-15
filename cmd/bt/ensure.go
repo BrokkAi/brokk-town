@@ -188,13 +188,16 @@ func serviceArgs(base string, demo bool, listen string) []string {
 }
 
 // temporaryBinary recognizes go run and go test executables, which must not
-// be registered or restarted because they disappear.
+// be registered or restarted because they disappear. Both live in a go-build
+// work directory; the temp directory as a whole is not a signal, since on
+// Linux every test's own directory is under /tmp.
 func temporaryBinary(exe string) bool {
-	tmp := os.TempDir()
-	if resolved, err := filepath.EvalSymlinks(tmp); err == nil {
-		tmp = resolved
+	for _, part := range strings.Split(filepath.ToSlash(exe), "/") {
+		if strings.HasPrefix(part, "go-build") {
+			return true
+		}
 	}
-	return strings.HasPrefix(exe, tmp) || strings.Contains(exe, "/go-build")
+	return false
 }
 
 func buildSpec(base, listen string) (daemon.Spec, error) {

@@ -212,7 +212,7 @@ func TestSystemdUnitQuotesAndSupervises(t *testing.T) {
 		"Restart=always",
 		"RestartSec=5",
 		"StartLimitIntervalSec=0",
-		"KillMode=mixed",
+		"KillMode=process",
 		"StandardOutput=append:" + filepath.Join(home, "state <dir>", "logs", "serve.log"),
 		"WantedBy=default.target",
 	} {

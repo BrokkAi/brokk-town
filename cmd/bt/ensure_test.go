@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -358,6 +359,53 @@ func TestServiceCommandsReportAndControlTheService(t *testing.T) {
 	}
 }
 
+func TestStopNeverSignalsAProcessThatIsNotTheService(t *testing.T) {
+	base := t.TempDir()
+	exe := filepath.Join(base, "bt")
+	if err := os.WriteFile(exe, []byte("bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	stubLifecycle(t, &fakeManager{}, nil, func(string, bool, string) error { t.Error("spawned"); return nil }, exe)
+	// A stale connection file after a crash or reboot can name a PID that now
+	// belongs to something else entirely; that process must be left alone.
+	bystander := exec.Command("sleep", "30")
+	if err := bystander.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bystander.Process.Kill(); _ = bystander.Wait() })
+	stale, _ := json.Marshal(connection{URL: "http://127.0.0.1:1", Token: "test-key", PID: bystander.Process.Pid})
+	if err := os.WriteFile(filepath.Join(base, "connection.json"), stale, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), []string{"service", "stop", "--state-dir", base}); err != nil {
+		t.Fatal(err)
+	}
+	if !processAlive(bystander.Process.Pid) {
+		t.Fatal("stop signalled a process that never answered as the town service")
+	}
+	if err := bystander.Process.Signal(syscall.Signal(0)); err != nil {
+		t.Fatalf("bystander gone: %v", err)
+	}
+}
+
+func TestDemoNeverTouchesTheRealRegistration(t *testing.T) {
+	base := t.TempDir()
+	exe := filepath.Join(base, "bt")
+	if err := os.WriteFile(exe, []byte("bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	manager := &fakeManager{status: daemon.Status{Installed: true, Loaded: true, Running: true, PID: os.Getpid()}}
+	stubLifecycle(t, manager, nil, func(string, bool, string) error { t.Error("spawned"); return nil }, exe)
+	for _, verb := range []string{"on", "off"} {
+		if err := run(context.Background(), []string{"service", verb, "--demo", "--state-dir", base}); err == nil {
+			t.Fatalf("service %s --demo accepted", verb)
+		}
+	}
+	if !registrationEnabled(base) || len(manager.Calls()) != 0 {
+		t.Fatalf("demo verbs changed the real registration: enabled=%v calls=%v", registrationEnabled(base), manager.Calls())
+	}
+}
+
 func TestStopUnloadsASupervisedJobWithoutAConnection(t *testing.T) {
 	base := t.TempDir()
 	exe := filepath.Join(base, "bt")
@@ -426,8 +474,13 @@ func TestPreferenceAndTemporaryBinaryRules(t *testing.T) {
 	if !registrationEnabled(base) {
 		t.Fatal("corrupt preference must mean on")
 	}
-	if !temporaryBinary(filepath.Join(os.TempDir(), "go-build123", "bt")) || temporaryBinary("/usr/local/bin/bt") {
+	if !temporaryBinary(filepath.Join(os.TempDir(), "go-build123", "bt")) || !temporaryBinary("/tmp/go-build4567/b001/bt.test") || temporaryBinary("/usr/local/bin/bt") {
 		t.Fatal("temporary binary detection is wrong")
+	}
+	// A binary that merely lives under the temp directory, as every test's
+	// fake bt does on Linux, is not a go run build.
+	if temporaryBinary(filepath.Join(os.TempDir(), "TestSomething123", "bt")) {
+		t.Fatal("temp-dir binaries must not count as temporary builds")
 	}
 	oldExe := executablePath
 	executablePath = func() (string, error) { return filepath.Join(os.TempDir(), "go-build123", "bt"), nil }

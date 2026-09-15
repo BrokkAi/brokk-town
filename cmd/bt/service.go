@@ -81,6 +81,9 @@ func runService(ctx context.Context, args []string) error {
 		fmt.Printf("Registered with %s: %s\nTown: %s\n", m.Name(), m.UnitPath(), conn.URL)
 		return nil
 	case "off":
+		if *demo {
+			return errors.New("the demo town is never registered with the login session")
+		}
 		if err := setRegistration(base, false); err != nil {
 			return err
 		}
@@ -115,14 +118,20 @@ func runService(ctx context.Context, args []string) error {
 				}
 			}
 		}
-		conn, readErr := readConnection(runtime)
-		running := readErr == nil && processAlive(conn.PID)
+		// Only a service that answers an authenticated probe is signalled. A
+		// connection file left by a crash or reboot names a PID that may now
+		// belong to an unrelated process.
+		conn, running := serviceAlive(ctx, runtime)
 		if running {
 			if err := stopProcess(ctx, runtime, conn); err != nil {
 				return err
 			}
 		}
 		if !unloaded && !running {
+			if conn.PID > 0 && processAlive(conn.PID) {
+				fmt.Printf("The town service is not running. The connection file names pid %d, which does not answer as the town service, so it was left alone.\n", conn.PID)
+				return nil
+			}
 			fmt.Println("The town service is not running.")
 			return nil
 		}
@@ -185,7 +194,7 @@ func serviceStatus(ctx context.Context, base string, demo bool) error {
 				fmt.Println("              (missing; the service cannot restart itself until bt is reinstalled)")
 			}
 		}
-		if status.Loaded && status.PID > 0 && status.PID != conn.PID {
+		if !demo && status.Loaded && status.PID > 0 && status.PID != conn.PID {
 			fmt.Printf("Note:         pid %d holds the state directory, not the registered job (pid %d); stop it before the registered service can run\n", conn.PID, status.PID)
 		}
 	case conn.PID > 0:

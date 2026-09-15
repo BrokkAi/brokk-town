@@ -15,8 +15,9 @@ import (
 const SystemdUnit = "brokk-town.service"
 
 // systemd registers a user unit. Restart=always with no start limit lets the
-// job recover once a foreground service releases the state lock; KillMode
-// mixed lets the service cancel its own worker process groups first.
+// job recover once a foreground service releases the state lock. KillMode
+// process signals only the service itself: bot processes it deliberately
+// leaves running across a restart must never be killed with the unit's cgroup.
 type systemd struct {
 	configHome string
 	run        Runner
@@ -37,7 +38,7 @@ Environment={{quote (printf "%s=%s" .Key .Value)}}
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
-KillMode=mixed
+KillMode=process
 UMask=0077
 StandardOutput=append:{{specifiers .StdoutPath}}
 StandardError=append:{{specifiers .StderrPath}}

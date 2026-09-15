@@ -10,9 +10,11 @@
   throttle) on macOS or a systemd user unit (`Restart=always`, no start limit,
   best-effort lingering) on Linux. The unit captures the installing shell's
   `PATH`, `HOME`, and `BROKK_TOWN_MANAGED=1`, and is rewritten whenever its
-  rendered content changes. Registration failure, `bt service off`, demo mode,
-  and temporary (`go run`/`go test`) binaries fall back to a detached spawn
-  with owner-only log files under the state directory. `launch.json` also
+  rendered content changes. Registration failure, `bt service off`, and demo
+  mode fall back to a detached spawn with owner-only log files under the state
+  directory. Temporary (`go run`/`go test`) binaries are refused for both
+  registration and detached spawn because they disappear; they use `bt serve`
+  in the foreground. `launch.json` also
   remembers the last explicit `--listen` per town (real and demo) so a later
   command's default cannot re-register the job onto a different port; `bt
   service stop` unloads a supervised job even when no connection file exists,
