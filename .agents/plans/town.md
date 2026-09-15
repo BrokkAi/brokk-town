@@ -320,6 +320,20 @@ queues and non-squash merge strategies currently require manual merging. Real
 agent judgment and repository-specific publishing policy need an operator-chosen
 live town before they can be exercised end to end.
 
+## Durable issue retry follow-up
+
+- Explicit retries of `issue:N` now reset that repository's pinned issue-bot
+  state through its released, issue-scoped Retry API before Town acknowledges
+  the retry. PR review, repair, merge-intent, and saved-commit recovery retain
+  their separate behavior.
+- An active issue worker is canceled and drained before reset; scheduling is held
+  until issue-bot releases its state and checkout locks. Saved work and uncertain
+  claim/publication fields are preserved, and reset failures leave Town's blocked
+  task counters intact and return an error to the caller.
+- Regression coverage seeds two exhausted durable jobs, retries one through the
+  real supervisor control path during an active fake worker, verifies only the
+  selected job becomes eligible and resumes, and checks failure atomicity.
+
 ## Public repository and distribution setup
 
 The user authorized creating a public repository and pushing this implementation,

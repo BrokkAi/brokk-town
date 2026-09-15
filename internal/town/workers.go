@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+	issuebot "github.com/BrokkAi/issue-bot"
 )
 
 type BotWorkers struct {
@@ -18,6 +19,19 @@ type BotWorkers struct {
 	BotCommands  map[Role]string
 	remoteURL    func(string) string
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
+}
+
+func (b *BotWorkers) RetryIssue(t *Town, issue int) error {
+	dir, state := Workspace(b.Root, t.ID, Issue)
+	cfg := issuebot.DefaultConfig()
+	cfg.Remote = b.remote(t.Config.Repo)
+	cfg.Branch = t.Config.Branch
+	cfg.Directory = dir
+	cfg.StateDirectory = state
+	cfg.GitHub.Repo = t.Config.Repo
+	cfg.GitHub.Host = "github.com"
+	cfg.Issue = issue
+	return issuebot.Retry(cfg)
 }
 
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (RunResult, error) {

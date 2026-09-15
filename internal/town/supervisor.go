@@ -23,6 +23,9 @@ type RunResult struct {
 type Workers interface {
 	Run(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error)
 }
+type IssueRetrier interface {
+	RetryIssue(*Town, int) error
+}
 type Supervisor struct {
 	Store     *Store
 	GitHub    GitHub
@@ -31,6 +34,7 @@ type Supervisor struct {
 	Harnesses *harness.Catalog
 	mu        sync.Mutex
 	running   map[string]context.CancelFunc
+	retrying  map[string]bool
 	wg        sync.WaitGroup
 	wake      chan struct{}
 	fatal     chan error
@@ -39,7 +43,7 @@ type Supervisor struct {
 
 func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	publisher, _ := gh.(IssuePublisher)
-	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -96,6 +100,7 @@ func (s *Supervisor) schedule(ctx context.Context) {
 				continue
 			}
 			_, busy := s.running[key]
+			busy = busy || s.retrying[key]
 			if r != Repo && s.activeWorkers() >= limit {
 				busy = true
 			}
@@ -397,6 +402,20 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 	if role != "all" && !ValidRole(role) {
 		return errors.New("unknown role")
 	}
+	if action == "retry" {
+		state := s.Store.Snapshot()
+		t := state.Towns[id]
+		if t == nil || t.Deleted {
+			return errors.New("unknown town")
+		}
+		task := t.Tasks[taskID]
+		if task == nil {
+			return errors.New("unknown task")
+		}
+		if task.Kind == "issue" && !state.Demo {
+			return s.retryIssueTask(id, taskID)
+		}
+	}
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
@@ -407,22 +426,7 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 			if task == nil {
 				return errors.New("unknown task")
 			}
-			if i := t.Intents[task.Number]; i != nil && i.Status == "uncertain" {
-				i.Status = "retry" // Explicit operator request; worker rechecks GitHub before any write.
-			}
-			task.Blocked = false
-			task.Attempts = 0
-			task.RetryAt = time.Time{}
-			if task.Stage == "inconclusive" {
-				task.Audit = nil
-				task.Stage = "queued"
-				task.House = Review
-			}
-			if task.Cycles >= t.Config.MaxCycles {
-				task.Cycles = 0
-			}
-			t.Workers[task.House].Next = time.Time{}
-			t.Workers[task.House].Enabled = true
+			resetTaskForRetry(t, task)
 			return nil
 		}
 		for _, r := range Roles {
@@ -461,6 +465,100 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 	default:
 	}
 	return nil
+}
+
+func resetTaskForRetry(t *Town, task *Task) {
+	if i := t.Intents[task.Number]; i != nil && i.Status == "uncertain" {
+		i.Status = "retry" // Explicit operator request; worker rechecks GitHub before any write.
+	}
+	task.Blocked = false
+	task.Attempts = 0
+	task.RetryAt = time.Time{}
+	if task.Stage == "inconclusive" {
+		task.Audit = nil
+		task.Stage = "queued"
+		task.House = Review
+	}
+	if task.Cycles >= t.Config.MaxCycles {
+		task.Cycles = 0
+	}
+	t.Workers[task.House].Next = time.Time{}
+	t.Workers[task.House].Enabled = true
+}
+
+func (s *Supervisor) retryIssueTask(id, taskID string) error {
+	retrier, ok := s.Workers.(IssueRetrier)
+	if !ok {
+		return errors.New("issue worker does not support durable retry")
+	}
+	key := id + ":" + string(Issue)
+	s.mu.Lock()
+	if s.retrying == nil {
+		s.retrying = map[string]bool{}
+	}
+	if s.retrying[key] {
+		s.mu.Unlock()
+		return errors.New("issue retry is already in progress")
+	}
+	s.retrying[key] = true
+	if cancel := s.running[key]; cancel != nil {
+		cancel()
+	}
+	s.mu.Unlock()
+
+	finish := func() {
+		s.mu.Lock()
+		delete(s.retrying, key)
+		s.mu.Unlock()
+		s.notifyScheduler()
+	}
+	defer finish()
+	deadline := time.NewTimer(30 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		s.mu.Lock()
+		_, running := s.running[key]
+		s.mu.Unlock()
+		if !running {
+			break
+		}
+		select {
+		case <-deadline.C:
+			return errors.New("timed out waiting for the active issue worker to stop before retry")
+		case <-ticker.C:
+		}
+	}
+
+	// Keep scheduling and town deletion out while issue-bot takes its own state
+	// and checkout locks and Town commits the corresponding retry state.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.Store.Snapshot()
+	t := state.Towns[id]
+	if t == nil || t.Deleted {
+		return errors.New("unknown town")
+	}
+	task := t.Tasks[taskID]
+	if task == nil || task.Kind != "issue" {
+		return errors.New("issue task changed while preparing retry")
+	}
+	if err := retrier.RetryIssue(t, task.Number); err != nil {
+		return fmt.Errorf("reset issue-bot retry state for issue #%d: %w", task.Number, err)
+	}
+	return s.Store.Update(func(st *State) error {
+		current := st.Towns[id]
+		if current == nil || current.Deleted {
+			return errors.New("unknown town")
+		}
+		currentTask := current.Tasks[taskID]
+		if currentTask == nil || currentTask.Kind != "issue" || currentTask.Number != task.Number {
+			return errors.New("issue task changed while committing retry")
+		}
+		resetTaskForRetry(current, currentTask)
+		return nil
+	})
 }
 func (s *Supervisor) mergeReady(ctx context.Context, t *Town) (bool, error) {
 	numbers := []int{}
