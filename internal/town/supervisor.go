@@ -15,7 +15,13 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/harness"
 )
 
-type Progress struct{ Phase, Task string }
+// Progress is one worker phase/task snapshot. Seq is the worker protocol event
+// number when the observation came from an external bot stream, so Town can
+// resume that stream after a restart.
+type Progress struct {
+	Phase, Task string
+	Seq         uint64
+}
 type RunResult struct {
 	Owned map[int]Ownership
 	Audit *Audit
@@ -23,6 +29,12 @@ type RunResult struct {
 }
 type Workers interface {
 	Run(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error)
+}
+
+// Adopter reconnects to a bot process recorded by an earlier service. Workers
+// without it leave such runs with an uncertain outcome.
+type Adopter interface {
+	Adopt(context.Context, *Town, Role, WorkerRun, func(Progress), *slog.Logger) (RunResult, error)
 }
 type IssueRetrier interface {
 	CanRetryIssue(*Town, int) (bool, error)
@@ -79,6 +91,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	// Reconnect to bot processes left by the previous service before scheduling
+	// anything, so no house is dispatched twice.
+	s.adopt(ctx)
 	for {
 		s.schedule(ctx)
 		select {
@@ -125,17 +140,49 @@ func (s *Supervisor) schedule(ctx context.Context) {
 				busy = true
 			}
 			if !busy {
-				child, cancel := context.WithCancel(ctx)
-				s.running[key] = cancel
-				s.Store.setActive(s.activeWorkers())
-				s.wg.Add(1)
-				go func(t *Town, r Role, key string) {
-					defer s.wg.Done()
-					defer func() { cancel(); s.releaseWorker(key) }()
-					s.execute(child, t, r)
-				}(t, r, key)
+				s.dispatch(ctx, t, r, key, nil)
 			}
 			s.mu.Unlock()
+		}
+	}
+}
+
+// dispatch reserves key and runs one worker attempt in the background. Explicit
+// stops cancel with errStopWorker so the bot process is killed; the plain
+// cancellation of service shutdown leaves external processes running for the
+// next service to adopt. Caller holds s.mu.
+func (s *Supervisor) dispatch(ctx context.Context, t *Town, r Role, key string, adopt *WorkerRun) {
+	child, cancel := context.WithCancelCause(ctx)
+	s.running[key] = func() { cancel(errStopWorker) }
+	s.Store.setActive(s.activeWorkers())
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer func() { cancel(nil); s.releaseWorker(key) }()
+		s.execute(child, t, r, adopt)
+	}()
+}
+
+// adopt dispatches every persisted run handle. It runs once at startup, before
+// the first scheduling pass.
+func (s *Supervisor) adopt(ctx context.Context) {
+	state := s.Store.Snapshot()
+	if state.Demo {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range state.Towns {
+		for _, r := range AgentRoles {
+			w := t.Workers[r]
+			if w == nil || w.Run == nil || ctx.Err() != nil {
+				continue
+			}
+			key := t.ID + ":" + string(r)
+			if _, busy := s.running[key]; busy {
+				continue
+			}
+			s.dispatch(ctx, t, r, key, w.Run)
 		}
 	}
 }
@@ -183,12 +230,29 @@ func (s *Supervisor) SetCapacity(limit int) error {
 	return err
 }
 
-func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
+func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *WorkerRun) {
 	now := s.now()
+	abandon := false
 	if err := s.Store.Update(func(st *State) error {
 		current := st.Towns[t.ID]
 		w := current.Workers[r]
-		if current.Deleted || !w.Enabled || ctx.Err() != nil {
+		if ctx.Err() != nil {
+			return context.Canceled
+		}
+		if adopt != nil {
+			// A deleted town's orphan is ended; every other handle is resumed,
+			// even for a paused house, because pause lets active work finish.
+			if current.Deleted {
+				abandon = true
+				return nil
+			}
+			t = clone(current)
+			w.Status = "working"
+			w.Error = ""
+			w.Updated = now
+			return nil
+		}
+		if current.Deleted || !w.Enabled {
 			return context.Canceled
 		}
 		if r != Repo {
@@ -213,6 +277,10 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		if !errors.Is(err, context.Canceled) {
 			s.fail(err)
 		}
+		return
+	}
+	if abandon {
+		s.abandon(ctx, t, r, *adopt)
 		return
 	}
 	// Progress and logging never block agent callbacks. A single consumer persists
@@ -248,6 +316,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 					w.Phase = p.Phase
 					w.Task = p.Task
 					w.Updated = s.now()
+					if p.Seq > 0 && w.Run != nil {
+						w.Run.Seq = p.Seq
+					}
 					return nil
 				})
 			}
@@ -268,7 +339,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 				err = fmt.Errorf("worker panic: %v", v)
 			}
 		}()
-		if r == Repo {
+		if adopt != nil {
+			result, err = s.adoptRun(ctx, t, r, *adopt, observe, log)
+		} else if r == Repo {
 			err = s.reconcile(ctx, t)
 		} else if r == Review {
 			handled, e := s.mergeReady(ctx, t)
@@ -280,7 +353,8 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			result, err = s.Workers.Run(ctx, t, r, observe, log)
 		}
 	}()
-	if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+	detached := errors.Is(err, errWorkerDetached)
+	if err != nil && !detached && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 		log.Error("worker attempt failed", "error", err)
 	}
 	close(updates)
@@ -289,6 +363,16 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	s.update(func(st *State) error {
 		current := st.Towns[t.ID]
 		w := current.Workers[r]
+		if detached {
+			// The bot process is still running. Keep its handle and profile so
+			// the next service reconnects instead of scheduling a second run.
+			w.Status = "detached"
+			w.Phase = "detached"
+			w.Task = "Still running; the next town service will reconnect to it"
+			w.Updated = s.now()
+			return nil
+		}
+		w.Run = nil
 		w.Agent = nil
 		w.Status = "waiting"
 		w.Updated = s.now()
@@ -378,6 +462,31 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		return nil
 	})
 }
+
+// adoptRun resumes a persisted external run when the workers support it.
+// Otherwise the outcome is recorded as uncertain and the handle is dropped.
+func (s *Supervisor) adoptRun(ctx context.Context, t *Town, r Role, run WorkerRun, observe func(Progress), log *slog.Logger) (RunResult, error) {
+	adopter, ok := s.Workers.(Adopter)
+	if !ok {
+		return RunResult{PR: run.PR}, &WorkerOutcomeUnknownError{Bot: run.Bot, Version: run.Version, Reason: "was running when the service restarted and this service cannot reconnect to it"}
+	}
+	return adopter.Adopt(ctx, t, r, run, observe, log)
+}
+
+// abandon ends an orphaned bot process whose town was deleted and drops its
+// handle. Stop semantics apply: the process is killed after identity is proven.
+func (s *Supervisor) abandon(ctx context.Context, t *Town, r Role, run WorkerRun) {
+	if adopter, ok := s.Workers.(Adopter); ok {
+		stopped, cancel := context.WithCancelCause(ctx)
+		cancel(errStopWorker)
+		_, _ = adopter.Adopt(stopped, t, r, run, func(Progress) {}, slog.New(&workerLog{role: r, out: nil, now: s.now}))
+	}
+	s.update(func(st *State) error {
+		st.Towns[t.ID].Workers[r].Run = nil
+		return nil
+	})
+}
+
 func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 	t = s.Store.Snapshot().Towns[t.ID]
 	// Funnel synchronization is source-neutral and commits typed health before

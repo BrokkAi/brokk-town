@@ -35,7 +35,7 @@ func TestSettingsApplyAtDispatchAndDoNotChangeActiveRun(t *testing.T) {
 	})
 	sup := NewSupervisor(s, nil, workers)
 	done := make(chan struct{})
-	go func() { sup.execute(context.Background(), stale, Bug); close(done) }()
+	go func() { sup.execute(context.Background(), stale, Bug, nil); close(done) }()
 	if <-seen != "old" {
 		t.Fatal("wrong starting model")
 	}
@@ -47,7 +47,7 @@ func TestSettingsApplyAtDispatchAndDoNotChangeActiveRun(t *testing.T) {
 		t.Fatal("active config mutated")
 	}
 	<-done
-	sup.execute(context.Background(), stale, Bug)
+	sup.execute(context.Background(), stale, Bug, nil)
 	if <-seen != "new" || <-seen != "new" {
 		t.Fatal("stale scheduled config used")
 	}
@@ -116,7 +116,7 @@ func TestDeleteCancelsWorkRetainsRecoveryAndRestoresPaused(t *testing.T) {
 		<-ctx.Done()
 		close(stopping)
 		<-release
-		progress(Progress{"cleanup", "Stopped"})
+		progress(Progress{Phase: "cleanup", Task: "Stopped"})
 		return RunResult{Owned: map[int]Ownership{10: {Branch: "issue/2", Issue: 2}}}, ctx.Err()
 	})
 	sup := NewSupervisor(s, nil, workers)

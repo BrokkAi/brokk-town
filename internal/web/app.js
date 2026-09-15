@@ -17,6 +17,10 @@ import {
   focusIdentity,
   focusMatches,
   scheduleLabel,
+  townControls,
+  decisionReason,
+  inbox,
+  ago,
 } from "./town.js";
 import { management } from "./manage.js";
 import { landscape, drawWorking, easeDelivery } from "./scenery.js";
@@ -69,7 +73,27 @@ let state = null,
   sequence = null,
   moving = [],
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
-  streamAbort = null;
+  streamAbort = null,
+  servedVersion = "";
+let liveDetail = null;
+let liveDetailEpoch = 0;
+function clearLiveDetail() {
+  liveDetail = null;
+  liveDetailEpoch++;
+}
+async function fetchLiveDetail(townId, taskId) {
+  const key = `${townId}\n${taskId}`;
+  const epoch = liveDetailEpoch;
+  try {
+    const detail = await api("/api/task-detail", { town: townId, task: taskId });
+    if (epoch !== liveDetailEpoch) return;
+    liveDetail = { key, status: "ready", data: detail };
+  } catch (error) {
+    if (epoch !== liveDetailEpoch) return;
+    liveDetail = { key, status: "failed", error: error.message };
+  }
+  if (selectedTown === townId && selectedTask === taskId) renderInspection();
+}
 const canvas = $("#world"),
   ctx = canvas.getContext("2d"),
   buildings = new Image(),
@@ -190,19 +214,33 @@ function receive(next) {
   moving = moving.slice(-24);
   sequence = next.seq;
   state = next;
+  // The page's assets belong to the binary that served them. When a restart
+  // brings a different version, reload so the UI matches the API again.
+  if (next.version) {
+    if (servedVersion && next.version !== servedVersion) {
+      location.reload();
+      return;
+    }
+    servedVersion = next.version;
+  }
   const update = $("#update-notice");
   if (state.update) {
     update.textContent = `Upgrade Town to ${state.update.latest}`;
     update.title = state.update.command;
     update.hidden = false;
     update.onclick = async () => {
-      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nThe service will keep running; restart it afterward to use the new version.`)) return;
+      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
       update.disabled = true;
       update.textContent = "Upgrading Town…";
       try {
-        await api("/api/update", {});
-        update.textContent = `Town ${state.update.latest} installed · restart service`;
-        update.title = "Restart bt serve to use the installed version";
+        const result = await api("/api/update", {});
+        if (result.restarting) {
+          update.textContent = `Town ${state.update.latest} installed · restarting`;
+          update.title = "The service restarts itself; this page reloads when it is back";
+        } else {
+          update.textContent = `Town ${state.update.latest} installed · restart service`;
+          update.title = "Restart bt serve to use the installed version";
+        }
       } catch (error) {
         update.disabled = false;
         update.textContent = `Upgrade failed · try again`;
@@ -212,6 +250,10 @@ function receive(next) {
   } else {
     update.hidden = true;
   }
+  const serviceVersion = typeof state.version === "string" ? state.version.trim() : "";
+  $("#town-version").textContent = serviceVersion;
+  $("#town-version").hidden = !serviceVersion;
+  $("#help-version").textContent = serviceVersion ? `Brokk Town ${serviceVersion}` : "";
   if (!state.towns[selectedTown]) {
     selectedTown = Object.keys(state.towns)[0] || "";
     selectedTask = "";
@@ -392,6 +434,7 @@ function inspectOperation(id, role, task = "") {
   $("#close-inspector").focus();
 }
 function closeInspector() {
+  clearLiveDetail();
   $("#inspector").classList.remove("open");
   if (state) renderOverview();
 }
@@ -400,8 +443,32 @@ function chooseHouse(role) {
   saveScope();
   selectedHouse = role;
   selectedTask = "";
+  clearLiveDetail();
   $("#inspector").classList.add("open");
   render();
+}
+function renderTownControls(t) {
+  const toggle = $("#town-toggle"),
+    pauseAll = $("#pause-all"),
+    chip = $("#town-state");
+  toggle.disabled = !t;
+  pauseAll.disabled = !t;
+  if (!t) {
+    chip.hidden = true;
+    pauseAll.hidden = true;
+    toggle.textContent = "▶ Wake the town";
+    toggle.dataset.action = "start";
+    return;
+  }
+  const controls = townControls(t);
+  chip.hidden = false;
+  chip.textContent = controls.status;
+  chip.className = `status-chip status-${controls.statusClass}`;
+  toggle.textContent = controls.primary.label;
+  toggle.dataset.action = controls.primary.action;
+  toggle.classList.toggle("primary", controls.primary.action === "start");
+  pauseAll.hidden = !controls.secondary;
+  if (controls.secondary) pauseAll.textContent = controls.secondary.label;
 }
 function render() {
   const focus = focusIdentity(document.activeElement);
@@ -411,20 +478,25 @@ function render() {
   $("#mode").hidden = !state.demo;
   $("#demo-note").hidden = !state.demo;
   $("#empty").hidden = !!t;
-  $("#start-all").disabled = !t;
-  $("#pause-all").disabled = !t;
+  renderTownControls(t);
   $("#repo-owner").textContent = t ? t.config.repo.split("/")[0] : "WELCOME TO";
   $("#town-name").textContent = t
     ? t.config.repo.split("/")[1]
     : "Your next little town";
+  const needs = inbox(state);
+  const townNeeds = (id) => needs.towns[id] || { decisions: 0, attention: 0 };
   $("#town-meta").textContent = t
-    ? `${t.config.branch || "Reading repository…"} · ${Object.values(t.workers).filter((w) => w.status === "working").length} agents at work · ${Object.values(t.tasks).filter((task) => task.blocked).length} need attention`
+    ? `${t.config.branch || "Reading repository…"} · ${Object.values(t.workers).filter((w) => w.status === "working").length} agents at work · ${townNeeds(t.id).decisions} await your decision · ${townNeeds(t.id).attention} need attention`
     : "Connect a repository to bring its agents together.";
   $("#towns").innerHTML = Object.values(state.towns)
-    .map(
-      (item) =>
-        `<button class="town-link ${item.id === selectedTown ? "selected" : ""}" data-town="${esc(item.id)}"><strong>▧ ${esc(item.config.repo.split("/")[1])}</strong><small>${esc(item.config.repo.split("/")[0])} · ${Object.values(item.workers).filter((w) => w.enabled).length} awake</small></button>`,
-    )
+    .map((item) => {
+      const counts = townNeeds(item.id);
+      const flags = [
+        counts.decisions ? `<span class="town-flag decide">${counts.decisions} to decide</span>` : "",
+        counts.attention ? `<span class="town-flag attention">${counts.attention} attention</span>` : "",
+      ].join("");
+      return `<button class="town-link ${item.id === selectedTown ? "selected" : ""}" data-town="${esc(item.id)}"><strong>▧ ${esc(item.config.repo.split("/")[1])}</strong><small>${esc(item.config.repo.split("/")[0])} · ${Object.values(item.workers).filter((w) => w.enabled).length} awake</small>${flags ? `<span class="town-flags">${flags}</span>` : ""}</button>`;
+    })
     .join("");
   $("#towns")
     .querySelectorAll("button")
@@ -442,6 +514,7 @@ function render() {
   renderInspection();
   renderJournal();
   renderManagement();
+  renderInbox(needs);
   if (focus) {
     const root = document.querySelector(`#${focus.surface}`);
     const restored = [...(root?.querySelectorAll("button") || [])].find((button) =>
@@ -459,6 +532,7 @@ function selectTown(id) {
     /* Keep the selection for this session when persistence is unavailable. */
   }
   selectedTask = "";
+  clearLiveDetail();
   moving = [];
   overview = false;
   saveScope();
@@ -483,7 +557,7 @@ function renderOverview() {
     Object.values(state.towns)
       .map((t) => {
         const stats = townSummary(t);
-        return `<button class="town-card" data-visit="${esc(t.id)}"><span class="eyebrow">${esc(t.config.repo.split("/")[0])}</span><h2>${esc(t.config.repo.split("/")[1])}</h2><div class="town-card-houses" aria-hidden="true"></div><div class="town-stats"><span><strong>${stats.busy}</strong> working</span><span><strong>${stats.queued}</strong> at the doors</span><span><strong>${stats.blocked + stats.failed}</strong> need attention</span></div><p>${esc(t.error || t.reports.at(-1)?.title || "Repo-bot is taking the first inventory")}</p><small>${esc(stats.release)} · Visit town →</small></button>`;
+        return `<button class="town-card" data-visit="${esc(t.id)}"><span class="eyebrow">${esc(t.config.repo.split("/")[0])}</span><h2>${esc(t.config.repo.split("/")[1])}</h2><div class="town-card-houses" aria-hidden="true"></div><div class="town-stats"><span><strong>${stats.busy}</strong> working</span><span><strong>${stats.queued}</strong> at the doors</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> to decide</span><span><strong>${stats.blocked + stats.failed}</strong> need attention</span></div><p>${esc(t.error || t.reports.at(-1)?.title || "Repo-bot is taking the first inventory")}</p><small>${esc(stats.release)} · Visit town →</small></button>`;
       })
       .join("") ||
     '<div class="overview-empty"><h2>Your world starts with one repository.</h2><p>Add a town using New town above. Each repository gets its own team of agents.</p></div>';
@@ -583,9 +657,38 @@ function renderInspection() {
       : isUpgrade
         ? `<div class="inspector-actions"><button id="admit-task" class="primary">Upgrade now</button><button id="delay-task">Delay a day</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">The bot keeps ${esc(task.upgrade?.from || "its current pin")} until you decide. Upgrading pins ${esc(task.upgrade?.to || "the new version")} for its next run; delaying asks again in a day; declining skips this version.</p>`
         : `<div class="inspector-actions"><button id="admit-task" class="primary">${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`;
-    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${sourceSummary}<p>${esc(task.detail || "Following the next step through town.")}</p>${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${mayorActions}${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
+    const isMayor = task.mayoral_decision === "pending";
+    const liveCapable = isMayor && (task.kind === "issue" || task.kind === "pr") && task.number > 0;
+    const kindLabel = task.kind === "pr" ? "PR" : task.kind === "issue" ? "Issue" : task.kind;
+    const mayorMeta = liveCapable
+      ? `<p><strong>${esc(kindLabel)} #${task.number}</strong> · ${esc(decisionReason(task))}${task.updated ? ` · updated ${esc(new Date(task.updated).toLocaleString())}` : ""}</p><p class="muted">Admitting sends this to ${task.kind === "issue" ? "Issue Bot" : "Review Bot"}.</p>`
+      : "";
+    let liveBlock = "";
+    if (liveCapable) {
+      const key = `${selectedTown}\n${selectedTask}`;
+      if (!liveDetail || liveDetail.key !== key) {
+        liveDetail = { key, status: state.demo ? "demo" : "loading" };
+        if (!state.demo) fetchLiveDetail(selectedTown, selectedTask);
+      }
+      if (liveDetail.status === "loading") {
+        liveBlock = `<p class="muted">Loading live details from GitHub…</p>`;
+      } else if (liveDetail.status === "demo") {
+        liveBlock = `<p class="muted">Demo town: simulated arrival, no live source.</p>`;
+      } else if (liveDetail.status === "failed") {
+        liveBlock = `<p class="muted">Live details unavailable${liveDetail.error ? `: ${esc(liveDetail.error)}` : ""}. The summary above is current as of the last sync.</p>`;
+      } else {
+        const d = liveDetail.data;
+        const comments = d.kind === "pr" && d.review_comments
+          ? `${d.comments} comments · ${d.review_comments} review comments`
+          : `${d.comments} comment${d.comments === 1 ? "" : "s"}`;
+        liveBlock = `<p class="muted">${d.author ? `Opened by ${esc(d.author)} · ` : ""}${esc(comments)} · ${esc(d.state)} · updated ${esc(new Date(d.updated_at).toLocaleString())}</p>${d.body ? `<pre>${esc(d.body)}</pre>${d.truncated ? `<p class="muted">Truncated here — the rest is at the source link above.</p>` : ""}` : `<p class="muted">No description provided at the source.</p>`}`;
+      }
+    }
+    const detailText = task.detail || (liveCapable ? "" : "Following the next step through town.");
+    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${mayorActions}${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
     $("#back-house").onclick = () => {
       selectedTask = "";
+      clearLiveDetail();
       renderInspection();
     };
     if ($("#retry-task"))
@@ -602,7 +705,7 @@ function renderInspection() {
   }
   if (selectedHouse === "hall") {
     const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
-    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work, proposed features and bot updates wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind === "upgrade" ? "bot update" : task.kind)} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>News from repo-bot</h2>${
+    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work, proposed features and bot updates wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind === "upgrade" ? "bot update" : task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
@@ -697,6 +800,78 @@ async function command(action, role = "all", task = "") {
     showError(e.message);
   }
 }
+// The inbox lists what waits on the Mayor in every town and points at the
+// exact house where the decision or retry lives.  It re-renders on every
+// snapshot so a decision made elsewhere disappears without a reload.
+function inboxLabel(item) {
+  const kind = item.kind === "pr" ? "PR" : item.kind === "issue" ? "Issue" : item.kind;
+  return [item.number > 0 ? `${kind} #${item.number}` : kind, ago(item.updated)].filter(Boolean);
+}
+function inboxGroups(items, card) {
+  const groups = new Map();
+  for (const item of items) {
+    if (!groups.has(item.repo)) groups.set(item.repo, []);
+    groups.get(item.repo).push(item);
+  }
+  return [...groups]
+    .map(([repo, rows]) => `<section class="inbox-town"><h3>${esc(repo)}</h3>${rows.map(card).join("")}</section>`)
+    .join("");
+}
+function renderInbox(needs = inbox(state)) {
+  const count = $("#inbox-count"),
+    toggle = $("#inbox-toggle");
+  count.textContent = String(needs.total);
+  count.hidden = !needs.total;
+  count.classList.toggle("decisions", needs.decisions.length > 0);
+  const summary = needs.total
+    ? `${needs.decisions.length} awaiting your decision · ${needs.attention.length} need attention`
+    : "Nothing needs you right now";
+  toggle.title = `${summary} · across every town`;
+  toggle.setAttribute("aria-label", `Needs you: ${summary}`);
+  const openButton = (item, label, primary) =>
+    `<button class="${primary ? "primary" : ""}" data-inbox-key="open:${esc(item.task || item.house)}" data-inbox-town="${esc(item.town)}" data-inbox-house="${esc(item.house)}" data-inbox-task="${esc(item.task)}" data-inbox-open="1">${label}</button>`;
+  const decisionCard = (item) =>
+    `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · admitting sends it to ${item.kind === "issue" ? "Issue Bot" : "Review Bot"}</small></div><div class="inbox-actions">${openButton(item, "Open in Town Hall", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit">${item.reviewAgain ? "Review again" : "Admit"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline">Decline</button></div></article>`;
+  const attentionCard = (item) =>
+    `<article class="inbox-item attention"><div><strong>${esc(item.title)}</strong><small><span class="status-chip status-${esc(item.statusClass)}">${esc(item.statusLabel)}</span> · ${esc([houseNames[item.house] || item.house, ...inboxLabel(item)].join(" · "))}</small>${item.detail ? `<small>${esc(item.detail)}</small>` : ""}</div><div class="inbox-actions">${openButton(item, "Inspect", true)}</div></article>`;
+  $("#inbox-list").innerHTML =
+    (needs.decisions.length
+      ? `<h2>Awaiting your decision <span class="count">${needs.decisions.length}</span></h2>${inboxGroups(needs.decisions, decisionCard)}`
+      : "") +
+    (needs.attention.length
+      ? `<h2>Needs attention <span class="count">${needs.attention.length}</span></h2>${inboxGroups(needs.attention, attentionCard)}`
+      : "") ||
+    '<p class="muted">Nothing needs you right now. New arrivals and stuck work will appear here from every town.</p>';
+  $("#inbox-list")
+    .querySelectorAll("[data-inbox-open]")
+    .forEach((button) => (button.onclick = () => openInboxItem(button.dataset.inboxTown, button.dataset.inboxHouse, button.dataset.inboxTask)));
+  $("#inbox-list")
+    .querySelectorAll("[data-inbox-decide]")
+    .forEach((button) => (button.onclick = () => decideFromInbox(button.dataset.inboxTown, button.dataset.inboxTask, button.dataset.inboxDecide)));
+}
+function openInboxItem(id, house, task) {
+  if (!state?.towns[id]) return;
+  $("#inbox-dialog").close();
+  selectTown(id);
+  inspectOperation(id, indices[house] !== undefined ? house : "hall", task);
+}
+async function decideFromInbox(id, task, action) {
+  $("#inbox-error").textContent = "";
+  try {
+    await api("/api/control", { town: id, role: "hall", action, task });
+    await refreshState();
+  } catch (error) {
+    $("#inbox-error").textContent = error.message;
+  }
+}
+function openInbox() {
+  if (!state) return;
+  $("#inbox-error").textContent = "";
+  renderInbox();
+  $("#inbox-dialog").showModal();
+}
+$("#inbox-toggle").onclick = openInbox;
+$("#close-inbox").onclick = () => $("#inbox-dialog").close();
 function sprite(image, index, x, y, size) {
   if (!image.complete || !image.naturalWidth) return;
   const crop =
@@ -797,7 +972,7 @@ function draw(now) {
     }
   requestAnimationFrame(draw);
 }
-$("#start-all").onclick = () => command("start");
+$("#town-toggle").onclick = () => command($("#town-toggle").dataset.action || "start");
 $("#pause-all").onclick = () => command("pause");
 $("#close-inspector").onclick = closeInspector;
 for (const id of ["new-town", "empty-add"])
@@ -859,6 +1034,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "?") $("#help-dialog").showModal();
+  if (e.key.toLowerCase() === "i") openInbox();
   if (e.key.toLowerCase() === "t") selectView("town");
   if (e.key.toLowerCase() === "b") selectView("board");
   if (e.key.toLowerCase() === "c") selectView("compact");

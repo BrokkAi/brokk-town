@@ -22,17 +22,76 @@ import (
 	"time"
 
 	"github.com/BrokkAi/brokk-town/internal/harness"
-	"github.com/BrokkAi/brokk-town/internal/osrun"
 	"github.com/BrokkAi/brokk-town/internal/town"
 	"github.com/BrokkAi/brokk-town/internal/web"
 )
 
 var version = "dev"
 
+// connection is the service's advertisement to local clients. Version,
+// executable, and start time let a newer client roll the service forward;
+// managed records whether a login-session supervisor owns the process.
 type connection struct {
-	URL   string `json:"url"`
-	Token string `json:"token"`
-	PID   int    `json:"pid"`
+	URL        string    `json:"url"`
+	Token      string    `json:"token"`
+	PID        int       `json:"pid"`
+	Version    string    `json:"version,omitempty"`
+	Executable string    `json:"executable,omitempty"`
+	Started    time.Time `json:"started,omitempty"`
+	Managed    bool      `json:"managed,omitempty"`
+}
+
+// errRestart asks main to replace this process with the binary at its own
+// path, keeping the PID so a login-session supervisor sees one continuous job.
+var errRestart = errors.New("restart requested")
+
+// executablePath resolves the real binary behind any launcher symlink, such as
+// the npm shim, so registrations and restarts never depend on PATH.
+var executablePath = func() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, e := filepath.EvalSymlinks(exe); e == nil {
+		exe = resolved
+	}
+	return exe, nil
+}
+
+// serviceToken persists the local access key so browser bookmarks, open tabs,
+// and a polling TUI survive service restarts. Delete the file to rotate it.
+func serviceToken(dir string) (string, error) {
+	path := filepath.Join(dir, "token")
+	if b, err := os.ReadFile(path); err == nil {
+		token := strings.TrimSpace(string(b))
+		if _, e := hex.DecodeString(token); e == nil && len(token) == 64 {
+			return token, nil
+		}
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(key)
+	if err := os.WriteFile(path, []byte(token+"\n"), 0600); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// describeLock enriches the store's single-writer error with the running
+// service's identity so the operator knows what holds the state directory.
+func describeLock(dir string, err error) error {
+	if !strings.Contains(err.Error(), "another town service is running") {
+		return err
+	}
+	if conn, e := readConnection(dir); e == nil && conn.PID > 0 {
+		return fmt.Errorf("%w (pid %d at %s; stop it with bt service stop, or Ctrl+C if it runs in a terminal)", err, conn.PID, conn.URL)
+	}
+	return err
 }
 
 func stateHome() string {
@@ -55,7 +114,18 @@ func buildVersion() string {
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err := run(ctx, os.Args[1:]); err != nil && !errors.Is(err, context.Canceled) {
+	err := run(ctx, os.Args[1:])
+	cancel()
+	if errors.Is(err, errRestart) {
+		// The store lock, listener, and connection file are already released.
+		// Exec keeps the PID, so supervisors and the npm launcher see one job.
+		exe, e := executablePath()
+		if e == nil {
+			e = syscall.Exec(exe, os.Args, os.Environ())
+		}
+		err = fmt.Errorf("restart failed: %w", e)
+	}
+	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "bt:", err)
 		os.Exit(1)
 	}
@@ -70,9 +140,12 @@ func run(ctx context.Context, args []string) error {
 		fmt.Println(buildVersion())
 		return nil
 	}
+	if command == "service" {
+		return runService(ctx, args)
+	}
 	fs := flag.NewFlagSet("bt "+command, flag.ContinueOnError)
 	dir := fs.String("state-dir", stateHome(), "private state directory")
-	listen := fs.String("listen", "127.0.0.1:8099", "loopback HTTP address (serve only)")
+	listen := fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
 	demo := fs.Bool("demo", false, "isolated simulated town (serve only)")
 	repo := fs.String("repo", "", "GitHub OWNER/REPO")
 	role := fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls; omit for town defaults in settings")
@@ -91,7 +164,7 @@ func run(ctx context.Context, args []string) error {
 	requestID := fs.String("request-id", "", "saved submission ID (request/check-request)")
 	maxWorkers := fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|admit|decline|delay|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
+		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|web|status|service|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|admit|decline|delay|serve|version] [options]\n\nRun bt for the terminal panel or bt web for the browser address; either starts the town service when it is down and keeps it registered with your login session.\nAdd --demo for a simulated town. Use bt service to inspect, stop, or unregister the service, and bt serve to run it in the foreground.\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -103,23 +176,25 @@ func run(ctx context.Context, args []string) error {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
-	abs, err := filepath.Abs(*dir)
+	base, err := filepath.Abs(*dir)
 	if err != nil {
 		return err
 	}
-	if *demo {
-		abs = filepath.Join(abs, "demo")
-	}
+	abs := runtimeDir(base, *demo)
 	if command == "serve" {
 		return serve(ctx, abs, *listen, *demo, *config, *repo)
+	}
+	address, err := resolveListen(base, *demo, *listen, flagSet(fs, "listen"))
+	if err != nil {
+		return err
 	}
 	if command == "capacity" {
 		if *maxWorkers < 1 || *maxWorkers > town.MaximumMaxWorkers {
 			return fmt.Errorf("--max-workers is required and must be between 1 and %d", town.MaximumMaxWorkers)
 		}
-		conn, err := readConnection(abs)
+		conn, err := ensureService(ctx, base, *demo, address)
 		if err != nil {
-			return fmt.Errorf("town service is not available; run bt serve (or bt serve --demo): %w", err)
+			return err
 		}
 		var capacity town.Capacity
 		if err := request(ctx, conn, "POST", "/api/capacity", town.ServiceConfig{MaxWorkers: *maxWorkers}, &capacity); err != nil {
@@ -157,9 +232,9 @@ func run(ctx context.Context, args []string) error {
 		}
 		agent["inherit"] = true
 	}
-	conn, err := readConnection(abs)
+	conn, err := ensureService(ctx, base, *demo, address)
 	if err != nil {
-		return fmt.Errorf("town service is not available; run bt serve (or bt serve --demo): %w", err)
+		return err
 	}
 	switch command {
 	case "harnesses":
@@ -318,16 +393,12 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
 func serve(ctx context.Context, dir, address string, demo bool, configFile, repo string) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
+	if err := loopbackAddress(address); err != nil {
 		return err
-	}
-	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return errors.New("bind to a loopback IP; use an SSH tunnel for remote access")
 	}
 	store, err := town.Open(dir, demo)
 	if err != nil {
-		return err
+		return describeLock(dir, err)
 	}
 	defer store.Close()
 	if configFile != "" {
@@ -389,11 +460,13 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		return err
 	}
 	defer listener.Close()
-	key := make([]byte, 32)
-	if _, err = rand.Read(key); err != nil {
+	token, err := serviceToken(dir)
+	if err != nil {
 		return err
 	}
-	conn := connection{URL: "http://" + listener.Addr().String(), Token: hex.EncodeToString(key), PID: os.Getpid()}
+	exe, _ := executablePath()
+	managed := os.Getenv("BROKK_TOWN_MANAGED") == "1"
+	conn := connection{URL: "http://" + listener.Addr().String(), Token: token, PID: os.Getpid(), Version: buildVersion(), Executable: exe, Started: time.Now(), Managed: managed}
 	data, _ := json.Marshal(conn)
 	if err = os.WriteFile(filepath.Join(dir, "connection.json"), data, 0600); err != nil {
 		return err
@@ -410,9 +483,12 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	supervisor.BotVersions = func(checkCtx context.Context) (map[town.Role]string, error) {
 		return town.CheckBotVersions(checkCtx, botRegistry)
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	var available atomic.Pointer[town.UpdateNotice]
 	var upgradeMu sync.Mutex
-	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Update: available.Load}
+	var restarting atomic.Bool
+	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh, Update: available.Load}
 	server.Upgrade = func(upgradeCtx context.Context) error {
 		upgradeMu.Lock()
 		defer upgradeMu.Unlock()
@@ -422,15 +498,19 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		}
 		installCtx, installCancel := context.WithTimeout(upgradeCtx, 2*time.Minute)
 		defer installCancel()
-		packageSpec := "@brokkai/brokk-town@" + notice.Latest
-		if _, e := osrun.Run(installCtx, dir, nil, "npm", "install", "--global", packageSpec); e != nil {
+		if e := town.InstallUpdate(installCtx, dir, exe, notice.Latest); e != nil {
 			return fmt.Errorf("upgrade failed: %w", e)
 		}
 		available.Store(nil)
 		return nil
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// Restart replaces this process with whatever binary now sits at its own
+	// path. The delay lets the HTTP response reach the client first.
+	server.Restart = func() {
+		if restarting.CompareAndSwap(false, true) {
+			time.AfterFunc(time.Second, cancel)
+		}
+	}
 	// Registry I/O stays off HTTP, TUI, and render loops. Failure is deliberately
 	// quiet: inability to check must never prevent a local town from starting.
 	go func() {
@@ -440,6 +520,9 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 			defer checkCancel()
 			notice, e := town.CheckUpdate(checkCtx, client, buildVersion())
 			if e == nil {
+				if notice != nil {
+					notice.Command = town.UpdateCommand(exe, notice.Latest)
+				}
 				available.Store(notice)
 			}
 		}
@@ -464,7 +547,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	} else {
 		go func() { results <- supervisor.Run(ctx) }()
 	}
-	fmt.Printf("Brokk Town %s\nBrowser: %s/#token=%s\nTerminal: bt tui --state-dir %s\n", version, conn.URL, conn.Token, dir)
+	fmt.Printf("Brokk Town %s\nBrowser: %s/#token=%s\nTerminal: bt tui --state-dir %s\n", buildVersion(), conn.URL, conn.Token, dir)
 	if demo {
 		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
 	}
@@ -486,10 +569,26 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		<-results
 	}
 	_ = os.Remove(filepath.Join(dir, "connection.json"))
+	if restarting.Load() && (errors.Is(err, context.Canceled) || errors.Is(err, http.ErrServerClosed)) {
+		return errRestart
+	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
+}
+
+// loopbackAddress rejects anything but a literal loopback IP. The service has
+// no remote authentication; an SSH tunnel is the supported remote path.
+func loopbackAddress(address string) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return errors.New("bind to a loopback IP; use an SSH tunnel for remote access")
+	}
+	return nil
 }
 
 // decodeConfigFile accepts the original JSON array and the current object form

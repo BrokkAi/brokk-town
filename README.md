@@ -25,13 +25,15 @@ Build with the Go version in `go.mod`:
 
 ```sh
 make build
-./bin/bt serve --demo
+./bin/bt tui --demo
 ```
 
-Open the browser address printed by the service. In another terminal:
+Any `bt` command starts the town service in the background when it is not
+running. Press `q` to leave the terminal panel; the town keeps going. Print the
+browser address with:
 
 ```sh
-./bin/bt tui --demo
+./bin/bt web --demo
 ```
 
 Demo mode uses an isolated state directory and simulated activity in two towns.
@@ -42,9 +44,42 @@ fixtures, with active worker profiles available to inspect. Paper-trail illustra
 a neighboring repository with a failed watchtower. Pause a house to hold its next step.
 
 The browser and TUI attach to the same service. Closing either leaves workers
-running. Stop the foreground service with Ctrl+C; it cancels and waits for workers
-before releasing the state lock. `bt` without a command opens the TUI of an
-already-running service. Use `bt web` to print its browser address again.
+running. `bt` without a command opens the TUI. Use `bt web` to print the browser
+address again; the local access key is persistent, so bookmarks and open tabs
+survive restarts.
+
+### The service keeps itself running
+
+There is nothing to install or remember. The first `bt` command that starts a
+real town also registers the service with your login session: a launchd agent
+on macOS (`~/Library/LaunchAgents/ai.brokk.town.plist`) or a systemd user unit
+on Linux (`~/.config/systemd/user/brokk-town.service`). From then on the town
+restarts after a crash and returns after a reboot without any command, and the
+browser page reloads itself when a new version comes up. The demo town is never
+registered; it starts on demand and stays until stopped.
+
+- `bt service status` shows the service, its registration, and log locations
+  (`logs/serve.log` and `logs/serve.err.log` under the state directory).
+- `bt service stop` stops it until the next `bt` command. `bt service restart`
+  restarts it in place.
+- `bt service off` keeps the service out of your login session; `bt` still
+  starts it on demand, but it will not return by itself after logout or reboot.
+  `bt service on` registers it again.
+- `bt serve` still runs the service in the foreground for development. It
+  refuses to start while another service holds the state directory and names
+  that process.
+
+The registration captures the `PATH` of the shell that created it, so `gh`,
+`git`, `npx`, and your chosen agent are found without a login shell. A
+`--listen` address given to any command is remembered for that town, so a later
+command's default never moves a registered service to another port. On Linux,
+`bt` enables lingering for your user so the town survives logout; if that needs
+administrator approval, it says so. Over SSH on a Mac without a logged-in
+session there is no launchd user domain, so the service runs unregistered.
+
+When you rebuild or upgrade `bt`, the next `bt` command notices that the running
+service is older and restarts it on the new binary. An older `bt` never
+downgrades a running service.
 
 The browser header switches among **Town**, **Board**, and **Compact** without
 restarting. Town keeps the animated houses first-class; Board groups durable work
@@ -80,8 +115,11 @@ npm install -g @brokkai/brokk-town
 While the service is running, Town checks npm outside its input and render loops.
 When a newer stable release is available, the browser offers an **Upgrade Town**
 button and the TUI offers `u`. After confirmation, the service installs that exact
-version and asks for a restart. A failed or offline check never interrupts local
-operation.
+version through the channel it was installed from (npm for the npm package,
+otherwise the checksum-verified release archive over the current binary) and
+restarts itself in place; the browser page reloads when the new version is up.
+Bots that were mid-run keep working through the restart and are reconnected.
+A failed or offline check never interrupts local operation.
 
 You can also build from source as above or install the current branch:
 
@@ -150,8 +188,10 @@ GitHub reconciliation.
 ```
 
 New towns start with the five automation workers **paused**. Repo-bot starts its
-read-only inventory. Inspect the town, then start individual workers or choose
-**Wake the town**. Starting workers authorizes their real work: filing issues,
+read-only inventory. The town header shows whether the town is paused, awake,
+or partly awake, and its button offers the action that changes that state.
+Inspect the town, then start individual workers or choose **Wake the town**.
+Starting workers authorizes their real work: filing issues,
 creating and repairing PRs, posting reviews, merging under the configured policy,
 and publishing releases. Agents and verification commands run with your local
 permissions. Use an isolated account or machine for repositories you don't trust.
@@ -169,6 +209,15 @@ permissions. Use an isolated account or machine for repositories you don't trust
 Pause finishes active work and stops scheduling more. Stop also cancels active
 work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
 uncertain external writes retain their saved intent and are reconciled first.
+
+Stopping or restarting the service (Ctrl+C, SIGTERM, `bt service restart`, or
+an in-app upgrade) does not stop the external bots. Each bot process runs detached, and Town commits its handle (PID,
+socket, and exact task) before requesting work. The next `bt serve` reconnects to
+those processes before scheduling anything new. Bots that advertise the `detach`
+capability replay the events Town missed and their results are applied normally.
+Older bots finish on their own, and Town records that attempt as uncertain rather
+than guessing; repo-bot then reconciles whatever landed on GitHub. Only an explicit
+Stop, a town deletion, or the two-hour dispatch deadline ends a bot process.
 
 Capacity is a persisted service setting shared by every town. It reserves only
 non-reporter bot runs; repo-bot, issue publishing, and prompt-free model choice

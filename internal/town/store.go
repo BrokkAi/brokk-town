@@ -21,6 +21,9 @@ type Store struct {
 	changed chan struct{}
 }
 
+// ErrServiceRunning means another process holds this state directory's lock.
+var ErrServiceRunning = errors.New("another town service is running")
+
 func Open(dir string, demo bool) (*Store, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
@@ -31,7 +34,7 @@ func Open(dir string, demo bool) (*Store, error) {
 	}
 	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return nil, fmt.Errorf("another town service is running: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrServiceRunning, err)
 	}
 	s := &Store{state: NewState(demo), path: filepath.Join(dir, "state.json"), lock: f, changed: make(chan struct{})}
 	b, err := os.ReadFile(s.path)
@@ -73,9 +76,17 @@ func Open(dir string, demo bool) (*Store, error) {
 		s.Close()
 		return nil, fmt.Errorf("read town state: %w", err)
 	}
-	// Worker processes cannot survive a service restart; durable intents can.
+	// External bot processes outlive a service restart; their handles stay so
+	// the supervisor can reconnect before it schedules anything new. Every other
+	// worker returns to its scheduled state, and durable intents are kept.
 	for _, t := range s.state.Towns {
 		for _, w := range t.Workers {
+			if w.Run != nil && !t.Deleted {
+				w.Status = "working"
+				w.Phase = "reconnecting"
+				w.Task = "Reconnecting to " + w.Run.Bot + " " + w.Run.Version + " started before the service restarted"
+				continue
+			}
 			w.Agent = nil
 			if w.Enabled {
 				w.Status = "waiting"
@@ -107,6 +118,9 @@ func validateState(s State, demo bool) error {
 		for _, r := range Roles {
 			if t.Workers[r] == nil || t.Workers[r].Role != r {
 				return errors.New("missing worker")
+			}
+			if err := t.Workers[r].Run.Validate(r); err != nil {
+				return err
 			}
 		}
 		for key, task := range t.Tasks {
