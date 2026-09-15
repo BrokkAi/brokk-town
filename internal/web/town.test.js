@@ -333,7 +333,7 @@ test("worker controls only offer actions that change the worker's state", () => 
   assert.deepEqual(workerControls({ enabled: true, status: "working" }), { start: false, pause: true, stop: true });
   assert.deepEqual(workerControls({ enabled: true, status: "waiting", agent: { model: "m" } }), { start: false, pause: true, stop: true });
   assert.deepEqual(workerControls({ enabled: true, status: "pausing" }), { start: false, pause: false, stop: true });
-  assert.deepEqual(workerControls({ enabled: true, status: "waiting" }), { start: true, pause: true, stop: true });
+  assert.deepEqual(workerControls({ enabled: true, status: "waiting" }), { start: false, pause: true, stop: true });
   assert.deepEqual(workerControls({ enabled: true, status: "failed" }), { start: true, pause: true, stop: true });
   assert.deepEqual(workerControls({ enabled: false, status: "paused" }), { start: true, pause: false, stop: false });
   assert.deepEqual(workerControls(undefined), { start: true, pause: false, stop: false });
