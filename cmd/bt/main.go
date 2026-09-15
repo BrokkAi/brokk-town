@@ -132,40 +132,68 @@ func main() {
 }
 func run(ctx context.Context, args []string) error {
 	command := "tui"
+	explicit := false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command = args[0]
 		args = args[1:]
-	}
-	if command == "version" {
-		fmt.Println(buildVersion())
-		return nil
+		explicit = true
 	}
 	if command == "service" {
 		return runService(ctx, args)
 	}
 	fs := flag.NewFlagSet("bt "+command, flag.ContinueOnError)
-	dir := fs.String("state-dir", stateHome(), "private state directory")
-	listen := fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
-	demo := fs.Bool("demo", false, "isolated simulated town (serve only)")
-	repo := fs.String("repo", "", "GitHub OWNER/REPO")
-	role := fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls (start all wakes all five, except release under manual merge policy); omit for town defaults in settings")
-	task := fs.String("task", "", "task ID for retry; omit with --role release to reset the release bot's exhausted attempt budget")
-	config := fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
-	agentHarness := fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
-	harnessVersion := fs.String("harness-version", "", "select an exact catalog version (add/settings)")
-	refreshHarnesses := fs.Bool("refresh", false, "refresh the official ACP registry (harnesses)")
-	model := fs.String("model", "", "ACP model ID; empty uses harness default (add/settings)")
-	effort := fs.String("effort", "", "ACP reasoning effort; empty uses harness default (add/settings)")
-	agentCommand := fs.String("agent-command", "", "custom ACP command as a JSON argument array (add/settings)")
-	inherit := fs.Bool("inherit", false, "restore a bot's town defaults (settings --role BOT)")
-	kind := fs.String("kind", "feature", "feature or bug (request)")
-	title := fs.String("title", "", "GitHub issue title (request)")
-	bodyFile := fs.String("body-file", "", "issue description file, or - for stdin (request)")
-	requestID := fs.String("request-id", "", "saved submission ID (request/check-request)")
-	maxWorkers := fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
+	fl := addCLIFlags(fs)
+	dir, listen, demo := fl.dir, fl.listen, fl.demo
+	repo, role, task := fl.repo, fl.role, fl.task
+	config := fl.config
+	agentHarness, harnessVersion := fl.harness, fl.harnessVersion
+	refreshHarnesses := fl.refresh
+	model, effort, agentCommand := fl.model, fl.effort, fl.agentCommand
+	inherit := fl.inherit
+	kind, title, bodyFile, requestID := fl.kind, fl.title, fl.bodyFile, fl.requestID
+	maxWorkers := fl.maxWorkers
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|web|status|service|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|admit|decline|delay|serve|version] [options]\n\nTown starts and manages bot workers internally; separate bot CLIs are not companion processes. New towns pause Bug, Feature, Issue, Review, and Release Bots and run Repo Bot read-only. Enabled houses resume after restarts.\nRun bt for the terminal panel or bt web for the browser address; either starts the town service when it is down and keeps it registered with your login session.\nAdd --demo for a simulated town. Use bt service to inspect, stop, or unregister the service, and bt serve to run it in the foreground.\n")
-		fs.PrintDefaults()
+		if !explicit {
+			printRootHelp(fs.Output(), fs)
+			return
+		}
+		printCommandHelp(fs.Output(), fs, command)
+	}
+	if command == "help" {
+		if len(args) == 0 {
+			printRootHelp(os.Stdout, fs)
+			return nil
+		}
+		if args[0] == "service" {
+			sfs := flag.NewFlagSet("bt service", flag.ContinueOnError)
+			addServiceFlags(sfs)
+			if len(args) > 1 && findServiceCommand(args[1]) != nil {
+				printServiceVerbHelp(os.Stdout, sfs, args[1])
+				return nil
+			}
+			printServiceHelp(os.Stdout, sfs)
+			return nil
+		}
+		if findCommand(args[0]) != nil {
+			printCommandHelp(os.Stdout, fs, args[0])
+			return nil
+		}
+		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", args[0])
+	}
+	if findCommand(command) == nil {
+		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
+	}
+	if wantsHelp(args) {
+		if !explicit {
+			printRootHelp(os.Stdout, fs)
+			return nil
+		}
+		printCommandHelp(os.Stdout, fs, command)
+		return nil
+	}
+	if command == "version" {
+		fmt.Println(buildVersion())
+		return nil
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -174,7 +202,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
+		return fmt.Errorf("unexpected arguments: %s\nRun 'bt %s --help' for usage", strings.Join(fs.Args(), " "), command)
 	}
 	base, err := filepath.Abs(*dir)
 	if err != nil {
@@ -347,7 +375,7 @@ func run(ctx context.Context, args []string) error {
 		var result any
 		return request(ctx, conn, "POST", "/api/control", map[string]string{"town": strings.ToLower(*repo), "role": *role, "action": command, "task": *task}, &result)
 	default:
-		return fmt.Errorf("unknown command %q", command)
+		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
 	}
 }
 func readConnection(dir string) (connection, error) {

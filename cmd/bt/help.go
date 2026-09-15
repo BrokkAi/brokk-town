@@ -1,0 +1,315 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+)
+
+// This file gives bt a cobra-style help surface without the cobra
+// dependency: Usage / Available Commands / Flags sections, per-command
+// help, and a help command. Flag parsing stays on the standard library.
+
+type cliFlags struct {
+	dir            *string
+	listen         *string
+	demo           *bool
+	repo           *string
+	role           *string
+	task           *string
+	config         *string
+	harness        *string
+	harnessVersion *string
+	refresh        *bool
+	model          *string
+	effort         *string
+	agentCommand   *string
+	inherit        *bool
+	kind           *string
+	title          *string
+	bodyFile       *string
+	requestID      *string
+	maxWorkers     *int
+}
+
+// addCLIFlags defines every client flag on one set. Parsing stays lenient
+// (every flag parses for every command) while help display filters to the
+// flags relevant to each command.
+func addCLIFlags(fs *flag.FlagSet) *cliFlags {
+	fl := &cliFlags{}
+	fl.dir = fs.String("state-dir", stateHome(), "private state directory")
+	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
+	fl.demo = fs.Bool("demo", false, "isolated simulated town (serve only)")
+	fl.repo = fs.String("repo", "", "GitHub OWNER/REPO")
+	fl.role = fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls (start all wakes all five, except release under manual merge policy); omit for town defaults in settings")
+	fl.task = fs.String("task", "", "task ID for retry; omit with --role release to reset the release bot's exhausted attempt budget")
+	fl.config = fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
+	fl.harness = fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
+	fl.harnessVersion = fs.String("harness-version", "", "select an exact catalog version (add/settings)")
+	fl.refresh = fs.Bool("refresh", false, "refresh the official ACP registry (harnesses)")
+	fl.model = fs.String("model", "", "ACP model ID; empty uses harness default (add/settings)")
+	fl.effort = fs.String("effort", "", "ACP reasoning effort; empty uses harness default (add/settings)")
+	fl.agentCommand = fs.String("agent-command", "", "custom ACP command as a JSON argument array (add/settings)")
+	fl.inherit = fs.Bool("inherit", false, "restore a bot's town defaults (settings --role BOT)")
+	fl.kind = fs.String("kind", "feature", "feature or bug (request)")
+	fl.title = fs.String("title", "", "GitHub issue title (request)")
+	fl.bodyFile = fs.String("body-file", "", "issue description file, or - for stdin (request)")
+	fl.requestID = fs.String("request-id", "", "saved submission ID (request/check-request)")
+	fl.maxWorkers = fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
+	return fl
+}
+
+type serviceFlags struct {
+	dir    *string
+	listen *string
+	demo   *bool
+}
+
+func addServiceFlags(fs *flag.FlagSet) *serviceFlags {
+	fl := &serviceFlags{}
+	fl.dir = fs.String("state-dir", stateHome(), "private state directory")
+	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
+	fl.demo = fs.Bool("demo", false, "the isolated simulated town")
+	return fl
+}
+
+type commandInfo struct {
+	name  string
+	short string
+	long  string
+	args  string
+	flags []string
+}
+
+// globalFlagNames are the persistent flags: they apply to every command.
+var globalFlagNames = []string{"demo", "listen", "state-dir"}
+
+var cliCommands = []commandInfo{
+	{name: "tui", short: "Open the terminal control panel (default)", long: "Open the terminal control panel. Starts the town service when it is down and keeps it registered with your login session.", args: "[flags]", flags: nil},
+	{name: "web", short: "Print the browser address for the town", long: "Print the browser address for the town. Starts the town service when it is down.", args: "[flags]", flags: nil},
+	{name: "status", short: "Show town state as JSON", long: "Show the town state as JSON.", args: "[flags]", flags: nil},
+	{name: "service", short: "Manage the town service", long: "Inspect, stop, or unregister the town service. See bt service --help for the available actions.", args: "[command] [flags]", flags: nil},
+	{name: "capacity", short: "Set the maximum active bot workers", long: "Set the maximum active bot workers across all towns.", args: "--max-workers N [flags]", flags: []string{"max-workers"}},
+	{name: "add", short: "Add a town", long: "Add a town for a GitHub repository.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "model", "repo"}},
+	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
+	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog.", args: "[flags]", flags: []string{"refresh"}},
+	{name: "settings", short: "Configure a town or bot", long: "Configure a town's defaults or one bot house. Omit --role to edit town defaults.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "inherit", "model", "repo", "role"}},
+	{name: "request", short: "Submit a GitHub issue request", long: "Submit a GitHub issue as work for a town.", args: "--repo OWNER/REPO --title TITLE --body-file FILE [flags]", flags: []string{"body-file", "kind", "repo", "request-id", "title"}},
+	{name: "check-request", short: "Check a submitted request", long: "Check the status of a submitted request.", args: "--repo OWNER/REPO --request-id ID [flags]", flags: []string{"repo", "request-id"}},
+	{name: "start", short: "Start a town or bot house", long: "Start a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
+	{name: "pause", short: "Pause a town or bot house", long: "Pause a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
+	{name: "stop", short: "Stop a town or bot house", long: "Stop a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
+	{name: "retry", short: "Retry a task", long: "Retry a task. Omit --task with --role release to reset the release bot's exhausted attempt budget.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role", "task"}},
+	{name: "admit", short: "Admit a Mayoral decision", long: "Admit a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
+	{name: "decline", short: "Decline a Mayoral decision", long: "Decline a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
+	{name: "delay", short: "Delay a Mayoral decision", long: "Delay a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
+	{name: "serve", short: "Run the town service in the foreground", long: "Run the town service in the foreground.", args: "[flags]", flags: []string{"config", "repo"}},
+	{name: "version", short: "Print the version", long: "Print the bt version.", args: "", flags: nil},
+}
+
+var serviceCommands = []commandInfo{
+	{name: "status", short: "Show the service, its registration, and log locations", long: "Show the service, its registration, and log locations.", args: "[flags]"},
+	{name: "on", short: "Register the service with the login session (the default)", long: "Register the service with launchd or systemd --user so it survives crashes and reboots.", args: "[flags]"},
+	{name: "off", short: "Keep the service out of the login session", long: "Keep the service out of your login session; bt still starts it on demand.", args: "[flags]"},
+	{name: "stop", short: "Stop the service until the next bt command", long: "Stop the service until the next bt command.", args: "[flags]"},
+	{name: "restart", short: "Restart the service in place", long: "Restart the service in place.", args: "[flags]"},
+}
+
+func findCommand(name string) *commandInfo {
+	for i := range cliCommands {
+		if cliCommands[i].name == name {
+			return &cliCommands[i]
+		}
+	}
+	return nil
+}
+
+func findServiceCommand(name string) *commandInfo {
+	for i := range serviceCommands {
+		if serviceCommands[i].name == name {
+			return &serviceCommands[i]
+		}
+	}
+	return nil
+}
+
+// wantsHelp reports a cobra-style help request anywhere in the remaining
+// args: -h, -help, --help, including --help=true forms.
+func wantsHelp(args []string) bool {
+	for _, a := range args {
+		t := strings.TrimLeft(a, "-")
+		if i := strings.Index(t, "="); i >= 0 {
+			t = t[:i]
+		}
+		if t == "h" || t == "help" {
+			return true
+		}
+	}
+	return false
+}
+
+func isGlobalFlag(name string) bool {
+	for _, g := range globalFlagNames {
+		if g == name {
+			return true
+		}
+	}
+	return false
+}
+
+type flagRow struct {
+	left  string
+	usage string
+}
+
+func flagRows(fs *flag.FlagSet, names []string) []flagRow {
+	rows := make([]flagRow, 0, len(names))
+	for _, name := range names {
+		f := fs.Lookup(name)
+		if f == nil {
+			continue
+		}
+		typeName, usage := flag.UnquoteUsage(f)
+		spec := "--" + f.Name
+		if typeName != "" {
+			spec += " " + typeName
+		}
+		text := usage
+		if f.DefValue != "" && f.DefValue != "false" && f.DefValue != "0" {
+			def := f.DefValue
+			if typeName == "string" {
+				def = fmt.Sprintf("%q", def)
+			}
+			if text != "" {
+				text += " "
+			}
+			text += fmt.Sprintf("(default %s)", def)
+		}
+		rows = append(rows, flagRow{left: "      " + spec, usage: text})
+	}
+	return rows
+}
+
+func writeFlagSection(out io.Writer, fs *flag.FlagSet, names []string, heading string, helpFor string) {
+	writeFlagSectionWithHelp(out, fs, names, heading, helpFor, true)
+}
+
+func writeFlagSectionWithHelp(out io.Writer, fs *flag.FlagSet, names []string, heading string, helpFor string, includeHelp bool) {
+	names = append([]string(nil), names...)
+	sort.Strings(names)
+	rows := flagRows(fs, names)
+	if includeHelp {
+		rows = append(rows, flagRow{left: "  -h, --help", usage: "help for " + helpFor})
+	}
+	width := 0
+	for _, r := range rows {
+		if len(r.left) > width {
+			width = len(r.left)
+		}
+	}
+	fmt.Fprintln(out, heading+":")
+	for _, r := range rows {
+		fmt.Fprintf(out, "%-*s  %s\n", width, r.left, r.usage)
+	}
+}
+
+func writeCommands(out io.Writer, cmds []commandInfo) {
+	width := 0
+	for _, c := range cmds {
+		if len(c.name) > width {
+			width = len(c.name)
+		}
+	}
+	for _, c := range cmds {
+		fmt.Fprintf(out, "  %-*s  %s\n", width, c.name, c.short)
+	}
+}
+
+// printRootHelp renders the top-level help: description, usage, commands,
+// flags, and the --help pointer.
+func printRootHelp(out io.Writer, fs *flag.FlagSet) {
+	fmt.Fprintln(out, "Brokk Town — one local service, a browser town, and a terminal control panel.")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Run bt for the terminal panel or bt web for the browser address; either starts")
+	fmt.Fprintln(out, "the town service when it is down and keeps it registered with your login session.")
+	fmt.Fprintln(out, "Add --demo for a simulated town. Use bt service to inspect, stop, or unregister")
+	fmt.Fprintln(out, "the service, and bt serve to run it in the foreground.")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Usage:")
+	fmt.Fprintln(out, "  bt [command] [flags]")
+	fmt.Fprintln(out, "  bt [flags]")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Available Commands:")
+	withHelp := append(append([]commandInfo(nil), cliCommands...), commandInfo{name: "help", short: "Show help for a command"})
+	writeCommands(out, withHelp)
+	fmt.Fprintln(out)
+	writeFlagSection(out, fs, globalFlagNames, "Flags", "bt")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, `Use "bt [command] --help" for more information about a command.`)
+}
+
+// printCommandHelp renders help for one command with its own flags plus the
+// shared global flags.
+func printCommandHelp(out io.Writer, fs *flag.FlagSet, name string) {
+	c := findCommand(name)
+	if c == nil {
+		printRootHelp(out, fs)
+		return
+	}
+	if name == "service" {
+		printServiceHelp(out, fs)
+		return
+	}
+	fmt.Fprintln(out, c.long)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Usage:")
+	usage := "  bt " + c.name
+	if c.args != "" {
+		usage += " " + c.args
+	}
+	fmt.Fprintln(out, usage)
+	if name == "version" {
+		return
+	}
+	if len(c.flags) > 0 {
+		fmt.Fprintln(out)
+		writeFlagSectionWithHelp(out, fs, c.flags, "Flags", "bt "+c.name, false)
+	}
+	fmt.Fprintln(out)
+	writeFlagSection(out, fs, globalFlagNames, "Global Flags", "bt "+c.name)
+}
+
+func printServiceHelp(out io.Writer, fs *flag.FlagSet) {
+	fmt.Fprintln(out, "Manage the town service. Every bt command starts the town service when it is")
+	fmt.Fprintln(out, "down and registers it with your login session.")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Usage:")
+	fmt.Fprintln(out, "  bt service [command] [flags]")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Available Commands:")
+	writeCommands(out, serviceCommands)
+	fmt.Fprintln(out)
+	writeFlagSection(out, fs, globalFlagNames, "Flags", "bt service")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, `Use "bt service [command] --help" for more information about a command.`)
+}
+
+func printServiceVerbHelp(out io.Writer, fs *flag.FlagSet, verb string) {
+	c := findServiceCommand(verb)
+	if c == nil {
+		printServiceHelp(out, fs)
+		return
+	}
+	fmt.Fprintln(out, c.long)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Usage:")
+	usage := "  bt service " + c.name
+	if c.args != "" {
+		usage += " " + c.args
+	}
+	fmt.Fprintln(out, usage)
+	fmt.Fprintln(out)
+	writeFlagSection(out, fs, globalFlagNames, "Flags", "bt service "+c.name)
+}
