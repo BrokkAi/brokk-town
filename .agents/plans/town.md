@@ -777,3 +777,13 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   at the relevant `--help`. Help goes to stdout, errors stay on stderr.
 - Coverage: `cmd/bt/help_test.go` asserts the sections, per-command flag
   filtering, offline help, and the usage hints.
+
+## v0.3.0 release preparation (2026-09-15)
+
+- Prepare a stable minor release for the manual worker authority, declined-source,
+  browser stability, CLI help, and durable automation-outcome work now on master.
+- Update the release candidate to `v0.3.0`, retain the existing exact-commit
+  build/preflight/publication gates, and record the user-facing changes in the
+  changelog.
+- During preparation, run the full local checks and candidate build without
+  pushing the final tag, uploading release assets, or publishing packages.

@@ -1,16 +1,34 @@
 # Changelog
 
-## 0.1.3 — pending
+## 0.3.0 — pending
 
-- Treat a declined Feature Bot proposal as town work rather than outside work:
-  Town closes the issue as not planned and keeps the decline visible in Town
-  Hall. Outside issues and PRs are still only ignored.
+- Make worker startup and write authority explicit across the browser, TUI, and
+  CLI. Manual merge policy pauses Release Bot, rejects direct release starts and
+  retries, excludes it from town-wide wake, and safely adopts persisted workers
+  that stop while Town reconnects.
+- Close declined, town-authored Feature Bot proposals at their GitHub source;
+  declined outside work is still ignored rather than modified.
+- Keep Start unavailable for workers that are already running or waiting out a
+  scheduled poll, while retaining early retry for a failed worker.
+- Keep the browser connect dialog pointed at `bt web` and preserve inspector
+  scrolling while live snapshots arrive, with Mayoral actions remaining above
+  asynchronously loaded task details.
+- Add Cobra-style `bt` help for commands and service verbs without adding a CLI
+  dependency.
+- Persist deduplicated automation outcome records with task and revision
+  provenance, explicit finding judgments, optional usage and cost data, and
+  selectable Town Hall reports plus JSON and CSV exports. Submitted PRs remain
+  distinct from confirmed merges, absent metrics remain unknown, and CSV formula
+  text is neutralized.
+
+## 0.2.0 — 2026-09-15
+
 - Certify a completed publication once every destination and provenance check
   passes; the final `published` check no longer fails with a placeholder error.
 - Lift Release Bot's exhausted attempt budget from Town through its worker API
   with `bt retry --role release` instead of editing bot state by hand.
 
-## 0.1.2 — pending
+## 0.1.2 — 2026-09-14
 
 - Add a cross-town "Needs you" inbox to the browser: pending Mayoral decisions
   and stuck work from every town, longest wait first, with a jump to the exact
