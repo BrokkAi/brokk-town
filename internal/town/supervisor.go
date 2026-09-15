@@ -25,6 +25,7 @@ type Workers interface {
 	Run(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error)
 }
 type IssueRetrier interface {
+	CanRetryIssue(*Town, int) (bool, error)
 	RetryIssue(*Town, int) error
 }
 type Supervisor struct {
@@ -478,7 +479,9 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 			return errors.New("unknown task")
 		}
 		if task.Kind == "issue" && !state.Demo {
-			return s.retryIssueTask(id, taskID)
+			if _, ok := s.Workers.(IssueRetrier); ok {
+				return s.retryIssueTask(id, taskID)
+			}
 		}
 	}
 	err := s.Store.Update(func(st *State) error {
@@ -578,7 +581,7 @@ func resetTaskForRetry(t *Town, task *Task) {
 func (s *Supervisor) retryIssueTask(id, taskID string) error {
 	retrier, ok := s.Workers.(IssueRetrier)
 	if !ok {
-		return errors.New("issue worker does not support durable retry")
+		return errors.New("issue worker durable retry support changed")
 	}
 	key := id + ":" + string(Issue)
 	s.mu.Lock()
@@ -590,9 +593,6 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 		return errors.New("issue retry is already in progress")
 	}
 	s.retrying[key] = true
-	if cancel := s.running[key]; cancel != nil {
-		cancel()
-	}
 	s.mu.Unlock()
 
 	finish := func() {
@@ -602,6 +602,48 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 		s.notifyScheduler()
 	}
 	defer finish()
+
+	// Validate the Town identity and issue-bot state before interrupting an
+	// active worker. Funnel failures commonly have no issue-bot job at all; in
+	// that case Town's own blocked task is the only state that needs resetting.
+	s.mu.Lock()
+	state := s.Store.Snapshot()
+	t := state.Towns[id]
+	if t == nil || t.Deleted {
+		s.mu.Unlock()
+		return errors.New("unknown town")
+	}
+	task := t.Tasks[taskID]
+	if task == nil || task.Kind != "issue" {
+		s.mu.Unlock()
+		return errors.New("issue task changed while preparing retry")
+	}
+	durable, err := retrier.CanRetryIssue(t, task.Number)
+	if err != nil {
+		s.mu.Unlock()
+		return fmt.Errorf("inspect issue-bot retry state for issue #%d: %w", task.Number, err)
+	}
+	if !durable {
+		err = s.Store.Update(func(st *State) error {
+			current := st.Towns[id]
+			if current == nil || current.Deleted {
+				return errors.New("unknown town")
+			}
+			currentTask := current.Tasks[taskID]
+			if currentTask == nil || currentTask.Kind != "issue" || currentTask.Number != task.Number {
+				return errors.New("issue task changed while committing retry")
+			}
+			resetTaskForRetry(current, currentTask)
+			return nil
+		})
+		s.mu.Unlock()
+		return err
+	}
+	if cancel := s.running[key]; cancel != nil {
+		cancel()
+	}
+	s.mu.Unlock()
+
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -624,12 +666,12 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 	// and checkout locks and Town commits the corresponding retry state.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state := s.Store.Snapshot()
-	t := state.Towns[id]
+	state = s.Store.Snapshot()
+	t = state.Towns[id]
 	if t == nil || t.Deleted {
 		return errors.New("unknown town")
 	}
-	task := t.Tasks[taskID]
+	task = t.Tasks[taskID]
 	if task == nil || task.Kind != "issue" {
 		return errors.New("issue task changed while preparing retry")
 	}

@@ -347,12 +347,110 @@ func (w *issueRetryWorker) RetryIssue(t *Town, issue int) error {
 	return (&BotWorkers{Root: w.root}).RetryIssue(t, issue)
 }
 
-type failingIssueRetrier struct {
-	workerFunc
-	err error
+func (w *issueRetryWorker) CanRetryIssue(t *Town, issue int) (bool, error) {
+	return (&BotWorkers{Root: w.root}).CanRetryIssue(t, issue)
 }
 
-func (w failingIssueRetrier) RetryIssue(*Town, int) error { return w.err }
+type failingIssueRetrier struct {
+	workerFunc
+	inspectErr error
+	retryErr   error
+}
+
+func (w failingIssueRetrier) CanRetryIssue(*Town, int) (bool, error) {
+	return true, w.inspectErr
+}
+func (w failingIssueRetrier) RetryIssue(*Town, int) error { return w.retryErr }
+
+func blockedIssueTown(t *testing.T, s *Store) *Town {
+	t.Helper()
+	x := addTown(t, s)
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		town.Initialized = true
+		town.Workers[Repo].Enabled = false
+		town.Workers[Issue].Enabled = true
+		town.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Issue 7", Stage: "queued", House: Issue, Blocked: true, Attempts: 3, RetryAt: time.Now().Add(time.Hour), Updated: time.Now()}
+	})
+	return x
+}
+
+func TestIssueRetryWithoutDurableJobDoesNotStopActiveWorker(t *testing.T) {
+	s := testStore(t, false)
+	x := blockedIssueTown(t, s)
+	workers := &issueRetryWorker{root: t.TempDir(), entered: make(chan int, 2)}
+	sup := NewSupervisor(s, newGH(1), workers)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- sup.Run(ctx) }()
+	if run := <-workers.entered; run != 1 {
+		t.Fatalf("first run = %d", run)
+	}
+
+	if err := sup.Control(x.ID, Issue, "retry", "issue:7"); err != nil {
+		t.Fatal(err)
+	}
+	workers.mu.Lock()
+	active, runs := workers.active, workers.runs
+	workers.mu.Unlock()
+	if !active || runs != 1 {
+		t.Fatalf("Town-only retry interrupted the active issue worker: active=%t runs=%d", active, runs)
+	}
+	task := s.Snapshot().Towns[x.ID].Tasks["issue:7"]
+	if task.Blocked || task.Attempts != 0 || !task.RetryAt.IsZero() {
+		t.Fatalf("Town-only retry was not committed: %+v", task)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("supervisor shutdown hung")
+	}
+}
+
+func TestIssueRetryValidationFailureDoesNotStopActiveWorker(t *testing.T) {
+	s := testStore(t, false)
+	x := blockedIssueTown(t, s)
+	entered := make(chan struct{})
+	canceled := make(chan struct{})
+	want := errors.New("durable state is invalid")
+	workers := failingIssueRetrier{
+		workerFunc: func(ctx context.Context, _ *Town, _ Role, _ func(Progress), _ *slog.Logger) (RunResult, error) {
+			close(entered)
+			<-ctx.Done()
+			close(canceled)
+			return RunResult{}, ctx.Err()
+		},
+		inspectErr: want,
+	}
+	sup := NewSupervisor(s, newGH(1), workers)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- sup.Run(ctx) }()
+	<-entered
+
+	err := sup.Control(x.ID, Issue, "retry", "issue:7")
+	if !errors.Is(err, want) {
+		t.Fatalf("wrong retry error: %v", err)
+	}
+	select {
+	case <-canceled:
+		t.Fatal("validation failure canceled the active issue worker")
+	default:
+	}
+	task := s.Snapshot().Towns[x.ID].Tasks["issue:7"]
+	if !task.Blocked || task.Attempts != 3 {
+		t.Fatalf("validation failure changed Town retry state: %+v", task)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("supervisor shutdown hung")
+	}
+}
 
 func TestIssueRetryResetsSelectedDurableJobAfterActiveWorkerStops(t *testing.T) {
 	s := testStore(t, false)
@@ -453,7 +551,7 @@ func TestIssueRetryFailureDoesNotAcknowledgeTownRetry(t *testing.T) {
 	want := errors.New("durable state is unavailable")
 	sup := NewSupervisor(s, newGH(1), failingIssueRetrier{workerFunc: func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
 		return RunResult{}, nil
-	}, err: want})
+	}, retryErr: want})
 	err := sup.Control(x.ID, Issue, "retry", "issue:1")
 	if !errors.Is(err, want) || !strings.Contains(err.Error(), "reset issue-bot retry state") {
 		t.Fatalf("wrong retry error: %v", err)
