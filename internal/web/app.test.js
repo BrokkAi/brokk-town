@@ -356,6 +356,8 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements["town-toggle"].textContent, "Ⅱ Pause the town", "toggle offers the action that changes state");
   assert.equal(elements["town-toggle"].classList.contains("primary"), false);
   assert.equal(elements["pause-all"].hidden, true, "no separate pause-all when every agent is awake");
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  assert.match(elements.inspection.textContent, /Authority:.*create pull requests/, "house controls explain their write authority");
   await elements["town-toggle"].onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"all"')), true);
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();

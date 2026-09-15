@@ -255,13 +255,19 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 	if botVersion != nil && (role == "" || !workerVersionPattern.MatchString(*botVersion)) {
 		return errors.New("a bot role and semantic bot version are required")
 	}
-	return s.Store.Update(func(st *State) error {
+	cancelRelease := false
+	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
 		}
 		if mergePolicy != nil {
 			t.Config.MergePolicy = *mergePolicy
+			if *mergePolicy == "manual" {
+				cancelRelease = enforceManualReleasePolicy(t)
+			} else if t.Workers[Release].Task == manualReleaseTask {
+				t.Workers[Release].Task = "Ready when you are"
+			}
 		}
 		if mayoralFeatureReview != nil {
 			value := *mayoralFeatureReview
@@ -311,6 +317,17 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 		st.Event(id, "settings", "operator", target, "", title, s.now())
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if cancelRelease {
+		s.mu.Lock()
+		if cancel := s.running[id+":"+string(Release)]; cancel != nil {
+			cancel()
+		}
+		s.mu.Unlock()
+	}
+	return nil
 }
 
 type AgentChoices struct {

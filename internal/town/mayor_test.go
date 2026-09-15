@@ -1,6 +1,8 @@
 package town
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,3 +75,68 @@ func TestFeatureProposalsRequireMayorByDefaultAndCanBeExempted(t *testing.T) {
 }
 
 func boolPointer(value bool) *bool { return &value }
+
+func TestDeclinedProposalIsClosedAtSourceExactlyOnce(t *testing.T) {
+	store := testStore(t, false)
+	x := addTown(t, store)
+	proposal := RemoteIssue{Number: 12, Title: "Separate review model settings", Body: "<!-- feature-bot: proposal -->", State: "open"}
+	gh := &fakeGH{snapshot: inventory()}
+	gh.snapshot.Issues = []RemoteIssue{proposal}
+	update(t, store, func(st *State) {
+		remote := inventory()
+		remote.Issues = []RemoteIssue{proposal}
+		Reconcile(st, st.Towns[x.ID], remote, time.Now())
+	})
+	task := store.Snapshot().Towns[x.ID].Tasks["issue:12"]
+	if task.External || task.Stage != "awaiting_mayor" {
+		t.Fatalf("feature proposal was not an internal Hall task: %+v", task)
+	}
+
+	supervisor := NewSupervisor(store, gh, nil)
+	if err := supervisor.Control(x.ID, Hall, "decline", "issue:12"); err != nil {
+		t.Fatal(err)
+	}
+	task = store.Snapshot().Towns[x.ID].Tasks["issue:12"]
+	if strings.Contains(task.Detail, "outside work") {
+		t.Fatalf("internal proposal was declined as outside work: %q", task.Detail)
+	}
+
+	for pass := 0; pass < 2; pass++ {
+		if err := supervisor.reconcile(context.Background(), store.Snapshot().Towns[x.ID]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(gh.closed) != 1 || gh.closed[0] != 12 {
+		t.Fatalf("declined proposal was not closed exactly once: %v", gh.closed)
+	}
+	task = store.Snapshot().Towns[x.ID].Tasks["issue:12"]
+	if task.MayoralDecision != "declined" || task.Stage != "declined" || task.House != Hall {
+		t.Fatalf("closing the issue erased the Mayoral decision: %+v", task)
+	}
+	if !strings.Contains(task.Detail, "closed the issue") {
+		t.Fatalf("closure was not reported to the Mayor: %q", task.Detail)
+	}
+}
+
+func TestDeclinedOutsideIssueIsLeftOpen(t *testing.T) {
+	store := testStore(t, false)
+	x := addTown(t, store)
+	outside := RemoteIssue{Number: 9, Title: "Outside request", State: "open"}
+	gh := &fakeGH{snapshot: inventory()}
+	gh.snapshot.Issues = []RemoteIssue{outside}
+	update(t, store, func(st *State) {
+		remote := inventory()
+		remote.Issues = []RemoteIssue{outside}
+		Reconcile(st, st.Towns[x.ID], remote, time.Now())
+	})
+	supervisor := NewSupervisor(store, gh, nil)
+	if err := supervisor.Control(x.ID, Hall, "decline", "issue:9"); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.reconcile(context.Background(), store.Snapshot().Towns[x.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if len(gh.closed) != 0 {
+		t.Fatalf("Town closed an outside issue: %v", gh.closed)
+	}
+}

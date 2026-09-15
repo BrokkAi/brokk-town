@@ -80,6 +80,10 @@ The v1 request contains:
 - PR number for review work;
 - expected base and head SHAs for review work.
 
+Protocol v1 has no field for limiting Release Bot's release-preparation merge
+authority. Town therefore does not dispatch Release Bot while the town merge
+policy is `manual`.
+
 Unknown fields and trailing JSON are rejected. Request bodies are bounded. The
 worker applies its own release defaults and validation before doing work.
 

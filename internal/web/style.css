@@ -678,6 +678,19 @@ p {
   font-size: 11px;
   padding: 3px 7px;
 }
+#town-wake-detail {
+  flex-basis: 100%;
+  text-align: right;
+  line-height: 1.35;
+}
+.authority {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #102219;
+  color: var(--muted);
+  line-height: 1.45;
+}
 .status-chip.status-awake {
   border-color: var(--green);
   color: var(--green);

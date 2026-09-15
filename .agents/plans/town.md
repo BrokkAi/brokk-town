@@ -1,5 +1,29 @@
 # Brokk Town implementation plan
 
+## Explicit worker startup and release authority (issue #4, 2026-09-15)
+
+- Explain across browser, TUI, CLI help, and README that Town launches its five
+  automation bots internally, those houses start paused, Repo Bot starts
+  read-only, and enabled state survives restarts.
+- Put each house's effective GitHub write authority beside its controls and make
+  the town-wide wake action name the five automation workers it enables.
+- Since Worker Protocol v1 cannot disable only Release Bot's preparation merges,
+  enforce manual merging by preventing release dispatch/start/retry, skipping
+  Release Bot during town-wide wake, and stopping it when policy becomes manual.
+- Authenticate persisted Release Bot sockets on a bounded live probe before a
+  manual-policy stop, even though the adoption context already carries the stop
+  cause, so the detached process is killed rather than orphaned. Retain the
+  socket and durable handle with a visible failure if safe authentication fails.
+- After a persisted Release Bot is stopped successfully, clear its durable run
+  and active agent profile and finalize it as paused under manual policy.
+- Keep the bounded adoption identity probe alive when manual policy is selected
+  during authentication. If safe authentication still fails while the process
+  may be alive, retain its durable handle and show the uncertain stop outcome.
+- Disclose beside Review Bot controls that starting it can merge eligible pull
+  requests when the configured merge policy permits.
+- Cover default and persisted startup state, manual-policy controls and scheduling,
+  fake Release Bot non-dispatch, and browser/TUI authority text.
+
 ## Durable blocked issue-bot jobs (issue #1)
 
 - Import issue-bot's validated saved job status after issue runs and on both

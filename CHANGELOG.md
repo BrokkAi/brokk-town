@@ -2,6 +2,9 @@
 
 ## 0.1.3 — pending
 
+- Treat a declined Feature Bot proposal as town work rather than outside work:
+  Town closes the issue as not planned and keeps the decline visible in Town
+  Hall. Outside issues and PRs are still only ignored.
 - Certify a completed publication once every destination and provenance check
   passes; the final `published` check no longer fails with a placeholder error.
 - Lift Release Bot's exhausted attempt budget from Town through its worker API

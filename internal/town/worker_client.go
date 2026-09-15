@@ -67,6 +67,7 @@ var errWorkerNeverStarted = fmt.Errorf("%w: the worker never received its run re
 // way to report its result. The work may or may not have landed on GitHub.
 type WorkerOutcomeUnknownError struct {
 	Bot, Version, Reason string
+	processRunning       bool
 }
 
 func (e *WorkerOutcomeUnknownError) Error() string {
@@ -397,14 +398,32 @@ func adoptWorker(ctx context.Context, role Role, run WorkerRun, observe func(Pro
 		ctx, cancel = context.WithDeadline(ctx, run.Deadline)
 		defer cancel()
 	}
-	probe, cancelProbe := context.WithTimeout(ctx, 5*time.Second)
+	// Adoption must authenticate the recorded socket before it can safely kill
+	// the process. Give only that initialization probe its own bounded lifetime
+	// so a stop arriving while the request is in flight cannot interrupt proof
+	// of identity. All later work continues to observe the original stop cause.
+	probe, cancelProbe := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	info, err := getWorkerInitialize(probe, client, 2*time.Second)
 	cancelProbe()
 	if err != nil {
-		cleanup()
-		return workerResult{}, &WorkerOutcomeUnknownError{Bot: run.Bot, Version: run.Version, Reason: "was running when the service restarted and had already exited when it came back"}
+		// A live PID may still own this socket. Keep its endpoint available for
+		// a later adoption attempt rather than unlinking the only safe way to
+		// authenticate it before a kill.
+		reason := "was running when the service restarted and could not be authenticated when it came back"
+		alive := osrun.Alive(run.PID)
+		if !alive {
+			cleanup()
+			reason = "was running when the service restarted and had already exited when it came back"
+		}
+		return workerResult{}, &WorkerOutcomeUnknownError{Bot: run.Bot, Version: run.Version, Reason: reason, processRunning: alive}
 	}
 	if err = validateWorkerInitialize(bot, info); err != nil {
+		if stopRequested(ctx) && osrun.Alive(run.PID) {
+			return workerResult{}, &WorkerOutcomeUnknownError{
+				Bot: run.Bot, Version: run.Version, processRunning: true,
+				Reason: fmt.Sprintf("was still running when Town tried to stop it but its identity could not be authenticated: %v", err),
+			}
+		}
 		cleanup()
 		return workerResult{}, fmt.Errorf("adopt %s worker: %w", role, err)
 	}

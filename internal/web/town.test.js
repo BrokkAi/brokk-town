@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   positions,
   houseNames,
+  houseAuthority,
   houseShortcuts,
   roadSegments,
   routePosition,
@@ -351,6 +352,10 @@ test("worker controls only offer actions that change the worker's state", () => 
   assert.deepEqual(workerControls({ enabled: true, status: "failed" }), { start: true, pause: true, stop: true });
   assert.deepEqual(workerControls({ enabled: false, status: "paused" }), { start: true, pause: false, stop: false });
   assert.deepEqual(workerControls(undefined), { start: true, pause: false, stop: false });
+  assert.deepEqual(workerControls({ enabled: false, status: "paused" }, true), { start: false, pause: false, stop: false });
+  assert.match(houseAuthority("review", "bot"), /merge eligible pull requests when merge policy permits/);
+  assert.match(houseAuthority("release", "manual"), /release-preparation pull requests.*Paused/);
+  assert.match(houseAuthority("repo"), /^Read-only:/);
 });
 test("optional tools validate input and use the visible navigation", async () => {
   const registered = new Map(),
@@ -406,7 +411,8 @@ test("townControls reports the town's wake state and offers the matching action"
   );
   const paused = townControls({ workers: { ...agents([false, false, false, false, false]), repo: { role: "repo", enabled: true } } });
   assert.equal(paused.status, "Paused", "repo-bot being enabled does not count as awake");
-  assert.deepEqual(paused.primary, { action: "start", label: "▶ Wake the town" });
+  assert.deepEqual(paused.primary, { action: "start", label: "▶ Wake the town (5)" });
+  assert.match(paused.detail, /Bug Bot.*Feature Bot.*Issue Bot.*Review Bot.*Release Bot/);
   assert.equal(paused.secondary, null);
   const awake = townControls({ workers: agents([true, true, true, true, true]) });
   assert.equal(awake.status, "Awake · 5 agents");
@@ -416,5 +422,11 @@ test("townControls reports the town's wake state and offers the matching action"
   assert.equal(partial.status, "Partly awake · 2 of 5");
   assert.deepEqual(partial.primary, { action: "start", label: "▶ Wake the rest" });
   assert.deepEqual(partial.secondary, { action: "pause", label: "Ⅱ Pause all" });
+  const manual = townControls({
+    config: { merge_policy: "manual" },
+    workers: { ...agents([false, false, false, false, false]), repo: { role: "repo", enabled: true } },
+  });
+  assert.deepEqual(manual.primary, { action: "start", label: "▶ Wake the town (4)" });
+  assert.match(manual.detail, /Release Bot stays paused while every merge is manual/);
   assert.equal(townControls(null).status, "Paused");
 });

@@ -76,6 +76,7 @@
             <button id="town-toggle" class="primary" disabled>
               ▶ Wake the town
             </button>
+            <small id="town-wake-detail" class="muted" hidden></small>
             <button id="pause-all" class="quiet" disabled hidden>
               Ⅱ Pause all
             </button>
@@ -156,14 +157,16 @@
           autocomplete="off"
         />
         <p class="muted">
-          Agents start paused. Repo-bot will bring you the first inventory.
+          Town starts and manages the five automation bots internally; no companion bot CLIs are needed.
+          Bug, Feature, Issue, Review, and Release Bots start paused, while read-only Repo Bot brings the first inventory.
+          Enabled houses resume after Town restarts.
         </p>
         <label for="merge-policy">When a reviewed PR is ready</label
         ><select id="merge-policy">
           <option value="bot">
             Auto-merge town-created PRs after required checks
           </option>
-          <option value="manual">Leave merging to me</option>
+          <option value="manual">Keep every merge manual (Release Bot stays paused)</option>
           <option value="all">
             Auto-merge all eligible PRs after required checks
           </option>
@@ -176,18 +179,11 @@
       </form>
     </dialog>
     <dialog id="connect-dialog">
-      <form id="connect-form">
-        <h2>Connect to your town</h2>
-        <p>
-          Open the address printed by <code>bt serve</code>, or enter its local
-          access key.
-        </p>
-        <label for="token-input">Local access key</label
-        ><input id="token-input" type="password" autocomplete="off" required />
-        <div class="dialog-actions">
-          <button class="primary">Connect</button>
-        </div>
-      </form>
+      <h2>Connect to your town</h2>
+      <p>
+        Run <code>bt web</code> and open the URL it prints. That link carries the
+        local access key for this browser.
+      </p>
     </dialog>
     <dialog id="capacity-dialog">
       <form id="capacity-form">
@@ -214,13 +210,15 @@
           <label for="settings-merge-policy">When a reviewed pull request is ready</label>
           <select id="settings-merge-policy">
             <option value="bot">Merge Town-created PRs only</option>
-            <option value="manual">Never merge automatically</option>
+            <option value="manual">Keep every merge manual (pause Release Bot)</option>
             <option value="all">Merge Town-created and external PRs</option>
           </select>
           <p class="muted">
             External PRs may be reviewed, but Town never edits contributor branches.
             Every automatic merge still requires a clean exact-revision review,
             GitHub mergeability, checks, and approvals.
+            Release Bot can create and merge its own release-preparation PRs, so
+            the manual policy pauses it and prevents it from starting.
           </p>
           <label class="check-row" for="settings-mayoral-feature-review">
             <input id="settings-mayoral-feature-review" type="checkbox" checked />
