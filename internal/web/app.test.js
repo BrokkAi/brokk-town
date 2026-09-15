@@ -431,6 +431,26 @@ test("mayoral inspection stays decidable when live details fail", async () => {
   assert.match(elements.inspection.textContent, /Admit to town/, "the decision stays available");
 });
 
+test("reopening a Mayoral card refreshes live details and retries failures", async () => {
+  let calls = 0;
+  const { elements, requests } = await openMayoralDecision(async () => {
+    calls++;
+    if (calls === 1) return { ok: false, json: async () => ({ error: "temporary failure" }) };
+    return { ok: true, json: async () => ({
+      kind: "issue", number: 3, title: "Outside request", body: "Fresh detail",
+      author: "octo", comments: 5, state: "open",
+      updated_at: "2026-09-01T10:00:00Z", url: "https://example.com/i/3",
+    }) };
+  });
+  assert.match(elements.inspection.textContent, /Live details unavailable/);
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.filter((request) => request.url === "/api/task-detail").length, 2);
+  assert.match(elements.inspection.textContent, /Fresh detail/);
+  assert.match(elements.inspection.textContent, /5 comments/);
+});
+
 test("responsive and reduced-motion contracts remain shipped in the stylesheet", () => {
   const css = readFileSync(new URL("./style.css", import.meta.url), "utf8");
   assert.match(css, /@media\s*\(max-width:\s*760px\)/);

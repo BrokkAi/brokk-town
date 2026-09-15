@@ -71,12 +71,20 @@ let state = null,
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
   streamAbort = null;
 let liveDetail = null;
+let liveDetailEpoch = 0;
+function clearLiveDetail() {
+  liveDetail = null;
+  liveDetailEpoch++;
+}
 async function fetchLiveDetail(townId, taskId) {
   const key = `${townId}\n${taskId}`;
+  const epoch = liveDetailEpoch;
   try {
     const detail = await api("/api/task-detail", { town: townId, task: taskId });
+    if (epoch !== liveDetailEpoch) return;
     liveDetail = { key, status: "ready", data: detail };
   } catch (error) {
+    if (epoch !== liveDetailEpoch) return;
     liveDetail = { key, status: "failed", error: error.message };
   }
   if (selectedTown === townId && selectedTask === taskId) renderInspection();
@@ -407,6 +415,7 @@ function inspectOperation(id, role, task = "") {
   $("#close-inspector").focus();
 }
 function closeInspector() {
+  clearLiveDetail();
   $("#inspector").classList.remove("open");
   if (state) renderOverview();
 }
@@ -415,6 +424,7 @@ function chooseHouse(role) {
   saveScope();
   selectedHouse = role;
   selectedTask = "";
+  clearLiveDetail();
   $("#inspector").classList.add("open");
   render();
 }
@@ -474,6 +484,7 @@ function selectTown(id) {
     /* Keep the selection for this session when persistence is unavailable. */
   }
   selectedTask = "";
+  clearLiveDetail();
   moving = [];
   overview = false;
   saveScope();
@@ -626,6 +637,7 @@ function renderInspection() {
     out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${mayorActions}${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
     $("#back-house").onclick = () => {
       selectedTask = "";
+      clearLiveDetail();
       renderInspection();
     };
     if ($("#retry-task"))
