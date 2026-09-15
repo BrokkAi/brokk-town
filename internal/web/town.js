@@ -255,6 +255,7 @@ export const taskStatuses = {
   queued: { label: "Queued", className: "queued" },
   awaiting_mayor: { label: "Mayoral decision", className: "waiting-github" },
   declined: { label: "Declined by Mayor", className: "closed" },
+  delayed: { label: "Delayed by Mayor", className: "waiting-github" },
   waiting_github: { label: "Waiting on GitHub", className: "waiting-github" },
   ready: { label: "Ready", className: "ready" },
   blocked: { label: "Blocked", className: "blocked" },
@@ -299,6 +300,21 @@ export function focusMatches(target, identity) {
   const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return key === identity.key && (!identity.town || town === identity.town);
+}
+
+// Which operator controls make sense for a worker in its current state.
+// Start re-enables a paused or failed worker (or runs a waiting one now);
+// Pause and Stop only apply to an enabled worker; Pause is redundant once a
+// pause is already in flight.
+export function workerControls(worker) {
+  const status = normalized(worker?.status);
+  const enabled = !!worker?.enabled;
+  const active = activeWorkerStatuses.has(status) || !!worker?.agent;
+  return {
+    start: !enabled || !active,
+    pause: enabled && status !== "pausing",
+    stop: enabled || active,
+  };
 }
 
 // Town-wide wake state for the header controls. Repo-bot is excluded: it is

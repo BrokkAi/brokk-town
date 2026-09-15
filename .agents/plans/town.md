@@ -687,6 +687,18 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   preparation agent, so script or workflow bugs get repaired without an operator.
 - Bump the Release Bot pin once a release advertising `retry` is published.
 
+## Offered bot upgrades (2026-09-15)
+
+- Check npm's stable bot tags from the supervisor at start and every six hours;
+  a registry failure is quiet and never changes a pin or stops a town.
+- Represent a newer stable release as an `upgrade:<role>` task in Town Hall so
+  it shares the Mayoral decision surfaces, counts and CLI with outside work.
+- Approve pins the exact version for the bot's next run; delay asks again after
+  a day; decline keeps the pin until a newer release appears. Nothing floats.
+- Add a per-town `auto_update_bots` setting, off by default, that pins new
+  stable releases as they appear and applies any offer already waiting.
+- Withdraw an offer when an explicit pin or the registry catches up with it.
+
 ## Master conflict recovery (2026-09-15)
 
 - Resolve the interrupted pull/rebase onto `1886354`: local commits `4aa63ee`

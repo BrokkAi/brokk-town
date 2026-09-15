@@ -24,6 +24,9 @@
   scheduling, `detach`-capable workers replay missed events, and only operator
   stop, town deletion, or the dispatch deadline kills a bot.
 - Offer pinned Brokk Town upgrades through the browser and terminal interfaces.
+- Offer newer stable bot releases as Mayoral decisions with upgrade, delay-a-day
+  and decline outcomes, checked from npm every six hours, and add a per-town
+  setting that pins new bot releases automatically.
 - Make the external pull-request ownership policy editable in Town settings.
 - Harden partial-release recovery when native archives were produced by a
   different compressor but contain identical files and executable modes.
