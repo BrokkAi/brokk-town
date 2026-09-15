@@ -251,6 +251,7 @@ function installFixture() {
 const state = {
   seq: 1,
   demo: true,
+  version: "v0.1.2",
   capacity: { active: 1, limit: 4 },
   service_config: { max_workers: 4 },
   update: { current: "1.0.0", latest: "1.1.0", command: "npm install -g @brokkai/brokk-town@1.1.0" },
@@ -299,6 +300,8 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   await import(`./app.js?dom-test=${Date.now()}`);
   for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
   assert.equal(elements["capacity-summary"].textContent, "1/4 workers");
+  assert.equal(elements["town-version"].textContent, "v0.1.2");
+  assert.equal(elements["help-version"].textContent, "Brokk Town v0.1.2");
   assert.equal(elements["update-notice"].textContent, "Upgrade Town to 1.1.0");
   await elements["update-notice"].onclick();
   assert.equal(requests.some((request) => request.url === "/api/update"), true);
@@ -351,6 +354,11 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   const decision = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3");
   assert.ok(decision, "Town Hall shows work awaiting the Mayor");
   decision.onclick();
+  assert.match(decision.textContent, /issue #3/, "Town Hall card carries the source number");
+  assert.match(elements.inspection.textContent, /Issue #3/);
+  assert.match(elements.inspection.textContent, /Issue Bot/, "decision names its destination");
+  assert.match(elements.inspection.textContent, /Demo town/, "demo explains why no live body follows");
+  assert.equal(requests.some((request) => request.url === "/api/task-detail"), false, "demo never fetches live details");
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"')), true);
 
@@ -367,6 +375,60 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   });
   assert.equal(requests.some((request) => request.url === "/api/capacity"), true);
   assert.equal(elements["capacity-dialog"].open, false);
+});
+
+async function openMayoralDecision(taskDetail) {
+  const elements = installFixture();
+  const requests = [];
+  const live = { ...state, seq: 1, demo: false };
+  const message = `data: ${JSON.stringify(live)}\n\n`;
+  let served = false;
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url === "/api/events") {
+      return { ok: true, body: { getReader: () => ({ read: async () => !served ? (served = true, { value: new TextEncoder().encode(message), done: false }) : { done: true } }) } };
+    }
+    if (url === "/api/task-detail") return taskDetail(url, options);
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?live-detail=${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  return { elements, requests };
+}
+
+test("mayoral inspection loads live GitHub details on open", async () => {
+  const { elements, requests } = await openMayoralDecision(async () => ({
+    ok: true,
+    json: async () => ({
+      kind: "issue", number: 3, title: "Outside request",
+      body: "Here is why this matters.", author: "octo", comments: 4,
+      state: "open", updated_at: "2026-09-01T10:00:00Z", url: "https://example.com/i/3",
+    }),
+  }));
+  const detailCall = requests.find((request) => request.url === "/api/task-detail");
+  assert.ok(detailCall, "opening the card fetches live details");
+  assert.deepEqual(JSON.parse(detailCall.options.body), { town: "acme/project", task: "issue:3" });
+  assert.match(elements.inspection.textContent, /Here is why this matters/);
+  assert.match(elements.inspection.textContent, /octo/);
+  assert.match(elements.inspection.textContent, /4 comments/);
+  assert.match(elements.inspection.textContent, /Issue #3/);
+  assert.match(elements.inspection.textContent, /Issue Bot/);
+});
+
+test("mayoral inspection stays decidable when live details fail", async () => {
+  const { elements, requests } = await openMayoralDecision(async () => ({
+    ok: false, json: async () => ({ error: "gh exploded" }),
+  }));
+  assert.ok(requests.some((request) => request.url === "/api/task-detail"));
+  assert.match(elements.inspection.textContent, /Live details unavailable/);
+  assert.match(elements.inspection.textContent, /gh exploded/);
+  assert.match(elements.inspection.textContent, /Admit to town/, "the decision stays available");
 });
 
 test("responsive and reduced-motion contracts remain shipped in the stylesheet", () => {

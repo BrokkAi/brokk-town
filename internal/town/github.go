@@ -31,18 +31,20 @@ type Ref struct {
 	} `json:"repo"`
 }
 type Pull struct {
-	Number      int        `json:"number"`
-	Title       string     `json:"title"`
-	Body        string     `json:"body"`
-	URL         string     `json:"html_url"`
-	State       string     `json:"state"`
-	Draft       bool       `json:"draft"`
-	Locked      bool       `json:"locked"`
-	Head        Ref        `json:"head"`
-	Base        Ref        `json:"base"`
-	MergedAt    *time.Time `json:"merged_at"`
-	MergeCommit string     `json:"merge_commit_sha"`
-	User        struct {
+	Number         int        `json:"number"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	URL            string     `json:"html_url"`
+	State          string     `json:"state"`
+	Draft          bool       `json:"draft"`
+	Locked         bool       `json:"locked"`
+	Comments       int        `json:"comments"`
+	ReviewComments int        `json:"review_comments"`
+	Head           Ref        `json:"head"`
+	Base           Ref        `json:"base"`
+	MergedAt       *time.Time `json:"merged_at"`
+	MergeCommit    string     `json:"merge_commit_sha"`
+	User           struct {
 		Login string `json:"login"`
 	} `json:"user"`
 	Updated time.Time `json:"updated_at"`

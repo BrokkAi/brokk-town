@@ -192,6 +192,11 @@ header {
   font: 11px var(--mono);
   white-space: nowrap;
 }
+.town-version {
+  color: #b5caae;
+  font: 11px var(--mono);
+  white-space: nowrap;
+}
 .operations-board,
 .operations-compact {
   padding: 2px 0 30px;

@@ -52,7 +52,11 @@ func tui(ctx context.Context, c connection) error {
 	defer fmt.Print("\x1b[0m\x1b[?25h\x1b[?2004l\x1b[?1049l")
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	snapshots := make(chan town.State, 1)
+	type tuiSnapshot struct {
+		town.State
+		Version string `json:"version"`
+	}
+	snapshots := make(chan tuiSnapshot, 1)
 	messages := make(chan string, 4)
 	commands := make(chan map[string]string, 4)
 	upgrades := make(chan struct{}, 1)
@@ -62,7 +66,7 @@ func tui(ctx context.Context, c connection) error {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
-			var state town.State
+			var state tuiSnapshot
 			err := request(ctx, c, "GET", "/api/state", nil, &state)
 			if err != nil {
 				select {
@@ -112,6 +116,7 @@ func tui(ctx context.Context, c connection) error {
 		}
 	}()
 	var state town.State
+	var serviceVersion string
 	selectedTown, selectedRole := 0, 0
 	overview := true
 	message := "Connecting to town service…"
@@ -126,7 +131,8 @@ func tui(ctx context.Context, c connection) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case v := <-snapshots:
-			state = v
+			state = v.State
+			serviceVersion = v.Version
 			message = ""
 		case m := <-messages:
 			message = m
@@ -239,7 +245,7 @@ func tui(ctx context.Context, c connection) error {
 		if pendingDelete != "" {
 			status = "Delete " + pendingDelete + "? y / n (GitHub stays intact)"
 		}
-		frame := renderTUI(state, selectedTown, role, width, height, status)
+		frame := renderTUI(state, serviceVersion, selectedTown, role, width, height, status)
 		if frame != last {
 			if _, err = fmt.Print("\x1b[H" + strings.ReplaceAll(frame, "\n", "\x1b[K\r\n") + "\x1b[K\x1b[J"); err != nil {
 				return err
@@ -264,7 +270,7 @@ func displayWorker(t *town.Town, role town.Role) *town.Worker {
 	return &town.Worker{Role: role, Status: "unavailable", Task: "Restart the town service to use this worker"}
 }
 
-func renderTUI(s town.State, townIndex, roleIndex, width, height int, message string) string {
+func renderTUI(s town.State, version string, townIndex, roleIndex, width, height int, message string) string {
 	width = max(1, width)
 	height = max(1, height)
 	lines := []string{}
@@ -279,7 +285,11 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 	} else if s.ServiceConfig.MaxWorkers > 0 {
 		limit = s.ServiceConfig.MaxWorkers
 	}
-	add(fmt.Sprintf(" BROKK TOWN                         %d/%d workers   %s", active, limit, mode))
+	title := "BROKK TOWN"
+	if version != "" {
+		title += " " + version
+	}
+	add(fmt.Sprintf(" %s   %d/%d workers   %s", title, active, limit, mode))
 	add(strings.Repeat("─", width))
 	ids := townIDs(s)
 	if len(ids) == 0 {
