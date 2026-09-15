@@ -49,8 +49,17 @@ def npm_exists(package, tarball=None):
     url = record.get("dist", {}).get("tarball", "")
     if urllib.parse.urlparse(url).scheme != "https" or urllib.parse.urlparse(url).hostname != "registry.npmjs.org":
         raise ValueError("unexpected npm tarball origin")
-    with urllib.request.urlopen(url, timeout=60) as response:
-        data = response.read()
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            data = response.read()
+    except urllib.error.HTTPError as error:
+        error.close()
+        if error.code == 404:
+            # The version record is visible but its tarball has not propagated
+            # through the registry yet. Report incomplete publication so the
+            # publisher waits instead of failing or resubmitting.
+            raise ValueError(f"publication is incomplete: npm tarball not yet visible: {package['name']}") from None
+        raise
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
     if integrity != record["dist"].get("integrity"):
         raise ValueError("downloaded npm tarball fails registry integrity")
@@ -163,8 +172,11 @@ def run(command, directory):
         print("Existing npm versions have matching latest/next pointers")
         return
     # Submit platform packages before the root launcher. A successful upload
-    # can take time to appear in public indexes; visibility is checked only by
-    # the explicit verify command, not used as a release gate.
+    # can take time to appear in public indexes; a visible version record
+    # whose tarball has not propagated yet reports incomplete publication so
+    # the publisher waits instead of failing or resubmitting. Visibility is
+    # never used as a publication gate: uploads happen only when the version
+    # record itself is absent.
     for package in packages:
         if not existing[package["name"]]:
             subprocess.run(["npm", "publish", str((directory / "npm" / package["filename"]).resolve()),

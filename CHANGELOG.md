@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — pending
+## 0.3.0 — 2026-09-15
 
 - Make worker startup and write authority explicit across the browser, TUI, and
   CLI. Manual merge policy pauses Release Bot, rejects direct release starts and

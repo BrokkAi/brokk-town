@@ -48,9 +48,13 @@ def publish(directory, sha, tag):
             if (actual / name).read_bytes() != (directory / "native" / name).read_bytes():
                 raise ValueError(f"upload integrity mismatch: {name}")
         checks.release.compare_assets(tag, actual, directory / "native", sha)
-    package_registry.run("publish", directory / "packages")
+    # Registry visibility lags behind accepted uploads, including between a
+    # new version record and its tarball. Submission and verification retry
+    # together on incomplete publication; discovery never resubmits an
+    # existing version, so waiting cannot duplicate an upload.
     for attempt in range(40):
         try:
+            package_registry.run("publish", directory / "packages")
             package_registry.run("verify", directory / "packages")
             break
         except ValueError as error:

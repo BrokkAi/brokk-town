@@ -128,6 +128,22 @@ class PackageRegistry(unittest.TestCase):
                     with self.assertRaises(urllib.error.HTTPError):
                         package_registry.fetch_json("https://registry.test")
 
+    def test_lagging_tarball_reports_incomplete_publication(self):
+        record = dict(self.packages[0], dist={
+            "integrity": self.packages[0]["integrity"],
+            "tarball": "https://registry.npmjs.org/example.tgz",
+        })
+        tarball = self.root / "npm" / self.packages[0]["filename"]
+        with patch.object(package_registry, "fetch_json", return_value=record):
+            with patch.object(package_registry.urllib.request, "urlopen", side_effect=urllib.error.HTTPError(
+                    "https://registry.npmjs.org/example.tgz", 404, "Not Found", {}, None)):
+                with self.assertRaisesRegex(ValueError, "publication is incomplete"):
+                    package_registry.npm_exists(self.packages[0], tarball)
+            with patch.object(package_registry.urllib.request, "urlopen", side_effect=urllib.error.HTTPError(
+                    "https://registry.npmjs.org/example.tgz", 500, "Server Error", {}, None)):
+                with self.assertRaises(urllib.error.HTTPError):
+                    package_registry.npm_exists(self.packages[0], tarball)
+
     def test_accepted_uploads_do_not_wait_for_public_indexes(self):
         with patch.object(package_registry, "npm_exists", return_value=False) as exists, \
                 patch.object(package_registry, "npm_pointer", return_value=None), \
