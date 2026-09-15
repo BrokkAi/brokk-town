@@ -27,6 +27,16 @@ def wait_for(fn, timeout=6):
     raise AssertionError('Timed out waiting for local demo state')
 
 
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
     root = Path(directory)
     conn_path = root / 'demo' / 'connection.json'
@@ -217,7 +227,50 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         saved = json.loads((root / 'demo' / 'state.json').read_text())
         assert saved['towns']['brokkai/paper-trail']['deleted']
         assert all(not w['enabled'] for w in saved['towns']['brokkai/paper-trail']['workers'].values())
-        print('Demo smoke passed: assets, auth, SSE, registry, supplemental harnesses, per-bot profiles/defaults/reset, pinned settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, restart recovery.')
+
+        # A foreground service names the process that holds the state directory.
+        clash = subprocess.run([binary, 'serve', '--demo', '--state-dir', directory,
+                                '--listen', '127.0.0.1:0'], text=True,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+        assert clash.returncode != 0 and f'pid {conn["pid"]}' in clash.stderr, clash.stderr
+        service.send_signal(signal.SIGTERM)
+        service.wait(timeout=10)
+        assert service.returncode == 0 and not conn_path.exists()
+
+        # Any client command starts the town on demand, detached from the
+        # terminal, and the access key survives restarts.
+        on_demand = subprocess.run([binary, 'status', '--demo', '--state-dir', directory,
+                                    '--listen', '127.0.0.1:0'], text=True, check=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=40)
+        assert 'starting the town service' in on_demand.stderr, on_demand.stderr
+        assert json.loads(on_demand.stdout)['demo'] is True
+        detached = json.loads(conn_path.read_text())
+        assert detached['pid'] != conn['pid'] and detached['token'] == conn['token']
+        assert detached['version'] and detached['executable'] and not detached.get('managed')
+        assert (root / 'demo' / 'logs' / 'serve.err.log').stat().st_mode & 0o777 == 0o600
+        status_out = subprocess.check_output([binary, 'service', 'status', '--demo',
+            '--state-dir', directory], text=True, stderr=subprocess.DEVNULL, timeout=20)
+        assert 'never (demo)' in status_out and 'started on demand' in status_out, status_out
+        # A crash heals on the next command with the same browser address.
+        os.kill(detached['pid'], signal.SIGKILL)
+        wait_for(lambda: not pid_alive(detached['pid']))
+        web = subprocess.run([binary, 'web', '--demo', '--state-dir', directory,
+                              '--listen', '127.0.0.1:0'], text=True, check=True,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=40)
+        healed = json.loads(conn_path.read_text())
+        assert healed['pid'] != detached['pid'] and pid_alive(healed['pid'])
+        assert web.stdout.strip() == healed['url'] + '/#token=' + conn['token'], web.stdout
+        # An explicit restart re-executes in place, keeping the PID.
+        restart = subprocess.check_output([binary, 'service', 'restart', '--demo',
+            '--state-dir', directory], text=True, stderr=subprocess.DEVNULL, timeout=40)
+        restarted = json.loads(conn_path.read_text())
+        assert f'pid {healed["pid"]}' in restart and restarted['pid'] == healed['pid']
+        assert restarted['started'] > healed['started'], (restarted, healed)
+        stop = subprocess.check_output([binary, 'service', 'stop', '--demo',
+            '--state-dir', directory], text=True, stderr=subprocess.DEVNULL, timeout=40)
+        assert 'Stopped' in stop and not conn_path.exists()
+        wait_for(lambda: not pid_alive(healed['pid']))
+        print('Demo smoke passed: assets, auth, SSE, registry, supplemental harnesses, per-bot profiles/defaults/reset, pinned settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, restart recovery, on-demand start, crash recovery, stable access key, in-place restart.')
     finally:
         if terminal is not None and terminal.poll() is None:
             terminal.kill()
@@ -228,3 +281,9 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         if service.poll() is None:
             service.send_signal(signal.SIGTERM)
             service.wait(timeout=10)
+        if conn_path.exists():
+            # A detached service started on demand outlives this script.
+            try:
+                os.kill(json.loads(conn_path.read_text())['pid'], signal.SIGTERM)
+            except (OSError, ValueError, KeyError):
+                pass

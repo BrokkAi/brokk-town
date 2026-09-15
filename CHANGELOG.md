@@ -2,6 +2,20 @@
 
 ## 0.1.2 — pending
 
+- Add a cross-town "Needs you" inbox to the browser: pending Mayoral decisions
+  and stuck work from every town, longest wait first, with a jump to the exact
+  Town Hall or house and in-place admit/decline. Sidebar towns and overview
+  cards now show how many decisions each town is waiting on.
+- Start the town service on demand from any `bt` command and register it with
+  the login session (launchd or systemd --user) so it survives crashes and
+  reboots; `bt service` inspects, stops, restarts, or unregisters it.
+- Restart in place after an upgrade through the original install channel, roll
+  a stale service forward when `bt` is newer, keep the browser address stable
+  across restarts, and reload the page when the service version changes.
+- Keep external bots running across a Town service restart. Bot processes are
+  detached with durable run handles, the next service reconnects to them before
+  scheduling, `detach`-capable workers replay missed events, and only operator
+  stop, town deletion, or the dispatch deadline kills a bot.
 - Offer pinned Brokk Town upgrades through the browser and terminal interfaces.
 - Make the external pull-request ownership policy editable in Town settings.
 - Harden partial-release recovery when native archives were produced by a
