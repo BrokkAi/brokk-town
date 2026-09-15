@@ -431,11 +431,22 @@ uncertain proposals before filing. Its verifier receives `FEATURE_COMMIT` and
 `FEATURE_FINDING`; shared verification commands must support the selected bot's
 environment. New and upgraded towns keep feature discovery paused until started.
 
+Town Hall's **Automation outcomes** report separates worker attempts, filed
+findings, submitted implementation PRs, repository-confirmed merges, repair
+rounds, blocked or abandoned work, and verified releases for a selectable
+period. A submitted PR is an artifact rather than an accepted fix. Operators
+can mark each filed finding useful or a false positive only by adding an
+explanation. Records retain task and revision provenance and show elapsed time,
+token usage, and cost as unknown when the worker does not provide them. The CSV
+export includes the repository on every row for comparisons across runs and
+towns.
+
 Private state defaults to `$XDG_STATE_HOME/brokk-town` or
 `~/.local/state/brokk-town`. `--state-dir` selects another directory; `--demo`
 appends `demo`. A single writer lock, atomic snapshots, per-role bot state, and
-private worktrees keep towns separate. Events, logs, and reports have bounded
-recent histories; task/intent history persists. Browser access uses a per-service
+private worktrees keep towns separate. Events, logs, and repo-bot reports have
+bounded recent histories; task, intent, and automation outcome history persists.
+Browser access uses a per-service
 local key in a URL fragment. `connection.json` and state snapshots are mode 0600.
 Private agent commands, environment, and authentication configuration are omitted
 from public configuration snapshots for both town defaults and bot profiles;

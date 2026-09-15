@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	issuebot "github.com/BrokkAi/issue-bot"
 )
@@ -54,6 +55,7 @@ func (b *BotWorkers) SyncIssues(t *Town) error {
 			terminalOnGitHub := task.Stage == "closed" || task.Stage == "locked"
 			switch job.Status {
 			case "blocked":
+				current.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("blocked:issue:%d:%d", number, job.Tries), At: time.Now(), Class: "outcome", Kind: "blocked", Status: "blocked", Role: Issue, TaskID: task.ID, Detail: issueJobDetail(job)})
 				if terminalOnGitHub {
 					task.Blocked = false
 					public.RetryDetail = "The issue is no longer open and eligible on GitHub."
@@ -77,6 +79,7 @@ func (b *BotWorkers) SyncIssues(t *Town) error {
 				if job.Status == "submitted" {
 					if pr := submittedPR(t.Config.Repo, job.URL); pr > 0 {
 						current.Owned[pr] = Ownership{Branch: job.Branch, Issue: number}
+						current.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("implementation-pr:pr:%d", pr), At: time.Now(), Class: "artifact", Kind: "implementation_pr", Status: "submitted", Role: Issue, TaskID: fmt.Sprintf("pr:%d", pr), RelatedTaskID: task.ID, URL: job.URL, Detail: task.Title})
 					}
 				}
 			case "pending":

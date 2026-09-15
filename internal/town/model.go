@@ -384,6 +384,7 @@ type Town struct {
 	FunnelSyncs   map[FunnelID]*FunnelSync `json:"funnel_syncs,omitempty"`
 	Requests      map[string]*IssueRequest `json:"requests,omitempty"`
 	Reports       []Report                 `json:"reports"`
+	Outcomes      []OutcomeRecord          `json:"outcomes"`
 	Head          string                   `json:"head"`
 	LastSync      time.Time                `json:"last_sync"`
 	LastRelease   string                   `json:"last_release"`
@@ -441,7 +442,7 @@ func (s *State) Add(c Config) (*Town, error) {
 		t.Workers[Repo].Next = time.Time{}
 		return t, nil
 	}
-	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, FunnelIntents: map[string]*WriteIntent{}, FunnelSyncs: map[FunnelID]*FunnelSync{}, Reports: []Report{}}
+	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, FunnelIntents: map[string]*WriteIntent{}, FunnelSyncs: map[FunnelID]*FunnelSync{}, Reports: []Report{}, Outcomes: []OutcomeRecord{}}
 	for _, r := range Roles {
 		t.Workers[r] = &Worker{Role: r, Enabled: r == Repo, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
 	}

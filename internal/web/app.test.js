@@ -68,6 +68,9 @@ class Element {
     for (const callback of this.listeners[event.type] || []) callback(event);
     this[`on${event.type}`]?.(event);
   }
+  click() {
+    this.dispatchEvent({ type: "click" });
+  }
   showModal() {
     this.open = true;
   }
@@ -280,12 +283,20 @@ const state = {
 test("app handlers render views, inspect work, preserve focused capacity input, and retain keyboard control", async () => {
   const elements = installFixture();
   const requests = [];
+  const createdLinks = [];
   let releaseSecond, releaseThird;
   const messages = [
     `data: ${JSON.stringify(state)}\n\n`,
     new Promise((resolve) => { releaseSecond = () => resolve(`data: ${JSON.stringify({ ...state, seq: 2, capacity: { active: 2, limit: 7 } })}\n\n`); }),
     new Promise((resolve) => { releaseThird = () => resolve(`data: ${JSON.stringify({ ...state, seq: 3, capacity: { active: 3, limit: 8 } })}\n\n`); }),
   ];
+  document.createElement = (tag) => {
+    const element = new Element(tag);
+    if (tag === "a") createdLinks.push(element);
+    return element;
+  };
+  globalThis.URL.createObjectURL = () => "blob:outcomes";
+  globalThis.URL.revokeObjectURL = () => {};
   globalThis.fetch = async (url, options = {}) => {
     requests.push({ url, options });
     if (url === "/api/events") {
@@ -296,6 +307,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
     if (url === "/api/update") return { ok: true, json: async () => ({ ok: true, restart_required: true }) };
     if (url === "/api/state") return { ok: true, json: async () => state };
     if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: true, agents: [] }) };
+    if (url.startsWith("/api/outcomes")) return { ok: true, blob: async () => ({}) };
     return { ok: true, json: async () => ({}) };
   };
   await import(`./app.js?dom-test=${Date.now()}`);
@@ -358,6 +370,12 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements["pause-all"].hidden, true, "no separate pause-all when every agent is awake");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   assert.match(elements.inspection.textContent, /Authority:.*create pull requests/, "house controls explain their write authority");
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.inspection.querySelectorAll("[data-outcome-days]").find((button) => button.dataset.outcomeDays === "0").onclick();
+  await elements.inspection.querySelectorAll("[data-export-outcomes]")[0].onclick();
+  const outcomeExport = requests.find((request) => request.url.startsWith("/api/outcomes"));
+  assert.equal(new URL(`https://town.local${outcomeExport.url}`).searchParams.get("from"), "1970-01-01T00:00:00.000Z", "All exports do not fall back to the server's seven-day default");
+  assert.equal(createdLinks.at(-1).download, "acme-project-outcomes-all.csv");
   await elements["town-toggle"].onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"all"')), true);
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();

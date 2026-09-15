@@ -104,6 +104,31 @@ export function taskRetryEligible(task) {
 export function visibleEvents(events, after, town) {
   return (events || []).filter((e) => e.seq > after && e.town === town);
 }
+
+export function outcomeReport(records = [], since = new Date(0)) {
+  const selected = records
+    .filter((record) => new Date(record.at) >= since)
+    .sort((a, b) => new Date(a.at) - new Date(b.at) || String(a.id).localeCompare(String(b.id)));
+  const summary = {
+    attempts: 0, findings: 0, submitted: 0, merged: 0, repairs: 0,
+    blocked: 0, releases: 0, useful: 0, falsePositives: 0, unjudged: 0,
+  };
+  for (const record of selected) {
+    if (record.kind === "worker_attempt") summary.attempts++;
+    if (record.kind === "finding_filed") {
+      summary.findings++;
+      if (!record.judgment) summary.unjudged++;
+      else if (record.judgment.value === "useful") summary.useful++;
+      else if (record.judgment.value === "false_positive") summary.falsePositives++;
+    }
+    if (record.kind === "implementation_pr") summary.submitted++;
+    if (record.kind === "merge") summary.merged++;
+    if (record.kind === "repair_round") summary.repairs++;
+    if (record.kind === "blocked" || record.kind === "abandoned") summary.blocked++;
+    if (record.kind === "release") summary.releases++;
+  }
+  return { records: selected, summary };
+}
 export function safeURL(value) {
   try {
     const u = new URL(value);

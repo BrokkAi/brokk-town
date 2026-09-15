@@ -99,6 +99,54 @@ func TestLocalAPIAuthenticationOriginAndStrictInput(t *testing.T) {
 	}
 }
 
+func TestOutcomeReportExportAndExplicitJudgment(t *testing.T) {
+	s, h := fixture(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := s.Store.Update(func(state *town.State) error {
+		current, err := state.Add(town.DefaultConfig("acme/outcomes"))
+		if err != nil {
+			return err
+		}
+		current.RecordOutcome(town.OutcomeRecord{ID: "finding-filed:issue:8", At: now, Class: "artifact", Kind: "finding_filed", Status: "confirmed", TaskID: "issue:8", URL: "https://github.com/acme/outcomes/issues/8", Detail: "=2+2"})
+		current.RecordOutcome(town.OutcomeRecord{ID: "implementation-pr:pr:9", At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", TaskID: "pr:9", RelatedTaskID: "issue:8", Revision: strings.Repeat("a", 40)})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	jsonResponse := call(t, h.URL, http.MethodGet, "/api/outcomes?town=acme%2Foutcomes&from="+from, "", "test-key", "")
+	if jsonResponse.StatusCode != http.StatusOK {
+		t.Fatalf("report status %d", jsonResponse.StatusCode)
+	}
+	var report town.OutcomeReport
+	if err := json.NewDecoder(jsonResponse.Body).Decode(&report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.FindingsFiled != 1 || report.Summary.PRsSubmitted != 1 || report.Summary.MergesConfirmed != 0 || report.Records[0].Town != "acme/outcomes" || report.Records[0].Usage != nil || report.Records[0].CostUSD != nil {
+		t.Fatalf("incorrect outcome report: %+v", report)
+	}
+
+	csvResponse := call(t, h.URL, http.MethodGet, "/api/outcomes?town=acme%2Foutcomes&from="+from+"&format=csv", "", "test-key", "")
+	body, _ := io.ReadAll(csvResponse.Body)
+	if csvResponse.StatusCode != http.StatusOK || !strings.Contains(string(body), "town,id,at,class,kind,status,role") || !strings.Contains(string(body), "unknown,unknown,unknown,unjudged") || !strings.Contains(string(body), "'=2+2") {
+		t.Fatalf("CSV export missing explicit unknowns: %s", body)
+	}
+
+	judged := call(t, h.URL, http.MethodPost, "/api/outcomes/judgment", `{"town":"acme/outcomes","outcome":"finding-filed:issue:8","value":"useful","explanation":"Prevented a production regression"}`, "test-key", "")
+	if judged.StatusCode != http.StatusOK {
+		t.Fatalf("judgment status %d", judged.StatusCode)
+	}
+	saved := s.Store.Snapshot().Towns["acme/outcomes"].Outcomes[0].Judgment
+	if saved == nil || saved.Value != "useful" || saved.Explanation != "Prevented a production regression" {
+		t.Fatalf("judgment not persisted: %+v", saved)
+	}
+	bad := call(t, h.URL, http.MethodPost, "/api/outcomes/judgment", `{"town":"acme/outcomes","outcome":"finding-filed:issue:8","value":"false_positive","explanation":""}`, "test-key", "")
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty explanation status %d", bad.StatusCode)
+	}
+}
+
 func TestUpdateIsOfferedAndInstalledThroughAuthenticatedAPI(t *testing.T) {
 	s, h := fixture(t)
 	notice := &town.UpdateNotice{Current: "1.0.0", Latest: "1.1.0", Command: "npm install -g @brokkai/brokk-town@1.1.0"}

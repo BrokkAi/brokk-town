@@ -67,6 +67,9 @@ func Open(dir string, demo bool) (*Store, error) {
 					if t.FunnelSyncs == nil {
 						t.FunnelSyncs = map[FunnelID]*FunnelSync{}
 					}
+					if t.Outcomes == nil {
+						t.Outcomes = []OutcomeRecord{}
+					}
 					enforceManualReleasePolicy(t)
 				}
 			}
@@ -178,6 +181,13 @@ func validateState(s State, demo bool) error {
 					return errors.New("invalid funnel task")
 				}
 			}
+		}
+		seenOutcomes := map[string]bool{}
+		for _, outcome := range t.Outcomes {
+			if outcome.validate() != nil || seenOutcomes[outcome.ID] {
+				return errors.New("invalid or duplicate outcome record")
+			}
+			seenOutcomes[outcome.ID] = true
 		}
 		for n, o := range t.Owned {
 			if n < 1 || o.Issue < 1 || o.Branch == "" {

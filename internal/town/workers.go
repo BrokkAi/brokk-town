@@ -178,7 +178,7 @@ func (b *BotWorkers) Adopt(ctx context.Context, t *Town, r Role, run WorkerRun, 
 // complete turns a raw worker outcome into Town's result for one dispatch. It
 // is shared by fresh runs and adopted runs so both apply identical rules.
 func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, workerResult workerResult, err error, observe func(Progress), log *slog.Logger) (RunResult, error) {
-	result := RunResult{}
+	result := RunResult{Usage: workerResult.Usage, CostUSD: workerResult.CostUSD}
 	if r == Release {
 		result.Retried = workerResult.retried
 	}
@@ -256,6 +256,12 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 }
 
 func validateWorkerResult(result workerResult, role Role) error {
+	if result.Usage != nil && (result.Usage.InputTokens < 0 || result.Usage.OutputTokens < 0) {
+		return errors.New("worker returned invalid usage")
+	}
+	if result.CostUSD != nil && *result.CostUSD < 0 {
+		return errors.New("worker returned invalid cost")
+	}
 	switch role {
 	case Issue:
 		if result.Issue == nil {

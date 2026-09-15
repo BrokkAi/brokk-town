@@ -152,8 +152,10 @@ type workerReviewResult struct {
 }
 
 type workerResult struct {
-	Issue  *workerIssueResult  `json:"issue,omitempty"`
-	Review *workerReviewResult `json:"review,omitempty"`
+	Issue   *workerIssueResult  `json:"issue,omitempty"`
+	Review  *workerReviewResult `json:"review,omitempty"`
+	Usage   *OutcomeUsage       `json:"usage,omitempty"`
+	CostUSD *float64            `json:"cost_usd,omitempty"`
 	// retried records an accepted POST /v1/retry before this run.
 	retried bool
 }

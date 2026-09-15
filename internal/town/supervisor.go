@@ -23,9 +23,11 @@ type Progress struct {
 	Seq         uint64
 }
 type RunResult struct {
-	Owned map[int]Ownership
-	Audit *Audit
-	PR    int
+	Owned   map[int]Ownership
+	Audit   *Audit
+	PR      int
+	Usage   *OutcomeUsage
+	CostUSD *float64
 	// Retried reports that the release worker accepted the requested attempt
 	// budget reset before this run, so the request is consumed.
 	Retried bool
@@ -238,6 +240,10 @@ func (s *Supervisor) SetCapacity(limit int) error {
 
 func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *WorkerRun) {
 	now := s.now()
+	started := now
+	if adopt != nil && !adopt.Started.IsZero() {
+		started = adopt.Started
+	}
 	abandon := false
 	if err := s.Store.Update(func(st *State) error {
 		current := st.Towns[t.ID]
@@ -370,6 +376,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 	close(updates)
 	close(progress)
 	<-done
+	finished := s.now()
 	s.update(func(st *State) error {
 		current := st.Towns[t.ID]
 		w := current.Workers[r]
@@ -444,6 +451,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 					task.Blocked = task.Attempts >= limit
 					if task.Blocked {
 						task.Detail = err.Error()
+						current.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("blocked:%s:%d", task.ID, task.Attempts), At: s.now(), Class: "outcome", Kind: "blocked", Status: "blocked", Role: r, TaskID: task.ID, Revision: task.Head, URL: task.URL, Detail: task.Detail})
 					} else if r == Review {
 						task.Detail = fmt.Sprintf("Reviewer attempt %d of %d did not complete; retry scheduled.", task.Attempts, limit)
 						w.Task = task.Detail
@@ -482,11 +490,47 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 				}
 			}
 		}
+		if ValidAgentRole(r) {
+			taskID, revision := outcomeAttemptTask(t, r, result)
+			status, detail := "attempted", "Worker attempt completed"
+			if err != nil && !errors.Is(err, context.Canceled) {
+				status, detail = "blocked", err.Error()
+			} else if errors.Is(err, context.Canceled) {
+				status, detail = "abandoned", "Worker attempt was canceled"
+			}
+			attemptID := fmt.Sprintf("attempt:%s:%d:%s", r, started.UnixNano(), taskID)
+			current.RecordOutcome(OutcomeRecord{ID: attemptID, At: finished, Class: "attempt", Kind: "worker_attempt", Status: status, Role: r, TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished), Usage: result.Usage, CostUSD: result.CostUSD})
+			if status == "abandoned" {
+				current.RecordOutcome(OutcomeRecord{ID: "abandoned:" + attemptID, At: finished, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished)})
+			}
+		}
 		if r != Repo {
 			current.Workers[Repo].Next = time.Time{}
 		}
 		return nil
 	})
+}
+
+func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
+	if result.PR > 0 {
+		id := fmt.Sprintf("pr:%d", result.PR)
+		if task := t.Tasks[id]; task != nil {
+			return id, task.Head
+		}
+		return id, ""
+	}
+	if role == Issue {
+		var selected *Task
+		for _, task := range t.Tasks {
+			if task.Kind == "issue" && task.House == Issue && (task.Stage == "queued" || task.Stage == "blocked") && (selected == nil || task.Number < selected.Number) {
+				selected = task
+			}
+		}
+		if selected != nil {
+			return selected.ID, selected.Head
+		}
+	}
+	return "", ""
 }
 
 // adoptRun resumes a persisted external run when the workers support it.
@@ -517,7 +561,8 @@ func (s *Supervisor) abandon(ctx context.Context, t *Town, r Role, run WorkerRun
 		}
 	}
 	s.update(func(st *State) error {
-		worker := st.Towns[t.ID].Workers[r]
+		current := st.Towns[t.ID]
+		worker := current.Workers[r]
 		worker.Run = nil
 		worker.Agent = nil
 		worker.Error = ""
@@ -525,9 +570,21 @@ func (s *Supervisor) abandon(ctx context.Context, t *Town, r Role, run WorkerRun
 		if !worker.Enabled {
 			worker.Status = "paused"
 		}
-		worker.Updated = s.now()
+		finished := s.now()
+		worker.Updated = finished
+		current.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("abandoned:orphan:%s:%d", r, run.Started.UnixNano()), At: finished, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: workerRunTask(run), Revision: run.HeadSHA, Detail: "Orphaned worker was stopped after its town was deleted", ElapsedMS: elapsedMillis(run.Started, finished)})
 		return nil
 	})
+}
+
+func workerRunTask(run WorkerRun) string {
+	if run.PR > 0 {
+		return fmt.Sprintf("pr:%d", run.PR)
+	}
+	if run.Issue > 0 {
+		return fmt.Sprintf("issue:%d", run.Issue)
+	}
+	return ""
 }
 
 func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {

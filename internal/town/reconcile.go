@@ -32,6 +32,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			}
 			task = &Task{ID: id, Kind: "issue", Number: i.Number, Title: i.Title, URL: i.URL, House: house, External: from == "outside", Stage: stage, MayoralDecision: decision, Updated: now}
 			t.Tasks[id] = task
+			if from == "bug" || from == "feature" {
+				t.RecordOutcome(OutcomeRecord{ID: "finding-filed:" + id, At: now, Class: "artifact", Kind: "finding_filed", Status: "confirmed", Role: Role(from), TaskID: id, URL: i.URL, Detail: i.Title})
+			}
 			if !initial && i.State == "open" {
 				s.Event(t.ID, "delivery", from, string(house), id, "Issue arrived: "+i.Title, now)
 				changes = append(changes, fmt.Sprintf("New issue #%d: %s", i.Number, i.Title))
@@ -82,6 +85,10 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				changes = append(changes, fmt.Sprintf("New PR #%d: %s", p.Number, p.Title))
 			}
 		}
+		if isOwned {
+			related := fmt.Sprintf("issue:%d", owned.Issue)
+			t.RecordOutcome(OutcomeRecord{ID: "implementation-pr:" + id, At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", Role: Issue, TaskID: id, RelatedTaskID: related, Revision: p.Head.SHA, URL: p.URL, Detail: p.Title})
+		}
 		wasExternal := task.External
 		task.External = !isOwned
 		if isOwned && wasExternal && task.MayoralDecision == "pending" {
@@ -93,6 +100,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		task.URL = p.URL
 		task.Branch = p.Head.Ref
 		if (task.Head != "" && task.Head != p.Head.SHA) || (task.Base != "" && task.Base != p.Base.SHA) || (task.Description != "" && task.Description != description(p)) {
+			if task.Head != "" && task.Head != p.Head.SHA && !isOwned {
+				t.RecordOutcome(OutcomeRecord{ID: "external-change:" + id + ":" + p.Head.SHA, At: now, Class: "outcome", Kind: "external_change", Status: "external", Role: Review, TaskID: id, Revision: p.Head.SHA, URL: p.URL, Detail: "Contributor changed the pull request revision"})
+			}
 			task.Audit = nil
 			task.Blocked = false
 			task.Attempts = 0
@@ -110,6 +120,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				task.Blocked = false
 				task.Attempts = 0
 				task.Cycles++
+				t.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("repair-round:%s:%s", id, intent.NewHead), At: now, Class: "outcome", Kind: "repair_round", Status: "confirmed", Role: Issue, TaskID: id, RelatedTaskID: fmt.Sprintf("issue:%d", owned.Issue), Revision: intent.NewHead, URL: p.URL, Detail: fmt.Sprintf("Repair round %d confirmed on GitHub", task.Cycles)})
 				task.Audit = nil
 				s.Move(t, task, "queued", Review, "Fixes delivered for another review", now)
 			}
@@ -129,6 +140,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 					task.House = Release
 				}
 			}
+			t.RecordOutcome(OutcomeRecord{ID: "merge:" + id + ":" + p.MergeCommit, At: *p.MergedAt, Class: "outcome", Kind: "merge", Status: "confirmed", TaskID: id, RelatedTaskID: fmt.Sprintf("issue:%d", owned.Issue), Revision: p.MergeCommit, URL: p.URL, Detail: p.Title})
 			if SHA(p.MergeCommit) {
 				cid := "commit:" + p.MergeCommit
 				if t.Tasks[cid] == nil {
@@ -136,6 +148,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				}
 			}
 		} else if p.State == "closed" {
+			if isOwned {
+				t.RecordOutcome(OutcomeRecord{ID: "abandoned:" + id + ":" + p.Head.SHA, At: now, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: id, RelatedTaskID: fmt.Sprintf("issue:%d", owned.Issue), Revision: p.Head.SHA, URL: p.URL, Detail: "Implementation PR closed without a confirmed merge"})
+			}
 			task.Stage = "closed"
 			task.MayoralDecision = ""
 		} else if task.MayoralDecision == "pending" || task.MayoralDecision == "declined" {
@@ -181,6 +196,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			changes = append(changes, "Released "+latest.Tag)
 		}
 		t.LastRelease = latest.Tag
+	}
+	if latest != nil {
+		t.RecordOutcome(OutcomeRecord{ID: "release:" + latest.Tag, At: latest.At, Class: "outcome", Kind: "release", Status: "confirmed", Role: Release, TaskID: "release:" + latest.Tag, Revision: latest.Tag, URL: latest.URL, Detail: latest.Name})
 	}
 	for _, task := range t.Tasks {
 		if task.Kind == "commit" && remote.Released[task.Head] {
