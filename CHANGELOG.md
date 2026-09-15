@@ -2,6 +2,10 @@
 
 ## 0.1.2 — pending
 
+- Add a cross-town "Needs you" inbox to the browser: pending Mayoral decisions
+  and stuck work from every town, longest wait first, with a jump to the exact
+  Town Hall or house and in-place admit/decline. Sidebar towns and overview
+  cards now show how many decisions each town is waiting on.
 - Offer pinned Brokk Town upgrades through the browser and terminal interfaces.
 - Make the external pull-request ownership policy editable in Town settings.
 - Harden partial-release recovery when native archives were produced by a

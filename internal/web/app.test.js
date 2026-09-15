@@ -431,6 +431,75 @@ test("mayoral inspection stays decidable when live details fail", async () => {
   assert.match(elements.inspection.textContent, /Admit to town/, "the decision stays available");
 });
 
+test("the inbox lists every town's decisions, opens the right Town Hall, and decides in place", async () => {
+  const elements = installFixture();
+  const requests = [];
+  const other = {
+    id: "beta/tools",
+    config: { repo: "beta/tools", branch: "main", bot_agents: {}, bot_versions: {}, harness: "codex-acp", model: "", effort: "" },
+    workers: {
+      review: { role: "review", status: "failed", enabled: true, error: "gh exploded", logs: [], updated: "2026-09-15T08:00:00Z" },
+      repo: { role: "repo", status: "paused", enabled: true, logs: [] },
+    },
+    tasks: {
+      "pr:12": { id: "pr:12", kind: "pr", number: 12, title: "Contributor PR for beta", house: "hall", stage: "awaiting_mayor", external: true, mayoral_decision: "pending", updated: "2026-09-10T08:00:00Z" },
+    },
+    intents: {}, reports: [], events: [],
+  };
+  const twoTowns = { ...state, seq: 1, towns: { ...state.towns, "beta/tools": other } };
+  let served = false;
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url === "/api/events") {
+      return { ok: true, body: { getReader: () => ({ read: async () => !served ? (served = true, { value: new TextEncoder().encode(`data: ${JSON.stringify(twoTowns)}\n\n`), done: false }) : { done: true } }) } };
+    }
+    if (url === "/api/state") return { ok: true, json: async () => twoTowns };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: true, agents: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?inbox-test=${Date.now()}`);
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(elements["inbox-count"].textContent, "3", "header badge counts decisions and stuck work across towns");
+  assert.equal(elements["inbox-count"].hidden, false);
+  assert.ok(elements["inbox-count"].classList.contains("decisions"), "badge highlights pending Mayoral decisions");
+  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /2 awaiting your decision · 1 need attention/);
+  const betaLink = elements.towns.querySelectorAll("[data-town]").find((button) => button.dataset.town === "beta/tools");
+  assert.match(betaLink.textContent, /1 to decide/, "sidebar shows each town's pending decisions");
+  assert.match(betaLink.textContent, /1 attention/, "sidebar shows each town's stuck work");
+  assert.match(elements.overview.textContent, /to decide/, "overview cards show decisions waiting");
+
+  document.dispatchEvent({ type: "keydown", key: "i", target: new Element("div") });
+  assert.equal(elements["inbox-dialog"].open, true, "keyboard shortcut opens the inbox");
+  const opens = elements["inbox-list"].querySelectorAll("[data-inbox-open]");
+  assert.deepEqual(
+    opens.map((button) => [button.dataset.inboxTown, button.dataset.inboxHouse, button.dataset.inboxTask]),
+    [["acme/project", "hall", "issue:3"], ["beta/tools", "hall", "pr:12"], ["beta/tools", "review", ""]],
+    "decisions from every town lead (an unknown age counts as the longest wait), then stuck work names the house to inspect",
+  );
+  assert.match(elements["inbox-list"].textContent, /outside arrival/);
+  assert.match(elements["inbox-list"].textContent, /Review Bot/);
+  assert.match(elements["inbox-list"].textContent, /gh exploded/, "failed workers carry their error");
+
+  opens[1].onclick();
+  assert.equal(elements["inbox-dialog"].open, false, "opening an item closes the inbox");
+  assert.equal(elements.inspector.classList.contains("open"), true);
+  assert.equal(elements.overview.hidden, true, "opening an item leaves the all-towns overview");
+  assert.equal(elements["inspector-town"].textContent, "beta/tools", "the inspector switches to the item's town");
+  assert.match(elements.inspection.textContent, /Contributor PR for beta/);
+  assert.match(elements.inspection.textContent, /PR #12/);
+  assert.ok(elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task"), "the decision is right there");
+
+  elements["inbox-toggle"].onclick();
+  const decline = elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxTask === "issue:3" && button.dataset.inboxDecide === "decline");
+  assert.ok(decline, "decisions can be made from the inbox");
+  await decline.onclick();
+  const control = requests.find((request) => request.url === "/api/control" && request.options.body.includes('"action":"decline"'));
+  assert.ok(control, "declining from the inbox sends the control command");
+  assert.deepEqual(JSON.parse(control.options.body), { town: "acme/project", role: "hall", action: "decline", task: "issue:3" }, "the command targets the item's own town, not the selected one");
+  assert.equal(elements["inbox-error"].textContent, "");
+});
+
 test("responsive and reduced-motion contracts remain shipped in the stylesheet", () => {
   const css = readFileSync(new URL("./style.css", import.meta.url), "utf8");
   assert.match(css, /@media\s*\(max-width:\s*760px\)/);

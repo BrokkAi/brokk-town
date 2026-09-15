@@ -31,6 +31,15 @@
       </div>
       <span id="capacity-summary" class="capacity-summary" role="status"></span>
       <button id="capacity-settings" class="quiet" type="button">Capacity</button>
+      <button
+        id="inbox-toggle"
+        class="quiet inbox-toggle"
+        type="button"
+        aria-haspopup="dialog"
+        title="Mayoral decisions and stuck work across every town"
+      >
+        Needs you<span id="inbox-count" class="inbox-count" hidden>0</span>
+      </button>
       <div class="header-space"></div>
       <button id="motion" class="quiet" aria-pressed="false">Motion on</button
       ><button id="new-town">＋ New town</button>
@@ -395,10 +404,25 @@
         <div id="request-history" aria-live="polite"></div>
       </section>
     </dialog>
+    <dialog id="inbox-dialog" class="wide-dialog">
+      <div class="eyebrow">ACROSS YOUR TOWNS</div>
+      <h2>What needs you</h2>
+      <p class="muted">
+        Mayoral decisions and stuck work from every town, longest wait first.
+        Open an item to read its full context in that town, or decide here
+        when you already know.
+      </p>
+      <div id="inbox-error" class="form-error" role="alert"></div>
+      <div id="inbox-list" aria-live="polite"></div>
+      <div class="dialog-actions">
+        <button type="button" id="close-inbox" class="quiet">Close</button>
+      </div>
+    </dialog>
     <dialog id="help-dialog">
       <h2>Around the town</h2>
       <p class="muted" id="help-version"></p>
       <p><kbd>0</kbd> All towns</p>
+      <p><kbd>I</kbd> What needs you, across every town</p>
       <p><kbd>1</kbd>–<kbd>5</kbd> Visit agent houses</p>
       <p><kbd>6</kbd> Read the town hall reports</p>
       <p><kbd>7</kbd> Visit Feature Bot’s study</p>
