@@ -120,6 +120,150 @@ func TestRepairCommitsAndPushesOneExistingBranchThenHandsBack(t *testing.T) {
 		t.Fatal("uncertain push duplicated repair")
 	}
 }
+
+// laggingGH reports the pull request head GitHub showed before the push for a
+// number of reads, the way the REST pull object trails a ref update.
+type laggingGH struct {
+	gitFixtureGH
+	stale string
+	lag   int
+	reads int
+}
+
+func (g *laggingGH) Pull(ctx context.Context, repo string, n int) (Pull, error) {
+	p, e := g.gitFixtureGH.Pull(ctx, repo, n)
+	g.reads++
+	if g.reads <= g.lag {
+		p.Head.SHA = g.stale
+	}
+	return p, e
+}
+func repairAgent() func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error) {
+	return func(ctx context.Context, _ *Town, tree sessionTree, _ string, _ *slog.Logger, _ string) (string, error) {
+		if e := os.WriteFile(filepath.Join(tree.dir, "code.txt"), []byte("fixed\n"), 0600); e != nil {
+			return "", e
+		}
+		_, e := git(ctx, tree.dir, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-am", "repair")
+		return `TOWN_REPAIR {"summary":"Fixed the defect","checks":["Regression passed"]}`, e
+	}
+}
+func TestRepairConfirmsFromRemoteRefWhenPullRequestHeadLags(t *testing.T) {
+	for _, scenario := range []string{"catches_up", "never_catches_up"} {
+		t.Run(scenario, func(t *testing.T) {
+			b, x, task, remote := fixtureWorkers(t)
+			lag := 3
+			if scenario == "never_catches_up" {
+				lag = 1 << 20
+			}
+			gh := &laggingGH{gitFixtureGH: b.GitHub.(gitFixtureGH), stale: task.Head, lag: lag}
+			b.GitHub = gh
+			b.confirmWait = 50 * time.Millisecond
+			b.confirmInterval = time.Millisecond
+			b.executeAgent = repairAgent()
+			if e := b.repair(context.Background(), x, task, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil))); e != nil {
+				t.Fatal(e)
+			}
+			state := b.Store.Snapshot().Towns[x.ID]
+			out := state.Tasks[task.ID]
+			if state.Intents[1].Status != "confirmed" || out.Stage != "queued" || out.House != Review || out.Cycles != 1 {
+				t.Fatalf("lagging pull request head failed a landed push: %+v", out)
+			}
+			head, e := git(context.Background(), "", "--git-dir", remote, "rev-parse", "refs/heads/issue-1")
+			if e != nil || head != out.Head || head == task.Head {
+				t.Fatal("existing branch not advanced")
+			}
+			if scenario == "catches_up" && gh.reads < lag+1 {
+				t.Fatalf("confirmed before the pull request caught up after %d reads", gh.reads)
+			}
+		})
+	}
+}
+func TestRepairRefusesConfirmationWhenBranchMovedPastPush(t *testing.T) {
+	b, x, task, remote := fixtureWorkers(t)
+	ctx := context.Background()
+	b.confirmWait = 50 * time.Millisecond
+	b.confirmInterval = time.Millisecond
+	b.executeAgent = repairAgent()
+	// Another writer advances the branch as soon as the repair push lands, so
+	// the exact repair commit is no longer the branch head when the daemon
+	// looks up the remote ref to confirm.
+	raced := false
+	b.remoteURL = func(string) string {
+		head, e := git(ctx, "", "--git-dir", remote, "rev-parse", "refs/heads/issue-1")
+		if e == nil && head != task.Head && !raced {
+			raced = true
+			tree, _ := git(ctx, "", "--git-dir", remote, "rev-parse", head+"^{tree}")
+			extra, e := git(ctx, "", "-c", "user.name=Other", "-c", "user.email=other@example.test", "--git-dir", remote, "commit-tree", tree, "-p", head, "-m", "someone else")
+			if e != nil {
+				t.Fatal(e)
+			}
+			if _, e = git(ctx, "", "--git-dir", remote, "update-ref", "refs/heads/issue-1", extra); e != nil {
+				t.Fatal(e)
+			}
+		}
+		return remote
+	}
+	err := b.repair(ctx, x, task, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "not confirmed at the exact head") {
+		t.Fatalf("moved branch confirmed as the repair: %v", err)
+	}
+	if !raced {
+		t.Fatal("race never happened")
+	}
+	if b.Store.Snapshot().Towns[x.ID].Intents[1].Status != "uncertain" {
+		t.Fatal("moved branch did not keep the intent uncertain")
+	}
+}
+
+type advancingRepairGH struct {
+	laggingGH
+	remote string
+	moved  bool
+}
+
+func (g *advancingRepairGH) Pull(ctx context.Context, repo string, n int) (Pull, error) {
+	p, err := g.laggingGH.Pull(ctx, repo, n)
+	if err != nil {
+		return p, err
+	}
+	head, err := git(ctx, "", "--git-dir", g.remote, "rev-parse", "refs/heads/issue-1")
+	if err != nil {
+		return p, err
+	}
+	if head != g.stale && !g.moved {
+		g.moved = true
+		tree, err := git(ctx, "", "--git-dir", g.remote, "rev-parse", head+"^{tree}")
+		if err != nil {
+			return p, err
+		}
+		extra, err := git(ctx, "", "-c", "user.name=Other", "-c", "user.email=other@example.test", "--git-dir", g.remote, "commit-tree", tree, "-p", head, "-m", "concurrent push")
+		if err != nil {
+			return p, err
+		}
+		if _, err := git(ctx, "", "--git-dir", g.remote, "update-ref", "refs/heads/issue-1", extra); err != nil {
+			return p, err
+		}
+		p.Head.SHA = extra
+	}
+	return p, nil
+}
+
+func TestRepairRefusesConcurrentPushDuringPullConfirmation(t *testing.T) {
+	b, x, task, remote := fixtureWorkers(t)
+	gh := &advancingRepairGH{laggingGH: laggingGH{gitFixtureGH: b.GitHub.(gitFixtureGH), stale: task.Head, lag: 1 << 20}, remote: remote}
+	b.GitHub = gh
+	b.confirmWait = 50 * time.Millisecond
+	b.confirmInterval = time.Millisecond
+	b.executeAgent = repairAgent()
+	err := b.repair(context.Background(), x, task, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "not confirmed at the exact head") || !gh.moved {
+		t.Fatalf("concurrent branch advance accepted: %v moved=%t", err, gh.moved)
+	}
+	if b.Store.Snapshot().Towns[x.ID].Intents[1].Status != "uncertain" {
+		t.Fatal("concurrent push did not preserve uncertain repair intent")
+	}
+}
+
 func TestCertifierAndOperatorVerifyCannotChangeReviewedRevision(t *testing.T) {
 	for _, scenario := range []string{"valid", "agent_commit", "verify_commit", "omitted_evidence"} {
 		t.Run(scenario, func(t *testing.T) {

@@ -21,6 +21,9 @@ import {
   focusMatches,
   scheduleLabel,
   townControls,
+  inbox,
+  ago,
+  decisionReason,
 } from "./town.js";
 import { registerTownTools } from "./tools.js";
 test("deliveries resume after cursor and stay in their repository", () => {
@@ -111,8 +114,77 @@ test("queue and overview report blocked and waiting work", () => {
     blocked: 1,
     failed: 1,
     queued: 2,
+    decisions: 0,
     release: "v1",
   });
+});
+test("inbox gathers decisions and stuck work from every town, longest wait first", () => {
+  const state = {
+    towns: {
+      "acme/later": {
+        id: "acme/later",
+        config: { repo: "acme/later" },
+        workers: { review: { status: "failed", error: "gh exploded", updated: "2026-09-15T08:00:00Z" } },
+        tasks: {
+          "pr:9": { id: "pr:9", kind: "pr", number: 9, title: "Newer contributor PR", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", external: true, updated: "2026-09-15T09:00:00Z" },
+          "pr:4": { id: "pr:4", kind: "pr", number: 4, title: "Merge looked uncertain", house: "release", stage: "ready", updated: "2026-09-14T10:00:00Z" },
+          "issue:5": { id: "issue:5", kind: "issue", number: 5, title: "Already admitted", house: "issue", stage: "queued", mayoral_decision: "admitted", updated: "2026-09-15T09:30:00Z" },
+        },
+        intents: { 4: { status: "uncertain", detail: "Merge response was lost" } },
+      },
+      "acme/earlier": {
+        id: "acme/earlier",
+        config: { repo: "acme/earlier" },
+        workers: { issue: { status: "working" } },
+        tasks: {
+          "issue:7": { id: "issue:7", kind: "issue", number: 7, title: "Older proposal", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", updated: "2026-09-13T12:00:00Z" },
+          "pr:8": { id: "pr:8", kind: "pr", number: 8, title: "Review asked for changes", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", external: true, audit: { verdict: "changes_needed", summary: "", findings: [] }, updated: "2026-09-14T12:00:00Z" },
+          "issue:1": { id: "issue:1", kind: "issue", number: 1, title: "Stuck repair", house: "issue", stage: "fixes", blocked: true, updated: "2026-09-12T12:00:00Z" },
+          "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Declined earlier", house: "hall", stage: "declined", mayoral_decision: "declined", blocked: true },
+        },
+      },
+    },
+  };
+  const needs = inbox(state);
+  assert.deepEqual(
+    needs.decisions.map((item) => [item.town, item.task, item.reason, item.reviewAgain]),
+    [
+      ["acme/earlier", "issue:7", "proposed inside Town", false],
+      ["acme/earlier", "pr:8", "Town review asked for changes", true],
+      ["acme/later", "pr:9", "outside arrival", false],
+    ],
+    "decisions come from every town, oldest first, and skip admitted or declined work",
+  );
+  assert.deepEqual(
+    needs.attention.map((item) => [item.town, item.house, item.task, item.status]),
+    [
+      ["acme/earlier", "issue", "issue:1", "blocked"],
+      ["acme/later", "release", "pr:4", "uncertain_write"],
+      ["acme/later", "review", "", "failed"],
+    ],
+    "stuck tasks and failed workers each point at the house to inspect",
+  );
+  assert.equal(needs.attention[1].detail, "Merge response was lost");
+  assert.equal(needs.attention[2].detail, "gh exploded");
+  assert.deepEqual(needs.towns, {
+    "acme/later": { decisions: 1, attention: 2 },
+    "acme/earlier": { decisions: 2, attention: 1 },
+  });
+  assert.equal(needs.total, 6);
+  assert.deepEqual(inbox(null), { decisions: [], attention: [], towns: {}, total: 0 });
+  assert.equal(decisionReason({ external: true, audit: { verdict: "changes_needed" } }), "Town review asked for changes");
+  const now = Date.parse("2026-09-15T12:00:00Z");
+  assert.equal(ago("2026-09-15T11:59:40Z", now), "just now");
+  assert.equal(ago("2026-09-15T11:35:00Z", now), "25m ago");
+  assert.equal(ago("2026-09-15T02:00:00Z", now), "10h ago");
+  assert.equal(ago("2026-09-10T12:00:00Z", now), "5d ago");
+  assert.equal(ago("0001-01-01T00:00:00Z", now), "", "Go's zero time is not an age");
+  assert.equal(ago("", now), "");
+  assert.deepEqual(
+    focusIdentity({ closest: () => ({ id: "inbox-list" }), dataset: { inboxKey: "admit:pr:8", inboxTown: "acme/earlier" } }),
+    { surface: "inbox-list", key: "admit:pr:8", town: "acme/earlier" },
+    "inbox buttons keep focus across snapshot redraws",
+  );
 });
 test("task links only open normal provider HTTPS URLs", () => {
   assert.equal(safeURL("https://github.com/acme/a/pull/3"), true);
