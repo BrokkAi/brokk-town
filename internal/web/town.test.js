@@ -20,6 +20,7 @@ import {
   focusIdentity,
   focusMatches,
   scheduleLabel,
+  townControls,
   inbox,
   ago,
   decisionReason,
@@ -312,4 +313,23 @@ test("optional tools validate input and use the visible navigation", async () =>
       () => {},
     ),
   );
+});
+
+test("townControls reports the town's wake state and offers the matching action", () => {
+  const agents = (enabled) => Object.fromEntries(
+    ["bug", "feature", "issue", "review", "release"].map((role, i) => [role, { role, enabled: enabled[i] }]),
+  );
+  const paused = townControls({ workers: { ...agents([false, false, false, false, false]), repo: { role: "repo", enabled: true } } });
+  assert.equal(paused.status, "Paused", "repo-bot being enabled does not count as awake");
+  assert.deepEqual(paused.primary, { action: "start", label: "▶ Wake the town" });
+  assert.equal(paused.secondary, null);
+  const awake = townControls({ workers: agents([true, true, true, true, true]) });
+  assert.equal(awake.status, "Awake · 5 agents");
+  assert.deepEqual(awake.primary, { action: "pause", label: "Ⅱ Pause the town" });
+  assert.equal(awake.secondary, null);
+  const partial = townControls({ workers: agents([true, false, true, false, false]) });
+  assert.equal(partial.status, "Partly awake · 2 of 5");
+  assert.deepEqual(partial.primary, { action: "start", label: "▶ Wake the rest" });
+  assert.deepEqual(partial.secondary, { action: "pause", label: "Ⅱ Pause all" });
+  assert.equal(townControls(null).status, "Paused");
 });

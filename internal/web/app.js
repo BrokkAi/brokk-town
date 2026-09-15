@@ -17,6 +17,7 @@ import {
   focusIdentity,
   focusMatches,
   scheduleLabel,
+  townControls,
   decisionReason,
   inbox,
   ago,
@@ -446,6 +447,29 @@ function chooseHouse(role) {
   $("#inspector").classList.add("open");
   render();
 }
+function renderTownControls(t) {
+  const toggle = $("#town-toggle"),
+    pauseAll = $("#pause-all"),
+    chip = $("#town-state");
+  toggle.disabled = !t;
+  pauseAll.disabled = !t;
+  if (!t) {
+    chip.hidden = true;
+    pauseAll.hidden = true;
+    toggle.textContent = "▶ Wake the town";
+    toggle.dataset.action = "start";
+    return;
+  }
+  const controls = townControls(t);
+  chip.hidden = false;
+  chip.textContent = controls.status;
+  chip.className = `status-chip status-${controls.statusClass}`;
+  toggle.textContent = controls.primary.label;
+  toggle.dataset.action = controls.primary.action;
+  toggle.classList.toggle("primary", controls.primary.action === "start");
+  pauseAll.hidden = !controls.secondary;
+  if (controls.secondary) pauseAll.textContent = controls.secondary.label;
+}
 function render() {
   const focus = focusIdentity(document.activeElement);
   const t = town();
@@ -454,8 +478,7 @@ function render() {
   $("#mode").hidden = !state.demo;
   $("#demo-note").hidden = !state.demo;
   $("#empty").hidden = !!t;
-  $("#start-all").disabled = !t;
-  $("#pause-all").disabled = !t;
+  renderTownControls(t);
   $("#repo-owner").textContent = t ? t.config.repo.split("/")[0] : "WELCOME TO";
   $("#town-name").textContent = t
     ? t.config.repo.split("/")[1]
@@ -944,7 +967,7 @@ function draw(now) {
     }
   requestAnimationFrame(draw);
 }
-$("#start-all").onclick = () => command("start");
+$("#town-toggle").onclick = () => command($("#town-toggle").dataset.action || "start");
 $("#pause-all").onclick = () => command("pause");
 $("#close-inspector").onclick = closeInspector;
 for (const id of ["new-town", "empty-add"])
