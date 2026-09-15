@@ -421,6 +421,7 @@ func TestSupervisorStopsPersistedReleaseRunUnderManualPolicy(t *testing.T) {
 		current.Config.MergePolicy = "manual"
 		worker := current.Workers[Release]
 		worker.Enabled, worker.Status, worker.Run = true, "working", &handle
+		worker.Agent = &PublicBotAgentConfig{Harness: "codex", Model: "gpt-5"}
 	})
 	workers := &adoptingWorker{
 		workerFunc: func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
@@ -442,6 +443,10 @@ func TestSupervisorStopsPersistedReleaseRunUnderManualPolicy(t *testing.T) {
 		t.Fatal("persisted release run was resumed under manual policy")
 	}
 	supervisor.wg.Wait()
+	worker := store.Snapshot().Towns[town.ID].Workers[Release]
+	if worker.Run != nil || worker.Status != "paused" || worker.Agent != nil {
+		t.Fatalf("stopped release worker retained active state: %+v", worker)
+	}
 }
 
 func TestSupervisorRetainsPersistedRunWhenSafeStopFails(t *testing.T) {

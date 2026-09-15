@@ -502,7 +502,15 @@ func (s *Supervisor) abandon(ctx context.Context, t *Town, r Role, run WorkerRun
 		}
 	}
 	s.update(func(st *State) error {
-		st.Towns[t.ID].Workers[r].Run = nil
+		worker := st.Towns[t.ID].Workers[r]
+		worker.Run = nil
+		worker.Agent = nil
+		worker.Error = ""
+		worker.Status = "waiting"
+		if !worker.Enabled {
+			worker.Status = "paused"
+		}
+		worker.Updated = s.now()
 		return nil
 	})
 }

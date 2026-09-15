@@ -14,6 +14,8 @@
   manual-policy stop, even though the adoption context already carries the stop
   cause, so the detached process is killed rather than orphaned. Retain the
   socket and durable handle with a visible failure if safe authentication fails.
+- After a persisted Release Bot is stopped successfully, clear its durable run
+  and active agent profile and finalize it as paused under manual policy.
 - Disclose beside Review Bot controls that starting it can merge eligible pull
   requests when the configured merge policy permits.
 - Cover default and persisted startup state, manual-policy controls and scheduling,
