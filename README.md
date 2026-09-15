@@ -25,13 +25,15 @@ Build with the Go version in `go.mod`:
 
 ```sh
 make build
-./bin/bt serve --demo
+./bin/bt tui --demo
 ```
 
-Open the browser address printed by the service. In another terminal:
+Any `bt` command starts the town service in the background when it is not
+running. Press `q` to leave the terminal panel; the town keeps going. Print the
+browser address with:
 
 ```sh
-./bin/bt tui --demo
+./bin/bt web --demo
 ```
 
 Demo mode uses an isolated state directory and simulated activity in two towns.
@@ -42,9 +44,42 @@ fixtures, with active worker profiles available to inspect. Paper-trail illustra
 a neighboring repository with a failed watchtower. Pause a house to hold its next step.
 
 The browser and TUI attach to the same service. Closing either leaves workers
-running. Stop the foreground service with Ctrl+C; it cancels and waits for workers
-before releasing the state lock. `bt` without a command opens the TUI of an
-already-running service. Use `bt web` to print its browser address again.
+running. `bt` without a command opens the TUI. Use `bt web` to print the browser
+address again; the local access key is persistent, so bookmarks and open tabs
+survive restarts.
+
+### The service keeps itself running
+
+There is nothing to install or remember. The first `bt` command that starts a
+real town also registers the service with your login session: a launchd agent
+on macOS (`~/Library/LaunchAgents/ai.brokk.town.plist`) or a systemd user unit
+on Linux (`~/.config/systemd/user/brokk-town.service`). From then on the town
+restarts after a crash and returns after a reboot without any command, and the
+browser page reloads itself when a new version comes up. The demo town is never
+registered; it starts on demand and stays until stopped.
+
+- `bt service status` shows the service, its registration, and log locations
+  (`logs/serve.log` and `logs/serve.err.log` under the state directory).
+- `bt service stop` stops it until the next `bt` command. `bt service restart`
+  restarts it in place.
+- `bt service off` keeps the service out of your login session; `bt` still
+  starts it on demand, but it will not return by itself after logout or reboot.
+  `bt service on` registers it again.
+- `bt serve` still runs the service in the foreground for development. It
+  refuses to start while another service holds the state directory and names
+  that process.
+
+The registration captures the `PATH` of the shell that created it, so `gh`,
+`git`, `npx`, and your chosen agent are found without a login shell. A
+`--listen` address given to any command is remembered for that town, so a later
+command's default never moves a registered service to another port. On Linux,
+`bt` enables lingering for your user so the town survives logout; if that needs
+administrator approval, it says so. Over SSH on a Mac without a logged-in
+session there is no launchd user domain, so the service runs unregistered.
+
+When you rebuild or upgrade `bt`, the next `bt` command notices that the running
+service is older and restarts it on the new binary. An older `bt` never
+downgrades a running service.
 
 The browser header switches among **Town**, **Board**, and **Compact** without
 restarting. Town keeps the animated houses first-class; Board groups durable work
@@ -70,7 +105,7 @@ a commit shipped. Columns, prompts and transitions are not programmable.
 ## Installation and releases
 
 Source is published at [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town).
-The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.0)
+The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.1)
 and npm:
 
 ```sh
@@ -80,8 +115,11 @@ npm install -g @brokkai/brokk-town
 While the service is running, Town checks npm outside its input and render loops.
 When a newer stable release is available, the browser offers an **Upgrade Town**
 button and the TUI offers `u`. After confirmation, the service installs that exact
-version and asks for a restart. A failed or offline check never interrupts local
-operation.
+version through the channel it was installed from (npm for the npm package,
+otherwise the checksum-verified release archive over the current binary) and
+restarts itself in place; the browser page reloads when the new version is up.
+Bots that were mid-run keep working through the restart and are reconnected.
+A failed or offline check never interrupts local operation.
 
 You can also build from source as above or install the current branch:
 
@@ -112,6 +150,10 @@ coding agent. Town does not require a separate bot installation: each dispatch
 uses `npx --yes` with an exact compatible release of bug-bot, feature-bot,
 issue-bot, review-bot, or release-bot, then communicates with it over a private
 Unix socket. Town never selects an ambient or floating bot version.
+Each bot's Settings panel shows its current pin. **Check for bot update** reads
+npm's stable tag, and **Use VERSION** stages that exact version for the Mayor to
+save. The pin changes only for that town and takes effect on the bot's next run;
+capability and reported-version checks still run before any repository work.
 
 The worker uses
 standard-library HTTP/JSON, negotiates protocol and capabilities before work,
@@ -140,8 +182,10 @@ GitHub reconciliation.
 ```
 
 New towns start with the five automation workers **paused**. Repo-bot starts its
-read-only inventory. Inspect the town, then start individual workers or choose
-**Wake the town**. Starting workers authorizes their real work: filing issues,
+read-only inventory. The town header shows whether the town is paused, awake,
+or partly awake, and its button offers the action that changes that state.
+Inspect the town, then start individual workers or choose **Wake the town**.
+Starting workers authorizes their real work: filing issues,
 creating and repairing PRs, posting reviews, merging under the configured policy,
 and publishing releases. Agents and verification commands run with your local
 permissions. Use an isolated account or machine for repositories you don't trust.
@@ -159,6 +203,15 @@ permissions. Use an isolated account or machine for repositories you don't trust
 Pause finishes active work and stops scheduling more. Stop also cancels active
 work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
 uncertain external writes retain their saved intent and are reconciled first.
+
+Stopping or restarting the service (Ctrl+C, SIGTERM, `bt service restart`, or
+an in-app upgrade) does not stop the external bots. Each bot process runs detached, and Town commits its handle (PID,
+socket, and exact task) before requesting work. The next `bt serve` reconnects to
+those processes before scheduling anything new. Bots that advertise the `detach`
+capability replay the events Town missed and their results are applied normally.
+Older bots finish on their own, and Town records that attempt as uncertain rather
+than guessing; repo-bot then reconciles whatever landed on GitHub. Only an explicit
+Stop, a town deletion, or the two-hour dispatch deadline ends a bot process.
 
 Capacity is a persisted service setting shared by every town. It reserves only
 non-reporter bot runs; repo-bot, issue publishing, and prompt-free model choice
@@ -293,6 +346,13 @@ Animation never initiates a GitHub write. Reconnecting does not replay previousl
 seen deliveries. External PRs receive reviews but their branches are left to their
 authors; only locally recorded Town-created branches enter automatic repair.
 
+New external issues and PRs first wait at Town Hall for a durable Mayoral
+decision. **Admit** sends the work to Issue Bot or Review Bot; **Decline** keeps
+Town from acting on it without changing GitHub. Feature Bot proposals follow the
+same route by default and can be exempted in **Town Settings → External
+contributions**. The browser provides the primary decision UX; scripts may use
+`bt admit --repo OWNER/REPO --task issue:123` or `bt decline ...`.
+
 A review is bound to the exact base, head, PR description, and discussion snapshot. A suppressed
 duplicate comment is still a finding to check. Complete coverage, explicit
 resolution of every concern, and validation evidence are required for a clean
@@ -317,7 +377,8 @@ bot profiles, verification command, and policy, then run:
 
 Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
-`merge_policy`, `poll_seconds`, `report_seconds`, and `max_cycles`. The example
+`merge_policy`, `mayoral_feature_review`, `poll_seconds`, `report_seconds`, and
+`max_cycles`. The example
 lists all required values. To persist global capacity alongside the town list,
 use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
 remains accepted. When `serve --config` includes `max_workers`, that value
@@ -361,6 +422,45 @@ local key in a URL fragment. `connection.json` and state snapshots are mode 0600
 Private agent commands, environment, and authentication configuration are omitted
 from public configuration snapshots for both town defaults and bot profiles;
 each bot's effective harness, model, and effort are visible.
+
+### Source funnels
+
+Optional `funnels` make issue intake source-neutral. Each named funnel declares a
+provider, validated location/filter, a local credential reference, explicit
+priority policy, overlap policy, and allowlisted lifecycle mappings. Credential
+references are resolved by adapters at request time; secret values never enter
+Town state, model prompts, events, logs, or public snapshots. Public state shows
+the safe funnel configuration and each normalized item's source identity, URL,
+revision, external state, eligibility, capabilities, priority policy, last sync,
+and typed outcome.
+
+GitHub funnels support query, `selected_issues`, and comma-separated
+`include_labels`/`exclude_labels`. Focused selections are read by issue identity
+instead of relying on search indexing. `working` and `blocked` mappings translate
+the normalized lifecycle into confirmed label changes. Slack is the second real
+adapter: it reads a configured channel through paginated Web API calls and maps
+configured lifecycle actions to reactions plus bounded thread replies. Slack
+tokens are obtained from a private resolver immediately before each request.
+Read-only funnels and empty per-transition mappings stay visibly unsupported.
+
+Funnels also recognize provider-native done signals on inbound reads. A Slack
+message with a present `:white_check_mark:` or `:heavy_check_mark:` reaction is
+normalized as **Done**; a GitHub issue whose state is `closed` is normalized as
+**Closed**. Both remain in the durable inventory with their source provenance,
+but become ineligible and leave the worker queue. A GitHub selector must include
+closed issues (for example `is:issue`, not `is:issue is:open`) if Town is to
+observe that transition. Done is based only on an explicit item state or reaction;
+an incomplete or empty inventory never closes missing work by implication.
+
+Lifecycle mutations use a durable intent before the provider call. A lost
+response remains `uncertain`; reconciliation is read-only and absence of a
+receipt never permits a duplicate label, reaction, comment, or thread reply.
+Incomplete reads, partial discovery, authentication failures, rate limits,
+unsupported actions, and uncertain writes remain distinct outcomes. Funnel
+declaration order is never scheduling priority. Overlapping source identities
+are retained, deduplicated, or rejected only according to the explicit overlap
+policy. Demo and tests use synthetic or fake providers and perform no live source
+or agent automation. See the complete JSON example for GitHub and Slack shapes.
 Local logs and worktrees can contain repository content; keep this directory private.
 
 If a push or merge response is lost, Town checks GitHub rather than assuming

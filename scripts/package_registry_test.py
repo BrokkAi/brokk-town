@@ -51,6 +51,7 @@ class PackageRegistry(unittest.TestCase):
 
     def test_native_packages_publish_before_root(self):
         with patch.object(package_registry, "npm_exists", return_value=False), \
+                patch.object(package_registry, "npm_pointer", return_value=None), \
                 patch.object(package_registry.subprocess, "run") as command:
             package_registry.run("publish", self.root)
             calls = [call.args[0] for call in command.call_args_list]
@@ -61,6 +62,7 @@ class PackageRegistry(unittest.TestCase):
 
     def test_identical_existing_packages_are_verified_without_upload(self):
         with patch.object(package_registry, "npm_exists", return_value=True), \
+                patch.object(package_registry, "npm_pointer", return_value="0.1.0"), \
                 patch.object(package_registry, "verify_provenance") as provenance, \
                 patch.object(package_registry.subprocess, "run") as command:
             package_registry.run("publish", self.root)
@@ -70,6 +72,7 @@ class PackageRegistry(unittest.TestCase):
 
     def test_final_verification_requires_independent_provenance(self):
         with patch.object(package_registry, "npm_exists", return_value=True), \
+                patch.object(package_registry, "npm_pointer", return_value="0.1.0"), \
                 patch.object(package_registry, "verify_provenance", side_effect=ValueError("missing provenance")):
             with self.assertRaisesRegex(ValueError, "missing provenance"):
                 package_registry.run("verify", self.root)
@@ -127,6 +130,7 @@ class PackageRegistry(unittest.TestCase):
 
     def test_accepted_uploads_do_not_wait_for_public_indexes(self):
         with patch.object(package_registry, "npm_exists", return_value=False) as exists, \
+                patch.object(package_registry, "npm_pointer", return_value=None), \
                 patch.object(package_registry.subprocess, "run") as command:
             package_registry.run("publish", self.root)
             self.assertEqual(command.call_count, 5)
@@ -134,7 +138,22 @@ class PackageRegistry(unittest.TestCase):
 
     def test_upload_failure_stops_before_publishing_the_launcher(self):
         with patch.object(package_registry, "npm_exists", return_value=False), \
+                patch.object(package_registry, "npm_pointer", return_value=None), \
                 patch.object(package_registry.subprocess, "run", side_effect=package_registry.subprocess.CalledProcessError(1, "npm")) as command:
             with self.assertRaises(package_registry.subprocess.CalledProcessError):
                 package_registry.run("publish", self.root)
             self.assertEqual(command.call_count, 1)
+
+    def test_existing_version_with_conflicting_dist_tag_fails_closed(self):
+        with patch.object(package_registry, "npm_exists", return_value=True), \
+                patch.object(package_registry, "npm_pointer", return_value="0.2.0"), \
+                patch.object(package_registry.subprocess, "run") as command:
+            with self.assertRaisesRegex(ValueError, "conflicting npm dist-tag"):
+                package_registry.run("publish", self.root)
+            command.assert_not_called()
+
+    def test_verify_requires_release_dist_tag(self):
+        with patch.object(package_registry, "npm_exists", return_value=True), \
+                patch.object(package_registry, "npm_pointer", return_value=None):
+            with self.assertRaisesRegex(ValueError, "publication is incomplete"):
+                package_registry.run("verify", self.root)

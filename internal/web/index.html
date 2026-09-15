@@ -22,6 +22,7 @@
         ><span id="connection">Connecting</span>
       </div>
       <span id="mode" class="badge" hidden>DEMO</span>
+      <span id="town-version" class="town-version" role="status"></span>
       <button id="update-notice" class="update-notice" type="button" hidden></button>
       <div id="view-switcher" class="view-switcher" role="tablist" aria-label="View">
         <button type="button" data-view="town" role="tab" aria-selected="true">Town</button>
@@ -30,6 +31,15 @@
       </div>
       <span id="capacity-summary" class="capacity-summary" role="status"></span>
       <button id="capacity-settings" class="quiet" type="button">Capacity</button>
+      <button
+        id="inbox-toggle"
+        class="quiet inbox-toggle"
+        type="button"
+        aria-haspopup="dialog"
+        title="Mayoral decisions and stuck work across every town"
+      >
+        Needs you<span id="inbox-count" class="inbox-count" hidden>0</span>
+      </button>
       <div class="header-space"></div>
       <button id="motion" class="quiet" aria-pressed="false">Motion on</button
       ><button id="new-town">＋ New town</button>
@@ -62,9 +72,13 @@
             <button id="town-settings" class="quiet" disabled>
               ⚙ Settings
             </button>
-            <button id="start-all" class="primary" disabled>
-              ▶ Wake the town</button
-            ><button id="pause-all" class="quiet" disabled>Ⅱ Pause</button>
+            <span id="town-state" class="status-chip" hidden></span>
+            <button id="town-toggle" class="primary" disabled>
+              ▶ Wake the town
+            </button>
+            <button id="pause-all" class="quiet" disabled hidden>
+              Ⅱ Pause all
+            </button>
           </div>
         </div>
         <div id="error" role="alert" hidden></div>
@@ -208,6 +222,11 @@
             Every automatic merge still requires a clean exact-revision review,
             GitHub mergeability, checks, and approvals.
           </p>
+          <label class="check-row" for="settings-mayoral-feature-review">
+            <input id="settings-mayoral-feature-review" type="checkbox" checked />
+            Require a Mayoral decision for Feature Bot proposals
+          </label>
+          <p class="muted">Enabled by default. Proposed feature issues wait at Town Hall before Issue Bot may implement them.</p>
         </section>
         <div class="agent-profile">
           <label for="agent-role">Configure agent for</label>
@@ -226,6 +245,15 @@
             </button>
           </div>
         </div>
+        <section id="bot-version-panel" class="settings-section" hidden>
+          <div class="eyebrow">BOT SOFTWARE</div>
+          <p id="bot-version-status" class="muted" role="status"></p>
+          <div class="choice-actions">
+            <button id="check-bot-version" type="button">Check for bot update</button>
+            <button id="use-bot-version" type="button" class="primary" hidden></button>
+          </div>
+          <p class="muted">Bot versions stay pinned. A saved change takes effect on this bot's next run.</p>
+        </section>
         <label for="harness-input">Coding harness</label>
         <select id="harness-input">
           <option value="custom">Custom ACP command</option>
@@ -380,9 +408,25 @@
         <div id="request-history" aria-live="polite"></div>
       </section>
     </dialog>
+    <dialog id="inbox-dialog" class="wide-dialog">
+      <div class="eyebrow">ACROSS YOUR TOWNS</div>
+      <h2>What needs you</h2>
+      <p class="muted">
+        Mayoral decisions and stuck work from every town, longest wait first.
+        Open an item to read its full context in that town, or decide here
+        when you already know.
+      </p>
+      <div id="inbox-error" class="form-error" role="alert"></div>
+      <div id="inbox-list" aria-live="polite"></div>
+      <div class="dialog-actions">
+        <button type="button" id="close-inbox" class="quiet">Close</button>
+      </div>
+    </dialog>
     <dialog id="help-dialog">
       <h2>Around the town</h2>
+      <p class="muted" id="help-version"></p>
       <p><kbd>0</kbd> All towns</p>
+      <p><kbd>I</kbd> What needs you, across every town</p>
       <p><kbd>1</kbd>–<kbd>5</kbd> Visit agent houses</p>
       <p><kbd>6</kbd> Read the town hall reports</p>
       <p><kbd>7</kbd> Visit Feature Bot’s study</p>

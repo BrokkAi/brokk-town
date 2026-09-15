@@ -61,7 +61,7 @@ export function queueFor(town, role) {
     .filter(
       (t) =>
         t.house === role &&
-        !["closed", "merged", "shipped", "implemented"].includes(t.stage),
+        !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
     )
     .sort(
       (a, b) =>
@@ -84,7 +84,7 @@ export function issueJobDetails(task) {
 export function taskRetryEligible(task) {
   return !!(
     task.blocked &&
-    (task.kind !== "issue" || task.issue_job?.retry_eligible)
+    (task.kind !== "issue" || !task.issue_job || task.issue_job.retry_eligible)
   );
 }
 export function visibleEvents(events, after, town) {
@@ -95,7 +95,7 @@ export function safeURL(value) {
     const u = new URL(value);
     return (
       u.protocol === "https:" &&
-      u.hostname === "github.com" &&
+      Boolean(u.hostname) &&
       !u.username &&
       !u.password &&
       !u.port
@@ -156,10 +156,111 @@ export function townSummary(town) {
     blocked: tasks.filter((t) => t.blocked).length,
     failed: workers.filter((w) => w.status === "failed").length,
     queued: tasks.filter(
-      (t) => !["closed", "merged", "shipped", "implemented"].includes(t.stage),
+      (t) => !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
     ).length,
+    decisions: tasks.filter((t) => t.mayoral_decision === "pending").length,
     release: town.last_release || "No releases yet",
   };
+}
+
+// Why a task waits at Town Hall, in the Mayor's words.  Shared by the
+// inspector and the cross-town inbox so both explain an arrival the same way.
+export function decisionReason(task) {
+  if (task?.audit?.verdict === "changes_needed") return "Town review asked for changes";
+  if (task?.external) return "outside arrival";
+  return "proposed inside Town";
+}
+
+// Task statuses that stop work until an operator looks.  The board's Blocked
+// column, the operations attention count, and the inbox all use this one list.
+export const attentionStatuses = ["blocked", "failed", "inconclusive", "uncertain_write"];
+
+// Everything across every town that waits on a person: pending Mayoral
+// decisions and stuck work.  Oldest first, so the longest wait surfaces on top.
+// Each item names the town and house to open so the caller can navigate
+// straight to the place where the decision or retry lives.
+export function inbox(state) {
+  const decisions = [],
+    attention = [],
+    towns = {};
+  for (const town of Object.values(state?.towns || {})) {
+    if (!town?.id) continue;
+    const repo = town.config?.repo || town.id;
+    const counts = { decisions: 0, attention: 0 };
+    towns[town.id] = counts;
+    const base = (task) => ({
+      town: town.id,
+      repo,
+      task: task.id,
+      house: task.house || "hall",
+      title: task.title || task.id,
+      kind: task.kind || "",
+      number: task.number || 0,
+      updated: task.updated || "",
+    });
+    for (const task of Object.values(town.tasks || {})) {
+      if (!task) continue;
+      if (task.mayoral_decision === "pending") {
+        counts.decisions++;
+        decisions.push({
+          ...base(task),
+          external: !!task.external,
+          reason: decisionReason(task),
+          reviewAgain: task.audit?.verdict === "changes_needed",
+        });
+        continue;
+      }
+      const projected = projectTask(town, task);
+      if (!attentionStatuses.includes(projected.status)) continue;
+      counts.attention++;
+      attention.push({
+        ...base(task),
+        status: projected.status,
+        statusLabel: projected.statusLabel,
+        statusClass: projected.statusClass,
+        detail: task.detail || projected.intent?.detail || "",
+      });
+    }
+    for (const [role, worker] of Object.entries(town.workers || {})) {
+      if (normalized(worker?.status) !== "failed") continue;
+      counts.attention++;
+      attention.push({
+        town: town.id,
+        repo,
+        task: "",
+        house: role,
+        title: `${houseNames[role] || role} failed`,
+        kind: "worker",
+        number: 0,
+        updated: worker.updated || "",
+        status: "failed",
+        statusLabel: taskStatuses.failed.label,
+        statusClass: taskStatuses.failed.className,
+        detail: worker.error || "",
+      });
+    }
+  }
+  const oldestFirst = (a, b) =>
+    (Date.parse(a.updated) || 0) - (Date.parse(b.updated) || 0) ||
+    a.repo.localeCompare(b.repo) ||
+    a.title.localeCompare(b.title);
+  decisions.sort(oldestFirst);
+  attention.sort(oldestFirst);
+  return { decisions, attention, towns, total: decisions.length + attention.length };
+}
+
+// Short relative age for inbox rows.  Go's zero time and unparseable values
+// render as nothing rather than as an absurd number of days.
+export function ago(value, now = Date.now()) {
+  const at = Date.parse(value || "");
+  if (!Number.isFinite(at) || at < Date.UTC(2000, 0, 1)) return "";
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 // These projections deliberately read the persisted snapshot only.  They are
@@ -170,6 +271,8 @@ export const taskStatuses = {
   draft: { label: "Draft", className: "draft" },
   working: { label: "Working", className: "working" },
   queued: { label: "Queued", className: "queued" },
+  awaiting_mayor: { label: "Mayoral decision", className: "waiting-github" },
+  declined: { label: "Declined by Mayor", className: "closed" },
   waiting_github: { label: "Waiting on GitHub", className: "waiting-github" },
   ready: { label: "Ready", className: "ready" },
   blocked: { label: "Blocked", className: "blocked" },
@@ -178,6 +281,7 @@ export const taskStatuses = {
   uncertain_write: { label: "Uncertain write", className: "uncertain-write" },
   unreleased: { label: "Unreleased", className: "unreleased" },
   implemented: { label: "Implemented", className: "implemented" },
+  complete: { label: "Done", className: "complete" },
   closed: { label: "Closed", className: "closed" },
   merged: { label: "Merged", className: "merged" },
   shipped: { label: "Shipped", className: "shipped" },
@@ -200,19 +304,37 @@ export function normalizeView(value) {
 
 export function focusIdentity(target) {
   if (!target) return null;
-  const surface = target.closest?.("#towns, #houses, #journal, #board, #compact")?.id || "";
+  const surface = target.closest?.("#towns, #houses, #journal, #board, #compact, #inbox-list")?.id || "";
   const dataset = target.dataset || {};
-  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || "";
-  const town = dataset.town || dataset.boardTown || dataset.compactTown || "";
+  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
+  const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return surface && key ? { surface, key, town } : null;
 }
 
 export function focusMatches(target, identity) {
   if (!identity || !target) return false;
   const dataset = target.dataset || {};
-  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || "";
-  const town = dataset.town || dataset.boardTown || dataset.compactTown || "";
+  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
+  const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return key === identity.key && (!identity.town || town === identity.town);
+}
+
+// Town-wide wake state for the header controls. Repo-bot is excluded: it is
+// always enabled and never an agent, so it says nothing about whether the
+// operator has authorized real work.
+export function townControls(town) {
+  const agents = Object.values(town?.workers || {}).filter((w) => w.role !== "repo");
+  const awake = agents.filter((w) => w.enabled).length;
+  if (!awake)
+    return { status: "Paused", statusClass: "paused", primary: { action: "start", label: "▶ Wake the town" }, secondary: null };
+  if (awake === agents.length)
+    return { status: `Awake · ${awake} agent${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Ⅱ Pause the town" }, secondary: null };
+  return {
+    status: `Partly awake · ${awake} of ${agents.length}`,
+    statusClass: "partial",
+    primary: { action: "start", label: "▶ Wake the rest" },
+    secondary: { action: "pause", label: "Ⅱ Pause all" },
+  };
 }
 
 export function scheduleLabel(worker, now = Date.now()) {
@@ -225,10 +347,12 @@ export function scheduleLabel(worker, now = Date.now()) {
 }
 
 const terminalStages = new Set([
+  "complete",
   "closed",
   "merged",
   "shipped",
   "implemented",
+  "declined",
 ]);
 const githubWaitingStages = new Set([
   "awaiting_author",
@@ -311,9 +435,9 @@ export function boardColumn(task) {
   const stage = normalized(task?.stage);
   const status = task?.status || stage;
   if (status === "shipped") return "shipped";
-  if (["merged", "closed", "implemented"].includes(status)) return "completed";
+  if (["complete", "merged", "closed", "implemented", "declined"].includes(status)) return "completed";
   if (status === "unreleased") return "ready";
-  if (["blocked", "failed", "inconclusive", "uncertain_write"].includes(status)) return "blocked";
+  if (attentionStatuses.includes(status)) return "blocked";
   if (status === "unknown") return "open";
   if (status === "ready") return "ready";
   if (["waiting_github", "review"].includes(status) || ["awaiting_author", "checks"].includes(stage)) return "review";
@@ -396,11 +520,8 @@ export function projectTown(town) {
     counts,
     active: workers.filter((worker) => worker.active).length,
     failedWorkers: workers.filter((worker) => worker.status === "failed").length,
-    attention: tasks.filter((task) =>
-      ["blocked", "failed", "inconclusive", "uncertain_write"].includes(
-        task.status,
-      ),
-    ).length + workers.filter((worker) => worker.status === "failed").length,
+    attention: tasks.filter((task) => attentionStatuses.includes(task.status)).length +
+      workers.filter((worker) => worker.status === "failed").length,
   };
 }
 

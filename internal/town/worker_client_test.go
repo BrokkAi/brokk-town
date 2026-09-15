@@ -22,14 +22,43 @@ func writeFakeWorker(t *testing.T, path, body string) {
 }
 
 const pythonFakeWorker = `#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
 import socketserver
 
+# Modes (TOWN_WORKER_TEST_MODE):
+#   default  finish the run immediately (protocol v1 fixture).
+#   hang     protocol v1 without detach: block the run until the release file
+#            exists, then finish; honor shutdown only after the run ends.
+#   detach   advertise detach: keep working when the client disconnects,
+#            buffer events, and replay them through GET /v1/attach?after=N.
+MODE = os.environ.get('TOWN_WORKER_TEST_MODE', '')
+RELEASE = os.environ.get('TOWN_WORKER_TEST_RELEASE', '')
+EVENTS = []
+COND = threading.Condition()
+RUN_STARTED = threading.Event()
+RUN_DONE = threading.Event()
+
+def wait_release():
+    while RELEASE and not os.path.exists(RELEASE):
+        time.sleep(0.02)
+
+def publish(event):
+    with COND:
+        EVENTS.append(event)
+        COND.notify_all()
+
+def final_events():
+    return [
+        {'type': 'result', 'seq': 2, 'result': {'issue': {'owned': [{'pr': 7, 'branch': 'town/7', 'issue': 7}]}}},
+        {'type': 'complete', 'seq': 3},
+    ]
+
 class UnixHTTPServer(ThreadingHTTPServer):
     address_family = socket.AF_UNIX
     allow_reuse_address = False
+    daemon_threads = True
     def server_bind(self):
         self.server_path = self.server_address[0]
         self.socket.bind(self.server_path)
@@ -49,21 +78,62 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+    def start_stream(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/x-ndjson')
+        self.send_header('X-Brokk-Worker-Protocol', '1')
+        self.send_header('Connection', 'close')
+        self.end_headers()
+    def emit(self, event):
+        try:
+            self.wfile.write((json.dumps(event, separators=(',', ':')) + '\n').encode())
+            self.wfile.flush()
+            return True
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return False
     def do_GET(self):
+        if self.path.startswith('/v1/attach?after=') and MODE == 'detach':
+            after = int(self.path.split('=', 1)[1])
+            if not RUN_STARTED.is_set():
+                self.send_json(404, {'error': 'no run has been submitted'})
+                return
+            self.start_stream()
+            index = 0
+            while True:
+                with COND:
+                    while index >= len(EVENTS) and not RUN_DONE.is_set():
+                        COND.wait(0.05)
+                    if index >= len(EVENTS):
+                        return
+                    event = EVENTS[index]
+                index += 1
+                if event['seq'] <= after:
+                    continue
+                if not self.emit(event):
+                    return
+                if event['type'] in ('complete', 'error', 'canceled'):
+                    return
         if self.path != '/v1/initialize':
             self.send_error(404)
             return
+        capabilities = ['run', 'progress', 'issue-result', 'exact-issue']
+        if MODE == 'detach':
+            capabilities.append('detach')
         self.send_json(200, {
             'protocol': 1,
             'minimum_protocol': 1,
             'bot': 'issue-bot',
             'version': '9.8.7',
-            'capabilities': ['run', 'progress', 'issue-result'],
+            'capabilities': capabilities,
         })
     def do_POST(self):
         if self.path == '/v1/shutdown':
             self.send_json(202, {'stopping': True})
-            self.server.shutdown()
+            def stop():
+                if RUN_STARTED.is_set():
+                    RUN_DONE.wait()
+                self.server.shutdown()
+            threading.Thread(target=stop, daemon=True).start()
             return
         if self.path != '/v1/runs':
             self.send_error(404)
@@ -73,11 +143,29 @@ class Handler(BaseHTTPRequestHandler):
         capture = os.environ.get('TOWN_WORKER_TEST_CAPTURE')
         if capture:
             with open(capture, 'w') as f: json.dump(request, f)
-        events = [
-            {'type': 'progress', 'seq': 1, 'progress': {'phase': 'investigating', 'task': 'external protocol fixture'}},
-            {'type': 'result', 'seq': 2, 'result': {'issue': {'owned': [{'pr': 7, 'branch': 'town/7', 'issue': 7}]}}},
-            {'type': 'complete', 'seq': 3},
-        ]
+        RUN_STARTED.set()
+        progress = {'type': 'progress', 'seq': 1, 'progress': {'phase': 'investigating', 'task': 'external protocol fixture'}}
+        if MODE in ('hang', 'detach'):
+            # A run that has been accepted always completes its bookkeeping,
+            # however early the Town client disconnects: a detach-capable bot
+            # keeps working and buffering, and every bot must still exit after
+            # shutdown. A socket failure while writing headers must not leave
+            # the run half-recorded.
+            try:
+                try:
+                    self.start_stream()
+                except OSError:
+                    pass
+                publish(progress)
+                self.emit(progress)
+                wait_release()
+                for event in final_events():
+                    publish(event)
+                    self.emit(event)
+            finally:
+                RUN_DONE.set()
+            return
+        events = [progress] + final_events()
         data = ''.join(json.dumps(event, separators=(',', ':')) + '\n' for event in events).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/x-ndjson')
@@ -85,6 +173,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+        RUN_DONE.set()
 
 if len(sys.argv) == 2 and sys.argv[1] == 'version':
     print('9.8.7')
@@ -114,6 +203,7 @@ func TestIssueWorkerUsesVersionedUnixSocketProtocol(t *testing.T) {
 	x.Config.Branch = "main"
 	x.Config.Verify = []string{"go", "test", "./..."}
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent", "--mode=issue"}, Environment: map[string]string{"PRIVATE": "value"}}
+	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
 	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
 	progress := []Progress{}
 	result, err := workers.Run(context.Background(), x, Issue, func(p Progress) { progress = append(progress, p) }, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -135,11 +225,12 @@ func TestIssueWorkerUsesVersionedUnixSocketProtocol(t *testing.T) {
 		Repo     string             `json:"repo"`
 		Verify   []string           `json:"verify"`
 		Agent    runner.AgentConfig `json:"agent"`
+		Issue    int                `json:"issue"`
 	}
 	if err = json.Unmarshal(data, &sent); err != nil {
 		t.Fatal(err)
 	}
-	if sent.Protocol != 1 || sent.Remote != "https://github.com/acme/orchard.git" || sent.Branch != "main" || sent.Repo != "acme/orchard" {
+	if sent.Protocol != 1 || sent.Remote != "https://github.com/acme/orchard.git" || sent.Branch != "main" || sent.Repo != "acme/orchard" || sent.Issue != 7 {
 		t.Fatalf("wrong worker request identity: %+v", sent)
 	}
 	if !reflect.DeepEqual(sent.Agent.Command, []string{"fake-agent", "--mode=issue"}) || sent.Agent.Environment["PRIVATE"] != "value" {
@@ -168,8 +259,9 @@ func TestDefaultWorkersUseExactPinnedNpxPackages(t *testing.T) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TOWN_NPX_CAPTURE", capture)
 	workers := &BotWorkers{}
-	for role, packageSpec := range workerPackages {
-		bot, err := workers.externalBot(context.Background(), role)
+	for role, packageName := range workerPackageNames {
+		packageSpec := packageName + "@" + workerDefaultVersions[role]
+		bot, err := workers.externalBot(context.Background(), Config{}, role)
 		if err != nil {
 			t.Fatalf("resolve %s: %v", role, err)
 		}
@@ -181,21 +273,28 @@ func TestDefaultWorkersUseExactPinnedNpxPackages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, packageSpec := range workerPackages {
+	for role, packageName := range workerPackageNames {
+		packageSpec := packageName + "@" + workerDefaultVersions[role]
 		if !strings.Contains(string(data), "--yes "+packageSpec+" version\n") {
 			t.Fatalf("missing pinned invocation for %s: %s", packageSpec, data)
 		}
+	}
+	custom := Config{BotVersions: map[Role]string{Issue: "9.8.7"}}
+	bot, err := workers.externalBot(context.Background(), custom, Issue)
+	if err != nil || !reflect.DeepEqual(bot.args, []string{"--yes", "@brokkai/issue-bot@9.8.7"}) {
+		t.Fatalf("saved bot pin was not used: %+v %v", bot, err)
 	}
 }
 
 func TestWorkerVersionAndCapabilitiesAreChecked(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "fake-worker")
-	body := strings.Replace(pythonFakeWorker, `['run', 'progress', 'issue-result']`, `['run']`, 1)
+	body := strings.Replace(pythonFakeWorker, `['run', 'progress', 'issue-result', 'exact-issue']`, `['run']`, 1)
 	writeFakeWorker(t, fake, body)
 	store := testStore(t, false)
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
+	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
 	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
 	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), `does not advertise "progress"`) {
@@ -212,6 +311,7 @@ func TestWorkerEventSequenceMustBeContiguous(t *testing.T) {
 	x := addTown(t, store)
 	x.Config.Branch = "main"
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
+	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
 	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
 	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), "event sequence gap") {

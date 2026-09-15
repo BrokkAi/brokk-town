@@ -7,9 +7,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/town"
@@ -122,11 +124,166 @@ func TestUpdateIsOfferedAndInstalledThroughAuthenticatedAPI(t *testing.T) {
 	if installed.StatusCode != http.StatusOK || !called {
 		t.Fatalf("authenticated upgrade failed: status=%d called=%v", installed.StatusCode, called)
 	}
+	var result map[string]any
+	if err := json.NewDecoder(installed.Body).Decode(&result); err != nil || result["restart_required"] != true {
+		t.Fatalf("a service that cannot restart itself must ask for one: %v %v", result, err)
+	}
+
+	// With a restart hook the upgrade restarts in place, and clients can ask
+	// for a restart directly; both are authenticated.
+	restarted := make(chan struct{}, 2)
+	s.Version = "1.0.0"
+	s.Restart = func() { restarted <- struct{}{} }
+	response = call(t, h.URL, http.MethodGet, "/api/state", "", "test-key", "")
+	var versioned struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&versioned); err != nil || versioned.Version != "1.0.0" {
+		t.Fatalf("version missing from public state: %+v %v", versioned, err)
+	}
+	upgraded := call(t, h.URL, http.MethodPost, "/api/update", `{}`, "test-key", "")
+	result = nil
+	if err := json.NewDecoder(upgraded.Body).Decode(&result); err != nil || result["restarting"] != true || result["restart_required"] != nil {
+		t.Fatalf("managed upgrade response: %v %v", result, err)
+	}
+	if call(t, h.URL, http.MethodPost, "/api/restart", `{}`, "", "").StatusCode != http.StatusUnauthorized {
+		t.Fatal("unauthenticated restart accepted")
+	}
+	if call(t, h.URL, http.MethodPost, "/api/restart", `{}`, "test-key", "").StatusCode != http.StatusOK {
+		t.Fatal("restart request rejected")
+	}
+	for i := 0; i < 2; i++ {
+		select {
+		case <-restarted:
+		case <-time.After(3 * time.Second):
+			t.Fatal("restart hook not invoked")
+		}
+	}
+	s.Restart = nil
+	if call(t, h.URL, http.MethodPost, "/api/restart", `{}`, "test-key", "").StatusCode != http.StatusConflict {
+		t.Fatal("restart accepted without a hook")
+	}
+	if page := call(t, h.URL, http.MethodGet, "/", "", "", ""); page.Header.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("embedded assets must revalidate after a restart: %q", page.Header.Get("Cache-Control"))
+	}
+}
+
+func TestPublicStateIncludesServiceVersion(t *testing.T) {
+	s, h := fixture(t)
+	s.Version = "v0.1.2"
+	response := call(t, h.URL, http.MethodGet, "/api/state", "", "test-key", "")
+	var state struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Version != "v0.1.2" {
+		t.Fatalf("service version missing from public state: %+v", state)
+	}
+}
+
+func TestTaskDetailReadsOneLiveIssueOrPR(t *testing.T) {
+	s, h := fixture(t)
+	fake := &fakeTaskGitHub{
+		issue: town.GitHubIssue{Number: 7, Title: "Outside issue", Body: "What should change.", URL: "https://github.com/acme/managed/issues/7", State: "open", Author: "octo", Comments: 4, UpdatedAt: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)},
+	}
+	pull := town.Pull{Number: 8, Title: "Outside PR", Body: "Ready for review.", URL: "https://github.com/acme/managed/pull/8", State: "open", Comments: 2, ReviewComments: 3, Updated: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}
+	pull.User.Login = "contrib"
+	fake.pull = pull
+	s.TaskGitHub = fake
+	if r := call(t, h.URL, "POST", "/api/towns", `{"repo":"acme/managed"}`, "test-key", ""); r.StatusCode != 201 {
+		t.Fatal(r.Status)
+	}
+	addTask := func(id, kind string, number int) {
+		t.Helper()
+		if err := s.Store.Update(func(st *town.State) error {
+			st.Towns["acme/managed"].Tasks[id] = &town.Task{ID: id, Kind: kind, Number: number, Title: id, House: town.Hall, Stage: "awaiting_mayor", MayoralDecision: "pending"}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addTask("issue:7", "issue", 7)
+	addTask("pr:8", "pr", 8)
+	if r := call(t, h.URL, "POST", "/api/task-detail", `{}`, "", ""); r.StatusCode != 401 {
+		t.Fatal("missing authorization")
+	}
+	if r := call(t, h.URL, "POST", "/api/task-detail", `{"town":"acme/managed","task":"issue:7","injected":true}`, "test-key", ""); r.StatusCode != 400 {
+		t.Fatal("not strict")
+	}
+	issueResponse := call(t, h.URL, "POST", "/api/task-detail", `{"town":"ACME/managed","task":"issue:7"}`, "test-key", "")
+	var issue taskDetailResponse
+	if err := json.NewDecoder(issueResponse.Body).Decode(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if issueResponse.StatusCode != 200 || issue.Author != "octo" || issue.Comments != 4 || issue.Body != "What should change." || issue.Truncated {
+		t.Fatalf("live issue detail wrong: status=%d %+v", issueResponse.StatusCode, issue)
+	}
+	prResponse := call(t, h.URL, "POST", "/api/task-detail", `{"town":"acme/managed","task":"pr:8"}`, "test-key", "")
+	var pr taskDetailResponse
+	if err := json.NewDecoder(prResponse.Body).Decode(&pr); err != nil {
+		t.Fatal(err)
+	}
+	if prResponse.StatusCode != 200 || pr.Author != "contrib" || pr.Comments != 2 || pr.ReviewComments != 3 {
+		t.Fatalf("live PR detail wrong: status=%d %+v", prResponse.StatusCode, pr)
+	}
+	if len(fake.calls) != 2 || fake.calls[0] != "issue:acme/managed:7" || fake.calls[1] != "pr:acme/managed:8" {
+		t.Fatalf("unexpected GitHub calls: %v", fake.calls)
+	}
+	for _, tc := range []struct{ body string }{
+		{`{"town":"nope","task":"issue:7"}`},
+		{`{"town":"acme/managed","task":"issue:9"}`},
+		{`{"town":"acme/managed","task":""}`},
+	} {
+		if r := call(t, h.URL, "POST", "/api/task-detail", tc.body, "test-key", ""); r.StatusCode < 400 {
+			t.Fatalf("%s was accepted", tc.body)
+		}
+	}
+	s.TaskGitHub = nil
+	if r := call(t, h.URL, "POST", "/api/task-detail", `{"town":"acme/managed","task":"issue:7"}`, "test-key", ""); r.StatusCode != http.StatusServiceUnavailable {
+		t.Fatal("missing GitHub handle was not reported")
+	}
+}
+
+func TestTaskDetailRefusesDemoTowns(t *testing.T) {
+	s, h := fixtureMode(t, true)
+	s.TaskGitHub = &fakeTaskGitHub{}
+	if r := call(t, h.URL, "POST", "/api/task-detail", `{"town":"acme/demo","task":"issue:1"}`, "test-key", ""); r.StatusCode != http.StatusConflict {
+		t.Fatal("demo live details were not refused")
+	}
+}
+
+func TestTruncateTaskDetailBodyKeepsRunesIntact(t *testing.T) {
+	long := strings.Repeat("é", maxTaskDetailBody)
+	body, truncated := truncateTaskDetailBody(long)
+	if !truncated || len(body) > maxTaskDetailBody || !utf8.ValidString(body) {
+		t.Fatalf("multibyte body truncated wrong: bytes=%d truncated=%v", len(body), truncated)
+	}
+	if body, truncated := truncateTaskDetailBody("short"); truncated || body != "short" {
+		t.Fatal("short body changed")
+	}
+}
+
+type fakeTaskGitHub struct {
+	issue town.GitHubIssue
+	pull  town.Pull
+	calls []string
+}
+
+func (f *fakeTaskGitHub) Issue(_ context.Context, repo string, number int) (town.GitHubIssue, error) {
+	f.calls = append(f.calls, "issue:"+repo+":"+strconv.Itoa(number))
+	return f.issue, nil
+}
+
+func (f *fakeTaskGitHub) Pull(_ context.Context, repo string, number int) (town.Pull, error) {
+	f.calls = append(f.calls, "pr:"+repo+":"+strconv.Itoa(number))
+	return f.pull, nil
 }
 
 func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
 	s, h := fixture(t)
-	for _, path := range []string{"/api/settings", "/api/choices", "/api/requests", "/api/requests/check", "/api/harnesses/refresh"} {
+	for _, path := range []string{"/api/settings", "/api/choices", "/api/requests", "/api/requests/check", "/api/harnesses/refresh", "/api/task-detail"} {
 		if r := call(t, h.URL, "POST", path, `{}`, "", ""); r.StatusCode != 401 {
 			t.Fatal(path, "missing authorization")
 		}
@@ -146,8 +303,9 @@ func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
 	if config.Agent.Model != "chosen" || config.Agent.Effort != "low" || config.Agent.Command[1] != "private-argument" {
 		t.Fatal(config)
 	}
-	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"all"}`, "test-key", "")
-	if r.StatusCode != http.StatusOK || s.Store.Snapshot().Towns["acme/managed"].Config.MergePolicy != "all" {
+	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"all","mayoral_feature_review":false}`, "test-key", "")
+	updatedConfig := s.Store.Snapshot().Towns["acme/managed"].Config
+	if r.StatusCode != http.StatusOK || updatedConfig.MergePolicy != "all" || updatedConfig.ReviewsFeaturesWithMayor() {
 		t.Fatal("merge policy was not updated")
 	}
 	r = call(t, h.URL, "POST", "/api/settings", `{"town":"acme/managed","agent":{},"merge_policy":"unsafe"}`, "test-key", "")

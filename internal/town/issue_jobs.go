@@ -93,17 +93,6 @@ func (b *BotWorkers) SyncIssues(t *Town) error {
 	})
 }
 
-func (b *BotWorkers) RetryIssue(t *Town, number int) error {
-	b.issueMu.Lock()
-	defer b.issueMu.Unlock()
-	c := b.issueConfig(t)
-	c.Issue = number
-	if err := issuebot.Retry(c); err != nil {
-		return err
-	}
-	return nil
-}
-
 func issueJobDetail(job *issuebot.Job) string {
 	if job.Result != nil && strings.TrimSpace(job.Result.Detail) != "" {
 		return job.Result.Detail

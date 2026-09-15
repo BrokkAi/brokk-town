@@ -22,6 +22,10 @@ import {
   focusIdentity,
   focusMatches,
   scheduleLabel,
+  townControls,
+  inbox,
+  ago,
+  decisionReason,
 } from "./town.js";
 import { registerTownTools } from "./tools.js";
 test("deliveries resume after cursor and stay in their repository", () => {
@@ -98,6 +102,7 @@ test("queue and overview report blocked and waiting work", () => {
       a: { house: "issue", stage: "fixes", blocked: true, number: 2 },
       b: { house: "issue", stage: "queued", number: 1 },
       c: { house: "release", stage: "shipped" },
+      d: { house: "issue", stage: "complete" },
     },
     workers: { bug: { status: "working" }, review: { status: "failed" } },
     last_release: "v1",
@@ -111,14 +116,84 @@ test("queue and overview report blocked and waiting work", () => {
     blocked: 1,
     failed: 1,
     queued: 2,
+    decisions: 0,
     release: "v1",
   });
 });
-test("task links only open normal GitHub URLs", () => {
+test("inbox gathers decisions and stuck work from every town, longest wait first", () => {
+  const state = {
+    towns: {
+      "acme/later": {
+        id: "acme/later",
+        config: { repo: "acme/later" },
+        workers: { review: { status: "failed", error: "gh exploded", updated: "2026-09-15T08:00:00Z" } },
+        tasks: {
+          "pr:9": { id: "pr:9", kind: "pr", number: 9, title: "Newer contributor PR", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", external: true, updated: "2026-09-15T09:00:00Z" },
+          "pr:4": { id: "pr:4", kind: "pr", number: 4, title: "Merge looked uncertain", house: "release", stage: "ready", updated: "2026-09-14T10:00:00Z" },
+          "issue:5": { id: "issue:5", kind: "issue", number: 5, title: "Already admitted", house: "issue", stage: "queued", mayoral_decision: "admitted", updated: "2026-09-15T09:30:00Z" },
+        },
+        intents: { 4: { status: "uncertain", detail: "Merge response was lost" } },
+      },
+      "acme/earlier": {
+        id: "acme/earlier",
+        config: { repo: "acme/earlier" },
+        workers: { issue: { status: "working" } },
+        tasks: {
+          "issue:7": { id: "issue:7", kind: "issue", number: 7, title: "Older proposal", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", updated: "2026-09-13T12:00:00Z" },
+          "pr:8": { id: "pr:8", kind: "pr", number: 8, title: "Review asked for changes", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", external: true, audit: { verdict: "changes_needed", summary: "", findings: [] }, updated: "2026-09-14T12:00:00Z" },
+          "issue:1": { id: "issue:1", kind: "issue", number: 1, title: "Stuck repair", house: "issue", stage: "fixes", blocked: true, updated: "2026-09-12T12:00:00Z" },
+          "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Declined earlier", house: "hall", stage: "declined", mayoral_decision: "declined", blocked: true },
+        },
+      },
+    },
+  };
+  const needs = inbox(state);
+  assert.deepEqual(
+    needs.decisions.map((item) => [item.town, item.task, item.reason, item.reviewAgain]),
+    [
+      ["acme/earlier", "issue:7", "proposed inside Town", false],
+      ["acme/earlier", "pr:8", "Town review asked for changes", true],
+      ["acme/later", "pr:9", "outside arrival", false],
+    ],
+    "decisions come from every town, oldest first, and skip admitted or declined work",
+  );
+  assert.deepEqual(
+    needs.attention.map((item) => [item.town, item.house, item.task, item.status]),
+    [
+      ["acme/earlier", "issue", "issue:1", "blocked"],
+      ["acme/later", "release", "pr:4", "uncertain_write"],
+      ["acme/later", "review", "", "failed"],
+    ],
+    "stuck tasks and failed workers each point at the house to inspect",
+  );
+  assert.equal(needs.attention[1].detail, "Merge response was lost");
+  assert.equal(needs.attention[2].detail, "gh exploded");
+  assert.deepEqual(needs.towns, {
+    "acme/later": { decisions: 1, attention: 2 },
+    "acme/earlier": { decisions: 2, attention: 1 },
+  });
+  assert.equal(needs.total, 6);
+  assert.deepEqual(inbox(null), { decisions: [], attention: [], towns: {}, total: 0 });
+  assert.equal(decisionReason({ external: true, audit: { verdict: "changes_needed" } }), "Town review asked for changes");
+  const now = Date.parse("2026-09-15T12:00:00Z");
+  assert.equal(ago("2026-09-15T11:59:40Z", now), "just now");
+  assert.equal(ago("2026-09-15T11:35:00Z", now), "25m ago");
+  assert.equal(ago("2026-09-15T02:00:00Z", now), "10h ago");
+  assert.equal(ago("2026-09-10T12:00:00Z", now), "5d ago");
+  assert.equal(ago("0001-01-01T00:00:00Z", now), "", "Go's zero time is not an age");
+  assert.equal(ago("", now), "");
+  assert.deepEqual(
+    focusIdentity({ closest: () => ({ id: "inbox-list" }), dataset: { inboxKey: "admit:pr:8", inboxTown: "acme/earlier" } }),
+    { surface: "inbox-list", key: "admit:pr:8", town: "acme/earlier" },
+    "inbox buttons keep focus across snapshot redraws",
+  );
+});
+test("task links only open normal provider HTTPS URLs", () => {
   assert.equal(safeURL("https://github.com/acme/a/pull/3"), true);
+  assert.equal(safeURL("https://app.slack.com/client/T1/C1/thread-2"), true);
+  assert.equal(safeURL("https://linear.app/acme/issue/ABC-1"), true);
   for (const url of [
     "javascript:alert(1)",
-    "https://evil.test",
     "https://github.com@evil.test",
     "https://evil@github.com",
     "https://github.com:444/a",
@@ -176,8 +251,9 @@ test("blocked issue jobs expose attention, attempts, and recovery guidance", () 
   assert.equal(townSummary(t).queued, 1);
   assert.deepEqual(queueFor(t, "issue").map((task) => task.number), [1]);
 });
-test("retry is limited to eligible issues while preserving PR recovery", () => {
-  assert.equal(taskRetryEligible({ kind: "issue", blocked: true }), false);
+test("retry preserves funnel and PR recovery while respecting durable issue jobs", () => {
+  assert.equal(taskRetryEligible({ kind: "issue", blocked: true }), true);
+  assert.equal(taskRetryEligible({ kind: "issue", blocked: true, issue_job: { retry_eligible: false } }), false);
   assert.equal(taskRetryEligible({ kind: "pr", blocked: true }), true);
   assert.equal(taskRetryEligible({ kind: "pr", blocked: false }), false);
   assert.deepEqual(issueJobDetails({ kind: "pr" }), []);
@@ -207,6 +283,7 @@ test("operations projection preserves distinct persisted task outcomes", () => {
       uncertain: { id: "uncertain", kind: "pr", title: "Uncertain", house: "issue", stage: "queued", number: 5 },
       github: { id: "github", title: "GitHub", house: "review", stage: "awaiting_author" },
       work: { id: "work", title: "Working", house: "issue", stage: "fixes" },
+      done: { id: "done", title: "Done", house: "issue", stage: "complete" },
     },
   };
   assert.equal(taskStatus(town, town.tasks.blocked), "blocked");
@@ -215,18 +292,21 @@ test("operations projection preserves distinct persisted task outcomes", () => {
   assert.equal(taskStatus(town, town.tasks.uncertain), "uncertain_write");
   assert.equal(taskStatus(town, town.tasks.github), "waiting_github");
   assert.equal(taskStatus(town, town.tasks.work), "queued");
+  assert.equal(taskStatus(town, town.tasks.done), "complete");
+  assert.equal(queueFor(town, "issue").some((task) => task.id === "done"), false);
   assert.equal(workerProfile(town, "issue", town.workers.issue).model, "active-model");
   assert.equal(workerProfile(town, "review", town.workers.review).model, "queued-model");
   const projection = projectTown(town);
   assert.equal(projection.attention, 4);
   assert.deepEqual(
     projection.tasks.map((task) => task.status),
-    ["blocked", "uncertain_write", "inconclusive", "failed", "queued", "waiting_github"],
+    ["blocked", "uncertain_write", "inconclusive", "failed", "queued", "waiting_github", "complete"],
   );
   assert.equal(projectState({ towns: { [town.id]: town } }, town.id).selected.town, town);
   assert.equal(projectTask(town, town.tasks.github).statusLabel, "Waiting on GitHub");
   assert.equal(boardColumn(projectTask(town, { ...town.tasks.github, stage: "shipped" })), "shipped");
   assert.equal(boardColumn(projectTask(town, { ...town.tasks.github, stage: "merged" })), "completed");
+  assert.equal(boardColumn(projectTask(town, town.tasks.done)), "completed");
   assert.equal(boardColumn(projectTask(town, { ...town.tasks.github, stage: "mystery" })), "open");
 });
 test("view and focus projections tolerate reconnect redraws", () => {
@@ -293,4 +373,23 @@ test("optional tools validate input and use the visible navigation", async () =>
       () => {},
     ),
   );
+});
+
+test("townControls reports the town's wake state and offers the matching action", () => {
+  const agents = (enabled) => Object.fromEntries(
+    ["bug", "feature", "issue", "review", "release"].map((role, i) => [role, { role, enabled: enabled[i] }]),
+  );
+  const paused = townControls({ workers: { ...agents([false, false, false, false, false]), repo: { role: "repo", enabled: true } } });
+  assert.equal(paused.status, "Paused", "repo-bot being enabled does not count as awake");
+  assert.deepEqual(paused.primary, { action: "start", label: "▶ Wake the town" });
+  assert.equal(paused.secondary, null);
+  const awake = townControls({ workers: agents([true, true, true, true, true]) });
+  assert.equal(awake.status, "Awake · 5 agents");
+  assert.deepEqual(awake.primary, { action: "pause", label: "Ⅱ Pause the town" });
+  assert.equal(awake.secondary, null);
+  const partial = townControls({ workers: agents([true, false, true, false, false]) });
+  assert.equal(partial.status, "Partly awake · 2 of 5");
+  assert.deepEqual(partial.primary, { action: "start", label: "▶ Wake the rest" });
+  assert.deepEqual(partial.secondary, { action: "pause", label: "Ⅱ Pause all" });
+  assert.equal(townControls(null).status, "Paused");
 });

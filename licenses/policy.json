@@ -11,9 +11,9 @@
       }
     },
     "github.com/BrokkAi/issue-bot": {
-      "version": "v0.5.1",
+      "version": "v0.5.2",
       "license": "Apache-2.0",
-      "source": "https://github.com/BrokkAi/issue-bot/tree/v0.5.1",
+      "source": "https://github.com/BrokkAi/issue-bot/tree/v0.5.2",
       "files": {
         "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
         "NOTICE": "66ab3c6f17b5523f7406676c3288e9cf14856ef5b4758faec8c3939b0c4b9444"

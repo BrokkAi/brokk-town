@@ -17,6 +17,11 @@ import (
 func TestCapacityCLIPostsRequiredBoundedLimit(t *testing.T) {
 	seen := make(chan town.ServiceConfig, 1)
 	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/state" && r.Method == http.MethodGet {
+			// The CLI probes a running service before every command.
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/api/capacity" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -29,7 +34,7 @@ func TestCapacityCLIPostsRequiredBoundedLimit(t *testing.T) {
 	}))
 	defer h.Close()
 	dir := t.TempDir()
-	conn, _ := json.Marshal(connection{URL: h.URL, Token: "test-key"})
+	conn, _ := json.Marshal(connection{URL: h.URL, Token: "test-key", PID: os.Getpid()})
 	if err := os.WriteFile(filepath.Join(dir, "connection.json"), conn, 0600); err != nil {
 		t.Fatal(err)
 	}

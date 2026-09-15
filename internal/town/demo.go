@@ -20,6 +20,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 		for _, repo := range []string{"BrokkAi/orchard", "BrokkAi/paper-trail"} {
 			c := DefaultConfig(repo)
 			c.Branch = "main"
+			c.Funnels = FunnelConfigs{{ID: "demo-github", Provider: "github", Location: SourceLocation{"repository": repo}, Enabled: true, PriorityPolicy: "demo-explicit", ReadOnly: true}, {ID: "demo-slack", Provider: "slack", Location: SourceLocation{"channel": "CDEMO"}, Enabled: true, PriorityPolicy: "demo-explicit", ReadOnly: true}}
 			t, _ := s.Add(c)
 			t.Initialized = true
 			t.Head = strings.Repeat("a", 40)
@@ -32,6 +33,15 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 			t.Report("A good morning in orchard", "The town is awake. Bug and feature investigations are underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
 			if repo == "BrokkAi/orchard" {
 				seedDemoBoard(s, t, time.Now())
+				now := time.Now()
+				id := WorkIdentity{Funnel: "demo-slack", Provider: "slack", Item: "1712345678.000100"}
+				item := WorkItem{Identity: id, Title: "Investigate the customer import report", Body: "Synthetic Slack intake for demo mode.", Status: WorkQueued, Eligible: true, Eligibility: "matched demo channel marker", Priority: Priority{Value: 20, Policy: "demo-explicit", Reason: "operator-set example"}, Provenance: Provenance{Identity: id, URL: "https://app.slack.com/client/TDEMO/CDEMO/thread", Revision: "demo-r1", ObservedAt: now, ExternalState: "message"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
+				doneSlackID := WorkIdentity{Funnel: "demo-slack", Provider: "slack", Item: "1712345678.000200"}
+				doneSlack := WorkItem{Identity: doneSlackID, Title: "Document the import workaround", Body: "Synthetic Slack item carrying a check-mark reaction.", Status: WorkComplete, Eligible: false, Eligibility: "done reaction observed at source", Priority: Priority{Policy: "demo-explicit"}, Provenance: Provenance{Identity: doneSlackID, URL: "https://app.slack.com/client/TDEMO/CDEMO/done", Revision: "demo-r2", ObservedAt: now, ExternalState: "message"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
+				_ = ReconcileFunnelPage(s, t, DiscoveryPage{Funnel: "demo-slack", Provider: "slack", Items: []WorkItem{item, doneSlack}, Complete: true, Outcome: Outcome{Kind: OutcomeComplete, Covered: true}, ObservedAt: now}, now)
+				doneGitHubID := WorkIdentity{Funnel: "demo-github", Provider: "github", Item: "706"}
+				doneGitHub := WorkItem{Identity: doneGitHubID, Title: "Retire the legacy import endpoint", Status: WorkClosed, Eligible: false, Eligibility: "issue is closed at source", Priority: Priority{Policy: "demo-explicit"}, Provenance: Provenance{Identity: doneGitHubID, URL: "https://github.com/BrokkAi/orchard/issues/706", Revision: "demo-r3", ObservedAt: now, ExternalState: "closed"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
+				_ = ReconcileFunnelPage(s, t, DiscoveryPage{Funnel: "demo-github", Provider: "github", Items: []WorkItem{doneGitHub}, Complete: true, Outcome: Outcome{Kind: OutcomeComplete, Covered: true}, ObservedAt: now}, now)
 			} else {
 				t.Workers[Repo].Status = "failed"
 				t.Workers[Repo].Error = "Demo inventory is waiting for an operator retry"
@@ -151,16 +161,16 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 					s.Event(t.ID, "activity", "feature", "feature", "", "Feature-bot is researching a useful new capability", now)
 				case 10:
 					id := fmt.Sprintf("issue:%d", number+900)
-					t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 900, Title: "Save reusable report views", House: Issue, Stage: "queued", Updated: now, Detail: "Let operators save filters as named views. Acceptance: create, select, rename and delete views; restore the selected view after restart."}
-					s.Event(t.ID, "delivery", "feature", "issue", id, "Feature-bot filed an independently reviewed proposal", now)
+					t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 900, Title: "Save reusable report views", House: Hall, Stage: "awaiting_mayor", MayoralDecision: "pending", Updated: now, Detail: "Let operators save filters as named views. Acceptance: create, select, rename and delete views; restore the selected view after restart."}
+					s.Event(t.ID, "delivery", "feature", "hall", id, "Feature-bot brought a proposal to the Mayor", now)
 					t.Workers[Feature].Task = "Proposal filed; waiting for the next research session"
 				case 8:
 					id := fmt.Sprintf("issue:%d", number+500)
-					t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 500, Title: "Support a custom report schedule", House: Issue, Stage: "queued", External: true, Updated: now}
-					s.Event(t.ID, "delivery", "outside", "issue", id, "An external issue arrived by truck", now)
+					t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 500, Title: "Support a custom report schedule", House: Hall, Stage: "awaiting_mayor", MayoralDecision: "pending", External: true, Updated: now}
+					s.Event(t.ID, "delivery", "outside", "hall", id, "An external issue arrived for a Mayoral decision", now)
 					external := fmt.Sprintf("pr:%d", number+700)
-					t.Tasks[external] = &Task{ID: external, Kind: "pr", Number: number + 700, Title: "Clarify setup instructions", House: Review, Stage: "awaiting_author", External: true, Updated: now}
-					s.Event(t.ID, "delivery", "outside", "review", external, "A contributor PR arrived at review-bot", now)
+					t.Tasks[external] = &Task{ID: external, Kind: "pr", Number: number + 700, Title: "Clarify setup instructions", House: Hall, Stage: "awaiting_mayor", MayoralDecision: "pending", External: true, Updated: now}
+					s.Event(t.ID, "delivery", "outside", "hall", external, "A contributor PR arrived for a Mayoral decision", now)
 				}
 				for _, w := range t.Workers {
 					w.Updated = now

@@ -21,6 +21,9 @@ type Store struct {
 	changed chan struct{}
 }
 
+// ErrServiceRunning means another process holds this state directory's lock.
+var ErrServiceRunning = errors.New("another town service is running")
+
 func Open(dir string, demo bool) (*Store, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
@@ -31,7 +34,7 @@ func Open(dir string, demo bool) (*Store, error) {
 	}
 	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return nil, fmt.Errorf("another town service is running: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrServiceRunning, err)
 	}
 	s := &Store{state: NewState(demo), path: filepath.Join(dir, "state.json"), lock: f, changed: make(chan struct{})}
 	b, err := os.ReadFile(s.path)
@@ -57,6 +60,14 @@ func Open(dir string, demo bool) (*Store, error) {
 						t.Workers[Feature] = &Worker{Role: Feature, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
 					}
 				}
+				if t != nil {
+					if t.FunnelIntents == nil {
+						t.FunnelIntents = map[string]*WriteIntent{}
+					}
+					if t.FunnelSyncs == nil {
+						t.FunnelSyncs = map[FunnelID]*FunnelSync{}
+					}
+				}
 			}
 			err = validateState(s.state, demo)
 		}
@@ -65,9 +76,17 @@ func Open(dir string, demo bool) (*Store, error) {
 		s.Close()
 		return nil, fmt.Errorf("read town state: %w", err)
 	}
-	// Worker processes cannot survive a service restart; durable intents can.
+	// External bot processes outlive a service restart; their handles stay so
+	// the supervisor can reconnect before it schedules anything new. Every other
+	// worker returns to its scheduled state, and durable intents are kept.
 	for _, t := range s.state.Towns {
 		for _, w := range t.Workers {
+			if w.Run != nil && !t.Deleted {
+				w.Status = "working"
+				w.Phase = "reconnecting"
+				w.Task = "Reconnecting to " + w.Run.Bot + " " + w.Run.Version + " started before the service restarted"
+				continue
+			}
 			w.Agent = nil
 			if w.Enabled {
 				w.Status = "waiting"
@@ -100,10 +119,22 @@ func validateState(s State, demo bool) error {
 			if t.Workers[r] == nil || t.Workers[r].Role != r {
 				return errors.New("missing worker")
 			}
+			if err := t.Workers[r].Run.Validate(r); err != nil {
+				return err
+			}
 		}
 		for key, task := range t.Tasks {
 			if task == nil || task.ID != key || !ValidRole(task.House) || task.Cycles < 0 || task.Attempts < 0 || (task.Head != "" && !SHA(task.Head)) || (task.Base != "" && !SHA(task.Base)) {
 				return errors.New("invalid task identity or revision")
+			}
+			if task.MayoralDecision != "" && task.MayoralDecision != "pending" && task.MayoralDecision != "admitted" && task.MayoralDecision != "declined" {
+				return errors.New("invalid Mayoral decision")
+			}
+			if task.MayoralDecision == "pending" && (task.House != Hall || task.Stage != "awaiting_mayor") {
+				return errors.New("pending Mayoral decision left Town Hall")
+			}
+			if task.MayoralDecision == "declined" && (task.House != Hall || task.Stage != "declined") {
+				return errors.New("declined Mayoral decision is not final")
 			}
 			switch task.Kind {
 			case "issue", "pr":
@@ -113,6 +144,10 @@ func validateState(s State, demo bool) error {
 			case "commit":
 				if !SHA(task.Head) || key != "commit:"+task.Head {
 					return errors.New("invalid commit identity")
+				}
+			case "source":
+				if task.Source == nil || key != "source:"+task.Source.Identity.Key() {
+					return errors.New("invalid source task identity")
 				}
 			default:
 				return errors.New("invalid task kind")
@@ -124,6 +159,11 @@ func validateState(s State, demo bool) error {
 				}
 				if !SHA(a.Base) || !SHA(a.Head) || validateAudit(a, evidence) != nil {
 					return errors.New("invalid saved audit")
+				}
+			}
+			if task.Source != nil {
+				if err := task.Source.Validate(); err != nil {
+					return errors.New("invalid funnel task")
 				}
 			}
 		}
@@ -152,6 +192,16 @@ func validateState(s State, demo bool) error {
 			}
 			if i.Kind == "repair" && (!SHA(i.NewHead) || i.Branch == "" || !filepath.IsAbs(i.Directory)) {
 				return errors.New("invalid saved repair")
+			}
+		}
+		for key, i := range t.FunnelIntents {
+			if i == nil || i.ID != key || i.Validate() != nil {
+				return errors.New("invalid funnel write intent")
+			}
+		}
+		for key, sync := range t.FunnelSyncs {
+			if sync == nil || sync.Funnel != key || sync.Provider == "" || sync.Outcome.Validate() != nil {
+				return errors.New("invalid funnel sync")
 			}
 		}
 	}

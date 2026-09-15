@@ -52,7 +52,11 @@ func tui(ctx context.Context, c connection) error {
 	defer fmt.Print("\x1b[0m\x1b[?25h\x1b[?2004l\x1b[?1049l")
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	snapshots := make(chan town.State, 1)
+	type tuiSnapshot struct {
+		town.State
+		Version string `json:"version"`
+	}
+	snapshots := make(chan tuiSnapshot, 1)
 	messages := make(chan string, 4)
 	commands := make(chan map[string]string, 4)
 	upgrades := make(chan struct{}, 1)
@@ -62,7 +66,7 @@ func tui(ctx context.Context, c connection) error {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
-			var state town.State
+			var state tuiSnapshot
 			err := request(ctx, c, "GET", "/api/state", nil, &state)
 			if err != nil {
 				select {
@@ -90,11 +94,13 @@ func tui(ctx context.Context, c connection) error {
 				default:
 				}
 			case <-upgrades:
-				var result any
+				var result map[string]any
 				err := request(ctx, c, "POST", "/api/update", map[string]any{}, &result)
 				message := "Town upgraded · restart the service to use it"
 				if err != nil {
 					message = err.Error()
+				} else if result["restarting"] == true {
+					message = "Town upgraded · service restarting"
 				}
 				select {
 				case messages <- message:
@@ -112,6 +118,7 @@ func tui(ctx context.Context, c connection) error {
 		}
 	}()
 	var state town.State
+	var serviceVersion string
 	selectedTown, selectedRole := 0, 0
 	overview := true
 	message := "Connecting to town service…"
@@ -126,7 +133,8 @@ func tui(ctx context.Context, c connection) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case v := <-snapshots:
-			state = v
+			state = v.State
+			serviceVersion = v.Version
 			message = ""
 		case m := <-messages:
 			message = m
@@ -239,7 +247,7 @@ func tui(ctx context.Context, c connection) error {
 		if pendingDelete != "" {
 			status = "Delete " + pendingDelete + "? y / n (GitHub stays intact)"
 		}
-		frame := renderTUI(state, selectedTown, role, width, height, status)
+		frame := renderTUI(state, serviceVersion, selectedTown, role, width, height, status)
 		if frame != last {
 			if _, err = fmt.Print("\x1b[H" + strings.ReplaceAll(frame, "\n", "\x1b[K\r\n") + "\x1b[K\x1b[J"); err != nil {
 				return err
@@ -264,7 +272,7 @@ func displayWorker(t *town.Town, role town.Role) *town.Worker {
 	return &town.Worker{Role: role, Status: "unavailable", Task: "Restart the town service to use this worker"}
 }
 
-func renderTUI(s town.State, townIndex, roleIndex, width, height int, message string) string {
+func renderTUI(s town.State, version string, townIndex, roleIndex, width, height int, message string) string {
 	width = max(1, width)
 	height = max(1, height)
 	lines := []string{}
@@ -279,7 +287,11 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 	} else if s.ServiceConfig.MaxWorkers > 0 {
 		limit = s.ServiceConfig.MaxWorkers
 	}
-	add(fmt.Sprintf(" BROKK TOWN                         %d/%d workers   %s", active, limit, mode))
+	title := "BROKK TOWN"
+	if version != "" {
+		title += " " + version
+	}
+	add(fmt.Sprintf(" %s   %d/%d workers   %s", title, active, limit, mode))
 	add(strings.Repeat("─", width))
 	ids := townIDs(s)
 	if len(ids) == 0 {
@@ -303,12 +315,18 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 				if task.Blocked {
 					blocked++
 				}
-				if task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
+				if task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" && task.Stage != "declined" {
 					queued++
 				}
 			}
 			add(" " + t.Config.Repo)
-			add(fmt.Sprintf("   %d working · %d queued · %d need attention · %s", busy, queued, blocked, t.LastRelease))
+			mayoral := 0
+			for _, task := range t.Tasks {
+				if task.MayoralDecision == "pending" {
+					mayoral++
+				}
+			}
+			add(fmt.Sprintf("   %d working · %d queued · %d Mayoral decisions · %d need attention · %s", busy, queued, mayoral, blocked, t.LastRelease))
 			if t.Error != "" {
 				add("   " + t.Error)
 			}
@@ -333,12 +351,23 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 		add("")
 		r := town.Roles[roleIndex]
 		add(" AT " + strings.ToUpper(string(r)) + "'S DOOR")
+		if r == town.Issue || r == town.Repo {
+			funnelIDs := make([]string, 0, len(t.FunnelSyncs))
+			for id := range t.FunnelSyncs {
+				funnelIDs = append(funnelIDs, string(id))
+			}
+			sort.Strings(funnelIDs)
+			for _, id := range funnelIDs {
+				sync := t.FunnelSyncs[town.FunnelID(id)]
+				add(fmt.Sprintf("   source %-14s %-10s %s", id, sync.Provider, sync.Outcome.Kind))
+			}
+		}
 		if r != town.Repo {
 			add(fmt.Sprintf(" Configure: bt settings --repo %s --role %s", t.Config.Repo, r))
 		}
 		tasks := []*town.Task{}
 		for _, task := range t.Tasks {
-			if task.House == r && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" {
+			if task.House == r && task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" && task.Stage != "declined" {
 				tasks = append(tasks, task)
 			}
 		}
@@ -353,7 +382,11 @@ func renderTUI(s town.State, townIndex, roleIndex, width, height int, message st
 				add(fmt.Sprintf("   … %d more queued", len(tasks)-i))
 				break
 			}
-			add(fmt.Sprintf("   %-18s %s", task.Stage, task.Title))
+			source := ""
+			if task.Source != nil {
+				source = fmt.Sprintf(" [%s/%s; %s]", task.Source.Identity.Provider, task.Source.Identity.Funnel, task.Source.Priority.Policy)
+			}
+			add(fmt.Sprintf("   %-18s %s%s", task.Stage, task.Title, source))
 			if task.Blocked {
 				add("     " + task.Detail)
 				if task.IssueJob != nil {

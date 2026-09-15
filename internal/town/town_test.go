@@ -10,8 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
+
+	issuebot "github.com/BrokkAi/issue-bot"
 )
 
 var baseSHA = strings.Repeat("a", 40)
@@ -145,7 +148,7 @@ func TestReconcileArrivalsRevisionAndReleaseAncestry(t *testing.T) {
 			routes[e.Cargo] = e.From + ">" + e.To
 		}
 	}
-	if routes["issue:3"] != "outside>issue" || routes["issue:4"] != "bug>issue" || routes["issue:6"] != "feature>issue" || routes["pr:5"] != "issue>review" || x.Tasks["issue:6"].External {
+	if routes["issue:3"] != "outside>hall" || routes["issue:4"] != "bug>issue" || routes["issue:6"] != "feature>hall" || routes["pr:5"] != "issue>review" || x.Tasks["issue:6"].External {
 		t.Fatal(routes)
 	}
 	task := x.Tasks["pr:5"]
@@ -296,6 +299,269 @@ func (f workerFunc) Run(c context.Context, t *Town, r Role, p func(Progress), l 
 	return f(c, t, r, p, l)
 }
 
+type issueRetryWorker struct {
+	root    string
+	entered chan int
+	mu      sync.Mutex
+	active  bool
+	runs    int
+}
+
+func (w *issueRetryWorker) Run(ctx context.Context, t *Town, role Role, _ func(Progress), _ *slog.Logger) (RunResult, error) {
+	if role != Issue {
+		return RunResult{}, fmt.Errorf("unexpected role %s", role)
+	}
+	_, state := Workspace(w.root, t.ID, Issue)
+	if err := os.MkdirAll(state, 0700); err != nil {
+		return RunResult{}, err
+	}
+	lock, err := os.OpenFile(filepath.Join(state, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return RunResult{}, err
+	}
+	defer lock.Close()
+	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return RunResult{}, err
+	}
+	w.mu.Lock()
+	w.active = true
+	w.runs++
+	run := w.runs
+	w.mu.Unlock()
+	w.entered <- run
+	<-ctx.Done()
+	_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	w.mu.Lock()
+	w.active = false
+	w.mu.Unlock()
+	return RunResult{}, ctx.Err()
+}
+
+func (w *issueRetryWorker) RetryIssue(t *Town, issue int) error {
+	w.mu.Lock()
+	active := w.active
+	w.mu.Unlock()
+	if active {
+		return errors.New("retry overlapped the active issue worker")
+	}
+	return (&BotWorkers{Root: w.root}).RetryIssue(t, issue)
+}
+
+func (w *issueRetryWorker) CanRetryIssue(t *Town, issue int) (bool, error) {
+	return (&BotWorkers{Root: w.root}).CanRetryIssue(t, issue)
+}
+
+type failingIssueRetrier struct {
+	workerFunc
+	inspectErr error
+	retryErr   error
+}
+
+func (w failingIssueRetrier) CanRetryIssue(*Town, int) (bool, error) {
+	return true, w.inspectErr
+}
+func (w failingIssueRetrier) RetryIssue(*Town, int) error { return w.retryErr }
+
+func blockedIssueTown(t *testing.T, s *Store) *Town {
+	t.Helper()
+	x := addTown(t, s)
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		town.Initialized = true
+		town.Workers[Repo].Enabled = false
+		town.Workers[Issue].Enabled = true
+		town.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Issue 7", Stage: "queued", House: Issue, Blocked: true, Attempts: 3, RetryAt: time.Now().Add(time.Hour), Updated: time.Now()}
+	})
+	return x
+}
+
+func TestIssueRetryWithoutDurableJobDoesNotStopActiveWorker(t *testing.T) {
+	s := testStore(t, false)
+	x := blockedIssueTown(t, s)
+	workers := &issueRetryWorker{root: t.TempDir(), entered: make(chan int, 2)}
+	sup := NewSupervisor(s, newGH(1), workers)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- sup.Run(ctx) }()
+	if run := <-workers.entered; run != 1 {
+		t.Fatalf("first run = %d", run)
+	}
+
+	if err := sup.Control(x.ID, Issue, "retry", "issue:7"); err != nil {
+		t.Fatal(err)
+	}
+	workers.mu.Lock()
+	active, runs := workers.active, workers.runs
+	workers.mu.Unlock()
+	if !active || runs != 1 {
+		t.Fatalf("Town-only retry interrupted the active issue worker: active=%t runs=%d", active, runs)
+	}
+	task := s.Snapshot().Towns[x.ID].Tasks["issue:7"]
+	if task.Blocked || task.Attempts != 0 || !task.RetryAt.IsZero() {
+		t.Fatalf("Town-only retry was not committed: %+v", task)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("supervisor shutdown hung")
+	}
+}
+
+func TestIssueRetryValidationFailureDoesNotStopActiveWorker(t *testing.T) {
+	s := testStore(t, false)
+	x := blockedIssueTown(t, s)
+	entered := make(chan struct{})
+	canceled := make(chan struct{})
+	want := errors.New("durable state is invalid")
+	workers := failingIssueRetrier{
+		workerFunc: func(ctx context.Context, _ *Town, _ Role, _ func(Progress), _ *slog.Logger) (RunResult, error) {
+			close(entered)
+			<-ctx.Done()
+			close(canceled)
+			return RunResult{}, ctx.Err()
+		},
+		inspectErr: want,
+	}
+	sup := NewSupervisor(s, newGH(1), workers)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- sup.Run(ctx) }()
+	<-entered
+
+	err := sup.Control(x.ID, Issue, "retry", "issue:7")
+	if !errors.Is(err, want) {
+		t.Fatalf("wrong retry error: %v", err)
+	}
+	select {
+	case <-canceled:
+		t.Fatal("validation failure canceled the active issue worker")
+	default:
+	}
+	task := s.Snapshot().Towns[x.ID].Tasks["issue:7"]
+	if !task.Blocked || task.Attempts != 3 {
+		t.Fatalf("validation failure changed Town retry state: %+v", task)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("supervisor shutdown hung")
+	}
+}
+
+func TestIssueRetryResetsSelectedDurableJobAfterActiveWorkerStops(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	now := time.Now()
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		town.Initialized = true
+		town.Workers[Repo].Enabled = false
+		town.Workers[Issue].Enabled = true
+		for _, n := range []int{1, 2} {
+			id := fmt.Sprintf("issue:%d", n)
+			town.Tasks[id] = &Task{ID: id, Kind: "issue", Number: n, Title: fmt.Sprintf("Issue %d", n), Stage: "queued", House: Issue, Blocked: true, Attempts: 3, RetryAt: now.Add(time.Hour), Updated: now}
+		}
+	})
+
+	root := t.TempDir()
+	dir, stateDir := Workspace(root, x.ID, Issue)
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	claim := &issuebot.Claim{Token: strings.Repeat("a", 32), Repo: x.ID, Issue: 1, Status: "released", Detail: "publication outcome uncertain"}
+	saved := &issuebot.State{
+		Format: 1, Remote: "https://github.com/acme/orchard.git", Branch: "main", Directory: dir, Repo: x.ID, Host: "github.com",
+		Jobs: map[int]*issuebot.Job{
+			1: {ClaimPending: true, Claim: claim, Issue: issuebot.Issue{Number: 1}, Branch: "issue-bot/1", Base: baseSHA, Tries: 3, RetryAt: now.Add(time.Hour), Failure: "budget exhausted", Status: "blocked", Result: &issuebot.Result{Status: "blocked", Detail: "saved diagnostics"}},
+			2: {Issue: issuebot.Issue{Number: 2}, Branch: "issue-bot/2", Tries: 3, RetryAt: now.Add(2 * time.Hour), Failure: "other failure", Status: "blocked"},
+		},
+	}
+	data, err := json.MarshalIndent(saved, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(stateDir, "state.json"), append(data, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	workers := &issueRetryWorker{root: root, entered: make(chan int, 2)}
+	sup := NewSupervisor(s, newGH(1), workers)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- sup.Run(ctx) }()
+	if run := <-workers.entered; run != 1 {
+		t.Fatalf("first run = %d", run)
+	}
+	if err = sup.Control(x.ID, Issue, "retry", "issue:1"); err != nil {
+		t.Fatal(err)
+	}
+	if run := <-workers.entered; run != 2 {
+		t.Fatalf("retry did not resume issue worker; run = %d", run)
+	}
+
+	cfg := issuebot.DefaultConfig()
+	cfg.Remote, cfg.Branch, cfg.Directory, cfg.StateDirectory = saved.Remote, saved.Branch, saved.Directory, stateDir
+	cfg.GitHub.Repo, cfg.GitHub.Host = saved.Repo, saved.Host
+	got, err := issuebot.ReadState(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := got.Jobs[1]
+	if job.Tries != 0 || !job.RetryAt.IsZero() || job.Status != "pending" {
+		t.Fatalf("selected durable job was not reset: %+v", job)
+	}
+	if !job.ClaimPending || job.Claim == nil || job.Claim.Detail != claim.Detail || job.Base != baseSHA || job.Result == nil || job.Result.Detail != "saved diagnostics" {
+		t.Fatalf("retry discarded uncertain claim or saved work: %+v", job)
+	}
+	other := got.Jobs[2]
+	if other.Tries != 3 || other.Status != "blocked" || !other.RetryAt.Equal(saved.Jobs[2].RetryAt) {
+		t.Fatalf("unrelated durable job changed: %+v", other)
+	}
+	town := s.Snapshot().Towns[x.ID]
+	if town.Tasks["issue:1"].Blocked || town.Tasks["issue:1"].Attempts != 0 || !town.Tasks["issue:1"].RetryAt.IsZero() {
+		t.Fatalf("Town retry state was not reset: %+v", town.Tasks["issue:1"])
+	}
+	if !town.Tasks["issue:2"].Blocked || town.Tasks["issue:2"].Attempts != 3 {
+		t.Fatalf("unrelated Town task changed: %+v", town.Tasks["issue:2"])
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("supervisor shutdown hung")
+	}
+}
+
+func TestIssueRetryFailureDoesNotAcknowledgeTownRetry(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	retryAt := time.Now().Add(time.Hour)
+	update(t, s, func(st *State) {
+		task := st.Towns[x.ID].Tasks["issue:1"]
+		if task == nil {
+			task = &Task{ID: "issue:1", Kind: "issue", Number: 1, Title: "Issue 1", Stage: "queued", House: Issue, Updated: time.Now()}
+			st.Towns[x.ID].Tasks[task.ID] = task
+		}
+		task.Blocked, task.Attempts, task.RetryAt = true, 3, retryAt
+	})
+	want := errors.New("durable state is unavailable")
+	sup := NewSupervisor(s, newGH(1), failingIssueRetrier{workerFunc: func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{}, nil
+	}, retryErr: want})
+	err := sup.Control(x.ID, Issue, "retry", "issue:1")
+	if !errors.Is(err, want) || !strings.Contains(err.Error(), "reset issue-bot retry state") {
+		t.Fatalf("wrong retry error: %v", err)
+	}
+	task := s.Snapshot().Towns[x.ID].Tasks["issue:1"]
+	if !task.Blocked || task.Attempts != 3 || !task.RetryAt.Equal(retryAt) || task.House != Issue {
+		t.Fatalf("failed durable reset was acknowledged by Town: %+v", task)
+	}
+}
+
 func TestMergePersistsIntentAndChecksFreshEvidence(t *testing.T) {
 	for _, scenario := range []string{"clean", "stale", "checks", "discussion", "description", "external", "manual", "uncertain"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -360,6 +626,80 @@ func TestMergePersistsIntentAndChecksFreshEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestReviewFailuresRetryFiveTimesAndRemainOperatorRecoverable(t *testing.T) {
+	s := testStore(t, false)
+	x := setupPR(t, s, 1)
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		town.Workers[Review].Enabled = true
+		task := town.Tasks["pr:1"]
+		task.Stage, task.Audit = "queued", nil
+	})
+	failure := &ReviewAttemptError{Complete: false, ExpectedBase: baseSHA, ExpectedHead: headSHA}
+	sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{PR: 1}, failure
+	}))
+	for attempt := 1; attempt <= 5; attempt++ {
+		sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
+		town := s.Snapshot().Towns[x.ID]
+		task := town.Tasks["pr:1"]
+		if task.Attempts != attempt || task.Blocked != (attempt == 5) {
+			t.Fatalf("attempt %d: %+v", attempt, task)
+		}
+		if attempt < 5 && strings.Contains(task.Detail, "<missing>") {
+			t.Fatalf("detailed reviewer error exposed before retry budget exhausted: %q", task.Detail)
+		}
+	}
+	task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+	if !strings.Contains(task.Detail, "complete=false") || !strings.Contains(task.Detail, "<missing>") {
+		t.Fatalf("final failure omitted actionable evidence: %q", task.Detail)
+	}
+	if err := sup.Control(x.ID, Review, "retry", "pr:1"); err != nil {
+		t.Fatal(err)
+	}
+	task = s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+	if task.Blocked || task.Attempts != 0 || !task.RetryAt.IsZero() {
+		t.Fatalf("operator could not unblock review: %+v", task)
+	}
+}
+
+func TestCompletedNegativeReviewRoutesByOwnership(t *testing.T) {
+	for _, external := range []bool{false, true} {
+		t.Run(fmt.Sprint("external=", external), func(t *testing.T) {
+			s := testStore(t, false)
+			x := setupPR(t, s, 1)
+			negative := clean()
+			negative.Verdict = "changes_needed"
+			negative.Findings = []Finding{{ID: "new:defect", State: "open", Detail: "broken behavior"}}
+			update(t, s, func(st *State) {
+				town := st.Towns[x.ID]
+				town.Workers[Review].Enabled = true
+				task := town.Tasks["pr:1"]
+				task.Stage, task.Audit, task.External = "queued", nil, external
+			})
+			sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+				return RunResult{PR: 1, Audit: negative}, nil
+			}))
+			sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
+			task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+			if external {
+				if task.House != Hall || task.Stage != "awaiting_mayor" || task.MayoralDecision != "pending" {
+					t.Fatalf("external review did not reach Mayor: %+v", task)
+				}
+				if err := sup.Control(x.ID, Hall, "decline", task.ID); err != nil {
+					t.Fatal(err)
+				}
+				if got := s.Snapshot().Towns[x.ID].Tasks[task.ID]; got.Stage != "declined" {
+					t.Fatalf("Mayor could not resolve task: %+v", got)
+				}
+			} else if task.House != Issue || task.Stage != "fixes" {
+				t.Fatalf("owned review did not reach Issue Bot: %+v", task)
+			}
+		})
+	}
+}
+
 func TestSupervisorPauseFinishStopCancelAndTownIsolation(t *testing.T) {
 	s := testStore(t, false)
 	x := addTown(t, s)
@@ -377,7 +717,7 @@ func TestSupervisorPauseFinishStopCancelAndTownIsolation(t *testing.T) {
 		entered <- struct{}{}
 		defer func() { exited <- struct{}{} }()
 		for i := 0; i < 100; i++ {
-			observe(Progress{"checking", "Working"})
+			observe(Progress{Phase: "checking", Task: "Working"})
 			log.Info("progress", "step", i)
 		}
 		select {
@@ -446,7 +786,7 @@ func TestFailedInitialPersistenceNeverRunsWorker(t *testing.T) {
 		called = true
 		return RunResult{}, nil
 	}))
-	sup.execute(context.Background(), x, Bug)
+	sup.execute(context.Background(), x, Bug, nil)
 	if called {
 		t.Fatal("ran agent without durable state")
 	}
@@ -458,7 +798,7 @@ func TestDemoIsIsolatedAndCompletesTheLoop(t *testing.T) {
 	go func() { done <- runDemo(ctx, s, time.Millisecond) }()
 	eventually(t, func() bool {
 		for _, e := range s.Snapshot().Events {
-			if e.From == "feature" && e.To == "issue" {
+			if e.From == "feature" && e.To == "hall" {
 				return true
 			}
 		}
@@ -474,7 +814,7 @@ func TestDemoIsIsolatedAndCompletesTheLoop(t *testing.T) {
 	for _, e := range st.Events {
 		routes[e.From+">"+e.To] = true
 	}
-	for _, r := range []string{"bug>issue", "feature>issue", "issue>review", "review>issue", "review>release", "release>outside"} {
+	for _, r := range []string{"bug>issue", "feature>hall", "issue>review", "review>issue", "review>release", "release>outside"} {
 		if !routes[r] {
 			t.Fatal("missing route", r)
 		}

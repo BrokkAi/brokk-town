@@ -221,9 +221,9 @@ Source: https://github.com/BrokkAi/acp-go/tree/v0.1.0
 
 ==============================================================================
 
-github.com/BrokkAi/issue-bot v0.5.1
+github.com/BrokkAi/issue-bot v0.5.2
 License: Apache-2.0
-Source: https://github.com/BrokkAi/issue-bot/tree/v0.5.1
+Source: https://github.com/BrokkAi/issue-bot/tree/v0.5.2
 
 ==============================================================================
 

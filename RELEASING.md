@@ -2,7 +2,7 @@
 
 ## Destinations and order
 
-The first stable candidate is **v0.1.0**. All deliverables use the exact same
+The current candidate is **v0.1.2**. All deliverables use the exact same
 committed inputs. Never move a published version tag or overwrite conflicting
 artifacts. All five npm packages already have `0.1.0-rc.1`, manually bootstrapped
 under `next` from `cfa1a68754e565b61894bb5de33558ee05b169f7`; these are historical
@@ -50,7 +50,7 @@ make check smoke
 python3 scripts/licenses.py
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 export RELEASE_COMMIT="$(git rev-parse HEAD)"
-export RELEASE_TAG=v0.1.0
+export RELEASE_TAG=v0.1.2
 python3 scripts/release_checks.py build --directory dist/candidate
 python3 scripts/release_checks.py version --directory dist/candidate
 ```
@@ -68,16 +68,16 @@ credentials without publishing or changing that policy:
 
 ```sh
 export RELEASE_COMMIT="$(git rev-parse HEAD)"
-export PREFLIGHT_TAG="v0.1.0-preflight.$(git rev-parse --short=8 "$RELEASE_COMMIT")"
+export PREFLIGHT_TAG="v0.1.2-preflight.$(git rev-parse --short=8 "$RELEASE_COMMIT")"
 git tag "$PREFLIGHT_TAG" "$RELEASE_COMMIT"
 git push origin "$PREFLIGHT_TAG"
 
 gh workflow run publish-packages.yml --repo github.com/BrokkAi/brokk-town \
-  --ref "$PREFLIGHT_TAG" -f tag=v0.1.0 -F publish=false
+  --ref "$PREFLIGHT_TAG" -f tag=v0.1.2 -F publish=false
 ```
 
 Check the returned run's exact SHA. The preflight ref is immutable and is not
-the release version; the workflow input remains `v0.1.0` so its candidate and
+the release version; the workflow input remains `v0.1.2` so its candidate and
 destination checks describe the actual proposed release. A run at another commit
 cannot validate this candidate.
 
@@ -101,7 +101,7 @@ See [npm's registry API](https://api-docs.npmjs.com/) and
 
 On 2026-09-14, `packages-publish` permits only `v*` tags. The explicit-dispatch
 workflow plus the uniquely named preflight tag exercises that policy without
-broadening it. Do not create the final `v0.1.0` tag merely to test access and do
+broadening it. Do not create the final `v0.1.2` tag merely to test access and do
 not silently change the deployment policy. Workflow and token changes use the PR
 path.
 
