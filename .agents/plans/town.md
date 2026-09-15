@@ -37,6 +37,37 @@
   version exposure, and asset revalidation; smoke covers real on-demand start,
   crash recovery, and token stability for the demo town.
 
+## Bots survive Town restarts (2026-09-15)
+
+The user found that upgrading `bt` killed every in-flight bot and asked for a
+state where the town keeps functioning while the service is replaced. Repo-bot
+stays in-process by decision: it is a stateless reconcile that runs every poll
+and gates town initialization, so an external package would add fragility
+without preserving anything.
+
+- Bot processes start detached (own session, output to a file) and a durable
+  `WorkerRun` handle is committed on the worker before the run request. The
+  handle carries executable identity, PID, socket, output, last observed event
+  sequence, deadline, and the exact issue/PR revision.
+- Cancellation carries a cause. Operator stop, retry, and deletion kill the bot
+  after identity is proven over its socket; the dispatch deadline kills. Plain
+  cancellation is service shutdown and detaches, keeping the handle.
+- The supervisor adopts every handle before its first scheduling pass. Worker
+  Protocol v1 gains the optional `detach` capability and `GET /v1/attach?after=N`
+  with 404 for an idle worker. Detach-capable bots replay and complete normally;
+  older bots are asked to shut down when they can and the attempt is recorded as
+  an uncertain outcome. Deleted towns' orphans are ended.
+- Restarts use the self-managed lifecycle above: `/api/restart` re-executes in
+  place, and the new image adopts the detached bots. The systemd unit uses
+  `KillMode=process` so a unit restart never kills them with the cgroup.
+- Bot repositories still need the `detach` capability and attach endpoint; until
+  they ship it, restarts preserve processes but not results. In-process agent
+  sessions (issue repair and review certification) are still bound to the
+  service lifetime.
+- Validation: Go race/vet, browser tests, and Python fake workers covering
+  detach, adopt, replay offset, idle-worker 404, stop kill, uncertain outcome,
+  store reload, and supervisor adoption.
+
 ## Recoverable review outcomes (2026-09-14)
 
 - Reviewer execution/evidence failures are distinct from completed negative

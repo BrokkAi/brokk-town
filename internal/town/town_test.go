@@ -641,7 +641,7 @@ func TestReviewFailuresRetryFiveTimesAndRemainOperatorRecoverable(t *testing.T) 
 		return RunResult{PR: 1}, failure
 	}))
 	for attempt := 1; attempt <= 5; attempt++ {
-		sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review)
+		sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
 		town := s.Snapshot().Towns[x.ID]
 		task := town.Tasks["pr:1"]
 		if task.Attempts != attempt || task.Blocked != (attempt == 5) {
@@ -681,7 +681,7 @@ func TestCompletedNegativeReviewRoutesByOwnership(t *testing.T) {
 			sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
 				return RunResult{PR: 1, Audit: negative}, nil
 			}))
-			sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review)
+			sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
 			task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
 			if external {
 				if task.House != Hall || task.Stage != "awaiting_mayor" || task.MayoralDecision != "pending" {
@@ -717,7 +717,7 @@ func TestSupervisorPauseFinishStopCancelAndTownIsolation(t *testing.T) {
 		entered <- struct{}{}
 		defer func() { exited <- struct{}{} }()
 		for i := 0; i < 100; i++ {
-			observe(Progress{"checking", "Working"})
+			observe(Progress{Phase: "checking", Task: "Working"})
 			log.Info("progress", "step", i)
 		}
 		select {
@@ -786,7 +786,7 @@ func TestFailedInitialPersistenceNeverRunsWorker(t *testing.T) {
 		called = true
 		return RunResult{}, nil
 	}))
-	sup.execute(context.Background(), x, Bug)
+	sup.execute(context.Background(), x, Bug, nil)
 	if called {
 		t.Fatal("ran agent without durable state")
 	}

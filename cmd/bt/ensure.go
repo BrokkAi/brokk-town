@@ -300,7 +300,7 @@ func logTail(dir string) string {
 }
 
 // stopProcess terminates a service and waits for it to release the state
-// lock, which it does only after its workers have stopped.
+// lock. Its bot processes keep running and are adopted by the next service.
 func stopProcess(ctx context.Context, dir string, conn connection) error {
 	if !processAlive(conn.PID) {
 		return nil

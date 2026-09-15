@@ -325,7 +325,7 @@ func (b *BotWorkers) repair(ctx context.Context, t *Town, task *Task, observe fu
 	if Digest(discussion) != task.Audit.Discussion || task.Audit.Description != description(p) {
 		return b.requeue(t.ID, task.ID, "Discussion changed; checking current feedback before repair.")
 	}
-	observe(Progress{"repairing", fmt.Sprintf("Fixing review feedback on PR #%d", p.Number)})
+	observe(Progress{Phase: "repairing", Task: fmt.Sprintf("Fixing review feedback on PR #%d", p.Number)})
 	tree, err := b.tree(ctx, t, p, "repair", true)
 	if err != nil {
 		return err
@@ -433,7 +433,7 @@ TOWN_REPAIR {"summary":"Changes addressing each finding","checks":["actual check
 	if err = b.Store.Update(func(st *State) error { st.Towns[t.ID].Intents[p.Number] = intent; return nil }); err != nil {
 		return err
 	}
-	observe(Progress{"publishing", "Pushing the verified fix without rewriting history"})
+	observe(Progress{Phase: "publishing", Task: "Pushing the verified fix without rewriting history"})
 	pushURL, err := git(ctx, tree.dir, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return err
