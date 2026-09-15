@@ -55,11 +55,13 @@ Each role has its own managed checkout and bot
 state so independent houses do not share a working directory.
 
 The released bot executables remain responsible for their primary operations.
-Town does not compile the bot packages into `bt` or read their private state
-files. Each primary dispatch starts the corresponding `bbb`, `bfb`, `bib`,
+Each primary dispatch starts the corresponding `bbb`, `bfb`, `bib`,
 `brv`, or `brb` worker service on a private Unix socket, negotiates protocol
 version and capabilities, streams ordered progress, and consumes only explicit
-public results. Issue-bot receives implementation-ready PR settings, and Town
+public results. Issue-bot v0.5.1 is also pinned as a library solely for its
+validated public durable-state and retry APIs; Town projects job outcomes into
+task state without exposing issue bodies, claims, agent settings, or paths.
+Issue-bot receives implementation-ready PR settings, and Town
 adds an explicit repair path for its owned PRs. Review-bot's exact-revision
 result is an input to a separate full-change certification. Town never treats a
 successful exit or zero new review comments as merge permission. The complete

@@ -371,7 +371,12 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 				tasks = append(tasks, task)
 			}
 		}
-		sort.Slice(tasks, func(i, j int) bool { return tasks[i].Number < tasks[j].Number })
+		sort.Slice(tasks, func(i, j int) bool {
+			if tasks[i].Blocked != tasks[j].Blocked {
+				return tasks[i].Blocked
+			}
+			return tasks[i].Number < tasks[j].Number
+		})
 		for i, task := range tasks {
 			if i >= 4 {
 				add(fmt.Sprintf("   … %d more queued", len(tasks)-i))
@@ -382,6 +387,15 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 				source = fmt.Sprintf(" [%s/%s; %s]", task.Source.Identity.Provider, task.Source.Identity.Funnel, task.Source.Priority.Policy)
 			}
 			add(fmt.Sprintf("   %-18s %s%s", task.Stage, task.Title, source))
+			if task.Blocked {
+				add("     " + task.Detail)
+				if task.IssueJob != nil {
+					add(fmt.Sprintf("     %d attempts · %s", task.Attempts, task.IssueJob.RetryDetail))
+					if task.IssueJob.RetryEligible {
+						add(fmt.Sprintf("     bt retry --repo %s --task %s", t.Config.Repo, task.ID))
+					}
+				}
+			}
 		}
 		if len(tasks) == 0 {
 			add("   Nothing waiting.")

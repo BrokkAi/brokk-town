@@ -33,6 +33,9 @@ type RunResult struct {
 type Workers interface {
 	Run(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error)
 }
+type issueStateWorkers interface {
+	SyncIssues(*Town) error
+}
 
 // Adopter reconnects to a bot process recorded by an earlier service. Workers
 // without it leave such runs with an uncertain outcome.
@@ -494,6 +497,11 @@ func (s *Supervisor) abandon(ctx context.Context, t *Town, r Role, run WorkerRun
 }
 
 func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
+	if workers, ok := s.Workers.(issueStateWorkers); ok {
+		if err := workers.SyncIssues(t); err != nil {
+			return fmt.Errorf("import issue-bot jobs: %w", err)
+		}
+	}
 	t = s.Store.Snapshot().Towns[t.ID]
 	// Funnel synchronization is source-neutral and commits typed health before
 	// legacy repository reconciliation. Existing PR/release authority remains on
@@ -575,13 +583,21 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 			remote.Released[sha] = included
 		}
 	}
-	return s.Store.Update(func(st *State) error {
+	if err := s.Store.Update(func(st *State) error {
 		Reconcile(st, st.Towns[t.ID], remote, s.now())
 		w := st.Towns[t.ID].Workers[Repo]
 		w.Task = "Repository inventory is current"
 		w.Phase = "reporting"
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	if workers, ok := s.Workers.(issueStateWorkers); ok {
+		if err := workers.SyncIssues(s.Store.Snapshot().Towns[t.ID]); err != nil {
+			return fmt.Errorf("preserve issue-bot jobs after inventory: %w", err)
+		}
+	}
+	return nil
 }
 func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
 	if action == "delete" {
@@ -725,6 +741,15 @@ func resetTaskForRetry(t *Town, task *Task) {
 	task.Blocked = false
 	task.Attempts = 0
 	task.RetryAt = time.Time{}
+	if task.Kind == "issue" && task.Stage == "blocked" {
+		task.Stage = "queued"
+		task.Detail = "Waiting for issue-bot."
+		if task.IssueJob != nil {
+			task.IssueJob.Status = "pending"
+			task.IssueJob.RetryEligible = false
+			task.IssueJob.RetryDetail = "Retry requested; issue-bot will recheck GitHub before continuing."
+		}
+	}
 	if task.Stage == "inconclusive" {
 		task.Audit = nil
 		task.Stage = "queued"

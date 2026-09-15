@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -57,6 +58,59 @@ func TestPastedCommandsNeverOperateTown(t *testing.T) {
 	out = d.feed("q")
 	if len(out) != 1 || out[0] != "q" {
 		t.Fatal(out)
+	}
+}
+func TestBlockedIssueAttentionAndRecovery(t *testing.T) {
+	s := town.NewState(false)
+	x, _ := s.Add(town.DefaultConfig("acme/orchard"))
+	blocked := &town.Task{
+		ID: "issue:7", Kind: "issue", Number: 7, Title: "Clarify API contract",
+		House: town.Issue, Stage: "blocked", Blocked: true, Attempts: 2,
+		Detail: "The API response format is missing.",
+		IssueJob: &town.IssueJob{
+			Status: "blocked", RetryEligible: true,
+			RetryDetail: "Clarify the issue on GitHub, then retry.",
+		},
+	}
+	x.Tasks[blocked.ID] = blocked
+	for i := 1; i <= 5; i++ {
+		id := fmt.Sprintf("issue:%d", i)
+		x.Tasks[id] = &town.Task{ID: id, Kind: "issue", Number: i, Title: "Waiting issue", House: town.Issue, Stage: "queued"}
+	}
+	overview := renderTUI(s, "", 0, -1, 100, 24, "")
+	if !strings.Contains(overview, "6 queued") || !strings.Contains(overview, "1 need attention") {
+		t.Fatalf("blocked issue was missing from overview: %s", overview)
+	}
+	house := renderTUI(s, "", 0, 1, 100, 24, "")
+	for _, detail := range []string{
+		blocked.Title,
+		blocked.Detail,
+		"2 attempts · Clarify the issue on GitHub, then retry.",
+		"bt retry --repo acme/orchard --task issue:7",
+	} {
+		if !strings.Contains(house, detail) {
+			t.Fatalf("blocked issue inspection omitted %q: %s", detail, house)
+		}
+	}
+	if strings.Index(house, blocked.Title) > strings.Index(house, "Waiting issue") {
+		t.Fatal("blocked issue should precede waiting work")
+	}
+	blocked.IssueJob.RetryEligible = false
+	blocked.IssueJob.RetryDetail = "Wait for the pending issue claim update."
+	house = renderTUI(s, "", 0, 1, 100, 24, "")
+	if strings.Contains(house, "bt retry") || !strings.Contains(house, blocked.IssueJob.RetryDetail) {
+		t.Fatalf("unavailable retry was not explained: %s", house)
+	}
+	blocked.Blocked = false
+	blocked.Stage = "implemented"
+	blocked.IssueJob.Status = "submitted"
+	overview = renderTUI(s, "", 0, -1, 100, 24, "")
+	if !strings.Contains(overview, "5 queued") || !strings.Contains(overview, "0 need attention") {
+		t.Fatalf("submitted issue still needed attention: %s", overview)
+	}
+	house = renderTUI(s, "", 0, 1, 100, 24, "")
+	if strings.Contains(house, blocked.Title) || strings.Contains(house, blocked.Detail) {
+		t.Fatalf("submitted issue remained in the queue: %s", house)
 	}
 }
 

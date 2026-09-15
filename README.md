@@ -167,7 +167,10 @@ changes a pin or stops a town.
 The worker uses
 standard-library HTTP/JSON, negotiates protocol and capabilities before work,
 streams contiguous progress events, and returns explicit typed results. It never
-requires Town to parse bot-private state. See
+requires Town to parse bot-private state. Until the worker protocol carries job
+outcomes, Town uses the same pinned issue-bot release's validated public state
+API to import blocked/submitted scheduling metadata and perform explicit retries.
+See
 [docs/WORKER_PROTOCOL.md](docs/WORKER_PROTOCOL.md) for the contract.
 
 Town defaults to the official ACP registry’s `codex-acp` npm distribution, which
