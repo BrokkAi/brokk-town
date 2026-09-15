@@ -26,12 +26,11 @@ import (
 
 const workerProtocolVersion = 1
 
-var workerPackages = map[Role]string{
-	Bug:     "@brokkai/bug-bot@0.3.1",
-	Feature: "@brokkai/feature-bot@0.1.1",
-	Issue:   "@brokkai/issue-bot@0.5.1",
-	Review:  "@brokkai/review-bot@0.2.1",
-	Release: "@brokkai/release-bot@0.5.1",
+var workerPackageNames = map[Role]string{
+	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot",
+}
+var workerDefaultVersions = map[Role]string{
+	Bug: "0.3.1", Feature: "0.1.1", Issue: "0.5.2", Review: "0.2.1", Release: "0.5.1",
 }
 var workerBotNames = map[Role]string{
 	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot",
@@ -39,7 +38,7 @@ var workerBotNames = map[Role]string{
 var workerCapabilities = map[Role][]string{
 	Bug:     {"run", "progress", "bug-scan"},
 	Feature: {"run", "progress", "feature-research"},
-	Issue:   {"run", "progress", "issue-result"},
+	Issue:   {"run", "progress", "issue-result", "exact-issue"},
 	Review:  {"run", "progress", "exact-revision-review"},
 	Release: {"run", "progress", "release"},
 }
@@ -71,6 +70,7 @@ type workerRequest struct {
 	Host           string             `json:"host"`
 	Agent          runner.AgentConfig `json:"agent"`
 	Verify         []string           `json:"verify,omitempty"`
+	Issue          int                `json:"issue,omitempty"`
 	PR             int                `json:"pr,omitempty"`
 	BaseSHA        string             `json:"base_sha,omitempty"`
 	HeadSHA        string             `json:"head_sha,omitempty"`
@@ -111,11 +111,12 @@ type workerEvent struct {
 	Error    string          `json:"error,omitempty"`
 }
 
-func (b *BotWorkers) externalBot(ctx context.Context, role Role) (externalBot, error) {
-	packageSpec, ok := workerPackages[role]
+func (b *BotWorkers) externalBot(ctx context.Context, cfg Config, role Role) (externalBot, error) {
+	packageName, ok := workerPackageNames[role]
 	if !ok {
 		return externalBot{}, fmt.Errorf("unsupported worker %s", role)
 	}
+	packageSpec := packageName + "@" + cfg.BotVersion(role)
 	name := "npx"
 	args := []string{"--yes", packageSpec}
 	if b.BotCommands != nil {

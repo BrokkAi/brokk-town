@@ -58,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
             'minimum_protocol': 1,
             'bot': 'issue-bot',
             'version': '9.8.7',
-            'capabilities': ['run', 'progress', 'issue-result'],
+            'capabilities': ['run', 'progress', 'issue-result', 'exact-issue'],
         })
     def do_POST(self):
         if self.path == '/v1/shutdown':
@@ -114,6 +114,7 @@ func TestIssueWorkerUsesVersionedUnixSocketProtocol(t *testing.T) {
 	x.Config.Branch = "main"
 	x.Config.Verify = []string{"go", "test", "./..."}
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent", "--mode=issue"}, Environment: map[string]string{"PRIVATE": "value"}}
+	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
 	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
 	progress := []Progress{}
 	result, err := workers.Run(context.Background(), x, Issue, func(p Progress) { progress = append(progress, p) }, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -135,11 +136,12 @@ func TestIssueWorkerUsesVersionedUnixSocketProtocol(t *testing.T) {
 		Repo     string             `json:"repo"`
 		Verify   []string           `json:"verify"`
 		Agent    runner.AgentConfig `json:"agent"`
+		Issue    int                `json:"issue"`
 	}
 	if err = json.Unmarshal(data, &sent); err != nil {
 		t.Fatal(err)
 	}
-	if sent.Protocol != 1 || sent.Remote != "https://github.com/acme/orchard.git" || sent.Branch != "main" || sent.Repo != "acme/orchard" {
+	if sent.Protocol != 1 || sent.Remote != "https://github.com/acme/orchard.git" || sent.Branch != "main" || sent.Repo != "acme/orchard" || sent.Issue != 7 {
 		t.Fatalf("wrong worker request identity: %+v", sent)
 	}
 	if !reflect.DeepEqual(sent.Agent.Command, []string{"fake-agent", "--mode=issue"}) || sent.Agent.Environment["PRIVATE"] != "value" {
@@ -168,8 +170,9 @@ func TestDefaultWorkersUseExactPinnedNpxPackages(t *testing.T) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TOWN_NPX_CAPTURE", capture)
 	workers := &BotWorkers{}
-	for role, packageSpec := range workerPackages {
-		bot, err := workers.externalBot(context.Background(), role)
+	for role, packageName := range workerPackageNames {
+		packageSpec := packageName + "@" + workerDefaultVersions[role]
+		bot, err := workers.externalBot(context.Background(), Config{}, role)
 		if err != nil {
 			t.Fatalf("resolve %s: %v", role, err)
 		}
@@ -181,21 +184,28 @@ func TestDefaultWorkersUseExactPinnedNpxPackages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, packageSpec := range workerPackages {
+	for role, packageName := range workerPackageNames {
+		packageSpec := packageName + "@" + workerDefaultVersions[role]
 		if !strings.Contains(string(data), "--yes "+packageSpec+" version\n") {
 			t.Fatalf("missing pinned invocation for %s: %s", packageSpec, data)
 		}
+	}
+	custom := Config{BotVersions: map[Role]string{Issue: "9.8.7"}}
+	bot, err := workers.externalBot(context.Background(), custom, Issue)
+	if err != nil || !reflect.DeepEqual(bot.args, []string{"--yes", "@brokkai/issue-bot@9.8.7"}) {
+		t.Fatalf("saved bot pin was not used: %+v %v", bot, err)
 	}
 }
 
 func TestWorkerVersionAndCapabilitiesAreChecked(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "fake-worker")
-	body := strings.Replace(pythonFakeWorker, `['run', 'progress', 'issue-result']`, `['run']`, 1)
+	body := strings.Replace(pythonFakeWorker, `['run', 'progress', 'issue-result', 'exact-issue']`, `['run']`, 1)
 	writeFakeWorker(t, fake, body)
 	store := testStore(t, false)
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
+	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
 	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
 	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), `does not advertise "progress"`) {
@@ -212,6 +222,7 @@ func TestWorkerEventSequenceMustBeContiguous(t *testing.T) {
 	x := addTown(t, store)
 	x.Config.Branch = "main"
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
+	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
 	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
 	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), "event sequence gap") {

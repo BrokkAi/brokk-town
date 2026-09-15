@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ type Supervisor struct {
 	GitHub    GitHub
 	Workers   Workers
 	Publisher IssuePublisher
+	Funnels   FunnelRegistry
 	Harnesses *harness.Catalog
 	mu        sync.Mutex
 	running   map[string]context.CancelFunc
@@ -43,7 +45,11 @@ type Supervisor struct {
 
 func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	publisher, _ := gh.(IssuePublisher)
-	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	registry := FunnelRegistry{}
+	if provider, ok := gh.(GitHubFunnelProvider); ok {
+		registry[ProviderID("github")] = &GitHubFunnel{Client: provider}
+	}
+	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -260,6 +266,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			result, err = s.Workers.Run(ctx, t, r, observe, log)
 		}
 	}()
+	if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+		log.Error("worker attempt failed", "error", err)
+	}
 	close(updates)
 	close(progress)
 	<-done
@@ -279,7 +288,13 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		if !w.Enabled {
 			w.Status = "paused"
 		}
-		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+		reviewRetrying := err != nil && r == Review && result.PR > 0
+		if reviewRetrying {
+			if task := current.Tasks[fmt.Sprintf("pr:%d", result.PR)]; task != nil {
+				reviewRetrying = task.Attempts+1 < 5
+			}
+		}
+		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil && !reviewRetrying {
 			w.Status = "failed"
 			w.Error = err.Error()
 			w.Task = "Work paused: " + err.Error()
@@ -298,8 +313,20 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 				if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 					task.Attempts++
 					task.RetryAt = s.now().Add(15 * time.Minute)
-					task.Detail = err.Error()
-					task.Blocked = task.Attempts >= 3
+					limit := 3
+					if r == Review {
+						limit = 5
+					}
+					task.Blocked = task.Attempts >= limit
+					if task.Blocked {
+						task.Detail = err.Error()
+					} else if r == Review {
+						task.Detail = fmt.Sprintf("Reviewer attempt %d of %d did not complete; retry scheduled.", task.Attempts, limit)
+						w.Task = task.Detail
+						w.Error = ""
+					} else {
+						task.Detail = err.Error()
+					}
 				} else if result.Audit != nil && task.Head == result.Audit.Head && task.Base == result.Audit.Base && task.Description == result.Audit.Description {
 					task.Audit = result.Audit
 					if task.Concerns == nil {
@@ -316,8 +343,11 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 						st.Move(current, task, "ready", Review, "Review complete: ready for merge checks", s.now())
 					case "changes_needed":
 						if task.External {
-							task.Stage = "awaiting_author"
-							task.Detail = "Review feedback is ready for the external PR author."
+							task.Stage = "awaiting_mayor"
+							task.House = Hall
+							task.MayoralDecision = "pending"
+							task.Detail = "Review found changes are needed in this external PR. Decide whether Town should review it again or decline it."
+							st.Event(t.ID, "decision", "review", "hall", task.ID, "External PR needs a Mayoral decision: "+task.Title, s.now())
 						} else {
 							st.Move(current, task, "fixes", Issue, "Review feedback delivered to issue-bot", s.now())
 						}
@@ -336,9 +366,44 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 }
 func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 	t = s.Store.Snapshot().Towns[t.ID]
+	// Funnel synchronization is source-neutral and commits typed health before
+	// legacy repository reconciliation. Existing PR/release authority remains on
+	// the mature GitHub path while issue intake migrates incrementally.
+	if len(t.Config.Funnels) > 0 {
+		if err := s.reconcileFunnels(ctx, t.ID); err != nil {
+			return err
+		}
+		t = s.Store.Snapshot().Towns[t.ID]
+	}
 	remote, err := s.GitHub.Snapshot(ctx, t.Config)
 	if err != nil {
 		return err
+	}
+	// When this repository has configured GitHub funnels, the normalized
+	// selector result is the issue inventory. PRs/releases continue through the
+	// existing exact-revision path.
+	selected := map[int]bool{}
+	hasGitHubFunnel := false
+	for _, config := range t.Config.Funnels {
+		if config.Enabled && config.Provider == ProviderID("github") && strings.EqualFold(config.Location["repository"], t.Config.Repo) {
+			hasGitHubFunnel = true
+		}
+	}
+	if hasGitHubFunnel {
+		for _, task := range t.Tasks {
+			if task.Source != nil && task.Source.Identity.Provider == ProviderID("github") && task.Source.Eligible {
+				if n, parseErr := strconv.Atoi(string(task.Source.Identity.Item)); parseErr == nil {
+					selected[n] = true
+				}
+			}
+		}
+		issues := remote.Issues[:0]
+		for _, issue := range remote.Issues {
+			if selected[issue.Number] {
+				issues = append(issues, issue)
+			}
+		}
+		remote.Issues = issues
 	}
 	remote.ObservedHeads = map[int]string{}
 	for _, task := range t.Tasks {
@@ -396,10 +461,10 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 		}
 		return s.Delete(id)
 	}
-	if action != "start" && action != "pause" && action != "stop" && action != "retry" {
+	if action != "start" && action != "pause" && action != "stop" && action != "retry" && action != "admit" && action != "decline" {
 		return errors.New("unknown action")
 	}
-	if role != "all" && !ValidRole(role) {
+	if role != "all" && !ValidRole(role) && !((action == "admit" || action == "decline") && role == Hall) {
 		return errors.New("unknown role")
 	}
 	if action == "retry" {
@@ -420,6 +485,30 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
+		}
+		if action == "admit" || action == "decline" {
+			task := t.Tasks[taskID]
+			if task == nil || task.MayoralDecision != "pending" || task.Stage != "awaiting_mayor" || task.House != Hall {
+				return errors.New("task is not awaiting a Mayoral decision")
+			}
+			if action == "decline" {
+				task.MayoralDecision = "declined"
+				task.Stage = "declined"
+				task.Detail = "The Mayor declined this outside work. Town will not act on it."
+				st.Event(id, "decision", "hall", "outside", task.ID, "Mayor declined: "+task.Title, s.now())
+				return nil
+			}
+			task.MayoralDecision = "admitted"
+			task.Stage = "queued"
+			task.Detail = "The Mayor admitted this work to town."
+			target := Review
+			if task.Kind == "issue" {
+				target = Issue
+			}
+			task.House = target
+			t.Workers[target].Next = time.Time{}
+			st.Event(id, "decision", "hall", string(target), task.ID, "Mayor admitted: "+task.Title, s.now())
+			return nil
 		}
 		if action == "retry" {
 			task := t.Tasks[taskID]

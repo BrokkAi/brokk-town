@@ -59,6 +59,23 @@ def npm_exists(package, tarball=None):
     return True
 
 
+def npm_tag(package):
+    return "next" if "-" in package["version"] else "latest"
+
+
+def npm_pointer(package):
+    name = urllib.parse.quote(package["name"], safe="")
+    record = fetch_json(f"https://registry.npmjs.org/{name}")
+    if record is None:
+        return None
+    if record.get("name") != package["name"] or not isinstance(record.get("dist-tags", {}), dict):
+        raise ValueError(f"invalid npm dist-tag metadata: {package['name']}")
+    pointer = record.get("dist-tags", {}).get(npm_tag(package))
+    if pointer is not None and (not isinstance(pointer, str) or not pointer):
+        raise ValueError(f"invalid npm dist-tag metadata: {package['name']}")
+    return pointer
+
+
 def validated_packages(directory):
     manifest = json.loads((directory / "npm/manifest.json").read_text())
     release.validate_tag(manifest["tag"])
@@ -124,8 +141,26 @@ def run(command, directory):
     if command == "verify":
         if not all(existing.values()):
             raise ValueError("publication is incomplete: an npm package is missing")
+    # Dist-tags are mutable installer inputs, checked separately from immutable
+    # package version availability. A retry must never retarget an existing
+    # version's pointer: it may belong to a later completed release, and npm
+    # publish authorization does not establish dist-tag write authorization.
+    pointers = {p["name"]: npm_pointer(p) for p in packages}
+    for package in packages:
+        pointer = pointers[package["name"]]
+        if command == "verify" and pointer != package["version"]:
+            raise ValueError(f"publication is incomplete: npm {package['name']} {npm_tag(package)} "
+                             f"points to {pointer!r}, expected {package['version']}")
+        if existing[package["name"]] and pointer != package["version"]:
+            raise ValueError(f"conflicting npm dist-tag: {package['name']} {npm_tag(package)} "
+                             f"points to {pointer!r}, expected {package['version']}; "
+                             "an authorized npm maintainer must reconcile the pointer before retrying")
+    if command == "verify":
         verify_provenance(directory)
-        print("All five npm packages match the staged bytes")
+        print("All five npm package payloads, provenance, and latest/next pointers match the release")
+        return
+    if command == "check-pointers":
+        print("Existing npm versions have matching latest/next pointers")
         return
     # Submit platform packages before the root launcher. A successful upload
     # can take time to appear in public indexes; visibility is checked only by
@@ -135,13 +170,13 @@ def run(command, directory):
             subprocess.run(["npm", "publish", str((directory / "npm" / package["filename"]).resolve()),
                             "--access", "public", "--registry", "https://registry.npmjs.org",
                             "--provenance",
-                            "--tag", "next" if "-" in package["version"] else "latest"], check=True)
+                            "--tag", npm_tag(package)], check=True)
     print("Submitted npm packages; registry visibility may lag behind accepted uploads")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "publish", "verify"))
+    parser.add_argument("command", choices=("check", "check-pointers", "publish", "verify"))
     parser.add_argument("directory", type=Path)
     args = parser.parse_args()
     run(args.command, args.directory)

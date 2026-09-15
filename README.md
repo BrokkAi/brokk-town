@@ -70,7 +70,7 @@ a commit shipped. Columns, prompts and transitions are not programmable.
 ## Installation and releases
 
 Source is published at [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town).
-The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.0)
+The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.1)
 and npm:
 
 ```sh
@@ -112,6 +112,10 @@ coding agent. Town does not require a separate bot installation: each dispatch
 uses `npx --yes` with an exact compatible release of bug-bot, feature-bot,
 issue-bot, review-bot, or release-bot, then communicates with it over a private
 Unix socket. Town never selects an ambient or floating bot version.
+Each bot's Settings panel shows its current pin. **Check for bot update** reads
+npm's stable tag, and **Use VERSION** stages that exact version for the Mayor to
+save. The pin changes only for that town and takes effect on the bot's next run;
+capability and reported-version checks still run before any repository work.
 
 The worker uses
 standard-library HTTP/JSON, negotiates protocol and capabilities before work,
@@ -290,6 +294,13 @@ Animation never initiates a GitHub write. Reconnecting does not replay previousl
 seen deliveries. External PRs receive reviews but their branches are left to their
 authors; only locally recorded Town-created branches enter automatic repair.
 
+New external issues and PRs first wait at Town Hall for a durable Mayoral
+decision. **Admit** sends the work to Issue Bot or Review Bot; **Decline** keeps
+Town from acting on it without changing GitHub. Feature Bot proposals follow the
+same route by default and can be exempted in **Town Settings → External
+contributions**. The browser provides the primary decision UX; scripts may use
+`bt admit --repo OWNER/REPO --task issue:123` or `bt decline ...`.
+
 A review is bound to the exact base, head, PR description, and discussion snapshot. A suppressed
 duplicate comment is still a finding to check. Complete coverage, explicit
 resolution of every concern, and validation evidence are required for a clean
@@ -314,7 +325,8 @@ bot profiles, verification command, and policy, then run:
 
 Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
-`merge_policy`, `poll_seconds`, `report_seconds`, and `max_cycles`. The example
+`merge_policy`, `mayoral_feature_review`, `poll_seconds`, `report_seconds`, and
+`max_cycles`. The example
 lists all required values. To persist global capacity alongside the town list,
 use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
 remains accepted. When `serve --config` includes `max_workers`, that value
@@ -358,6 +370,45 @@ local key in a URL fragment. `connection.json` and state snapshots are mode 0600
 Private agent commands, environment, and authentication configuration are omitted
 from public configuration snapshots for both town defaults and bot profiles;
 each bot's effective harness, model, and effort are visible.
+
+### Source funnels
+
+Optional `funnels` make issue intake source-neutral. Each named funnel declares a
+provider, validated location/filter, a local credential reference, explicit
+priority policy, overlap policy, and allowlisted lifecycle mappings. Credential
+references are resolved by adapters at request time; secret values never enter
+Town state, model prompts, events, logs, or public snapshots. Public state shows
+the safe funnel configuration and each normalized item's source identity, URL,
+revision, external state, eligibility, capabilities, priority policy, last sync,
+and typed outcome.
+
+GitHub funnels support query, `selected_issues`, and comma-separated
+`include_labels`/`exclude_labels`. Focused selections are read by issue identity
+instead of relying on search indexing. `working` and `blocked` mappings translate
+the normalized lifecycle into confirmed label changes. Slack is the second real
+adapter: it reads a configured channel through paginated Web API calls and maps
+configured lifecycle actions to reactions plus bounded thread replies. Slack
+tokens are obtained from a private resolver immediately before each request.
+Read-only funnels and empty per-transition mappings stay visibly unsupported.
+
+Funnels also recognize provider-native done signals on inbound reads. A Slack
+message with a present `:white_check_mark:` or `:heavy_check_mark:` reaction is
+normalized as **Done**; a GitHub issue whose state is `closed` is normalized as
+**Closed**. Both remain in the durable inventory with their source provenance,
+but become ineligible and leave the worker queue. A GitHub selector must include
+closed issues (for example `is:issue`, not `is:issue is:open`) if Town is to
+observe that transition. Done is based only on an explicit item state or reaction;
+an incomplete or empty inventory never closes missing work by implication.
+
+Lifecycle mutations use a durable intent before the provider call. A lost
+response remains `uncertain`; reconciliation is read-only and absence of a
+receipt never permits a duplicate label, reaction, comment, or thread reply.
+Incomplete reads, partial discovery, authentication failures, rate limits,
+unsupported actions, and uncertain writes remain distinct outcomes. Funnel
+declaration order is never scheduling priority. Overlapping source identities
+are retained, deduplicated, or rejected only according to the explicit overlap
+policy. Demo and tests use synthetic or fake providers and perform no live source
+or agent automation. See the complete JSON example for GitHub and Slack shapes.
 Local logs and worktrees can contain repository content; keep this directory private.
 
 If a push or merge response is lost, Town checks GitHub rather than assuming

@@ -57,6 +57,14 @@ func Open(dir string, demo bool) (*Store, error) {
 						t.Workers[Feature] = &Worker{Role: Feature, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
 					}
 				}
+				if t != nil {
+					if t.FunnelIntents == nil {
+						t.FunnelIntents = map[string]*WriteIntent{}
+					}
+					if t.FunnelSyncs == nil {
+						t.FunnelSyncs = map[FunnelID]*FunnelSync{}
+					}
+				}
 			}
 			err = validateState(s.state, demo)
 		}
@@ -105,6 +113,15 @@ func validateState(s State, demo bool) error {
 			if task == nil || task.ID != key || !ValidRole(task.House) || task.Cycles < 0 || task.Attempts < 0 || (task.Head != "" && !SHA(task.Head)) || (task.Base != "" && !SHA(task.Base)) {
 				return errors.New("invalid task identity or revision")
 			}
+			if task.MayoralDecision != "" && task.MayoralDecision != "pending" && task.MayoralDecision != "admitted" && task.MayoralDecision != "declined" {
+				return errors.New("invalid Mayoral decision")
+			}
+			if task.MayoralDecision == "pending" && (task.House != Hall || task.Stage != "awaiting_mayor") {
+				return errors.New("pending Mayoral decision left Town Hall")
+			}
+			if task.MayoralDecision == "declined" && (task.House != Hall || task.Stage != "declined") {
+				return errors.New("declined Mayoral decision is not final")
+			}
 			switch task.Kind {
 			case "issue", "pr":
 				if task.Number < 1 || key != fmt.Sprintf("%s:%d", task.Kind, task.Number) {
@@ -113,6 +130,10 @@ func validateState(s State, demo bool) error {
 			case "commit":
 				if !SHA(task.Head) || key != "commit:"+task.Head {
 					return errors.New("invalid commit identity")
+				}
+			case "source":
+				if task.Source == nil || key != "source:"+task.Source.Identity.Key() {
+					return errors.New("invalid source task identity")
 				}
 			default:
 				return errors.New("invalid task kind")
@@ -124,6 +145,11 @@ func validateState(s State, demo bool) error {
 				}
 				if !SHA(a.Base) || !SHA(a.Head) || validateAudit(a, evidence) != nil {
 					return errors.New("invalid saved audit")
+				}
+			}
+			if task.Source != nil {
+				if err := task.Source.Validate(); err != nil {
+					return errors.New("invalid funnel task")
 				}
 			}
 		}
@@ -152,6 +178,16 @@ func validateState(s State, demo bool) error {
 			}
 			if i.Kind == "repair" && (!SHA(i.NewHead) || i.Branch == "" || !filepath.IsAbs(i.Directory)) {
 				return errors.New("invalid saved repair")
+			}
+		}
+		for key, i := range t.FunnelIntents {
+			if i == nil || i.ID != key || i.Validate() != nil {
+				return errors.New("invalid funnel write intent")
+			}
+		}
+		for key, sync := range t.FunnelSyncs {
+			if sync == nil || sync.Funnel != key || sync.Provider == "" || sync.Outcome.Validate() != nil {
+				return errors.New("invalid funnel sync")
 			}
 		}
 	}

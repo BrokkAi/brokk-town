@@ -108,6 +108,11 @@ in `result.review`. Other workers return no typed result. In every role, GitHub
 receipts and Town's inventory remain the durable source of truth; process exit
 alone is never interpreted as a successful write.
 
+Issue Bot run requests include an exact positive `issue` number selected from a
+durably admitted Town task. Town requires the worker's `exact-issue` capability;
+repository-wide issue scans are not used because they could bypass pending or
+declined Mayoral decisions.
+
 ## Shutdown
 
 After Town consumes the terminal event, it requests graceful shutdown:

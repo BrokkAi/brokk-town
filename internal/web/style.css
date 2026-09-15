@@ -158,6 +158,15 @@ header {
 .settings-section p:last-child {
   margin-bottom: 0;
 }
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+}
+.check-row input {
+  width: auto;
+}
 .view-switcher {
   display: flex;
   gap: 2px;

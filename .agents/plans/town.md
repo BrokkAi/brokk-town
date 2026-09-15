@@ -1,14 +1,27 @@
 # Brokk Town implementation plan
 
+## Recoverable review outcomes (2026-09-14)
+
+- Reviewer execution/evidence failures are distinct from completed negative
+  reviews. Town retries reviewer failures up to five times, retains exact
+  expected/returned revision diagnostics internally, and exposes the actionable
+  failure after the budget is exhausted. An operator retry resets that budget.
+- A completed changes-needed review routes Town-owned PRs to Issue Bot for repair.
+  External PRs route to Town Hall for an explicit retry or decline decision, so
+  no review outcome can leave work in an operator-inaccessible terminal state.
+
 ## Editable external contribution policy (2026-09-14)
 
 - Town Settings exposes the persisted merge policy after onboarding, with clear
   external-PR ownership and eligibility language. Agent-profile and policy edits
   commit atomically through the authenticated settings API.
-- A requested Mayoral decision gate for newly observed external issues and PRs
-  requires exact issue targeting in the issue-worker protocol before Town can
-  safely admit one issue while leaving other outside work inert. Do not simulate
-  this with UI-only state; coordinate the protocol and pinned issue-bot release.
+- New external issues and PRs persist at Town Hall until the Mayor explicitly
+  admits or declines them. Feature Bot proposals use the same gate by default,
+  controlled by a Town Settings checkbox. Decisions are durable, create committed
+  events, and never modify GitHub themselves.
+- Admitted issues dispatch individually through Issue Bot's `exact-issue` worker
+  capability in pinned `@brokkai/issue-bot@0.5.2`, so pending or declined issues
+  cannot be selected accidentally.
 
 ## In-app Town update notice (2026-09-14)
 
@@ -18,6 +31,33 @@
   release exists. The authenticated service installs that exact version with a
   bounded, cancellable npm subprocess and asks for a restart. Offline or malformed
   registry responses are non-fatal.
+
+## Configurable source funnels (issue #34, 2026-09-14)
+
+- Add source-neutral discovery, refresh, capability, lifecycle, and receipt
+  contracts. Normalize stable `(funnel, provider, source item ID)` identity,
+  provenance/revision/cursor, eligibility, source state, explicit priority, and
+  typed incomplete/auth/rate-limit/partial/unsupported/uncertain outcomes.
+- Persist normalized source tasks, per-funnel sync health/cursors, and lifecycle
+  write intents separately from legacy GitHub PR/merge intents. Save before a
+  provider mutation; reconcile lost responses without treating absence as retry
+  authorization. Public projections omit credential references and values.
+- Put GitHub issue selection behind an adapter with query, selected issue, and
+  include/exclude label filters (#3 slice), plus configurable working/blocked
+  label mappings and revision rereads. Retain existing GitHub PR/review/release
+  authority paths during incremental migration.
+- Prove provider differences with an injected-HTTP Slack channel adapter for
+  paginated reads, reactions, bounded thread replies, read-only operation, and
+  private call-time credential resolution. Demo/tests never contact live sources.
+- Show normalized provenance, eligibility, external state, priority, revision,
+  sync time, capabilities, and typed source health through the shared snapshot,
+  browser inspector, TUI, and CLI status. Document trust and priority boundaries.
+- Treat provider-native completion as a terminal inbound observation: Slack check
+  reactions and closed GitHub issues remain auditable but ineligible, and appear
+  in the Completed board column. Never infer done from an absent item in an
+  incomplete source read.
+- Validate focused fake adapters and restart/overlap/intent behavior, then run Go
+  race/vet, frontend, and integration gates before ready PR delivery.
 
 ## Versioned bot worker protocol (2026-09-14)
 
@@ -512,3 +552,33 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   owner/trust audit are retained in feature-bot/dist (ignored). Town integration
   is committed on its current master branch; no Town release was published and
   the user's existing live service was not restarted or enabled by this work.
+
+## v0.1.2 release preparation (2026-09-14)
+
+- Reconcile the job target and its recovered release-verification changes with
+  the already-published v0.1.1 baseline without moving existing tags.
+- Preserve upstream npm/Sigstore provenance validation while hardening native
+  archive recovery, npm dist-tag verification, and exact-run build evidence.
+- Run the complete local checks, deliver the preparation through the job's
+  unique PR, and validate the merged commit with a `publish=false` workflow run.
+- Do not create the final v0.1.2 tag, upload assets, publish npm packages, or
+  dispatch the publishing path during this preflight phase.
+
+## Review attempt recovery (2026-09-14)
+
+- Treat incomplete or revision-mismatched reviewer output as a failed attempt,
+  never as a clean or negative review, and retain the exact returned evidence in
+  the terminal error for diagnosis.
+- Retry reviewer failures up to five times without exposing noisy intermediate
+  evidence or marking the whole worker failed; retain explicit operator recovery.
+- Route completed negative reviews of external PRs back to the Mayor for an
+  explicit admit/decline decision while owned PR feedback continues to Issue Bot.
+- Validate with fake workers and GitHub only; no live repository automation.
+
+## Explicit bot version upgrades (2026-09-14)
+
+- Publish the effective exact bot pins in each town's safe public configuration.
+- Show the selected bot's current pin in Settings and check npm's stable tag only
+  when the Mayor asks; never float or silently mutate a running configuration.
+- Save an explicitly selected semantic version per town and bot, then retain all
+  worker protocol, capability, reported-version, and exact-run checks.

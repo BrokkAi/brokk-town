@@ -208,6 +208,11 @@
             Every automatic merge still requires a clean exact-revision review,
             GitHub mergeability, checks, and approvals.
           </p>
+          <label class="check-row" for="settings-mayoral-feature-review">
+            <input id="settings-mayoral-feature-review" type="checkbox" checked />
+            Require a Mayoral decision for Feature Bot proposals
+          </label>
+          <p class="muted">Enabled by default. Proposed feature issues wait at Town Hall before Issue Bot may implement them.</p>
         </section>
         <div class="agent-profile">
           <label for="agent-role">Configure agent for</label>
@@ -226,6 +231,15 @@
             </button>
           </div>
         </div>
+        <section id="bot-version-panel" class="settings-section" hidden>
+          <div class="eyebrow">BOT SOFTWARE</div>
+          <p id="bot-version-status" class="muted" role="status"></p>
+          <div class="choice-actions">
+            <button id="check-bot-version" type="button">Check for bot update</button>
+            <button id="use-bot-version" type="button" class="primary" hidden></button>
+          </div>
+          <p class="muted">Bot versions stay pinned. A saved change takes effect on this bot's next run.</p>
+        </section>
         <label for="harness-input">Coding harness</label>
         <select id="harness-input">
           <option value="custom">Custom ACP command</option>

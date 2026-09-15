@@ -25,10 +25,15 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			} else if strings.Contains(i.Body, "<!-- bug-bot:") {
 				from = "bug"
 			}
-			task = &Task{ID: id, Kind: "issue", Number: i.Number, Title: i.Title, URL: i.URL, House: Issue, External: from == "outside", Stage: "queued", Updated: now}
+			requiresMayor := from == "outside" || (from == "feature" && t.Config.ReviewsFeaturesWithMayor())
+			house, stage, decision := Issue, "queued", ""
+			if requiresMayor {
+				house, stage, decision = Hall, "awaiting_mayor", "pending"
+			}
+			task = &Task{ID: id, Kind: "issue", Number: i.Number, Title: i.Title, URL: i.URL, House: house, External: from == "outside", Stage: stage, MayoralDecision: decision, Updated: now}
 			t.Tasks[id] = task
 			if !initial && i.State == "open" {
-				s.Event(t.ID, "delivery", from, "issue", id, "Issue arrived: "+i.Title, now)
+				s.Event(t.ID, "delivery", from, string(house), id, "Issue arrived: "+i.Title, now)
 				changes = append(changes, fmt.Sprintf("New issue #%d: %s", i.Number, i.Title))
 			}
 		}
@@ -36,6 +41,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		task.URL = i.URL
 		if i.State == "closed" {
 			task.Stage = "closed"
+			task.MayoralDecision = ""
+		} else if task.MayoralDecision == "pending" || task.MayoralDecision == "declined" {
+			// Repository metadata cannot bypass or reopen a Mayoral decision.
 		} else if i.Locked {
 			task.Stage = "locked"
 		} else if task.Stage == "closed" || task.Stage == "locked" {
@@ -56,18 +64,28 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		owned := t.Owned[p.Number]
 		isOwned := owned.Branch != "" && owned.Branch == p.Head.Ref && strings.EqualFold(p.Head.Repo.FullName, t.Config.Repo)
 		if task == nil {
-			task = &Task{ID: id, Kind: "pr", Number: p.Number, Title: p.Title, URL: p.URL, House: Review, Stage: "queued", External: !isOwned, Updated: now}
+			house, stage, decision := Review, "queued", ""
+			if !isOwned {
+				house, stage, decision = Hall, "awaiting_mayor", "pending"
+			}
+			task = &Task{ID: id, Kind: "pr", Number: p.Number, Title: p.Title, URL: p.URL, House: house, Stage: stage, External: !isOwned, MayoralDecision: decision, Updated: now}
 			t.Tasks[id] = task
 			if !initial && p.State == "open" {
 				from := "issue"
 				if !isOwned {
 					from = "outside"
 				}
-				s.Event(t.ID, "delivery", from, "review", id, "PR arrived: "+p.Title, now)
+				s.Event(t.ID, "delivery", from, string(house), id, "PR arrived: "+p.Title, now)
 				changes = append(changes, fmt.Sprintf("New PR #%d: %s", p.Number, p.Title))
 			}
 		}
+		wasExternal := task.External
 		task.External = !isOwned
+		if isOwned && wasExternal && task.MayoralDecision == "pending" {
+			task.MayoralDecision = ""
+			task.Stage = "queued"
+			task.House = Review
+		}
 		task.Title = p.Title
 		task.URL = p.URL
 		task.Branch = p.Head.Ref
@@ -76,7 +94,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			task.Blocked = false
 			task.Attempts = 0
 			task.RetryAt = time.Time{}
-			if task.Stage != "merged" && task.Stage != "closed" {
+			if task.Stage != "merged" && task.Stage != "closed" && task.MayoralDecision != "pending" && task.MayoralDecision != "declined" {
 				s.Move(t, task, "queued", Review, "New revision ready for review", now)
 			}
 		}
@@ -94,6 +112,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			}
 		}
 		if p.MergedAt != nil {
+			task.MayoralDecision = ""
 			if intent := t.Intents[p.Number]; intent != nil && intent.Kind == "merge" {
 				intent.Status = "confirmed"
 				task.Blocked = false
@@ -115,6 +134,10 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			}
 		} else if p.State == "closed" {
 			task.Stage = "closed"
+			task.MayoralDecision = ""
+		} else if task.MayoralDecision == "pending" || task.MayoralDecision == "declined" {
+			// A contributor revision or draft-state change never bypasses the
+			// durable Mayoral intake decision.
 		} else if p.Draft {
 			task.Stage = "draft"
 		} else if p.Locked {
