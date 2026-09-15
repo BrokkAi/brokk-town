@@ -90,11 +90,13 @@ func tui(ctx context.Context, c connection) error {
 				default:
 				}
 			case <-upgrades:
-				var result any
+				var result map[string]any
 				err := request(ctx, c, "POST", "/api/update", map[string]any{}, &result)
 				message := "Town upgraded · restart the service to use it"
 				if err != nil {
 					message = err.Error()
+				} else if result["restarting"] == true {
+					message = "Town upgraded · service restarting"
 				}
 				select {
 				case messages <- message:
