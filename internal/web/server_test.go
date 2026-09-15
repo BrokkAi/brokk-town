@@ -108,7 +108,7 @@ func TestOutcomeReportExportAndExplicitJudgment(t *testing.T) {
 			return err
 		}
 		current.RecordOutcome(town.OutcomeRecord{ID: "finding-filed:issue:8", At: now, Class: "artifact", Kind: "finding_filed", Status: "confirmed", TaskID: "issue:8", URL: "https://github.com/acme/outcomes/issues/8", Detail: "A finding"})
-		current.RecordOutcome(town.OutcomeRecord{ID: "implementation-pr:pr:9", At: now.Add(time.Second), Class: "artifact", Kind: "implementation_pr", Status: "submitted", TaskID: "pr:9", RelatedTaskID: "issue:8", Revision: strings.Repeat("a", 40)})
+		current.RecordOutcome(town.OutcomeRecord{ID: "implementation-pr:pr:9", At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", TaskID: "pr:9", RelatedTaskID: "issue:8", Revision: strings.Repeat("a", 40)})
 		return nil
 	}); err != nil {
 		t.Fatal(err)

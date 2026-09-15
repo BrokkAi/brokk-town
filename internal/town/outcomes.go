@@ -90,6 +90,37 @@ func (r OutcomeRecord) validate() error {
 func (t *Town) RecordOutcome(record OutcomeRecord) {
 	for i := range t.Outcomes {
 		if t.Outcomes[i].ID == record.ID {
+			// A bot receipt can establish an artifact before the next GitHub
+			// inventory supplies its revision and URL. Enrich only absent facts;
+			// the first observed time and provenance remain stable on every poll.
+			existing := &t.Outcomes[i]
+			if existing.Role == "" {
+				existing.Role = record.Role
+			}
+			if existing.TaskID == "" {
+				existing.TaskID = record.TaskID
+			}
+			if existing.RelatedTaskID == "" {
+				existing.RelatedTaskID = record.RelatedTaskID
+			}
+			if existing.Revision == "" {
+				existing.Revision = record.Revision
+			}
+			if existing.URL == "" {
+				existing.URL = record.URL
+			}
+			if existing.Detail == "" {
+				existing.Detail = record.Detail
+			}
+			if existing.ElapsedMS == nil {
+				existing.ElapsedMS = record.ElapsedMS
+			}
+			if existing.Usage == nil {
+				existing.Usage = record.Usage
+			}
+			if existing.CostUSD == nil {
+				existing.CostUSD = record.CostUSD
+			}
 			return
 		}
 	}

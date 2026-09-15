@@ -76,10 +76,6 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			}
 			task = &Task{ID: id, Kind: "pr", Number: p.Number, Title: p.Title, URL: p.URL, House: house, Stage: stage, External: !isOwned, MayoralDecision: decision, Updated: now}
 			t.Tasks[id] = task
-			if isOwned {
-				related := fmt.Sprintf("issue:%d", owned.Issue)
-				t.RecordOutcome(OutcomeRecord{ID: "implementation-pr:" + id, At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", Role: Issue, TaskID: id, RelatedTaskID: related, Revision: p.Head.SHA, URL: p.URL, Detail: p.Title})
-			}
 			if !initial && p.State == "open" {
 				from := "issue"
 				if !isOwned {
@@ -88,6 +84,10 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				s.Event(t.ID, "delivery", from, string(house), id, "PR arrived: "+p.Title, now)
 				changes = append(changes, fmt.Sprintf("New PR #%d: %s", p.Number, p.Title))
 			}
+		}
+		if isOwned {
+			related := fmt.Sprintf("issue:%d", owned.Issue)
+			t.RecordOutcome(OutcomeRecord{ID: "implementation-pr:" + id, At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", Role: Issue, TaskID: id, RelatedTaskID: related, Revision: p.Head.SHA, URL: p.URL, Detail: p.Title})
 		}
 		wasExternal := task.External
 		task.External = !isOwned

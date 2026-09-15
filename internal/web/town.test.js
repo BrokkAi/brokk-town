@@ -53,6 +53,7 @@ test("outcome report separates submitted artifacts from confirmed outcomes and j
   const report = outcomeReport(records, new Date("2026-09-01T00:00:00Z"));
   assert.deepEqual(report.summary, { attempts: 1, findings: 1, submitted: 1, merged: 1, repairs: 1, blocked: 0, releases: 1, useful: 1, falsePositives: 0, unjudged: 0 });
   assert.equal(report.records.length, 6);
+  assert.equal(outcomeReport(records).records.length, 7);
 });
 test("all delivery routes have finite continuous endpoints", () => {
   for (const [from, to] of [

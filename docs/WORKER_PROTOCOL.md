@@ -112,9 +112,12 @@ kept as bounded tails.
 
 Issue workers return submitted PR ownership in `result.issue`. Review workers
 return exact base/head binding, completion evidence, and public finding details
-in `result.review`. Other workers return no typed result. In every role, GitHub
-receipts and Town's inventory remain the durable source of truth; process exit
-alone is never interpreted as a successful write.
+in `result.review`. Any worker may also return nonnegative `usage.input_tokens`,
+`usage.output_tokens`, and `cost_usd` fields when its provider makes those
+measurements available. Town preserves absent measurements as unknown rather
+than zero. Other workers return no role-specific typed result. In every role,
+GitHub receipts and Town's inventory remain the durable source of truth; process
+exit alone is never interpreted as a successful write.
 
 Issue Bot run requests include an exact positive `issue` number selected from a
 durably admitted Town task. Town requires the worker's `exact-issue` capability;

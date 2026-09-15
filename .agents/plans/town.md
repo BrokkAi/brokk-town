@@ -753,3 +753,16 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   packaging/license checks, and isolated demo CLI/API/TUI integration.
   Commit this recovery record and push master; no release or live bot
   automation is part of this recovery.
+
+## Automation outcome reporting (2026-09-15)
+
+- Persist deduplicated attempt, artifact, and confirmed-outcome records with
+  task and revision provenance across reconciliation polls and service restarts.
+- Derive filed findings, submitted implementation PRs, confirmed merges, repair
+  rounds, blocked or abandoned work, and verified releases from explicit worker
+  and repository evidence; never treat submission or closure as acceptance.
+- Require an operator explanation when marking a finding useful or a false
+  positive, and retain missing elapsed time, usage, and cost as explicit unknowns.
+- Add selectable Town Hall summaries plus JSON and CSV exports with repository
+  identity, and validate a deterministic lifecycle including rejected, blocked,
+  and externally changed work without live automation.

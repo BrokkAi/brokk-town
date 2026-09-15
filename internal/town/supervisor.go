@@ -23,9 +23,11 @@ type Progress struct {
 	Seq         uint64
 }
 type RunResult struct {
-	Owned map[int]Ownership
-	Audit *Audit
-	PR    int
+	Owned   map[int]Ownership
+	Audit   *Audit
+	PR      int
+	Usage   *OutcomeUsage
+	CostUSD *float64
 	// Retried reports that the release worker accepted the requested attempt
 	// budget reset before this run, so the request is consumed.
 	Retried bool
@@ -497,7 +499,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 				status, detail = "abandoned", "Worker attempt was canceled"
 			}
 			attemptID := fmt.Sprintf("attempt:%s:%d:%s", r, started.UnixNano(), taskID)
-			current.RecordOutcome(OutcomeRecord{ID: attemptID, At: finished, Class: "attempt", Kind: "worker_attempt", Status: status, Role: r, TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished)})
+			current.RecordOutcome(OutcomeRecord{ID: attemptID, At: finished, Class: "attempt", Kind: "worker_attempt", Status: status, Role: r, TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished), Usage: result.Usage, CostUSD: result.CostUSD})
 			if status == "abandoned" {
 				current.RecordOutcome(OutcomeRecord{ID: "abandoned:" + attemptID, At: finished, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished)})
 			}
