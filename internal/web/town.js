@@ -321,15 +321,16 @@ export function focusMatches(target, identity) {
 }
 
 // Which operator controls make sense for a worker in its current state.
-// Start re-enables a paused or failed worker (or runs a waiting one now);
-// Pause and Stop only apply to an enabled worker; Pause is redundant once a
-// pause is already in flight.
+// Start only applies to a worker that is actually stopped. An enabled worker is
+// already running whether it is working or waiting out its poll interval, so
+// Start stays disabled for both; Pause and Stop only apply to an enabled
+// worker; Pause is redundant once a pause is already in flight.
 export function workerControls(worker) {
   const status = normalized(worker?.status);
   const enabled = !!worker?.enabled;
   const active = activeWorkerStatuses.has(status) || !!worker?.agent;
   return {
-    start: !enabled || !active,
+    start: !enabled,
     pause: enabled && status !== "pausing",
     stop: enabled || active,
   };
