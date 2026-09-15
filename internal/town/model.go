@@ -183,6 +183,9 @@ type Worker struct {
 	Updated time.Time             `json:"updated"`
 	Next    time.Time             `json:"next,omitempty"`
 	Logs    []Log                 `json:"logs"`
+	// RetryRequested asks the next release dispatch to lift the release bot's
+	// exhausted attempt budget through its worker API before running.
+	RetryRequested bool `json:"retry_requested,omitempty"`
 }
 
 // WorkerRun is the durable handle of one external bot process. It is written

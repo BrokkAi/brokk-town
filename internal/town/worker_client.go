@@ -153,6 +153,8 @@ type workerReviewResult struct {
 type workerResult struct {
 	Issue  *workerIssueResult  `json:"issue,omitempty"`
 	Review *workerReviewResult `json:"review,omitempty"`
+	// retried records an accepted POST /v1/retry before this run.
+	retried bool
 }
 
 type workerEvent struct {
@@ -292,7 +294,7 @@ func orphanExit(pid int) exitWait {
 // started before any work is requested, and streams the run. Service shutdown
 // leaves the process running and returns errWorkerDetached; an operator stop or
 // the dispatch deadline kills it.
-func runWorker(ctx context.Context, bot externalBot, request workerRequest, deadline time.Time, observe func(Progress), started func(WorkerRun) error) (workerResult, error) {
+func runWorker(ctx context.Context, bot externalBot, request workerRequest, retry bool, deadline time.Time, observe func(Progress), started func(WorkerRun) error) (workerResult, error) {
 	socketDir, err := os.MkdirTemp("", "bt-worker-")
 	if err != nil {
 		return workerResult{}, err
@@ -351,10 +353,24 @@ func runWorker(ctx context.Context, bot externalBot, request workerRequest, dead
 		abort()
 		return workerResult{}, ctx.Err()
 	}
+	retried := false
+	if retry {
+		if !info.has("retry") {
+			abort()
+			return workerResult{}, fmt.Errorf("%s worker %s does not advertise %q; pin a release that supports retry", bot.role, info.Version, "retry")
+		}
+		observe(Progress{Phase: "starting", Task: "Resetting the " + string(bot.role) + " bot's attempt budget"})
+		if err = postWorkerRetry(ctx, client, request); err != nil {
+			abort()
+			return workerResult{}, err
+		}
+		retried = true
+	}
 	result, runErr := postWorkerRun(ctx, client, request, observe)
+	result.retried = retried
 	if runErr != nil && ctx.Err() != nil {
 		if detachRequested(ctx) {
-			return workerResult{}, errWorkerDetached
+			return workerResult{retried: retried}, errWorkerDetached
 		}
 		abort()
 		return result, runErr
@@ -447,6 +463,30 @@ func finishWorker(bot externalBot, client *http.Client, pid int, exit exitWait, 
 	}
 	cleanup()
 	return result, runErr
+}
+
+func postWorkerRetry(ctx context.Context, client *http.Client, request workerRequest) error {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://worker/v1/retry", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		return fmt.Errorf("request worker retry: %w", err)
+	}
+	defer response.Body.Close()
+	detail, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
+	switch response.StatusCode {
+	case http.StatusOK, http.StatusConflict:
+		return nil
+	default:
+		return fmt.Errorf("worker retry returned HTTP %d: %s", response.StatusCode, truncate(string(detail), 1024))
+	}
 }
 
 func shutdownWorker(ctx context.Context, client *http.Client) error {

@@ -485,6 +485,18 @@ Retry explicitly permits another attempt after fresh checks. For an uncertain
 repair push, it reuses and verifies the saved commit; it does not rerun the agent.
 If the PR moved, the saved worktree is retained for inspection. A retry also resets
 an exhausted repair budget. Never delete an uncertain intent to force progress.
+
+When the release house reports that Release Bot's retry budget is exhausted, fix
+the reported failure and ask Town to lift the budget:
+
+```sh
+./bin/bt retry --repo BrokkAi/my-project --role release
+```
+
+The next release run first calls the bot's `POST /v1/retry` worker API, which
+resets the pending release's attempt budget in its own workspace, then resumes
+the same release. Town never edits the bot's private state. The pinned Release
+Bot must advertise the `retry` capability; older pins report that plainly.
 Use `bt status` to inspect saved details and GitHub to resolve conflicts.
 
 The HTTP listener accepts loopback IPs only (default `127.0.0.1:8099`). Host,

@@ -193,6 +193,24 @@ class ReleaseChecks(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "integrity"):
                     package_registry.npm_exists(package, archive)
 
+    def test_published_certifies_once_every_destination_check_passes(self):
+        sha = "a" * 40
+        for tag, latest_lookups in (("v0.1.2", 1), ("v0.2.0-rc.1", 0)):
+            with patch.object(checks, "validate_build") as build, \
+                    patch.object(checks, "github_version") as github, \
+                    patch.object(checks.package_registry, "run") as registry, \
+                    patch.object(checks, "api", return_value={"tag_name": tag}) as api:
+                checks.published(Path("dist/candidate"), sha, tag)
+                build.assert_called_once_with(Path("dist/candidate"), sha, tag)
+                github.assert_called_once_with(Path("dist/candidate"), sha, tag, published=True)
+                registry.assert_called_once_with("verify", Path("dist/candidate") / "packages")
+                self.assertEqual(api.call_count, latest_lookups)
+        with patch.object(checks, "validate_build"), patch.object(checks, "github_version"), \
+                patch.object(checks.package_registry, "run"), \
+                patch.object(checks, "api", return_value={"tag_name": "v0.1.1"}):
+            with self.assertRaisesRegex(ValueError, "latest release does not point"):
+                checks.published(Path("dist/candidate"), sha, "v0.1.2")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -151,6 +151,9 @@ func (b *BotWorkers) Adopt(ctx context.Context, t *Town, r Role, run WorkerRun, 
 // is shared by fresh runs and adopted runs so both apply identical rules.
 func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, workerResult workerResult, err error, observe func(Progress), log *slog.Logger) (RunResult, error) {
 	result := RunResult{}
+	if r == Release {
+		result.Retried = workerResult.retried
+	}
 	switch r {
 	case Bug, Feature, Release:
 		if err != nil {
@@ -205,6 +208,7 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
 		Agent: agent, Verify: t.Config.Verify, Issue: d.issue, PR: d.pr, BaseSHA: d.base, HeadSHA: d.head,
 	}
+	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
 	// The handle is committed before the run request so a service that stops
 	// at any later point can find the process again.
 	started := func(run WorkerRun) error {
@@ -220,7 +224,7 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 			return nil
 		})
 	}
-	return runWorker(ctx, bot, request, deadline, observe, started)
+	return runWorker(ctx, bot, request, retry, deadline, observe, started)
 }
 
 func validateWorkerResult(result workerResult, role Role) error {

@@ -146,7 +146,7 @@ func TestAdoptingIdleWorkerShutsItDownAndReschedules(t *testing.T) {
 	}
 	var recorded WorkerRun
 	blocked, cancel := context.WithCancel(context.Background())
-	_, err = runWorker(blocked, bot, workerRequest{Protocol: 1, Issue: 7}, time.Now().Add(time.Hour), func(Progress) {}, func(run WorkerRun) error {
+	_, err = runWorker(blocked, bot, workerRequest{Protocol: 1, Issue: 7}, false, time.Now().Add(time.Hour), func(Progress) {}, func(run WorkerRun) error {
 		recorded = run
 		cancel()
 		return nil

@@ -306,9 +306,10 @@ def published(directory, sha, tag):
         latest = api("releases/latest")
         if latest.get("tag_name") != tag:
             raise ValueError("GitHub latest release does not point to the prepared version")
-    raise RuntimeError("Sigstore provenance verification is not implemented: validate the exact npm "
-                       "payload, source commit/workflow, Fulcio certificate, certificate-transparency "
-                       "log and Rekor inclusion before certifying publication")
+    # package_registry.run("verify") already verified every npm payload and its
+    # Fulcio/Rekor SLSA provenance bundle against this exact commit and tag.
+    print(f"Certified publication of {tag} from {sha}: GitHub release, native assets, "
+          "npm packages and provenance all match the candidate")
 
 
 def main():

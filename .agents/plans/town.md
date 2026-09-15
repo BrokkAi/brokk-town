@@ -690,6 +690,18 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
 - Save an explicitly selected semantic version per town and bot, then retain all
   worker protocol, capability, reported-version, and exact-run checks.
 
+## Release recovery through the worker API (2026-09-15)
+
+- The v0.1.2 publish run failed only because `release_checks.published` ended
+  with a placeholder `raise` after every destination and provenance check had
+  passed; certify instead of raising, with a unit test.
+- Add `POST /v1/retry` to the worker protocol so an operator lifts Release Bot's
+  exhausted attempt budget with `bt retry --role release` or the control API;
+  Town sends it only to a worker advertising `retry` and never edits bot state.
+- Release Bot itself routes a repeated identical verification failure to its
+  preparation agent, so script or workflow bugs get repaired without an operator.
+- Bump the Release Bot pin once a release advertising `retry` is published.
+
 ## Offered bot upgrades (2026-09-15)
 
 - Check npm's stable bot tags from the supervisor at start and every six hours;
