@@ -17,6 +17,7 @@ import {
   focusIdentity,
   focusMatches,
   scheduleLabel,
+  workerControls,
   townControls,
   decisionReason,
   inbox,
@@ -721,13 +722,14 @@ function renderInspection() {
     queue = queueFor(t, selectedHouse);
   if (!w) return;
   const agent = projectedWorker.profile;
+  const controls = workerControls(w);
   const funnelDetails = selectedHouse === "issue" || selectedHouse === "repo"
     ? Object.values(t.funnel_syncs || {}).map((sync) => `<p class="muted"><strong>${esc(sync.funnel)}</strong> · ${esc(sync.provider)} · ${esc((sync.outcome?.kind || "incomplete").replaceAll("_", " "))}${sync.last_sync ? ` · ${esc(new Date(sync.last_sync).toLocaleString())}` : ""}${sync.outcome?.detail ? `<br>${esc(sync.outcome.detail)}` : ""}</p>`).join("")
     : "";
   const agentDetails = selectedHouse === "repo"
     ? '<p class="muted">Reports repository state without an agent.</p>'
     : `<p class="muted">${projectedWorker.active ? "Active dispatch" : "Next run"}: ${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` ${esc(agent.harness_version)}` : ""} · ${esc(agent.model || "Default model")} · ${esc(agent.effort || "Default effort")}<br>${agent.source === "active" ? "Captured for this run" : agent.inherited === false ? "Own queued bot profile" : "Town defaults for queued work"}</p><button id="configure-agent" type="button">Configure agent</button>`;
-  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : "Waiting for work"))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start">▶ Start</button><button data-action="pause">Ⅱ Pause</button><button data-action="stop">■ Stop</button></div>${agentDetails}${funnelDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
+  out.innerHTML = `<p class="worker-type">${{ bug: "THE GREENHOUSE", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : "Waiting for work"))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${agentDetails}${funnelDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
     queue
       .slice(0, 40)
       .map(
