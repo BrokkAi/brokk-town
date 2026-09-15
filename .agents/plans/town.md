@@ -1,5 +1,40 @@
 # Brokk Town implementation plan
 
+## Self-managed service lifecycle (2026-09-15)
+
+- The tool owns its lifecycle; the operator installs nothing. Every client
+  command (`bt`, `tui`, `web`, `status`, controls) probes `connection.json`
+  (PID liveness plus an authenticated state request) and starts the service
+  when it is down. Real towns register with the login session through
+  `internal/daemon`: a launchd agent (`KeepAlive`, `RunAtLoad`, bounded
+  throttle) on macOS or a systemd user unit (`Restart=always`, no start limit,
+  best-effort lingering) on Linux. The unit captures the installing shell's
+  `PATH`, `HOME`, and `BROKK_TOWN_MANAGED=1`, and is rewritten whenever its
+  rendered content changes. Registration failure, `bt service off`, demo mode,
+  and temporary (`go run`/`go test`) binaries fall back to a detached spawn
+  with owner-only log files under the state directory. `launch.json` also
+  remembers the last explicit `--listen` per town (real and demo) so a later
+  command's default cannot re-register the job onto a different port; `bt
+  service stop` unloads a supervised job even when no connection file exists,
+  so a crash-looping job can always be halted.
+- The service advertises version, executable, start time, and managed mode in
+  `connection.json` and `version` in public state. A newer release client, or
+  the same binary rebuilt since the service started, restarts the service:
+  `/api/restart` re-executes the binary at its own path (same PID, so
+  supervisors and the npm launcher see one job); a different path re-registers
+  or respawns. An older client never downgrades. The access key persists in
+  `token` so browser bookmarks, tabs, and a polling TUI survive restarts; the
+  page reloads itself when the served version changes.
+- In-app upgrades install through the original channel (npm for the package
+  layout, otherwise the checksum-verified release archive swapped over the
+  executable) and then restart in place. `bt serve` remains the foreground
+  mode and names the process holding the state lock.
+- Tests: fake supervisor runners assert launchctl/systemctl sequences and
+  template escaping; fake managers and services cover start, fallback, drift
+  rolling, and `bt service` verbs; the web tests cover restart responses,
+  version exposure, and asset revalidation; smoke covers real on-demand start,
+  crash recovery, and token stability for the demo town.
+
 ## Recoverable review outcomes (2026-09-14)
 
 - Reviewer execution/evidence failures are distinct from completed negative

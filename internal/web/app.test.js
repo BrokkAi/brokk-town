@@ -369,6 +369,34 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements["capacity-dialog"].open, false);
 });
 
+test("the page follows a restarted service: managed upgrades report restarting and a new version reloads the assets", async () => {
+  const elements = installFixture();
+  let reloads = 0;
+  globalThis.location.reload = () => { reloads++; };
+  let releaseSecond;
+  const messages = [
+    `data: ${JSON.stringify({ ...state, version: "1.0.0" })}\n\n`,
+    new Promise((resolve) => { releaseSecond = () => resolve(`data: ${JSON.stringify({ ...state, seq: 2, version: "1.1.0" })}\n\n`); }),
+  ];
+  globalThis.fetch = async (url) => {
+    if (url === "/api/events") {
+      let index = 0;
+      return { ok: true, body: { getReader: () => ({ read: async () => index < messages.length ? { value: new TextEncoder().encode(await messages[index++]), done: false } : { done: true } }) } };
+    }
+    if (url === "/api/update") return { ok: true, json: async () => ({ ok: true, restarting: true }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: true, agents: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?reload-test=${Date.now()}`);
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  await elements["update-notice"].onclick();
+  assert.match(elements["update-notice"].textContent, /restarting/);
+  assert.equal(reloads, 0, "the same version never reloads");
+  releaseSecond();
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(reloads, 1, "a different service version reloads the page once");
+});
+
 test("responsive and reduced-motion contracts remain shipped in the stylesheet", () => {
   const css = readFileSync(new URL("./style.css", import.meta.url), "utf8");
   assert.match(css, /@media\s*\(max-width:\s*760px\)/);

@@ -2,6 +2,12 @@
 
 ## 0.1.2 — pending
 
+- Start the town service on demand from any `bt` command and register it with
+  the login session (launchd or systemd --user) so it survives crashes and
+  reboots; `bt service` inspects, stops, restarts, or unregisters it.
+- Restart in place after an upgrade through the original install channel, roll
+  a stale service forward when `bt` is newer, keep the browser address stable
+  across restarts, and reload the page when the service version changes.
 - Offer pinned Brokk Town upgrades through the browser and terminal interfaces.
 - Make the external pull-request ownership policy editable in Town settings.
 - Harden partial-release recovery when native archives were produced by a

@@ -122,6 +122,48 @@ func TestUpdateIsOfferedAndInstalledThroughAuthenticatedAPI(t *testing.T) {
 	if installed.StatusCode != http.StatusOK || !called {
 		t.Fatalf("authenticated upgrade failed: status=%d called=%v", installed.StatusCode, called)
 	}
+	var result map[string]any
+	if err := json.NewDecoder(installed.Body).Decode(&result); err != nil || result["restart_required"] != true {
+		t.Fatalf("a service that cannot restart itself must ask for one: %v %v", result, err)
+	}
+
+	// With a restart hook the upgrade restarts in place, and clients can ask
+	// for a restart directly; both are authenticated.
+	restarted := make(chan struct{}, 2)
+	s.Version = "1.0.0"
+	s.Restart = func() { restarted <- struct{}{} }
+	response = call(t, h.URL, http.MethodGet, "/api/state", "", "test-key", "")
+	var versioned struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&versioned); err != nil || versioned.Version != "1.0.0" {
+		t.Fatalf("version missing from public state: %+v %v", versioned, err)
+	}
+	upgraded := call(t, h.URL, http.MethodPost, "/api/update", `{}`, "test-key", "")
+	result = nil
+	if err := json.NewDecoder(upgraded.Body).Decode(&result); err != nil || result["restarting"] != true || result["restart_required"] != nil {
+		t.Fatalf("managed upgrade response: %v %v", result, err)
+	}
+	if call(t, h.URL, http.MethodPost, "/api/restart", `{}`, "", "").StatusCode != http.StatusUnauthorized {
+		t.Fatal("unauthenticated restart accepted")
+	}
+	if call(t, h.URL, http.MethodPost, "/api/restart", `{}`, "test-key", "").StatusCode != http.StatusOK {
+		t.Fatal("restart request rejected")
+	}
+	for i := 0; i < 2; i++ {
+		select {
+		case <-restarted:
+		case <-time.After(3 * time.Second):
+			t.Fatal("restart hook not invoked")
+		}
+	}
+	s.Restart = nil
+	if call(t, h.URL, http.MethodPost, "/api/restart", `{}`, "test-key", "").StatusCode != http.StatusConflict {
+		t.Fatal("restart accepted without a hook")
+	}
+	if page := call(t, h.URL, http.MethodGet, "/", "", "", ""); page.Header.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("embedded assets must revalidate after a restart: %q", page.Header.Get("Cache-Control"))
+	}
 }
 
 func TestManagementAPIsAreAuthenticatedStrictAndPersisted(t *testing.T) {
