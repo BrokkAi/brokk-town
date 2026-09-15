@@ -499,7 +499,7 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   assert.match(elements["inbox-list"].textContent, /Review Bot/);
   assert.match(elements["inbox-list"].textContent, /gh exploded/, "failed workers carry their error");
 
-  opens[1].onclick();
+  opens[2].onclick();
   assert.equal(elements["inbox-dialog"].open, false, "opening an item closes the inbox");
   assert.equal(elements.inspector.classList.contains("open"), true);
   assert.equal(elements.overview.hidden, true, "opening an item leaves the all-towns overview");
