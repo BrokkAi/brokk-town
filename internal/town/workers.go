@@ -19,6 +19,11 @@ type BotWorkers struct {
 	BotCommands  map[Role]string
 	remoteURL    func(string) string
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
+	// confirmWait and confirmInterval bound how long a repair publish waits
+	// for GitHub's pull request head to catch up with the pushed branch.
+	// Zero values use the production defaults.
+	confirmWait     time.Duration
+	confirmInterval time.Duration
 }
 
 func (b *BotWorkers) CanRetryIssue(t *Town, issue int) (bool, error) {
@@ -71,8 +76,20 @@ func emptyRevision(value string) string {
 	return value
 }
 
+// workerDeadline bounds one external bot dispatch, including time spent
+// reconnecting to it after a service restart.
+const workerDeadline = 2 * time.Hour
+
+// dispatch identifies what one bot run was asked to do. Adoption rebuilds it
+// from the durable run handle so results are applied to the same task.
+type dispatch struct {
+	issue, pr  int
+	base, head string
+}
+
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (RunResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Hour)
+	deadline := time.Now().Add(workerDeadline)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	result := RunResult{}
 	t = clone(t)
@@ -88,14 +105,9 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 		profile.Agent = agent
 		t.Config.BotAgents[r] = profile
 	}
+	var d dispatch
 	switch r {
 	case Bug, Feature, Release:
-		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, 0, 0, "", "", observe)
-		result.Retried = workerResult.retried
-		if err != nil {
-			return result, err
-		}
-		return result, validateWorkerResult(workerResult, r)
 	case Issue:
 		if task := nextTask(t, Issue, "fixes"); task != nil {
 			result.PR = task.Number
@@ -105,7 +117,43 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 		if task == nil {
 			return result, nil
 		}
-		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, task.Number, 0, "", "", observe)
+		d.issue = task.Number
+	case Review:
+		task := nextTask(t, Review, "queued")
+		if task == nil {
+			return result, nil
+		}
+		d = dispatch{pr: task.Number, base: task.Base, head: task.Head}
+	default:
+		return result, fmt.Errorf("unsupported worker %s", r)
+	}
+	workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, d, deadline, observe)
+	return b.complete(ctx, t, r, d, workerResult, err, observe, log)
+}
+
+// Adopt resumes a bot process that an earlier service left running. The run
+// handle names the process, its socket, and the exact task it was given.
+func (b *BotWorkers) Adopt(ctx context.Context, t *Town, r Role, run WorkerRun, observe func(Progress), log *slog.Logger) (RunResult, error) {
+	t = clone(t)
+	d := dispatch{issue: run.Issue, pr: run.PR, base: run.BaseSHA, head: run.HeadSHA}
+	workerResult, err := adoptWorker(ctx, r, run, observe)
+	return b.complete(ctx, t, r, d, workerResult, err, observe, log)
+}
+
+// complete turns a raw worker outcome into Town's result for one dispatch. It
+// is shared by fresh runs and adopted runs so both apply identical rules.
+func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, workerResult workerResult, err error, observe func(Progress), log *slog.Logger) (RunResult, error) {
+	result := RunResult{}
+	if r == Release {
+		result.Retried = workerResult.retried
+	}
+	switch r {
+	case Bug, Feature, Release:
+		if err != nil {
+			return result, err
+		}
+		return result, validateWorkerResult(workerResult, r)
+	case Issue:
 		if workerResult.Issue != nil {
 			result.Owned = make(map[int]Ownership, len(workerResult.Issue.Owned))
 			for _, owned := range workerResult.Issue.Owned {
@@ -119,30 +167,29 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 		}
 		return result, validateWorkerResult(workerResult, r)
 	case Review:
-		task := nextTask(t, Review, "queued")
-		if task == nil {
-			return result, nil
-		}
-		result.PR = task.Number
-		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, 0, task.Number, task.Base, task.Head, observe)
+		result.PR = d.pr
 		if err != nil {
 			return result, err
 		}
 		if err = validateWorkerResult(workerResult, r); err != nil {
 			return result, err
 		}
+		task := t.Tasks[fmt.Sprintf("pr:%d", d.pr)]
+		if task == nil {
+			return result, fmt.Errorf("PR #%d left the town while review-bot was working", d.pr)
+		}
 		review := workerResult.Review
-		if !review.Complete || review.ExactBase != task.Base || review.ExactHead != task.Head {
+		if !review.Complete || review.ExactBase != d.base || review.ExactHead != d.head || task.Base != d.base || task.Head != d.head {
 			return result, &ReviewAttemptError{Complete: review.Complete, ExpectedBase: task.Base, ExpectedHead: task.Head, ReturnedBase: review.ExactBase, ReturnedHead: review.ExactHead}
 		}
-		observe(Progress{"certifying", "Checking all outstanding findings on this revision"})
+		observe(Progress{Phase: "certifying", Task: "Checking all outstanding findings on this revision"})
 		result.Audit, err = b.certify(ctx, t, task, review.Findings, log)
 		return result, err
 	}
 	return result, fmt.Errorf("unsupported worker %s", r)
 }
 
-func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, issue, pr int, base, head string, observe func(Progress)) (workerResult, error) {
+func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, d dispatch, deadline time.Time, observe func(Progress)) (workerResult, error) {
 	bot, err := b.externalBot(ctx, t.Config, role)
 	if err != nil {
 		return workerResult{}, err
@@ -152,10 +199,25 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 	request := workerRequest{
 		Protocol: workerProtocolVersion, Remote: remote, Branch: branch,
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
-		Agent: agent, Verify: t.Config.Verify, Issue: issue, PR: pr, BaseSHA: base, HeadSHA: head,
+		Agent: agent, Verify: t.Config.Verify, Issue: d.issue, PR: d.pr, BaseSHA: d.base, HeadSHA: d.head,
 	}
 	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
-	return runWorker(ctx, bot, request, retry, observe, nil)
+	// The handle is committed before the run request so a service that stops
+	// at any later point can find the process again.
+	started := func(run WorkerRun) error {
+		if b.Store == nil {
+			return nil
+		}
+		return b.Store.Update(func(st *State) error {
+			town := st.Towns[t.ID]
+			if town == nil {
+				return errors.New("town disappeared before the worker started")
+			}
+			town.Workers[role].Run = &run
+			return nil
+		})
+	}
+	return runWorker(ctx, bot, request, retry, deadline, observe, started)
 }
 
 func validateWorkerResult(result workerResult, role Role) error {

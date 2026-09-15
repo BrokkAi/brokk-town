@@ -192,6 +192,120 @@ header {
   font: 11px var(--mono);
   white-space: nowrap;
 }
+.town-version {
+  color: #b5caae;
+  font: 11px var(--mono);
+  white-space: nowrap;
+}
+.inbox-toggle {
+  white-space: nowrap;
+}
+.inbox-count {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: #3d5738;
+  color: #d6f8be;
+  font: 11px var(--mono);
+  text-align: center;
+}
+.inbox-count.decisions {
+  background: #e4d477;
+  color: #1d1a0a;
+  font-weight: 700;
+}
+.town-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+.town-flag {
+  font: 11px var(--mono);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #3d5738;
+  color: #d6f8be;
+}
+.town-flag.decide {
+  background: #4a3f16;
+  color: #f0dd7a;
+  border: 1px solid #b6a54c66;
+}
+.town-flag.attention {
+  background: #4a2f1d;
+  color: #f1a775;
+}
+.town-stats .stat-decide strong {
+  color: #f0dd7a;
+}
+#inbox-list h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 6px;
+  font-size: 15px;
+}
+.inbox-town {
+  margin: 0 0 10px;
+}
+.inbox-town h3 {
+  font: 12px var(--mono);
+  letter-spacing: 1px;
+  color: #9fb493;
+  margin: 12px 0 8px;
+}
+.inbox-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: #15291d;
+  border: 1px solid #2e4634;
+  border-left: 3px solid #b6a54c;
+  border-radius: 7px;
+  color: #d4e0d0;
+}
+.inbox-item.attention {
+  border-left-color: #f1a775;
+}
+.inbox-item strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.inbox-item small {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  color: #a0b394;
+  overflow-wrap: anywhere;
+}
+.inbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.inbox-actions button {
+  font-size: 12px;
+  padding: 6px 9px;
+}
+@media (max-width: 760px) {
+  .inbox-item {
+    flex-direction: column;
+  }
+  .inbox-actions {
+    justify-content: flex-start;
+  }
+}
 .operations-board,
 .operations-compact {
   padding: 2px 0 30px;
@@ -557,7 +671,20 @@ p {
   gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
   max-width: 350px;
+}
+.town-controls .status-chip {
+  font-size: 11px;
+  padding: 3px 7px;
+}
+.status-chip.status-awake {
+  border-color: var(--green);
+  color: var(--green);
+}
+.status-chip.status-partial {
+  border-color: #c9a24a;
+  color: #efd68a;
 }
 .world {
   position: relative;

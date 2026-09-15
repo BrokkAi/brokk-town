@@ -63,11 +63,11 @@ func TestFeatureWorkerUsesDiscoveryCadenceAndNoSyntheticDelivery(t *testing.T) {
 		if role != Feature {
 			t.Fatalf("wrong role: %s", role)
 		}
-		progress(Progress{"reviewing", "Comparing the proposal against issue history"})
+		progress(Progress{Phase: "reviewing", Task: "Comparing the proposal against issue history"})
 		return RunResult{}, nil
 	}))
 	sup.now = func() time.Time { return now }
-	sup.execute(context.Background(), x, Feature)
+	sup.execute(context.Background(), x, Feature, nil)
 	state := s.Snapshot()
 	w := state.Towns[x.ID].Workers[Feature]
 	if !called || !w.Next.Equal(now.Add(30*time.Minute)) || w.Status != "waiting" {

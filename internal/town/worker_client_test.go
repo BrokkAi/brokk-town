@@ -22,14 +22,45 @@ func writeFakeWorker(t *testing.T, path, body string) {
 }
 
 const pythonFakeWorker = `#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
 import socketserver
 
+# Modes (TOWN_WORKER_TEST_MODE):
+#   default  finish the run immediately (protocol v1 fixture).
+#   hang     protocol v1 without detach: block the run until the release file
+#            exists, then finish; honor shutdown only after the run ends.
+#   detach   advertise detach: keep working when the client disconnects,
+#            buffer events, and replay them through GET /v1/attach?after=N.
+MODE = os.environ.get('TOWN_WORKER_TEST_MODE', '')
+RELEASE = os.environ.get('TOWN_WORKER_TEST_RELEASE', '')
+EVENTS = []
+COND = threading.Condition()
+RUN_STARTED = threading.Event()
+RUN_DONE = threading.Event()
+
+def wait_release():
+    while RELEASE and not os.path.exists(RELEASE):
+        time.sleep(0.02)
+
+def publish(event):
+    with COND:
+        EVENTS.append(event)
+        COND.notify_all()
+
+def final_events():
+    if os.environ.get('TOWN_WORKER_TEST_UNTYPED'):
+        return [{'type': 'complete', 'seq': 2}]
+    return [
+        {'type': 'result', 'seq': 2, 'result': {'issue': {'owned': [{'pr': 7, 'branch': 'town/7', 'issue': 7}]}}},
+        {'type': 'complete', 'seq': 3},
+    ]
+
 class UnixHTTPServer(ThreadingHTTPServer):
     address_family = socket.AF_UNIX
     allow_reuse_address = False
+    daemon_threads = True
     def server_bind(self):
         self.server_path = self.server_address[0]
         self.socket.bind(self.server_path)
@@ -49,22 +80,55 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+    def start_stream(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/x-ndjson')
+        self.send_header('X-Brokk-Worker-Protocol', '1')
+        self.send_header('Connection', 'close')
+        self.end_headers()
+    def emit(self, event):
+        try:
+            self.wfile.write((json.dumps(event, separators=(',', ':')) + '\n').encode())
+            self.wfile.flush()
+            return True
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return False
     def do_GET(self):
+        if self.path.startswith('/v1/attach?after=') and MODE == 'detach':
+            after = int(self.path.split('=', 1)[1])
+            if not RUN_STARTED.is_set():
+                self.send_json(404, {'error': 'no run has been submitted'})
+                return
+            self.start_stream()
+            index = 0
+            while True:
+                with COND:
+                    while index >= len(EVENTS) and not RUN_DONE.is_set():
+                        COND.wait(0.05)
+                    if index >= len(EVENTS):
+                        return
+                    event = EVENTS[index]
+                index += 1
+                if event['seq'] <= after:
+                    continue
+                if not self.emit(event):
+                    return
+                if event['type'] in ('complete', 'error', 'canceled'):
+                    return
         if self.path != '/v1/initialize':
             self.send_error(404)
             return
+        capabilities = ['run', 'progress', 'issue-result', 'exact-issue']
+        if MODE == 'detach':
+            capabilities.append('detach')
         self.send_json(200, {
             'protocol': 1,
             'minimum_protocol': 1,
             'bot': 'issue-bot',
             'version': '9.8.7',
-            'capabilities': ['run', 'progress', 'issue-result', 'exact-issue'],
+            'capabilities': capabilities,
         })
     def do_POST(self):
-        if self.path == '/v1/shutdown':
-            self.send_json(202, {'stopping': True})
-            self.server.shutdown()
-            return
         if self.path == '/v1/retry':
             length = int(self.headers.get('Content-Length', '0'))
             request = json.loads(self.rfile.read(length))
@@ -72,6 +136,14 @@ class Handler(BaseHTTPRequestHandler):
             if journal:
                 with open(journal, 'a') as f: f.write('retry ' + request['state_directory'] + '\n')
             self.send_json(200, {'retry': 'scheduled'})
+            return
+        if self.path == '/v1/shutdown':
+            self.send_json(202, {'stopping': True})
+            def stop():
+                if RUN_STARTED.is_set():
+                    RUN_DONE.wait()
+                self.server.shutdown()
+            threading.Thread(target=stop, daemon=True).start()
             return
         if self.path != '/v1/runs':
             self.send_error(404)
@@ -84,13 +156,29 @@ class Handler(BaseHTTPRequestHandler):
         journal = os.environ.get('TOWN_WORKER_TEST_JOURNAL')
         if journal:
             with open(journal, 'a') as f: f.write('run ' + request['state_directory'] + '\n')
-        events = [
-            {'type': 'progress', 'seq': 1, 'progress': {'phase': 'investigating', 'task': 'external protocol fixture'}},
-            {'type': 'result', 'seq': 2, 'result': {'issue': {'owned': [{'pr': 7, 'branch': 'town/7', 'issue': 7}]}}},
-            {'type': 'complete', 'seq': 3},
-        ]
-        if os.environ.get('TOWN_WORKER_TEST_UNTYPED'):
-            events = [events[0], {'type': 'complete', 'seq': 2}]
+        RUN_STARTED.set()
+        progress = {'type': 'progress', 'seq': 1, 'progress': {'phase': 'investigating', 'task': 'external protocol fixture'}}
+        if MODE in ('hang', 'detach'):
+            # A run that has been accepted always completes its bookkeeping,
+            # however early the Town client disconnects: a detach-capable bot
+            # keeps working and buffering, and every bot must still exit after
+            # shutdown. A socket failure while writing headers must not leave
+            # the run half-recorded.
+            try:
+                try:
+                    self.start_stream()
+                except OSError:
+                    pass
+                publish(progress)
+                self.emit(progress)
+                wait_release()
+                for event in final_events():
+                    publish(event)
+                    self.emit(event)
+            finally:
+                RUN_DONE.set()
+            return
+        events = [progress] + final_events()
         data = ''.join(json.dumps(event, separators=(',', ':')) + '\n' for event in events).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/x-ndjson')
@@ -98,6 +186,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+        RUN_DONE.set()
 
 if len(sys.argv) == 2 and sys.argv[1] == 'version':
     print('9.8.7')
@@ -226,6 +315,23 @@ func TestWorkerVersionAndCapabilitiesAreChecked(t *testing.T) {
 	}
 }
 
+func TestWorkerEventSequenceMustBeContiguous(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "fake-worker")
+	body := strings.Replace(pythonFakeWorker, `{'type': 'progress', 'seq': 1,`, `{'type': 'progress', 'seq': 2,`, 1)
+	writeFakeWorker(t, fake, body)
+	store := testStore(t, false)
+	x := addTown(t, store)
+	x.Config.Branch = "main"
+	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
+	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
+	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
+	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "event sequence gap") {
+		t.Fatalf("event sequence gap was accepted: %v", err)
+	}
+}
+
 func TestReleaseRetryUsesWorkerAPIBeforeRun(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "fake-worker")
@@ -266,22 +372,5 @@ func TestReleaseRetryUsesWorkerAPIBeforeRun(t *testing.T) {
 	x.Workers[Release].RetryRequested = true
 	if _, err = workers.Run(context.Background(), x, Release, func(Progress) {}, logger); err == nil || !strings.Contains(err.Error(), `does not advertise "retry"`) {
 		t.Fatalf("missing retry capability was accepted: %v", err)
-	}
-}
-
-func TestWorkerEventSequenceMustBeContiguous(t *testing.T) {
-	dir := t.TempDir()
-	fake := filepath.Join(dir, "fake-worker")
-	body := strings.Replace(pythonFakeWorker, `{'type': 'progress', 'seq': 1,`, `{'type': 'progress', 'seq': 2,`, 1)
-	writeFakeWorker(t, fake, body)
-	store := testStore(t, false)
-	x := addTown(t, store)
-	x.Config.Branch = "main"
-	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
-	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
-	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
-	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), "event sequence gap") {
-		t.Fatalf("event sequence gap was accepted: %v", err)
 	}
 }

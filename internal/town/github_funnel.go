@@ -222,6 +222,8 @@ type GitHubIssue struct {
 	Locked      bool      `json:"locked,omitempty"`
 	PullRequest bool      `json:"pull_request,omitempty"`
 	Labels      []string  `json:"labels,omitempty"`
+	Author      string    `json:"author,omitempty"`
+	Comments    int       `json:"comments,omitempty"`
 	Revision    string    `json:"revision"`
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
@@ -904,7 +906,11 @@ type githubIssueJSON struct {
 	State     string    `json:"state"`
 	Locked    bool      `json:"locked"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Labels    []struct {
+	Comments  int       `json:"comments"`
+	User      struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	Labels []struct {
 		Name string `json:"name"`
 	} `json:"labels"`
 	PullRequest map[string]any `json:"pull_request"`
@@ -915,7 +921,7 @@ func (i githubIssueJSON) issue() GitHubIssue {
 	for _, label := range i.Labels {
 		labels = append(labels, label.Name)
 	}
-	item := GitHubIssue{ID: strconv.FormatInt(i.ID, 10), Number: i.Number, Title: i.Title, Body: i.Body, URL: i.URL, State: i.State, Locked: i.Locked, Labels: labels, UpdatedAt: i.UpdatedAt, PullRequest: len(i.PullRequest) != 0}
+	item := GitHubIssue{ID: strconv.FormatInt(i.ID, 10), Number: i.Number, Title: i.Title, Body: i.Body, URL: i.URL, State: i.State, Locked: i.Locked, Labels: labels, Author: i.User.Login, Comments: i.Comments, UpdatedAt: i.UpdatedAt, PullRequest: len(i.PullRequest) != 0}
 	item.Revision = normalizeRevision(item)
 	return item
 }
