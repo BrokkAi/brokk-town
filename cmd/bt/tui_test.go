@@ -51,6 +51,10 @@ func TestTerminalFramesFitAndNeutralizeControls(t *testing.T) {
 	if !strings.Contains(issue, "Authority:") || !strings.Contains(issue, "create pull requests") {
 		t.Fatal("issue house omitted write authority", issue)
 	}
+	review := renderTUI(s, "", 0, 2, 140, 35, "")
+	if !strings.Contains(review, "merge eligible pull requests when merge policy permits") {
+		t.Fatal("review house omitted policy-dependent merge authority", review)
+	}
 }
 
 func TestTUIShowsManualReleaseBoundaryAndWakeSet(t *testing.T) {

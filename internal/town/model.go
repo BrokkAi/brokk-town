@@ -41,7 +41,7 @@ func WorkerAuthority(role Role, mergePolicy string) string {
 	case Issue:
 		return "May claim issues, create pull requests, and push repairs to Town-owned branches."
 	case Review:
-		return "May post pull request reviews and findings; it does not edit contributor branches."
+		return "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches."
 	case Release:
 		detail := "May create and merge release-preparation pull requests and publish releases and packages."
 		if mergePolicy == "manual" {

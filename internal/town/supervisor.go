@@ -490,7 +490,16 @@ func (s *Supervisor) abandon(ctx context.Context, t *Town, r Role, run WorkerRun
 	if adopter, ok := s.Workers.(Adopter); ok {
 		stopped, cancel := context.WithCancelCause(ctx)
 		cancel(errStopWorker)
-		_, _ = adopter.Adopt(stopped, t, r, run, func(Progress) {}, slog.New(&workerLog{role: r, out: nil, now: s.now}))
+		_, err := adopter.Adopt(stopped, t, r, run, func(Progress) {}, slog.New(&workerLog{role: r, out: nil, now: s.now}))
+		if err != nil && !errors.Is(err, context.Canceled) {
+			s.update(func(st *State) error {
+				worker := st.Towns[t.ID].Workers[r]
+				worker.Error = fmt.Sprintf("Could not stop persisted %s safely: %v", run.Bot, err)
+				worker.Updated = s.now()
+				return nil
+			})
+			return
+		}
 	}
 	s.update(func(st *State) error {
 		st.Towns[t.ID].Workers[r].Run = nil

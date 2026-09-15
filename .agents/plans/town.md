@@ -10,6 +10,12 @@
 - Since Worker Protocol v1 cannot disable only Release Bot's preparation merges,
   enforce manual merging by preventing release dispatch/start/retry, skipping
   Release Bot during town-wide wake, and stopping it when policy becomes manual.
+- Authenticate persisted Release Bot sockets on a bounded live probe before a
+  manual-policy stop, even though the adoption context already carries the stop
+  cause, so the detached process is killed rather than orphaned. Retain the
+  socket and durable handle with a visible failure if safe authentication fails.
+- Disclose beside Review Bot controls that starting it can merge eligible pull
+  requests when the configured merge policy permits.
 - Cover default and persisted startup state, manual-policy controls and scheduling,
   fake Release Bot non-dispatch, and browser/TUI authority text.
 

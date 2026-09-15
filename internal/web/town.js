@@ -21,7 +21,7 @@ export const houseAuthorities = {
   bug: "May inspect repository content and file GitHub bug issues.",
   feature: "May inspect repository content and propose or file GitHub feature issues.",
   issue: "May claim issues, create pull requests, and push repairs to Town-owned branches.",
-  review: "May post pull request reviews and findings; it does not edit contributor branches.",
+  review: "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches.",
   release: "May create and merge release-preparation pull requests and publish releases and packages.",
   repo: "Read-only: inventories and reconciles repository state without an agent or GitHub writes.",
 };

@@ -338,6 +338,7 @@ test("worker controls only offer actions that change the worker's state", () => 
   assert.deepEqual(workerControls({ enabled: false, status: "paused" }), { start: true, pause: false, stop: false });
   assert.deepEqual(workerControls(undefined), { start: true, pause: false, stop: false });
   assert.deepEqual(workerControls({ enabled: false, status: "paused" }, true), { start: false, pause: false, stop: false });
+  assert.match(houseAuthority("review", "bot"), /merge eligible pull requests when merge policy permits/);
   assert.match(houseAuthority("release", "manual"), /release-preparation pull requests.*Paused/);
   assert.match(houseAuthority("repo"), /^Read-only:/);
 });

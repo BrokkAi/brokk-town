@@ -203,6 +203,29 @@ func TestOperatorStopKillsWorkerProcess(t *testing.T) {
 	}
 }
 
+func TestAdoptStopAuthenticatesThenKillsWorkerProcess(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	workers, _, x, run, done, _ := startFakeIssueRun(t, ctx, "detach")
+	cancel()
+	if outcome := <-done; !errors.Is(outcome.err, errWorkerDetached) {
+		t.Fatalf("shutdown should leave the worker for adoption, got %v", outcome.err)
+	}
+	if !osrun.Alive(run.PID) {
+		t.Fatal("shutdown killed the worker before adoption")
+	}
+
+	stopped, stop := context.WithCancelCause(context.Background())
+	stop(errStopWorker)
+	_, err := workers.Adopt(stopped, x, Issue, run, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("adopted stop should report cancellation, got %v", err)
+	}
+	waitFor(t, 10*time.Second, func() bool { return !osrun.Alive(run.PID) })
+	if _, err := os.Stat(filepath.Dir(run.Socket)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("adopted stop did not clean the run directory: %v", err)
+	}
+}
+
 func TestOnlyPlainCancellationDetaches(t *testing.T) {
 	live := context.Background()
 	if detachRequested(live) || stopRequested(live) {
@@ -419,6 +442,34 @@ func TestSupervisorStopsPersistedReleaseRunUnderManualPolicy(t *testing.T) {
 		t.Fatal("persisted release run was resumed under manual policy")
 	}
 	supervisor.wg.Wait()
+}
+
+func TestSupervisorRetainsPersistedRunWhenSafeStopFails(t *testing.T) {
+	store := testStore(t, false)
+	town := addTown(t, store)
+	handle := WorkerRun{Bot: "release-bot", Version: "0.5.1", Command: "/usr/local/bin/npx", Hash: "abc", PID: 4247, Socket: "/tmp/bt-worker-release-failed/worker.sock", Output: "/tmp/bt-worker-release-failed/worker.log", Detachable: true, Started: time.Now(), Deadline: time.Now().Add(time.Hour)}
+	update(t, store, func(state *State) {
+		current := state.Towns[town.ID]
+		current.Config.MergePolicy = "manual"
+		worker := current.Workers[Release]
+		worker.Enabled, worker.Status, worker.Run = true, "working", &handle
+	})
+	workers := &adoptingWorker{
+		workerFunc: func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+			return RunResult{}, nil
+		},
+		adopted: make(chan WorkerRun, 1), stops: make(chan bool, 1), outcome: errors.New("identity probe failed"),
+	}
+	supervisor := NewSupervisor(store, nil, workers)
+	supervisor.adopt(context.Background())
+	supervisor.wg.Wait()
+	worker := store.Snapshot().Towns[town.ID].Workers[Release]
+	if worker.Run == nil || worker.Run.PID != handle.PID {
+		t.Fatalf("failed safe stop discarded the durable run handle: %+v", worker)
+	}
+	if !strings.Contains(worker.Error, "Could not stop persisted release-bot safely") {
+		t.Fatalf("failed safe stop was not exposed to the operator: %+v", worker)
+	}
 }
 
 func TestSupervisorEndsOrphanOfDeletedTown(t *testing.T) {
