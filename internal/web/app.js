@@ -1011,13 +1011,6 @@ $("#add-form").onsubmit = async (e) => {
     button.disabled = false;
   }
 };
-$("#connect-form").onsubmit = (e) => {
-  e.preventDefault();
-  token = $("#token-input").value.trim();
-  sessionStorage.setItem("brokk-town-token", token);
-  $("#connect-dialog").close();
-  connect();
-};
 function motionUI() {
   $("#motion").textContent = motion ? "Motion on" : "Motion off";
   $("#motion").setAttribute("aria-pressed", String(!motion));
