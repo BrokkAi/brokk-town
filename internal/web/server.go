@@ -223,6 +223,7 @@ type settingsInput struct {
 	MergePolicy          *string            `json:"merge_policy,omitempty"`
 	MayoralFeatureReview *bool              `json:"mayoral_feature_review,omitempty"`
 	BotVersion           *string            `json:"bot_version,omitempty"`
+	AutoUpdateBots       *bool              `json:"auto_update_bots,omitempty"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -231,7 +232,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.MayoralFeatureReview, input.BotVersion); err != nil {
+	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.MayoralFeatureReview, input.BotVersion, input.AutoUpdateBots); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

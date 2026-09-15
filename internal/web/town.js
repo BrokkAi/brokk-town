@@ -154,6 +154,7 @@ export const taskStatuses = {
   queued: { label: "Queued", className: "queued" },
   awaiting_mayor: { label: "Mayoral decision", className: "waiting-github" },
   declined: { label: "Declined by Mayor", className: "closed" },
+  delayed: { label: "Delayed by Mayor", className: "waiting-github" },
   waiting_github: { label: "Waiting on GitHub", className: "waiting-github" },
   ready: { label: "Ready", className: "ready" },
   blocked: { label: "Blocked", className: "blocked" },

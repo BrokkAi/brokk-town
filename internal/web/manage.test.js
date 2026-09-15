@@ -84,9 +84,10 @@ function fixture(extraAPI) {
     if (url === "/api/harnesses") return catalog;
     if (url === "/api/settings") {
       if (extraAPI) await extraAPI(url, body, signal);
-      const { role, agent, merge_policy, mayoral_feature_review, bot_version } = body;
+      const { role, agent, merge_policy, mayoral_feature_review, auto_update_bots, bot_version } = body;
       if (merge_policy) town.config.merge_policy = merge_policy;
       if (mayoral_feature_review !== undefined) town.config.mayoral_feature_review = mayoral_feature_review;
+      if (auto_update_bots !== undefined) town.config.auto_update_bots = auto_update_bots;
       if (bot_version) town.config.bot_versions[role] = bot_version;
       if (agent.inherit) delete overrides[role];
       else {
@@ -141,6 +142,7 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
     agent: { harness: "claude-code", model: "next-review-model", effort: "xhigh", version: "1.5" },
     merge_policy: "bot",
     mayoral_feature_review: true,
+    auto_update_bots: false,
     bot_version: "0.2.1",
   });
   assert.equal(elements["settings-dialog"].open, true);
@@ -167,6 +169,18 @@ test("bot updates are explicit and save a new exact pin", async () => {
   await save();
   assert.equal(app.saves()[0].body.bot_version, "0.6.0");
   assert.equal(app.town.config.bot_versions.issue, "0.6.0");
+});
+
+test("automatic bot updates are off until the Mayor saves the town setting", async () => {
+  const app = fixture();
+  await open();
+  assert.equal(elements["settings-auto-update-bots"].checked, false);
+  elements["settings-auto-update-bots"].checked = true;
+  await save();
+  assert.equal(app.saves()[0].body.auto_update_bots, true);
+  assert.equal(app.town.config.auto_update_bots, true);
+  await open();
+  assert.equal(elements["settings-auto-update-bots"].checked, true, "the saved setting is shown on reopen");
 });
 
 test("restoring defaults waits for save and follows subsequent town default changes", async () => {

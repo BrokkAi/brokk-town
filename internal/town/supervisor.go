@@ -35,13 +35,18 @@ type Supervisor struct {
 	Publisher IssuePublisher
 	Funnels   FunnelRegistry
 	Harnesses *harness.Catalog
-	mu        sync.Mutex
-	running   map[string]context.CancelFunc
-	retrying  map[string]bool
-	wg        sync.WaitGroup
-	wake      chan struct{}
-	fatal     chan error
-	now       func() time.Time
+	// BotVersions reads npm's stable tag for every bot package. When set, Run
+	// checks it at start and every BotVersionInterval (default six hours) and
+	// offers newer versions to each town as Mayoral decisions or auto-updates.
+	BotVersions        func(context.Context) (map[Role]string, error)
+	BotVersionInterval time.Duration
+	mu                 sync.Mutex
+	running            map[string]context.CancelFunc
+	retrying           map[string]bool
+	wg                 sync.WaitGroup
+	wake               chan struct{}
+	fatal              chan error
+	now                func() time.Time
 }
 
 func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
@@ -65,6 +70,13 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer func() { cancel(); s.wg.Wait() }()
+	if s.BotVersions != nil {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.watchBotVersions(ctx)
+		}()
+	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -84,6 +96,7 @@ func (s *Supervisor) schedule(ctx context.Context) {
 	if state.Demo {
 		return
 	}
+	s.reviveDelayedBotUpgrades()
 	for _, t := range state.Towns {
 		if t.Deleted {
 			continue
@@ -462,10 +475,11 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 		}
 		return s.Delete(id)
 	}
-	if action != "start" && action != "pause" && action != "stop" && action != "retry" && action != "admit" && action != "decline" {
+	decision := action == "admit" || action == "decline" || action == "delay"
+	if action != "start" && action != "pause" && action != "stop" && action != "retry" && !decision {
 		return errors.New("unknown action")
 	}
-	if role != "all" && !ValidRole(role) && !((action == "admit" || action == "decline") && role == Hall) {
+	if role != "all" && !ValidRole(role) && !(decision && role == Hall) {
 		return errors.New("unknown role")
 	}
 	if action == "retry" {
@@ -489,10 +503,13 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
 		}
-		if action == "admit" || action == "decline" {
+		if decision {
 			task := t.Tasks[taskID]
 			if task == nil || task.MayoralDecision != "pending" || task.Stage != "awaiting_mayor" || task.House != Hall {
 				return errors.New("task is not awaiting a Mayoral decision")
+			}
+			if task.Kind == "upgrade" || action == "delay" {
+				return st.decideBotUpgrade(t, task, action, s.now())
 			}
 			if action == "decline" {
 				task.MayoralDecision = "declined"

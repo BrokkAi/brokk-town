@@ -214,6 +214,14 @@
           </label>
           <p class="muted">Enabled by default. Proposed feature issues wait at Town Hall before Issue Bot may implement them.</p>
         </section>
+        <section class="settings-section" aria-labelledby="bot-updates-heading">
+          <div class="eyebrow" id="bot-updates-heading">BOT UPDATES</div>
+          <label class="check-row" for="settings-auto-update-bots">
+            <input id="settings-auto-update-bots" type="checkbox" />
+            Update bots automatically when npm publishes a stable release
+          </label>
+          <p class="muted">Off by default. Town checks npm every few hours; a newer stable bot version waits at Town Hall where you can approve it, delay it a day, or decline it. Turning this on pins new releases as they appear, including any offer already waiting.</p>
+        </section>
         <div class="agent-profile">
           <label for="agent-role">Configure agent for</label>
           <select id="agent-role">

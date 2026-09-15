@@ -91,7 +91,7 @@ func run(ctx context.Context, args []string) error {
 	requestID := fs.String("request-id", "", "saved submission ID (request/check-request)")
 	maxWorkers := fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|admit|decline|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
+		fmt.Fprint(fs.Output(), "Brokk Town — one local service, a browser town, and a terminal control panel.\n\nUsage: bt [tui|serve|web|status|capacity|add|delete|harnesses|settings|request|check-request|start|pause|stop|retry|admit|decline|delay|version] [options]\n\nRun bt serve --demo for a simulated town. Run bt serve for real repositories.\nClosing the TUI or browser leaves the service running. Stop serve with Ctrl+C.\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -258,14 +258,15 @@ func run(ctx context.Context, args []string) error {
 		}
 		var result any
 		return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
-	case "start", "pause", "stop", "retry", "delete", "admit", "decline":
+	case "start", "pause", "stop", "retry", "delete", "admit", "decline", "delay":
 		if *repo == "" {
 			return errors.New("--repo OWNER/REPO is required")
 		}
-		if (command == "admit" || command == "decline") && *task == "" {
+		decision := command == "admit" || command == "decline" || command == "delay"
+		if decision && *task == "" {
 			return errors.New("--task is required for a Mayoral decision")
 		}
-		if command == "admit" || command == "decline" {
+		if decision {
 			*role = "hall"
 		}
 		var result any
@@ -403,6 +404,12 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	gh := town.GitHubClient{}
 	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh}
 	supervisor := town.NewSupervisor(store, gh, workers)
+	// Bot pins are offered from npm's stable tags on the supervisor's schedule;
+	// each town decides at Town Hall unless it opted into automatic updates.
+	botRegistry := &http.Client{Timeout: 8 * time.Second}
+	supervisor.BotVersions = func(checkCtx context.Context) (map[town.Role]string, error) {
+		return town.CheckBotVersions(checkCtx, botRegistry)
+	}
 	var available atomic.Pointer[town.UpdateNotice]
 	var upgradeMu sync.Mutex
 	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Update: available.Load}
