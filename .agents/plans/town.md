@@ -1,5 +1,27 @@
 # Brokk Town implementation plan
 
+## Cross-town inbox for Mayoral decisions and stuck work (2026-09-15)
+
+- Pending Mayoral decisions used to be visible only inside one town's Town
+  Hall panel, so an operator had to visit every town to find them. The browser
+  header now carries a "Needs you" button with a badge that counts pending
+  decisions and stuck work across every town; the badge turns amber while any
+  decision waits. The `I` key opens the same inbox.
+- The inbox is a pure projection (`inbox` in `internal/web/town.js`) over the
+  shared snapshot: pending `mayoral_decision` tasks, tasks whose projected
+  status is blocked, failed, inconclusive or uncertain-write, and failed
+  workers. Items are grouped by repository and ordered longest wait first, and
+  each names the town, house and task to open. The same projection feeds the
+  sidebar per-town flags, the overview "to decide" stat and the town meta line,
+  so every count agrees with the list.
+- Opening an item selects that town and inspects the exact house, which for a
+  decision is Town Hall with Admit/Decline visible. Admit and Decline are also
+  available on the inbox row; they send the existing `/api/control` admit or
+  decline action with the item's own town, never the currently selected one.
+  Nothing new is written by the service; the inbox re-renders from every
+  snapshot, so a decision made elsewhere disappears without a reload. The TUI
+  already reported Mayoral decision counts per town and is unchanged.
+
 ## Self-managed service lifecycle (2026-09-15)
 
 - The tool owns its lifecycle; the operator installs nothing. Every client

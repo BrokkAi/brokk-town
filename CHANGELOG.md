@@ -2,6 +2,10 @@
 
 ## 0.1.2 — pending
 
+- Add a cross-town "Needs you" inbox to the browser: pending Mayoral decisions
+  and stuck work from every town, longest wait first, with a jump to the exact
+  Town Hall or house and in-place admit/decline. Sidebar towns and overview
+  cards now show how many decisions each town is waiting on.
 - Start the town service on demand from any `bt` command and register it with
   the login session (launchd or systemd --user) so it survives crashes and
   reboots; `bt service` inspects, stops, restarts, or unregisters it.
