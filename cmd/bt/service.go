@@ -17,17 +17,44 @@ import (
 // lifecycle that otherwise needs no attention.
 func runService(ctx context.Context, args []string) error {
 	verb := "status"
+	explicit := false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		verb = args[0]
 		args = args[1:]
+		explicit = true
 	}
 	fs := flag.NewFlagSet("bt service "+verb, flag.ContinueOnError)
-	dir := fs.String("state-dir", stateHome(), "private state directory")
-	listenFlag := fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
-	demo := fs.Bool("demo", false, "the isolated simulated town")
+	sfl := addServiceFlags(fs)
+	dir, demo := sfl.dir, sfl.demo
+	listenFlag := sfl.listen
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), "Usage: bt service [status|on|off|stop|restart] [options]\n\nEvery bt command starts the town service when it is down and registers it with your login session.\n  status   show the service, its registration, and log locations\n  on       register the service with launchd or systemd --user (the default)\n  off      keep the service out of your login session; bt still starts it on demand\n  stop     stop the service until the next bt command\n  restart  restart the service in place\n")
-		fs.PrintDefaults()
+		if !explicit {
+			printServiceHelp(fs.Output(), fs)
+			return
+		}
+		printServiceVerbHelp(fs.Output(), fs, verb)
+	}
+	if verb == "help" {
+		if len(args) == 0 {
+			printServiceHelp(os.Stdout, fs)
+			return nil
+		}
+		if findServiceCommand(args[0]) != nil {
+			printServiceVerbHelp(os.Stdout, fs, args[0])
+			return nil
+		}
+		return fmt.Errorf("unknown service command %q for \"bt service\"\nRun 'bt service --help' for usage", args[0])
+	}
+	if findServiceCommand(verb) == nil {
+		return fmt.Errorf("unknown service command %q for \"bt service\"\nRun 'bt service --help' for usage", verb)
+	}
+	if wantsHelp(args) {
+		if !explicit {
+			printServiceHelp(os.Stdout, fs)
+			return nil
+		}
+		printServiceVerbHelp(os.Stdout, fs, verb)
+		return nil
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -36,7 +63,7 @@ func runService(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
+		return fmt.Errorf("unexpected arguments: %s\nRun 'bt service %s --help' for usage", strings.Join(fs.Args(), " "), verb)
 	}
 	base, err := filepath.Abs(*dir)
 	if err != nil {
@@ -150,7 +177,7 @@ func runService(ctx context.Context, args []string) error {
 		fmt.Printf("Town %s at %s (pid %d)\n", conn.Version, conn.URL, conn.PID)
 		return nil
 	}
-	return fmt.Errorf("unknown service command %q", verb)
+	return fmt.Errorf("unknown service command %q for \"bt service\"\nRun 'bt service --help' for usage", verb)
 }
 
 func serviceStatus(ctx context.Context, base string, demo bool) error {
