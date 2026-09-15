@@ -113,6 +113,26 @@ durably admitted Town task. Town requires the worker's `exact-issue` capability;
 repository-wide issue scans are not used because they could bypass pending or
 declined Mayoral decisions.
 
+## Resetting a release attempt budget
+
+Release Bot stops after three failed attempts at one release and leaves the job
+pending. Town lifts that budget through the worker rather than by editing the
+bot's private state:
+
+```text
+POST /v1/retry
+Content-Type: application/json
+```
+
+The body is the same strict run request. The worker resets the pending job's
+attempt budget in that workspace without starting an agent and answers
+`200 {"retry":"scheduled"}`. A workspace with no pending release answers `409`
+with the reason; Town treats both as consuming the operator's request and then
+submits the ordinary run, which resumes the job. Town sends this only after an
+operator asks (`bt retry --role release` or the control API with an empty task)
+and only to a worker advertising the `retry` capability. Unknown fields and
+protocol mismatches are rejected exactly as for `/v1/runs`.
+
 ## Shutdown
 
 After Town consumes the terminal event, it requests graceful shutdown:

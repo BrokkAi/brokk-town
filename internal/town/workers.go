@@ -91,6 +91,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	switch r {
 	case Bug, Feature, Release:
 		workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, 0, 0, "", "", observe)
+		result.Retried = workerResult.retried
 		if err != nil {
 			return result, err
 		}
@@ -153,7 +154,8 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
 		Agent: agent, Verify: t.Config.Verify, Issue: issue, PR: pr, BaseSHA: base, HeadSHA: head,
 	}
-	return runWorker(ctx, bot, request, observe, nil)
+	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
+	return runWorker(ctx, bot, request, retry, observe, nil)
 }
 
 func validateWorkerResult(result workerResult, role Role) error {

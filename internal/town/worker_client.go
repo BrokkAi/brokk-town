@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -101,6 +102,8 @@ type workerReviewResult struct {
 type workerResult struct {
 	Issue  *workerIssueResult  `json:"issue,omitempty"`
 	Review *workerReviewResult `json:"review,omitempty"`
+	// retried records that the worker accepted a POST /v1/retry before the run.
+	retried bool
 }
 
 type workerEvent struct {
@@ -194,7 +197,10 @@ func fileHash(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func runWorker(ctx context.Context, bot externalBot, request workerRequest, observe func(Progress), log *slog.Logger) (workerResult, error) {
+// runWorker starts one worker service, negotiates its version and capabilities,
+// optionally lifts the bot's attempt budget through POST /v1/retry, streams one
+// run, and stops the service. retry requires the worker's "retry" capability.
+func runWorker(ctx context.Context, bot externalBot, request workerRequest, retry bool, observe func(Progress), log *slog.Logger) (workerResult, error) {
 	socketDir, err := os.MkdirTemp("", "bt-worker-")
 	if err != nil {
 		return workerResult{}, err
@@ -235,7 +241,23 @@ func runWorker(ctx context.Context, bot externalBot, request workerRequest, obse
 		_ = <-waitDone
 		return workerResult{}, err
 	}
+	retried := false
+	if retry {
+		if !slices.Contains(info.Capabilities, "retry") {
+			cancel()
+			_ = <-waitDone
+			return workerResult{}, fmt.Errorf("%s worker %s does not advertise %q; pin a release that supports retry", bot.role, info.Version, "retry")
+		}
+		observe(Progress{Phase: "starting", Task: "Resetting the " + string(bot.role) + " bot's attempt budget"})
+		if err = postWorkerRetry(ctx, client, request); err != nil {
+			cancel()
+			_ = <-waitDone
+			return workerResult{}, err
+		}
+		retried = true
+	}
 	result, runErr := postWorkerRun(ctx, client, request, observe)
+	result.retried = retried
 	if ctx.Err() == nil {
 		if err = shutdownWorker(ctx, client); err != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("stop worker service: %w", err))
@@ -255,6 +277,33 @@ func runWorker(ctx context.Context, bot externalBot, request workerRequest, obse
 		runErr = errors.Join(runErr, err)
 	}
 	return result, runErr
+}
+
+// postWorkerRetry asks the worker to reset its pending job's attempt budget for
+// the workspace in request. The worker answers 409 when there is no pending
+// job; that consumes the request too, since the following run starts fresh.
+func postWorkerRetry(ctx context.Context, client *http.Client, request workerRequest) error {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://worker/v1/retry", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		return fmt.Errorf("request worker retry: %w", err)
+	}
+	defer response.Body.Close()
+	detail, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
+	switch response.StatusCode {
+	case http.StatusOK, http.StatusConflict:
+		return nil
+	default:
+		return fmt.Errorf("worker retry returned HTTP %d: %s", response.StatusCode, truncate(string(detail), 1024))
+	}
 }
 
 func shutdownWorker(ctx context.Context, client *http.Client) error {

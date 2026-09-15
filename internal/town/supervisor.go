@@ -20,6 +20,9 @@ type RunResult struct {
 	Owned map[int]Ownership
 	Audit *Audit
 	PR    int
+	// Retried reports that the release worker accepted the requested attempt
+	// budget reset before this run, so the request is consumed.
+	Retried bool
 }
 type Workers interface {
 	Run(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error)
@@ -285,6 +288,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		}
 		if r == Release {
 			w.Next = s.now().Add(5 * time.Minute)
+			if result.Retried {
+				w.RetryRequested = false
+			}
 		}
 		if !w.Enabled {
 			w.Status = "paused"
@@ -468,6 +474,9 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 	if role != "all" && !ValidRole(role) && !((action == "admit" || action == "decline") && role == Hall) {
 		return errors.New("unknown role")
 	}
+	if action == "retry" && taskID == "" && role == Release {
+		return s.retryRelease(id)
+	}
 	if action == "retry" {
 		state := s.Store.Snapshot()
 		t := state.Towns[id]
@@ -557,6 +566,30 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 	default:
 	}
 	return nil
+}
+
+// retryRelease asks the next release dispatch to lift the release bot's
+// exhausted attempt budget through its worker API. Town never edits the bot's
+// private state itself; the worker resets it and the same run resumes the job.
+func (s *Supervisor) retryRelease(id string) error {
+	return s.Store.Update(func(st *State) error {
+		t := st.Towns[id]
+		if t == nil || t.Deleted {
+			return errors.New("unknown town")
+		}
+		w := t.Workers[Release]
+		if w == nil {
+			return errors.New("town has no release house")
+		}
+		w.RetryRequested = true
+		w.Enabled = true
+		w.Next = time.Time{}
+		w.Error = ""
+		w.Status = "waiting"
+		w.Task = "Retry requested: the next release run resets the release bot's attempt budget"
+		st.Event(id, "control", "operator", string(Release), "", "retry release", s.now())
+		return nil
+	})
 }
 
 func resetTaskForRetry(t *Town, task *Task) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3 — pending
+
+- Certify a completed publication once every destination and provenance check
+  passes; the final `published` check no longer fails with a placeholder error.
+- Lift Release Bot's exhausted attempt budget from Town through its worker API
+  with `bt retry --role release` instead of editing bot state by hand.
+
 ## 0.1.2 — pending
 
 - Offer pinned Brokk Town upgrades through the browser and terminal interfaces.

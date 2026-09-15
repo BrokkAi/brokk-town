@@ -65,6 +65,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(202, {'stopping': True})
             self.server.shutdown()
             return
+        if self.path == '/v1/retry':
+            length = int(self.headers.get('Content-Length', '0'))
+            request = json.loads(self.rfile.read(length))
+            journal = os.environ.get('TOWN_WORKER_TEST_JOURNAL')
+            if journal:
+                with open(journal, 'a') as f: f.write('retry ' + request['state_directory'] + '\n')
+            self.send_json(200, {'retry': 'scheduled'})
+            return
         if self.path != '/v1/runs':
             self.send_error(404)
             return
@@ -73,11 +81,16 @@ class Handler(BaseHTTPRequestHandler):
         capture = os.environ.get('TOWN_WORKER_TEST_CAPTURE')
         if capture:
             with open(capture, 'w') as f: json.dump(request, f)
+        journal = os.environ.get('TOWN_WORKER_TEST_JOURNAL')
+        if journal:
+            with open(journal, 'a') as f: f.write('run ' + request['state_directory'] + '\n')
         events = [
             {'type': 'progress', 'seq': 1, 'progress': {'phase': 'investigating', 'task': 'external protocol fixture'}},
             {'type': 'result', 'seq': 2, 'result': {'issue': {'owned': [{'pr': 7, 'branch': 'town/7', 'issue': 7}]}}},
             {'type': 'complete', 'seq': 3},
         ]
+        if os.environ.get('TOWN_WORKER_TEST_UNTYPED'):
+            events = [events[0], {'type': 'complete', 'seq': 2}]
         data = ''.join(json.dumps(event, separators=(',', ':')) + '\n' for event in events).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/x-ndjson')
@@ -210,6 +223,49 @@ func TestWorkerVersionAndCapabilitiesAreChecked(t *testing.T) {
 	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), `does not advertise "progress"`) {
 		t.Fatalf("missing capability was accepted: %v", err)
+	}
+}
+
+func TestReleaseRetryUsesWorkerAPIBeforeRun(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "fake-worker")
+	journal := filepath.Join(dir, "journal.txt")
+	body := strings.Replace(pythonFakeWorker, `'bot': 'issue-bot'`, `'bot': 'release-bot'`, 1)
+	body = strings.Replace(body, `['run', 'progress', 'issue-result', 'exact-issue']`, `['run', 'progress', 'release', 'retry']`, 1)
+	writeFakeWorker(t, fake, body)
+	t.Setenv("TOWN_WORKER_TEST_JOURNAL", journal)
+	t.Setenv("TOWN_WORKER_TEST_UNTYPED", "1")
+	store := testStore(t, false)
+	x := addTown(t, store)
+	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
+	x.Workers[Release].RetryRequested = true
+	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Release: fake}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	result, err := workers.Run(context.Background(), x, Release, func(Progress) {}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, state := Workspace(dir, x.ID, Release)
+	if data, _ := os.ReadFile(journal); !result.Retried || string(data) != "retry "+state+"\nrun "+state+"\n" {
+		t.Fatalf("retry did not precede the run in the bot's own workspace: retried=%t journal=%q", result.Retried, data)
+	}
+	// Without an operator request the worker API is not called.
+	if err = os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	x.Workers[Release].RetryRequested = false
+	if result, err = workers.Run(context.Background(), x, Release, func(Progress) {}, logger); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(journal); result.Retried || string(data) != "run "+state+"\n" {
+		t.Fatalf("unrequested retry: retried=%t journal=%q", result.Retried, data)
+	}
+	// A pinned release that predates the API reports that plainly instead of
+	// running as if the budget had been lifted.
+	writeFakeWorker(t, fake, strings.Replace(body, `'release', 'retry'`, `'release'`, 1))
+	x.Workers[Release].RetryRequested = true
+	if _, err = workers.Run(context.Background(), x, Release, func(Progress) {}, logger); err == nil || !strings.Contains(err.Error(), `does not advertise "retry"`) {
+		t.Fatalf("missing retry capability was accepted: %v", err)
 	}
 }
 

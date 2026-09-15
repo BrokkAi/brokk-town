@@ -76,7 +76,7 @@ func run(ctx context.Context, args []string) error {
 	demo := fs.Bool("demo", false, "isolated simulated town (serve only)")
 	repo := fs.String("repo", "", "GitHub OWNER/REPO")
 	role := fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls; omit for town defaults in settings")
-	task := fs.String("task", "", "task ID for retry")
+	task := fs.String("task", "", "task ID for retry; omit with --role release to reset the release bot's exhausted attempt budget")
 	config := fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
 	agentHarness := fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
 	harnessVersion := fs.String("harness-version", "", "select an exact catalog version (add/settings)")
