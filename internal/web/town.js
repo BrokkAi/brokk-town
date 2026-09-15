@@ -302,6 +302,21 @@ export function focusMatches(target, identity) {
   return key === identity.key && (!identity.town || town === identity.town);
 }
 
+// Which operator controls make sense for a worker in its current state.
+// Start re-enables a paused or failed worker (or runs a waiting one now);
+// Pause and Stop only apply to an enabled worker; Pause is redundant once a
+// pause is already in flight.
+export function workerControls(worker) {
+  const status = normalized(worker?.status);
+  const enabled = !!worker?.enabled;
+  const active = activeWorkerStatuses.has(status) || !!worker?.agent;
+  return {
+    start: !enabled || !active,
+    pause: enabled && status !== "pausing",
+    stop: enabled || active,
+  };
+}
+
 // Town-wide wake state for the header controls. Repo-bot is excluded: it is
 // always enabled and never an agent, so it says nothing about whether the
 // operator has authorized real work.
