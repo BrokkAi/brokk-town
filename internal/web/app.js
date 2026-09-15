@@ -652,9 +652,12 @@ function renderInspection() {
     const source = task.source,
       provenance = source?.provenance,
       sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
-    const mayorActions = task.mayoral_decision === "pending"
-      ? `<div class="inspector-actions"><button id="admit-task" class="primary">${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`
-      : "";
+    const isUpgrade = task.kind === "upgrade";
+    const mayorActions = task.mayoral_decision !== "pending"
+      ? ""
+      : isUpgrade
+        ? `<div class="inspector-actions"><button id="admit-task" class="primary">Upgrade now</button><button id="delay-task">Delay a day</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">The bot keeps ${esc(task.upgrade?.from || "its current pin")} until you decide. Upgrading pins ${esc(task.upgrade?.to || "the new version")} for its next run; delaying asks again in a day; declining skips this version.</p>`
+        : `<div class="inspector-actions"><button id="admit-task" class="primary">${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`;
     const isMayor = task.mayoral_decision === "pending";
     const liveCapable = isMayor && (task.kind === "issue" || task.kind === "pr") && task.number > 0;
     const kindLabel = task.kind === "pr" ? "PR" : task.kind === "issue" ? "Issue" : task.kind;
@@ -694,14 +697,16 @@ function renderInspection() {
         command("retry", selectedHouse, selectedTask);
     const decisionButtons = [...out.querySelectorAll("button")];
     const admit = decisionButtons.find((button) => button.id === "admit-task"),
-      decline = decisionButtons.find((button) => button.id === "decline-task");
+      decline = decisionButtons.find((button) => button.id === "decline-task"),
+      delay = decisionButtons.find((button) => button.id === "delay-task");
     if (admit) admit.onclick = () => command("admit", "hall", selectedTask);
     if (decline) decline.onclick = () => command("decline", "hall", selectedTask);
+    if (delay) delay.onclick = () => command("delay", "hall", selectedTask);
     return;
   }
   if (selectedHouse === "hall") {
     const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
-    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work and proposed features wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>News from repo-bot</h2>${
+    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work, proposed features and bot updates wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind === "upgrade" ? "bot update" : task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()

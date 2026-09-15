@@ -137,6 +137,17 @@ func validateState(s State, demo bool) error {
 				return errors.New("declined Mayoral decision is not final")
 			}
 			switch task.Kind {
+			case "upgrade":
+				u := task.Upgrade
+				if u == nil || !ValidAgentRole(u.Role) || key != "upgrade:"+string(u.Role) || task.House != Hall || !workerVersionPattern.MatchString(u.From) || !workerVersionPattern.MatchString(u.To) {
+					return errors.New("invalid bot upgrade identity")
+				}
+				if task.Stage == "delayed" && (task.MayoralDecision != "" || task.RetryAt.IsZero()) {
+					return errors.New("delayed bot upgrade needs a due time")
+				}
+				if task.Stage != "awaiting_mayor" && task.Stage != "declined" && task.Stage != "delayed" {
+					return errors.New("invalid bot upgrade stage")
+				}
 			case "issue", "pr":
 				if task.Number < 1 || key != fmt.Sprintf("%s:%d", task.Kind, task.Number) {
 					return errors.New("invalid task number")

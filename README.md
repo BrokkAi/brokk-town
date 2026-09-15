@@ -155,6 +155,15 @@ npm's stable tag, and **Use VERSION** stages that exact version for the Mayor to
 save. The pin changes only for that town and takes effect on the bot's next run;
 capability and reported-version checks still run before any repository work.
 
+Town also checks npm's stable tags on its own, at start and every six hours.
+When a bot has a newer stable release than a town's pin, the town receives a
+Mayoral decision at Town Hall: **Upgrade now** pins the new version for the
+bot's next run, **Delay a day** asks again after 24 hours, and **Decline** keeps
+the current pin until an even newer release is published. The **Update bots
+automatically** town setting (off by default) pins new stable releases as they
+appear instead, including any offer already waiting. A registry outage never
+changes a pin or stops a town.
+
 The worker uses
 standard-library HTTP/JSON, negotiates protocol and capabilities before work,
 streams contiguous progress events, and returns explicit typed results. It never
@@ -348,7 +357,9 @@ decision. **Admit** sends the work to Issue Bot or Review Bot; **Decline** keeps
 Town from acting on it without changing GitHub. Feature Bot proposals follow the
 same route by default and can be exempted in **Town Settings → External
 contributions**. The browser provides the primary decision UX; scripts may use
-`bt admit --repo OWNER/REPO --task issue:123` or `bt decline ...`.
+`bt admit --repo OWNER/REPO --task issue:123` or `bt decline ...`. Offered bot
+upgrades use the same commands with `--task upgrade:feature` (or another bot
+role), plus `bt delay ...` to be asked again in a day.
 
 A review is bound to the exact base, head, PR description, and discussion snapshot. A suppressed
 duplicate comment is still a finding to check. Complete coverage, explicit
