@@ -449,6 +449,59 @@ test("mayoral inspection stays decidable when live details fail", async () => {
   assert.match(elements.inspection.textContent, /Admit to town/, "the decision stays available");
 });
 
+test("an open decision keeps its markup across snapshots and puts the decision above the body", async () => {
+  const elements = installFixture();
+  const live = { ...state, seq: 1, demo: false };
+  let releaseSecond;
+  const messages = [
+    `data: ${JSON.stringify(live)}\n\n`,
+    new Promise((resolve) => {
+      releaseSecond = () => resolve(`data: ${JSON.stringify({ ...live, seq: 2 })}\n\n`);
+    }),
+  ];
+  globalThis.fetch = async (url) => {
+    if (url === "/api/events") {
+      let index = 0;
+      return { ok: true, body: { getReader: () => ({ read: async () => index < messages.length ? { value: new TextEncoder().encode(await messages[index++]), done: false } : { done: true } }) } };
+    }
+    if (url === "/api/task-detail")
+      return {
+        ok: true,
+        json: async () => ({
+          kind: "issue", number: 3, title: "Outside request",
+          body: "A long body the Mayor reads while the stream keeps ticking.",
+          author: "octo", comments: 4, state: "open",
+          updated_at: "2026-09-01T10:00:00Z", url: "https://example.com/i/3",
+        }),
+      };
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?inspection-stability=${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+
+  const html = elements.inspection.innerHTML;
+  assert.ok(
+    html.indexOf('class="inspector-actions"') < html.indexOf('class="task-detail"'),
+    "the decision sits above a body that grows when live details arrive",
+  );
+  // The panel is only rebuilt when its content changes; an unchanged snapshot
+  // must leave the reader's own DOM — and so their scroll position — in place.
+  elements.inspection.innerHTML = `${html}<!--kept-->`;
+  releaseSecond();
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(
+    elements.inspection.innerHTML.includes("<!--kept-->"),
+    "an identical snapshot leaves the open decision untouched",
+  );
+  assert.match(elements.inspection.textContent, /A long body the Mayor reads/);
+});
+
 test("the inbox lists every town's decisions, opens the right Town Hall, and decides in place", async () => {
   const elements = installFixture();
   const requests = [];
