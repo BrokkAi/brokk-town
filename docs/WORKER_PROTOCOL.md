@@ -2,7 +2,9 @@
 
 Brokk Town supervises the released Brokk bots as independent executables. They
 communicate through a local, versioned HTTP/JSON protocol rather than Go library
-calls, CLI log parsing, or Town reading bot-private state.
+calls or CLI log parsing for primary work. Protocol v1 does not yet carry all
+issue-job outcomes, so Town uses the pinned issue-bot release's validated public
+state and retry APIs for that scheduling metadata only.
 
 ## Transport and security
 

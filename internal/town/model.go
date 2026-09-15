@@ -280,6 +280,7 @@ type Task struct {
 	Blocked         bool              `json:"blocked"`
 	Attempts        int               `json:"attempts"`
 	RetryAt         time.Time         `json:"retry_at,omitempty"`
+	IssueJob        *IssueJob         `json:"issue_job,omitempty"`
 	Source          *WorkItem         `json:"source,omitempty"`
 	Upgrade         *BotUpgrade       `json:"upgrade,omitempty"`
 }
@@ -291,6 +292,17 @@ type BotUpgrade struct {
 	Role Role   `json:"role"`
 	From string `json:"from"`
 	To   string `json:"to"`
+}
+
+// IssueJob is the public scheduling outcome from issue-bot durable state.
+type IssueJob struct {
+	Status        string `json:"status"`
+	LastError     string `json:"last_error,omitempty"`
+	ResultStatus  string `json:"result_status,omitempty"`
+	ResultDetail  string `json:"result_detail,omitempty"`
+	ClaimPending  bool   `json:"claim_pending"`
+	RetryEligible bool   `json:"retry_eligible"`
+	RetryDetail   string `json:"retry_detail"`
 }
 
 type FunnelSync struct {

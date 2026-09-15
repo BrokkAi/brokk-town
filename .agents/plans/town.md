@@ -1,5 +1,18 @@
 # Brokk Town implementation plan
 
+## Durable blocked issue-bot jobs (issue #1)
+
+- Import issue-bot's validated saved job status after issue runs and on both
+  sides of repository reconciliation, so open blocked issues remain durable
+  across GitHub refreshes and daemon restarts while closed/locked GitHub state
+  remains authoritative.
+- Persist public failure/result detail, attempts, retry timing and eligibility
+  on issue tasks. Keep bot-private issue bodies, claims and worktree data out of
+  Town snapshots.
+- Make explicit retries update issue-bot's lock-protected durable state before
+  re-enabling work. Show blocked jobs first with actionable detail in browser
+  and TUI attention surfaces, and retain idempotent submitted ownership import.
+
 ## Cross-town inbox for Mayoral decisions and stuck work (2026-09-15)
 
 - Pending Mayoral decisions used to be visible only inside one town's Town
@@ -155,13 +168,15 @@ The user requested live-upgradable external bots, accepted Unix sockets for the
 initial transport, and authorized corresponding bot-repository changes. A later
 self-signed HTTPS/mutual-TLS transport can be added without changing semantics.
 
-- Town now removes bug-bot, feature-bot, issue-bot, release-bot, and review-bot
-  Go dependencies. Primary roles launch their installed executables and speak
+- Town removes primary in-process bot execution. Roles launch their pinned
+  executables and speak
   Worker Protocol v1 over a private mode-0600 Unix-domain HTTP socket.
 - Initialization exchanges protocol range, exact bot/service version, identity,
   and capabilities before work. Runs use strict JSON requests and contiguous
   newline-delimited progress/result/terminal events. Issue and review results are
-  explicit public protocol payloads; Town never parses bot-private state.
+  explicit public protocol payloads. Issue-bot remains pinned as a library only
+  for its validated public durable-state and explicit retry APIs until a later
+  worker protocol carries those job outcomes.
 - Town records and rechecks the resolved executable path, hash, and version.
   PATH is resolved anew for each dispatch, allowing replacement in an existing
   service-PATH directory without a Town restart; mid-dispatch replacement fails

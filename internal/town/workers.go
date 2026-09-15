@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
@@ -24,6 +25,7 @@ type BotWorkers struct {
 	// Zero values use the production defaults.
 	confirmWait     time.Duration
 	confirmInterval time.Duration
+	issueMu         sync.Mutex // Serialize durable issue-job reads and imports.
 }
 
 func (b *BotWorkers) CanRetryIssue(t *Town, issue int) (bool, error) {
@@ -87,11 +89,13 @@ type dispatch struct {
 	base, head string
 }
 
-func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (RunResult, error) {
+func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
+	if r == Issue {
+		defer func() { err = errors.Join(err, b.SyncIssues(t)) }()
+	}
 	deadline := time.Now().Add(workerDeadline)
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	result := RunResult{}
 	t = clone(t)
 	t.Config = t.Config.ForRole(r)
 	dir, state := Workspace(b.Root, t.ID, r)
@@ -133,7 +137,10 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 
 // Adopt resumes a bot process that an earlier service left running. The run
 // handle names the process, its socket, and the exact task it was given.
-func (b *BotWorkers) Adopt(ctx context.Context, t *Town, r Role, run WorkerRun, observe func(Progress), log *slog.Logger) (RunResult, error) {
+func (b *BotWorkers) Adopt(ctx context.Context, t *Town, r Role, run WorkerRun, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
+	if r == Issue {
+		defer func() { err = errors.Join(err, b.SyncIssues(t)) }()
+	}
 	t = clone(t)
 	d := dispatch{issue: run.Issue, pr: run.PR, base: run.BaseSHA, head: run.HeadSHA}
 	workerResult, err := adoptWorker(ctx, r, run, observe)
