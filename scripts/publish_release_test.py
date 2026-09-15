@@ -117,6 +117,29 @@ class PublishRecovery(unittest.TestCase):
         self.publish()
         self.assertEqual(self.uploaded, [name])
 
+    def test_registry_visibility_lag_retries_without_resubmitting(self):
+        calls = []
+        outcomes = [ValueError("publication is incomplete: npm tarball not yet visible"), None, None]
+
+        def registry(command, directory):
+            calls.append(command)
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+
+        with patch.dict(os.environ, {"GITHUB_REF": "refs/tags/" + self.tag}), \
+                patch.object(checks, "tag_commit", return_value=self.sha), \
+                patch.object(checks, "versions"), patch.object(checks, "authorization"), \
+                patch.object(checks, "github_version", return_value={"id": 1, "draft": True}), \
+                patch.object(checks, "api", side_effect=self.fake_api), \
+                patch.object(checks, "published"), \
+                patch.object(publish_release.subprocess, "run", side_effect=self.fake_gh), \
+                patch.object(publish_release.package_registry, "run", side_effect=registry), \
+                patch.object(publish_release.time, "sleep") as sleep:
+            publish_release.publish(self.directory, self.sha, self.tag)
+            self.assertEqual(calls, ["publish", "publish", "verify"])
+            sleep.assert_called_once_with(15)
+
 
 if __name__ == "__main__":
     unittest.main()
