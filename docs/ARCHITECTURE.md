@@ -1,6 +1,9 @@
 # Local service and repository towns
 
-`cmd/bt` owns the service lifecycle, local connection file, CLI, and TUI.
+`cmd/bt` owns the service lifecycle, local connection file, CLI, and TUI. Every
+client command starts the service when it is down and rolls it forward when the
+client binary is newer; `internal/daemon` registers it with the login session
+(launchd agent or systemd user unit) so it survives crashes and reboots.
 `internal/town` owns persistent facts, routing, GitHub reads/writes, and worker
 scheduling. `internal/web` embeds the browser application and exposes the same
 state/commands to both clients. The service outlives client connections.
@@ -74,8 +77,23 @@ rings are bounded; task identities and external-write intents remain durable.
 Worker progress and log callbacks use bounded channels and never wait for disk.
 Their consumer persists observations; final results use a separate transaction.
 A persistence error stops the supervisor. An initial state/intent write must
-succeed before starting work or issuing a push/merge. Shutdown cancels process
-groups and waits for all workers before releasing the store lock.
+succeed before starting work or issuing a push/merge.
+
+External bot processes are detached from the service: each runs in its own
+session with output in a file, and its durable run handle (executable, hash,
+version, PID, socket, output, last observed event, deadline, and the exact
+issue/PR revision it was given) is committed to the worker before the run request
+is sent. Cancellation carries a cause. Operator stop, retry, and town deletion
+cancel with a stop cause and kill the process group after its identity is proven
+over the socket; the dispatch deadline kills as well. A plain cancellation is
+service shutdown: the worker returns detached, keeps its handle, and the service
+waits for that bookkeeping before releasing the store lock. On startup the
+supervisor adopts every handle before its first scheduling pass, so a house is
+never dispatched twice. Detach-capable workers replay buffered events from the
+recorded sequence number and complete normally; other workers are asked to shut
+down when they can and their attempt is recorded as uncertain. A handle for a
+deleted town is ended. The in-place restart in `cmd/bt` re-executes the service
+binary with the same PID; the new image opens the store and adopts the handles.
 
 Pause disables scheduling while allowing active work to finish. Stop disables
 scheduling and cancels the worker context. The scheduler rechecks enabled state

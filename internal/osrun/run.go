@@ -61,11 +61,74 @@ func Kill(cmd *exec.Cmd) error {
 	if cmd.Process == nil {
 		return nil
 	}
-	err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	return KillGroup(cmd.Process.Pid)
+}
+
+// KillGroup ends every process in the group led by pid.
+func KillGroup(pid int) error {
+	if pid <= 0 {
+		return nil
+	}
+	err := syscall.Kill(-pid, syscall.SIGKILL)
 	if errors.Is(err, syscall.ESRCH) {
 		return os.ErrProcessDone
 	}
 	return err
+}
+
+// StartDetached prepares a long-lived worker that must outlive this process.
+// The child leads a new session, so terminal hangups and the parent's exit never
+// reach it, and its output goes to a file instead of a pipe that would break when
+// the parent disappears. Nothing cancels it implicitly: callers end it with
+// KillGroup or the worker's own shutdown request.
+func StartDetached(dir string, args []string, env map[string]string, output *os.File) *exec.Cmd {
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Dir = dir
+	cmd.Env = os.Environ()
+	for key, value := range env {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdin = nil
+	cmd.Stdout, cmd.Stderr = output, output
+	return cmd
+}
+
+// Alive reports whether pid still exists. Permission errors count as alive.
+func Alive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+// TailFile returns up to limit bytes from the end of a file, valid UTF-8, and
+// whether earlier content was omitted. A missing file reads as empty.
+func TailFile(path string, limit int) (string, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", false
+	}
+	size := info.Size()
+	truncated := size > int64(limit)
+	if truncated {
+		if _, err = f.Seek(size-int64(limit), 0); err != nil {
+			return "", false
+		}
+	}
+	b := make([]byte, min(size, int64(limit)))
+	n, _ := f.Read(b)
+	b = b[:n]
+	for len(b) > 0 && !utf8.RuneStart(b[0]) {
+		b = b[1:]
+	}
+	return strings.ToValidUTF8(string(b), "\ufffd"), truncated
 }
 
 // Run separates stdout from diagnostic stderr. JSON callers fail if truncated.

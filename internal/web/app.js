@@ -72,14 +72,23 @@ let state = null,
   sequence = null,
   moving = [],
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
-  streamAbort = null;
+  streamAbort = null,
+  servedVersion = "";
 let liveDetail = null;
+let liveDetailEpoch = 0;
+function clearLiveDetail() {
+  liveDetail = null;
+  liveDetailEpoch++;
+}
 async function fetchLiveDetail(townId, taskId) {
   const key = `${townId}\n${taskId}`;
+  const epoch = liveDetailEpoch;
   try {
     const detail = await api("/api/task-detail", { town: townId, task: taskId });
+    if (epoch !== liveDetailEpoch) return;
     liveDetail = { key, status: "ready", data: detail };
   } catch (error) {
+    if (epoch !== liveDetailEpoch) return;
     liveDetail = { key, status: "failed", error: error.message };
   }
   if (selectedTown === townId && selectedTask === taskId) renderInspection();
@@ -204,19 +213,33 @@ function receive(next) {
   moving = moving.slice(-24);
   sequence = next.seq;
   state = next;
+  // The page's assets belong to the binary that served them. When a restart
+  // brings a different version, reload so the UI matches the API again.
+  if (next.version) {
+    if (servedVersion && next.version !== servedVersion) {
+      location.reload();
+      return;
+    }
+    servedVersion = next.version;
+  }
   const update = $("#update-notice");
   if (state.update) {
     update.textContent = `Upgrade Town to ${state.update.latest}`;
     update.title = state.update.command;
     update.hidden = false;
     update.onclick = async () => {
-      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nThe service will keep running; restart it afterward to use the new version.`)) return;
+      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
       update.disabled = true;
       update.textContent = "Upgrading Town…";
       try {
-        await api("/api/update", {});
-        update.textContent = `Town ${state.update.latest} installed · restart service`;
-        update.title = "Restart bt serve to use the installed version";
+        const result = await api("/api/update", {});
+        if (result.restarting) {
+          update.textContent = `Town ${state.update.latest} installed · restarting`;
+          update.title = "The service restarts itself; this page reloads when it is back";
+        } else {
+          update.textContent = `Town ${state.update.latest} installed · restart service`;
+          update.title = "Restart bt serve to use the installed version";
+        }
       } catch (error) {
         update.disabled = false;
         update.textContent = `Upgrade failed · try again`;
@@ -410,6 +433,7 @@ function inspectOperation(id, role, task = "") {
   $("#close-inspector").focus();
 }
 function closeInspector() {
+  clearLiveDetail();
   $("#inspector").classList.remove("open");
   if (state) renderOverview();
 }
@@ -418,6 +442,7 @@ function chooseHouse(role) {
   saveScope();
   selectedHouse = role;
   selectedTask = "";
+  clearLiveDetail();
   $("#inspector").classList.add("open");
   render();
 }
@@ -484,6 +509,7 @@ function selectTown(id) {
     /* Keep the selection for this session when persistence is unavailable. */
   }
   selectedTask = "";
+  clearLiveDetail();
   moving = [];
   overview = false;
   saveScope();
@@ -636,6 +662,7 @@ function renderInspection() {
     out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${mayorActions}${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
     $("#back-house").onclick = () => {
       selectedTask = "";
+      clearLiveDetail();
       renderInspection();
     };
     if ($("#retry-task"))

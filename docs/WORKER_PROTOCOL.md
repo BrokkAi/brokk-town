@@ -14,8 +14,10 @@ bbb|bfb|bib|brv|brb worker --socket PATH
 
 The socket's parent directory is private to the Town service and the socket is
 mode `0600`. Town connects with the Go standard library HTTP client and does not
-invoke a shell. The worker exits after a Town shutdown request or canceled
-service context.
+invoke a shell. The worker exits after a Town shutdown request. Town starts the
+worker in its own session; the worker must not depend on its parent process, a
+controlling terminal, or an open stdout/stderr pipe, and it must keep running
+when the Town service exits.
 
 The message schemas and methods are transport-independent. A self-signed
 TLS transport with mutual certificate authentication can therefore be added later
@@ -113,6 +115,30 @@ durably admitted Town task. Town requires the worker's `exact-issue` capability;
 repository-wide issue scans are not used because they could bypass pending or
 declined Mayoral decisions.
 
+## Surviving a Town restart
+
+Town commits the worker's handle (PID, socket path, output file, version, and the
+exact task) before `POST /v1/runs`. A Town service that stops for an upgrade
+leaves the worker running; the next service reconnects.
+
+Workers that advertise the optional `detach` capability must:
+
+- continue the run when the `/v1/runs` client disconnects, treating the
+  disconnect as neither cancellation nor failure;
+- buffer every event of the run, including the terminal event, until shutdown;
+- serve `GET /v1/attach?after=N` with `Accept: application/x-ndjson`, replaying
+  every buffered event whose `seq` is greater than `N` and then streaming live
+  events until the terminal event, using the same event schema and contiguous
+  sequence numbers;
+- answer `GET /v1/attach` with HTTP 404 when no run has been submitted, so Town
+  can end an idle worker and reschedule the house without recording a failure.
+
+Town resumes from the last progress sequence it durably observed; a replayed
+`result` event is required before a replayed terminal event. Workers without
+`detach` receive a shutdown request when a new service adopts them and may finish
+their current run first; Town records that attempt as uncertain because it could
+not observe the outcome. In both cases GitHub receipts remain the source of truth.
+
 ## Shutdown
 
 After Town consumes the terminal event, it requests graceful shutdown:
@@ -122,5 +148,7 @@ POST /v1/shutdown
 ```
 
 The worker returns HTTP 202, stops accepting runs, finishes response streaming,
-removes its socket, and exits. Town cancels the process group only if graceful
-shutdown exceeds its bounded deadline or the dispatch context is canceled.
+removes its socket, and exits. Town kills the process group only when graceful
+shutdown exceeds its bounded deadline, when an operator stops the house or
+deletes the town, or when the dispatch deadline passes. Service shutdown never
+kills a worker.

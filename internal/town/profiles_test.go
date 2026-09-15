@@ -83,7 +83,7 @@ func TestBotSettingsResolveAtDispatchAndFreezeActiveRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
-	go func() { sup.execute(context.Background(), stale, Review); close(done) }()
+	go func() { sup.execute(context.Background(), stale, Review, nil); close(done) }()
 	if <-seen != "review-old" {
 		t.Fatal("dispatch used the town default or stale snapshot")
 	}
@@ -98,7 +98,7 @@ func TestBotSettingsResolveAtDispatchAndFreezeActiveRun(t *testing.T) {
 		t.Fatal("active profile changed")
 	}
 	<-done
-	sup.execute(context.Background(), stale, Review)
+	sup.execute(context.Background(), stale, Review, nil)
 	if <-seen != "review-new" || <-seen != "review-new" {
 		t.Fatal("next dispatch missed the saved profile")
 	}

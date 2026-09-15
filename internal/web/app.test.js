@@ -500,6 +500,54 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   assert.equal(elements["inbox-error"].textContent, "");
 });
 
+test("reopening a Mayoral card refreshes live details and retries failures", async () => {
+  let calls = 0;
+  const { elements, requests } = await openMayoralDecision(async () => {
+    calls++;
+    if (calls === 1) return { ok: false, json: async () => ({ error: "temporary failure" }) };
+    return { ok: true, json: async () => ({
+      kind: "issue", number: 3, title: "Outside request", body: "Fresh detail",
+      author: "octo", comments: 5, state: "open",
+      updated_at: "2026-09-01T10:00:00Z", url: "https://example.com/i/3",
+    }) };
+  });
+  assert.match(elements.inspection.textContent, /Live details unavailable/);
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.filter((request) => request.url === "/api/task-detail").length, 2);
+  assert.match(elements.inspection.textContent, /Fresh detail/);
+  assert.match(elements.inspection.textContent, /5 comments/);
+});
+
+test("the page follows a restarted service: managed upgrades report restarting and a new version reloads the assets", async () => {
+  const elements = installFixture();
+  let reloads = 0;
+  globalThis.location.reload = () => { reloads++; };
+  let releaseSecond;
+  const messages = [
+    `data: ${JSON.stringify({ ...state, version: "1.0.0" })}\n\n`,
+    new Promise((resolve) => { releaseSecond = () => resolve(`data: ${JSON.stringify({ ...state, seq: 2, version: "1.1.0" })}\n\n`); }),
+  ];
+  globalThis.fetch = async (url) => {
+    if (url === "/api/events") {
+      let index = 0;
+      return { ok: true, body: { getReader: () => ({ read: async () => index < messages.length ? { value: new TextEncoder().encode(await messages[index++]), done: false } : { done: true } }) } };
+    }
+    if (url === "/api/update") return { ok: true, json: async () => ({ ok: true, restarting: true }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: true, agents: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?reload-test=${Date.now()}`);
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  await elements["update-notice"].onclick();
+  assert.match(elements["update-notice"].textContent, /restarting/);
+  assert.equal(reloads, 0, "the same version never reloads");
+  releaseSecond();
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(reloads, 1, "a different service version reloads the page once");
+});
+
 test("responsive and reduced-motion contracts remain shipped in the stylesheet", () => {
   const css = readFileSync(new URL("./style.css", import.meta.url), "utf8");
   assert.match(css, /@media\s*\(max-width:\s*760px\)/);
