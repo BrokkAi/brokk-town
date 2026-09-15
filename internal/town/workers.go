@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+	issuebot "github.com/BrokkAi/issue-bot"
 )
 
 type BotWorkers struct {
@@ -18,6 +19,36 @@ type BotWorkers struct {
 	BotCommands  map[Role]string
 	remoteURL    func(string) string
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
+}
+
+func (b *BotWorkers) CanRetryIssue(t *Town, issue int) (bool, error) {
+	cfg := b.issueRetryConfig(t, issue)
+	state, err := issuebot.ReadState(cfg)
+	if err != nil {
+		return false, err
+	}
+	if state == nil {
+		return false, nil
+	}
+	job := state.Jobs[issue]
+	return job != nil && (job.Status == "blocked" || job.Status == "pending"), nil
+}
+
+func (b *BotWorkers) RetryIssue(t *Town, issue int) error {
+	return issuebot.Retry(b.issueRetryConfig(t, issue))
+}
+
+func (b *BotWorkers) issueRetryConfig(t *Town, issue int) issuebot.Config {
+	dir, state := Workspace(b.Root, t.ID, Issue)
+	cfg := issuebot.DefaultConfig()
+	cfg.Remote = b.remote(t.Config.Repo)
+	cfg.Branch = t.Config.Branch
+	cfg.Directory = dir
+	cfg.StateDirectory = state
+	cfg.GitHub.Repo = t.Config.Repo
+	cfg.GitHub.Host = "github.com"
+	cfg.Issue = issue
+	return cfg
 }
 
 // ReviewAttemptError means the reviewer did not produce evidence Town can use.
