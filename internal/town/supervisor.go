@@ -597,7 +597,49 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 			return fmt.Errorf("preserve issue-bot jobs after inventory: %w", err)
 		}
 	}
-	return nil
+	return s.closeDeclinedProposals(ctx, s.Store.Snapshot().Towns[t.ID], remote)
+}
+
+// closeDeclinedProposals retires the town's own issues once the Mayor declines
+// them. Closing is idempotent, so an issue that is already closed is skipped and
+// an uncertain attempt is simply retried by the next inventory.
+func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote RepoSnapshot) error {
+	if t == nil || t.Deleted {
+		return nil
+	}
+	open := map[int]bool{}
+	for _, i := range remote.Issues {
+		if i.State != "closed" {
+			open[i.Number] = true
+		}
+	}
+	numbers := []int{}
+	for _, task := range t.Tasks {
+		if task.Kind == "issue" && !task.External && task.MayoralDecision == "declined" && open[task.Number] {
+			numbers = append(numbers, task.Number)
+		}
+	}
+	sort.Ints(numbers)
+	var failures error
+	for _, n := range numbers {
+		id := fmt.Sprintf("issue:%d", n)
+		if err := s.GitHub.CloseIssue(ctx, t.Config.Repo, n); err != nil {
+			failures = errors.Join(failures, fmt.Errorf("close declined issue #%d: %w", n, err))
+			continue
+		}
+		if err := s.Store.Update(func(st *State) error {
+			current := st.Towns[t.ID]
+			if current == nil || current.Tasks[id] == nil || current.Tasks[id].MayoralDecision != "declined" {
+				return nil
+			}
+			current.Tasks[id].Detail = "The Mayor declined this proposal. Town closed the issue."
+			st.Event(t.ID, "decision", "hall", string(Repo), id, "Declined proposal closed: "+current.Tasks[id].Title, s.now())
+			return nil
+		}); err != nil {
+			return errors.Join(failures, err)
+		}
+	}
+	return failures
 }
 func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
 	if action == "delete" {
@@ -648,6 +690,16 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 			if action == "decline" {
 				task.MayoralDecision = "declined"
 				task.Stage = "declined"
+				// Work the town proposed to itself is retired at its source: a
+				// declined proposal is closed rather than left open for a bot to
+				// pick up again. Outside work is only ignored; Town does not
+				// close other people's issues and pull requests.
+				if task.Kind == "issue" && !task.External {
+					task.Detail = "The Mayor declined this proposal. Town is closing the issue."
+					t.Workers[Repo].Next = time.Time{}
+					st.Event(id, "decision", "hall", string(Repo), task.ID, "Mayor declined: "+task.Title, s.now())
+					return nil
+				}
 				task.Detail = "The Mayor declined this outside work. Town will not act on it."
 				st.Event(id, "decision", "hall", "outside", task.ID, "Mayor declined: "+task.Title, s.now())
 				return nil

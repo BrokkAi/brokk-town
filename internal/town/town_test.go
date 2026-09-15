@@ -247,6 +247,8 @@ type fakeGH struct {
 	snapshot   RepoSnapshot
 	onMerge    func()
 	contains   bool
+	closed     []int
+	closeError error
 }
 
 func newGH(n int) *fakeGH {
@@ -266,6 +268,20 @@ func (f *fakeGH) Discussion(context.Context, string, int) ([]Discussion, error) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return clone(f.discussion), nil
+}
+func (f *fakeGH) CloseIssue(_ context.Context, _ string, n int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closeError != nil {
+		return f.closeError
+	}
+	f.closed = append(f.closed, n)
+	for i := range f.snapshot.Issues {
+		if f.snapshot.Issues[i].Number == n {
+			f.snapshot.Issues[i].State = "closed"
+		}
+	}
+	return nil
 }
 func (f *fakeGH) Gate(context.Context, string, int) (MergeGate, error) { return f.gate, nil }
 func (f *fakeGH) Actor(context.Context) (string, error)                { return "operator", nil }

@@ -39,10 +39,13 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		}
 		task.Title = i.Title
 		task.URL = i.URL
-		if i.State == "closed" {
+		if task.MayoralDecision == "declined" {
+			// A decline is final, and closing the issue is how Town carries it
+			// out; the resulting closure must not erase the decision.
+		} else if i.State == "closed" {
 			task.Stage = "closed"
 			task.MayoralDecision = ""
-		} else if task.MayoralDecision == "pending" || task.MayoralDecision == "declined" {
+		} else if task.MayoralDecision == "pending" {
 			// Repository metadata cannot bypass or reopen a Mayoral decision.
 		} else if i.Locked {
 			task.Stage = "locked"

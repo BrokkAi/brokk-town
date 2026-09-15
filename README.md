@@ -359,7 +359,8 @@ New external issues and PRs first wait at Town Hall for a durable Mayoral
 decision. **Admit** sends the work to Issue Bot or Review Bot; **Decline** keeps
 Town from acting on it without changing GitHub. Feature Bot proposals follow the
 same route by default and can be exempted in **Town Settings → External
-contributions**. The browser provides the primary decision UX; scripts may use
+contributions**. A proposal is the town's own work, so declining one also closes
+its issue as not planned; outside issues and PRs are only ignored. The browser provides the primary decision UX; scripts may use
 `bt admit --repo OWNER/REPO --task issue:123` or `bt decline ...`. Offered bot
 upgrades use the same commands with `--task upgrade:feature` (or another bot
 role), plus `bt delay ...` to be asked again in a day.

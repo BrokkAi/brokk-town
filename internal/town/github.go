@@ -99,6 +99,7 @@ type GitHub interface {
 	Discussion(context.Context, string, int) ([]Discussion, error)
 	Gate(context.Context, string, int) (MergeGate, error)
 	Merge(context.Context, string, int, string) (string, error)
+	CloseIssue(context.Context, string, int) error
 	Actor(context.Context) (string, error)
 	Contains(context.Context, string, string, string) (bool, error)
 	Changes(context.Context, string, string, string) ([]RemoteCommit, error)
@@ -237,6 +238,13 @@ func (g GitHubClient) Merge(ctx context.Context, repo string, n int, sha string)
 		return "", fmt.Errorf("merge not confirmed: %s", result.Message)
 	}
 	return result.SHA, nil
+}
+
+// CloseIssue retires an issue the town itself proposed, as "not planned".
+// GitHub accepts a repeated close, so an uncertain response is safe to retry on
+// the next inventory.
+func (g GitHubClient) CloseIssue(ctx context.Context, repo string, n int) error {
+	return g.api(ctx, "PATCH", fmt.Sprintf("repos/%s/issues/%d", repo, n), map[string]string{"state": "closed", "state_reason": "not_planned"}, nil)
 }
 func Digest(v any) string { b, _ := json.Marshal(v); return Key(string(b)) }
 
