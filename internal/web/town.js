@@ -316,6 +316,24 @@ export function workerControls(worker) {
   };
 }
 
+// Town-wide wake state for the header controls. Repo-bot is excluded: it is
+// always enabled and never an agent, so it says nothing about whether the
+// operator has authorized real work.
+export function townControls(town) {
+  const agents = Object.values(town?.workers || {}).filter((w) => w.role !== "repo");
+  const awake = agents.filter((w) => w.enabled).length;
+  if (!awake)
+    return { status: "Paused", statusClass: "paused", primary: { action: "start", label: "▶ Wake the town" }, secondary: null };
+  if (awake === agents.length)
+    return { status: `Awake · ${awake} agent${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Ⅱ Pause the town" }, secondary: null };
+  return {
+    status: `Partly awake · ${awake} of ${agents.length}`,
+    statusClass: "partial",
+    primary: { action: "start", label: "▶ Wake the rest" },
+    secondary: { action: "pause", label: "Ⅱ Pause all" },
+  };
+}
+
 export function scheduleLabel(worker, now = Date.now()) {
   if (!worker?.enabled) return "Paused";
   if (worker?.agent) return "After current run";
