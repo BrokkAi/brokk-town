@@ -152,7 +152,7 @@ async function api(path, body, signal) {
 
 async function exportOutcomes(days) {
   const query = new URLSearchParams({ town: selectedTown, format: "csv" });
-  if (days > 0) query.set("from", new Date(Date.now() - days * 86400000).toISOString());
+  query.set("from", (days > 0 ? new Date(Date.now() - days * 86400000) : new Date(0)).toISOString());
   const response = await fetch(`/api/outcomes?${query}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || response.statusText);
   const href = URL.createObjectURL(await response.blob());
@@ -770,7 +770,7 @@ function renderInspection() {
       const judgment = record.judgment ? `${record.judgment.value.replaceAll("_", " ")}: ${record.judgment.explanation}` : "unjudged";
       const judge = record.kind === "finding_filed" ? `<span class="judgment-actions"><button data-judgment="useful" data-outcome="${esc(record.id)}">Useful</button><button data-judgment="false_positive" data-outcome="${esc(record.id)}">False positive</button></span>` : "";
       const title = esc(record.kind.replaceAll("_", " "));
-      const linkedTitle = safeURL(record.url) ? `<a href="${esc(record.url)}" target="_blank" rel="noreferrer">${title}</a>` : title;
+      const linkedTitle = safeURL(record.url) ? `<a href="${esc(record.url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
       const provenance = [record.role, record.task_id || "run-wide", record.revision ? `revision ${record.revision.slice(0, 12)}` : "revision unknown"].filter(Boolean).join(" · ");
       return `<article class="outcome-row"><time>${esc(new Date(record.at).toLocaleString())}</time><strong>${linkedTitle}</strong>${record.detail ? `<p>${esc(record.detail)}</p>` : ""}<p>${esc(record.status)} · ${esc(provenance)} · ${esc(unknown)} · usage ${record.usage == null ? "unknown" : esc(`${record.usage.input_tokens} in / ${record.usage.output_tokens} out`)} · cost ${record.cost_usd == null ? "unknown" : esc(`$${record.cost_usd}`)}</p>${record.kind === "finding_filed" ? `<p>Usefulness: ${esc(judgment)}</p>${judge}` : ""}</article>`;
     }).join("");

@@ -164,6 +164,11 @@ func csvRow(w io.Writer, fields []string) {
 		if i > 0 {
 			_, _ = io.WriteString(w, ",")
 		}
+		// Outcome details come from workers and GitHub. Keep spreadsheet apps
+		// from interpreting attacker-controlled text as a formula.
+		if field != "" && strings.ContainsAny(field[:1], "=+-@\t") {
+			field = "'" + field
+		}
 		if strings.ContainsAny(field, ",\"\r\n") {
 			field = `"` + strings.ReplaceAll(field, `"`, `""`) + `"`
 		}

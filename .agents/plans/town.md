@@ -766,3 +766,14 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
 - Add selectable Town Hall summaries plus JSON and CSV exports with repository
   identity, and validate a deterministic lifecycle including rejected, blocked,
   and externally changed work without live automation.
+
+## Cobra-style CLI help without cobra (2026-09-15)
+
+- `bt --help` / `bt help` now renders Usage, Available Commands, Flags, and a
+  `Use "bt [command] --help"` pointer; each command shows its own flags plus
+  Global Flags, and `bt service` has matching verb help. No new dependency.
+- `bt help <command>`, `bt <command> --help`, and `bt service <verb> --help`
+  all work without touching the service; unknown commands and extra args point
+  at the relevant `--help`. Help goes to stdout, errors stay on stderr.
+- Coverage: `cmd/bt/help_test.go` asserts the sections, per-command flag
+  filtering, offline help, and the usage hints.

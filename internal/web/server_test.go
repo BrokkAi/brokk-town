@@ -107,7 +107,7 @@ func TestOutcomeReportExportAndExplicitJudgment(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		current.RecordOutcome(town.OutcomeRecord{ID: "finding-filed:issue:8", At: now, Class: "artifact", Kind: "finding_filed", Status: "confirmed", TaskID: "issue:8", URL: "https://github.com/acme/outcomes/issues/8", Detail: "A finding"})
+		current.RecordOutcome(town.OutcomeRecord{ID: "finding-filed:issue:8", At: now, Class: "artifact", Kind: "finding_filed", Status: "confirmed", TaskID: "issue:8", URL: "https://github.com/acme/outcomes/issues/8", Detail: "=2+2"})
 		current.RecordOutcome(town.OutcomeRecord{ID: "implementation-pr:pr:9", At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", TaskID: "pr:9", RelatedTaskID: "issue:8", Revision: strings.Repeat("a", 40)})
 		return nil
 	}); err != nil {
@@ -129,7 +129,7 @@ func TestOutcomeReportExportAndExplicitJudgment(t *testing.T) {
 
 	csvResponse := call(t, h.URL, http.MethodGet, "/api/outcomes?town=acme%2Foutcomes&from="+from+"&format=csv", "", "test-key", "")
 	body, _ := io.ReadAll(csvResponse.Body)
-	if csvResponse.StatusCode != http.StatusOK || !strings.Contains(string(body), "town,id,at,class,kind,status,role") || !strings.Contains(string(body), "unknown,unknown,unknown,unjudged") {
+	if csvResponse.StatusCode != http.StatusOK || !strings.Contains(string(body), "town,id,at,class,kind,status,role") || !strings.Contains(string(body), "unknown,unknown,unknown,unjudged") || !strings.Contains(string(body), "'=2+2") {
 		t.Fatalf("CSV export missing explicit unknowns: %s", body)
 	}
 
