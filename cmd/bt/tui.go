@@ -338,7 +338,6 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 		add(fmt.Sprintf(" %s   [%d/%d towns]   branch %s", t.Config.Repo, townIndex+1, len(ids), t.Config.Branch))
 		add(" 0: all towns    Tab: next town    1–6 / j,k: select house")
 		add(" Settings and new issues: bt settings / bt request, or bt web")
-		add("")
 		add("    HOUSE        STATUS       CURRENT WORK")
 		for i, r := range town.Roles {
 			w := displayWorker(t, r)
@@ -365,6 +364,7 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 		if r != town.Repo {
 			add(fmt.Sprintf(" Configure: bt settings --repo %s --role %s", t.Config.Repo, r))
 		}
+		add(" Authority: " + town.WorkerAuthority(r, t.Config.MergePolicy))
 		tasks := []*town.Task{}
 		for _, task := range t.Tasks {
 			if task.House == r && task.Stage != "complete" && task.Stage != "closed" && task.Stage != "merged" && task.Stage != "shipped" && task.Stage != "implemented" && task.Stage != "declined" {
@@ -430,6 +430,6 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 	}
 	add(message)
 	add(strings.Repeat("─", width))
-	add(" s start · p pause · x stop · a wake town · d delete · u upgrade · q detach")
+	add(" s start · p pause · x stop · a wake available workers · d delete · u upgrade · q detach")
 	return strings.Join(lines, "\n")
 }

@@ -17,6 +17,20 @@ export const houseNames = {
   repo: "REPO BOT",
   hall: "TOWN HALL",
 };
+export const houseAuthorities = {
+  bug: "May inspect repository content and file GitHub bug issues.",
+  feature: "May inspect repository content and propose or file GitHub feature issues.",
+  issue: "May claim issues, create pull requests, and push repairs to Town-owned branches.",
+  review: "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches.",
+  release: "May create and merge release-preparation pull requests and publish releases and packages.",
+  repo: "Read-only: inventories and reconciles repository state without an agent or GitHub writes.",
+};
+
+export function houseAuthority(role, mergePolicy = "bot") {
+  if (role === "release" && mergePolicy === "manual")
+    return `${houseAuthorities.release} Paused while every merge is manual.`;
+  return houseAuthorities[role] || "";
+}
 // Preserve established shortcuts and append the new study on key 7.
 export const houseShortcuts = [
   "bug",
@@ -324,12 +338,12 @@ export function focusMatches(target, identity) {
 // Start re-enables a paused or failed worker (or runs a waiting one now);
 // Pause and Stop only apply to an enabled worker; Pause is redundant once a
 // pause is already in flight.
-export function workerControls(worker) {
+export function workerControls(worker, blocked = false) {
   const status = normalized(worker?.status);
   const enabled = !!worker?.enabled;
   const active = activeWorkerStatuses.has(status) || !!worker?.agent;
   return {
-    start: !enabled || !active,
+    start: !blocked && (!enabled || !active),
     pause: enabled && status !== "pausing",
     stop: enabled || active,
   };
@@ -339,17 +353,24 @@ export function workerControls(worker) {
 // always enabled and never an agent, so it says nothing about whether the
 // operator has authorized real work.
 export function townControls(town) {
-  const agents = Object.values(town?.workers || {}).filter((w) => w.role !== "repo");
+  const manual = town?.config?.merge_policy === "manual";
+  const agents = Object.values(town?.workers || {}).filter(
+    (w) => w.role !== "repo" && !(manual && w.role === "release"),
+  );
   const awake = agents.filter((w) => w.enabled).length;
+  const names = manual
+    ? "Bug Bot, Feature Bot, Issue Bot, and Review Bot; Release Bot stays paused while every merge is manual"
+    : "Bug Bot, Feature Bot, Issue Bot, Review Bot, and Release Bot";
   if (!awake)
-    return { status: "Paused", statusClass: "paused", primary: { action: "start", label: "▶ Wake the town" }, secondary: null };
+    return { status: "Paused", statusClass: "paused", primary: { action: "start", label: `▶ Wake the town (${agents.length})` }, secondary: null, detail: `Starts ${names}. Repo Bot already runs read-only.` };
   if (awake === agents.length)
-    return { status: `Awake · ${awake} agent${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Ⅱ Pause the town" }, secondary: null };
+    return { status: `Awake · ${awake} agent${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Ⅱ Pause the town" }, secondary: null, detail: "" };
   return {
     status: `Partly awake · ${awake} of ${agents.length}`,
     statusClass: "partial",
     primary: { action: "start", label: "▶ Wake the rest" },
     secondary: { action: "pause", label: "Ⅱ Pause all" },
+    detail: `Starts the remaining available workers: ${names}. Repo Bot runs read-only.`,
   };
 }
 

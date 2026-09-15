@@ -90,6 +90,9 @@ type dispatch struct {
 }
 
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
+	if r == Release && t.Config.MergePolicy == "manual" {
+		return result, manualReleaseError()
+	}
 	if r == Issue {
 		defer func() { err = errors.Join(err, b.SyncIssues(t)) }()
 	}
@@ -133,6 +136,31 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	}
 	workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, d, deadline, observe)
 	return b.complete(ctx, t, r, d, workerResult, err, observe, log)
+}
+
+const manualReleaseTask = "Paused by manual merge policy; Release Bot may merge release-preparation pull requests"
+
+func manualReleaseError() error {
+	return errors.New("release-bot is paused by manual merge policy because it may create and merge release-preparation pull requests; choose a Town merge policy that permits automatic merges before starting it")
+}
+
+// enforceManualReleasePolicy normalizes every persisted state mutation, including
+// config-file loads that bypass the interactive Settings API. Its return value
+// tells callers whether a running worker needs cancellation.
+func enforceManualReleasePolicy(t *Town) bool {
+	if t == nil || t.Config.MergePolicy != "manual" || t.Workers == nil || t.Workers[Release] == nil {
+		return false
+	}
+	w := t.Workers[Release]
+	wasActive := w.Enabled || w.Status == "working" || w.Status == "pausing"
+	w.Enabled = false
+	if w.Status == "working" || w.Status == "pausing" {
+		w.Status = "pausing"
+	} else {
+		w.Status = "paused"
+	}
+	w.Task = manualReleaseTask
+	return wasActive
 }
 
 // Adopt resumes a bot process that an earlier service left running. The run

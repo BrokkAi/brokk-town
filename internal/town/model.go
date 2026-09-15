@@ -30,6 +30,31 @@ var Roles = []Role{Bug, Issue, Review, Release, Repo, Feature}
 // AgentRoles excludes the reporter, which never starts an agent.
 var AgentRoles = []Role{Bug, Feature, Issue, Review, Release}
 
+// WorkerAuthority is the concise operator-facing description shared by the
+// terminal clients. Browser code mirrors these strings near the same controls.
+func WorkerAuthority(role Role, mergePolicy string) string {
+	switch role {
+	case Bug:
+		return "May inspect repository content and file GitHub bug issues."
+	case Feature:
+		return "May inspect repository content and propose or file GitHub feature issues."
+	case Issue:
+		return "May claim issues, create pull requests, and push repairs to Town-owned branches."
+	case Review:
+		return "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches."
+	case Release:
+		detail := "May create and merge release-preparation pull requests and publish releases and packages."
+		if mergePolicy == "manual" {
+			return detail + " Paused while every merge is manual."
+		}
+		return detail
+	case Repo:
+		return "Read-only: inventories and reconciles repository state without an agent or GitHub writes."
+	default:
+		return ""
+	}
+}
+
 func ValidAgentRole(r Role) bool {
 	for _, v := range AgentRoles {
 		if r == v {

@@ -3,6 +3,7 @@ package town
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -35,6 +36,7 @@ import socketserver
 #            buffer events, and replay them through GET /v1/attach?after=N.
 MODE = os.environ.get('TOWN_WORKER_TEST_MODE', '')
 RELEASE = os.environ.get('TOWN_WORKER_TEST_RELEASE', '')
+INIT_BLOCK = RELEASE + '.initialize-block' if RELEASE else ''
 EVENTS = []
 COND = threading.Condition()
 RUN_STARTED = threading.Event()
@@ -118,6 +120,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != '/v1/initialize':
             self.send_error(404)
             return
+        if INIT_BLOCK and os.path.exists(INIT_BLOCK):
+            open(INIT_BLOCK + '.started', 'a').close()
+            while not os.path.exists(INIT_BLOCK + '.release'):
+                time.sleep(0.02)
         capabilities = ['run', 'progress', 'issue-result', 'exact-issue']
         if MODE == 'detach':
             capabilities.append('detach')
@@ -372,5 +378,25 @@ func TestReleaseRetryUsesWorkerAPIBeforeRun(t *testing.T) {
 	x.Workers[Release].RetryRequested = true
 	if _, err = workers.Run(context.Background(), x, Release, func(Progress) {}, logger); err == nil || !strings.Contains(err.Error(), `does not advertise "retry"`) {
 		t.Fatalf("missing retry capability was accepted: %v", err)
+	}
+}
+
+func TestManualMergePolicyDoesNotStartFakeReleaseWorker(t *testing.T) {
+	dir := t.TempDir()
+	capture := filepath.Join(dir, "capture.json")
+	t.Setenv("TOWN_WORKER_TEST_CAPTURE", capture)
+	store := testStore(t, false)
+	town := addTown(t, store)
+	town.Config.MergePolicy = "manual"
+	workers := &BotWorkers{
+		Root: dir, Store: store,
+		BotCommands: map[Role]string{Release: filepath.Join(dir, "worker-that-must-not-start")},
+	}
+	_, err := workers.Run(context.Background(), town, Release, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "release-preparation") {
+		t.Fatalf("manual release dispatch was accepted: %v", err)
+	}
+	if _, statErr := os.Stat(capture); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("fake release worker received a request: %v", statErr)
 	}
 }
