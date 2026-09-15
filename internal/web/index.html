@@ -62,9 +62,13 @@
             <button id="town-settings" class="quiet" disabled>
               ⚙ Settings
             </button>
-            <button id="start-all" class="primary" disabled>
-              ▶ Wake the town</button
-            ><button id="pause-all" class="quiet" disabled>Ⅱ Pause</button>
+            <span id="town-state" class="status-chip" hidden></span>
+            <button id="town-toggle" class="primary" disabled>
+              ▶ Wake the town
+            </button>
+            <button id="pause-all" class="quiet" disabled hidden>
+              Ⅱ Pause all
+            </button>
           </div>
         </div>
         <div id="error" role="alert" hidden></div>

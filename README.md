@@ -141,8 +141,10 @@ GitHub reconciliation.
 ```
 
 New towns start with the five automation workers **paused**. Repo-bot starts its
-read-only inventory. Inspect the town, then start individual workers or choose
-**Wake the town**. Starting workers authorizes their real work: filing issues,
+read-only inventory. The town header shows whether the town is paused, awake,
+or partly awake, and its button offers the action that changes that state.
+Inspect the town, then start individual workers or choose **Wake the town**.
+Starting workers authorizes their real work: filing issues,
 creating and repairing PRs, posting reviews, merging under the configured policy,
 and publishing releases. Agents and verification commands run with your local
 permissions. Use an isolated account or machine for repositories you don't trust.

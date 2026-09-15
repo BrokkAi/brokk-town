@@ -218,7 +218,7 @@ function installFixture() {
     }
     if (selector === ".world") return elements.world;
     if (selector === ".activity") return elements.journal?.parent || elements.activity || (elements.journal && (elements.journal.parent = new Element("section", "activity")));
-    if (selector === ".town-controls") return elements["start-all"]?.parent || elements["start-all"];
+    if (selector === ".town-controls") return elements["town-toggle"]?.parent || elements["town-toggle"];
     return Object.values(elements).find((element) => element.matches(selector)) || Object.values(elements).map((element) => element.querySelector(selector)).find(Boolean) || null;
   };
   document.querySelectorAll = (selector) => {
@@ -347,6 +347,13 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements.compact.hidden, false, "keyboard shortcut opens Compact");
 
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  assert.equal(elements["town-state"].hidden, false, "header shows the town's wake state");
+  assert.equal(elements["town-state"].textContent, "Awake · 2 agents");
+  assert.equal(elements["town-toggle"].textContent, "Ⅱ Pause the town", "toggle offers the action that changes state");
+  assert.equal(elements["town-toggle"].classList.contains("primary"), false);
+  assert.equal(elements["pause-all"].hidden, true, "no separate pause-all when every agent is awake");
+  await elements["town-toggle"].onclick();
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"all"')), true);
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   const decision = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3");
   assert.ok(decision, "Town Hall shows work awaiting the Mayor");

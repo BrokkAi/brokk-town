@@ -557,7 +557,20 @@ p {
   gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
   max-width: 350px;
+}
+.town-controls .status-chip {
+  font-size: 11px;
+  padding: 3px 7px;
+}
+.status-chip.status-awake {
+  border-color: var(--green);
+  color: var(--green);
+}
+.status-chip.status-partial {
+  border-color: #c9a24a;
+  color: #efd68a;
 }
 .world {
   position: relative;
