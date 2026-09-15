@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
@@ -24,11 +25,22 @@ type Server struct {
 	Token      string
 	Origin     string
 	Version    string
+	// TaskGitHub reads one live issue or PR for the inspector. It is a
+	// narrow slice of town.GitHub so tests fake two methods, not the whole
+	// interface. A nil handle means live details are unavailable.
+	TaskGitHub taskGitHub
 	Update     func() *town.UpdateNotice
 	Upgrade    func(context.Context) error
 	// Restart asks the service to replace itself with the binary at its own
 	// path. Clients call it after an upgrade or when they are newer.
 	Restart func()
+}
+
+// taskGitHub fetches a single live issue or pull request on demand. Bodies
+// stay out of town state; the inspector reads them only while open.
+type taskGitHub interface {
+	Issue(ctx context.Context, repository string, number int) (town.GitHubIssue, error)
+	Pull(ctx context.Context, repo string, n int) (town.Pull, error)
 }
 
 func (s *Server) publicState() map[string]any {
@@ -64,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
 	mux.HandleFunc("POST /api/requests", s.submitRequest)
 	mux.HandleFunc("POST /api/requests/check", s.checkRequest)
+	mux.HandleFunc("POST /api/task-detail", s.taskDetail)
 	mux.HandleFunc("POST /api/update", s.upgrade)
 	mux.HandleFunc("POST /api/restart", s.restart)
 	mux.Handle("/", http.FileServerFS(files))
@@ -276,6 +289,88 @@ func (s *Server) botVersions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, versions)
+}
+
+// maxTaskDetailBody caps one live body so a pasted log cannot bloat the
+// inspector payload. Longer bodies stay fully available at the source link.
+const maxTaskDetailBody = 10000
+
+type taskDetailResponse struct {
+	Kind           string    `json:"kind"`
+	Number         int       `json:"number"`
+	Title          string    `json:"title"`
+	Body           string    `json:"body"`
+	Truncated      bool      `json:"truncated,omitempty"`
+	Author         string    `json:"author,omitempty"`
+	Comments       int       `json:"comments"`
+	ReviewComments int       `json:"review_comments,omitempty"`
+	State          string    `json:"state"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	URL            string    `json:"url"`
+}
+
+func truncateTaskDetailBody(body string) (string, bool) {
+	if len(body) <= maxTaskDetailBody {
+		return body, false
+	}
+	cut := body[:maxTaskDetailBody]
+	for !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut, true
+}
+
+func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Town string `json:"town"`
+		Task string `json:"task"`
+	}
+	if err := decode(w, r, &input); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	if input.Town == "" || input.Task == "" {
+		problem(w, "town and task are required", 400)
+		return
+	}
+	snapshot := s.Store.Snapshot()
+	if snapshot.Demo {
+		problem(w, "demo towns have no live source", http.StatusConflict)
+		return
+	}
+	t := snapshot.Towns[strings.ToLower(input.Town)]
+	if t == nil {
+		problem(w, "unknown town", 404)
+		return
+	}
+	task := t.Tasks[input.Task]
+	if task == nil || task.Number < 1 || (task.Kind != "issue" && task.Kind != "pr") {
+		problem(w, "live details need a GitHub issue or PR number", 400)
+		return
+	}
+	if s.TaskGitHub == nil {
+		problem(w, "live GitHub details are unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	if task.Kind == "pr" {
+		p, err := s.TaskGitHub.Pull(ctx, t.Config.Repo, task.Number)
+		if err != nil {
+			problem(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		body, truncated := truncateTaskDetailBody(p.Body)
+		respond(w, taskDetailResponse{Kind: "pr", Number: p.Number, Title: p.Title, Body: body, Truncated: truncated, Author: p.User.Login, Comments: p.Comments, ReviewComments: p.ReviewComments, State: p.State, UpdatedAt: p.Updated, URL: p.URL})
+		return
+	}
+	issue, err := s.TaskGitHub.Issue(ctx, t.Config.Repo, task.Number)
+	if err != nil {
+		problem(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	body, truncated := truncateTaskDetailBody(issue.Body)
+	respond(w, taskDetailResponse{Kind: "issue", Number: issue.Number, Title: issue.Title, Body: body, Truncated: truncated, Author: issue.Author, Comments: issue.Comments, State: issue.State, UpdatedAt: issue.UpdatedAt, URL: issue.URL})
 }
 func (s *Server) choices(w http.ResponseWriter, r *http.Request) {
 	var input settingsInput

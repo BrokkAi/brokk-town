@@ -481,7 +481,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	var available atomic.Pointer[town.UpdateNotice]
 	var upgradeMu sync.Mutex
 	var restarting atomic.Bool
-	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), Update: available.Load}
+	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh, Update: available.Load}
 	server.Upgrade = func(upgradeCtx context.Context) error {
 		upgradeMu.Lock()
 		defer upgradeMu.Unlock()
@@ -540,7 +540,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	} else {
 		go func() { results <- supervisor.Run(ctx) }()
 	}
-	fmt.Printf("Brokk Town %s\nBrowser: %s/#token=%s\nTerminal: bt tui --state-dir %s\n", version, conn.URL, conn.Token, dir)
+	fmt.Printf("Brokk Town %s\nBrowser: %s/#token=%s\nTerminal: bt tui --state-dir %s\n", buildVersion(), conn.URL, conn.Token, dir)
 	if demo {
 		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
 	}

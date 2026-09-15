@@ -71,6 +71,25 @@ let state = null,
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
   streamAbort = null,
   servedVersion = "";
+let liveDetail = null;
+let liveDetailEpoch = 0;
+function clearLiveDetail() {
+  liveDetail = null;
+  liveDetailEpoch++;
+}
+async function fetchLiveDetail(townId, taskId) {
+  const key = `${townId}\n${taskId}`;
+  const epoch = liveDetailEpoch;
+  try {
+    const detail = await api("/api/task-detail", { town: townId, task: taskId });
+    if (epoch !== liveDetailEpoch) return;
+    liveDetail = { key, status: "ready", data: detail };
+  } catch (error) {
+    if (epoch !== liveDetailEpoch) return;
+    liveDetail = { key, status: "failed", error: error.message };
+  }
+  if (selectedTown === townId && selectedTask === taskId) renderInspection();
+}
 const canvas = $("#world"),
   ctx = canvas.getContext("2d"),
   buildings = new Image(),
@@ -227,6 +246,10 @@ function receive(next) {
   } else {
     update.hidden = true;
   }
+  const serviceVersion = typeof state.version === "string" ? state.version.trim() : "";
+  $("#town-version").textContent = serviceVersion;
+  $("#town-version").hidden = !serviceVersion;
+  $("#help-version").textContent = serviceVersion ? `Brokk Town ${serviceVersion}` : "";
   if (!state.towns[selectedTown]) {
     selectedTown = Object.keys(state.towns)[0] || "";
     selectedTask = "";
@@ -407,6 +430,7 @@ function inspectOperation(id, role, task = "") {
   $("#close-inspector").focus();
 }
 function closeInspector() {
+  clearLiveDetail();
   $("#inspector").classList.remove("open");
   if (state) renderOverview();
 }
@@ -415,6 +439,7 @@ function chooseHouse(role) {
   saveScope();
   selectedHouse = role;
   selectedTask = "";
+  clearLiveDetail();
   $("#inspector").classList.add("open");
   render();
 }
@@ -474,6 +499,7 @@ function selectTown(id) {
     /* Keep the selection for this session when persistence is unavailable. */
   }
   selectedTask = "";
+  clearLiveDetail();
   moving = [];
   overview = false;
   saveScope();
@@ -595,9 +621,38 @@ function renderInspection() {
     const mayorActions = task.mayoral_decision === "pending"
       ? `<div class="inspector-actions"><button id="admit-task" class="primary">${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`
       : "";
-    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${sourceSummary}<p>${esc(task.detail || "Following the next step through town.")}</p>${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${mayorActions}${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
+    const isMayor = task.mayoral_decision === "pending";
+    const liveCapable = isMayor && (task.kind === "issue" || task.kind === "pr") && task.number > 0;
+    const kindLabel = task.kind === "pr" ? "PR" : task.kind === "issue" ? "Issue" : task.kind;
+    const mayorMeta = liveCapable
+      ? `<p><strong>${esc(kindLabel)} #${task.number}</strong> · ${esc(task.external ? "outside arrival" : task.audit?.verdict === "changes_needed" ? "Town review asked for changes" : "proposed inside Town")}${task.updated ? ` · updated ${esc(new Date(task.updated).toLocaleString())}` : ""}</p><p class="muted">Admitting sends this to ${task.kind === "issue" ? "Issue Bot" : "Review Bot"}.</p>`
+      : "";
+    let liveBlock = "";
+    if (liveCapable) {
+      const key = `${selectedTown}\n${selectedTask}`;
+      if (!liveDetail || liveDetail.key !== key) {
+        liveDetail = { key, status: state.demo ? "demo" : "loading" };
+        if (!state.demo) fetchLiveDetail(selectedTown, selectedTask);
+      }
+      if (liveDetail.status === "loading") {
+        liveBlock = `<p class="muted">Loading live details from GitHub…</p>`;
+      } else if (liveDetail.status === "demo") {
+        liveBlock = `<p class="muted">Demo town: simulated arrival, no live source.</p>`;
+      } else if (liveDetail.status === "failed") {
+        liveBlock = `<p class="muted">Live details unavailable${liveDetail.error ? `: ${esc(liveDetail.error)}` : ""}. The summary above is current as of the last sync.</p>`;
+      } else {
+        const d = liveDetail.data;
+        const comments = d.kind === "pr" && d.review_comments
+          ? `${d.comments} comments · ${d.review_comments} review comments`
+          : `${d.comments} comment${d.comments === 1 ? "" : "s"}`;
+        liveBlock = `<p class="muted">${d.author ? `Opened by ${esc(d.author)} · ` : ""}${esc(comments)} · ${esc(d.state)} · updated ${esc(new Date(d.updated_at).toLocaleString())}</p>${d.body ? `<pre>${esc(d.body)}</pre>${d.truncated ? `<p class="muted">Truncated here — the rest is at the source link above.</p>` : ""}` : `<p class="muted">No description provided at the source.</p>`}`;
+      }
+    }
+    const detailText = task.detail || (liveCapable ? "" : "Following the next step through town.");
+    out.innerHTML = `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div><div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${mayorActions}${task.blocked || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`;
     $("#back-house").onclick = () => {
       selectedTask = "";
+      clearLiveDetail();
       renderInspection();
     };
     if ($("#retry-task"))
@@ -612,7 +667,7 @@ function renderInspection() {
   }
   if (selectedHouse === "hall") {
     const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
-    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work and proposed features wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>News from repo-bot</h2>${
+    out.innerHTML = `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work and proposed features wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
