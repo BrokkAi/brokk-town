@@ -118,6 +118,7 @@ button and the TUI offers `u`. After confirmation, the service installs that exa
 version through the channel it was installed from (npm for the npm package,
 otherwise the checksum-verified release archive over the current binary) and
 restarts itself in place; the browser page reloads when the new version is up.
+Bots that were mid-run keep working through the restart and are reconnected.
 A failed or offline check never interrupts local operation.
 
 You can also build from source as above or install the current branch:
@@ -197,6 +198,15 @@ permissions. Use an isolated account or machine for repositories you don't trust
 Pause finishes active work and stops scheduling more. Stop also cancels active
 work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
 uncertain external writes retain their saved intent and are reconciled first.
+
+Stopping or restarting the service (Ctrl+C, SIGTERM, `bt service restart`, or
+an in-app upgrade) does not stop the external bots. Each bot process runs detached, and Town commits its handle (PID,
+socket, and exact task) before requesting work. The next `bt serve` reconnects to
+those processes before scheduling anything new. Bots that advertise the `detach`
+capability replay the events Town missed and their results are applied normally.
+Older bots finish on their own, and Town records that attempt as uncertain rather
+than guessing; repo-bot then reconciles whatever landed on GitHub. Only an explicit
+Stop, a town deletion, or the two-hour dispatch deadline ends a bot process.
 
 Capacity is a persisted service setting shared by every town. It reserves only
 non-reporter bot runs; repo-bot, issue publishing, and prompt-free model choice

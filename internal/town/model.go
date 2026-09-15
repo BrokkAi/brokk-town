@@ -3,6 +3,7 @@ package town
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -170,6 +171,7 @@ type PublicBotAgentConfig struct {
 }
 type Worker struct {
 	Agent   *PublicBotAgentConfig `json:"agent,omitempty"`
+	Run     *WorkerRun            `json:"run,omitempty"`
 	Role    Role                  `json:"role"`
 	Enabled bool                  `json:"enabled"`
 	Status  string                `json:"status"`
@@ -180,6 +182,45 @@ type Worker struct {
 	Next    time.Time             `json:"next,omitempty"`
 	Logs    []Log                 `json:"logs"`
 }
+
+// WorkerRun is the durable handle of one external bot process. It is written
+// before the run request is sent and cleared when Town has consumed the outcome,
+// so a service that restarts can find the process again instead of losing it.
+type WorkerRun struct {
+	Bot        string    `json:"bot"`
+	Version    string    `json:"version"`
+	Command    string    `json:"command"`
+	Args       []string  `json:"args,omitempty"`
+	Hash       string    `json:"hash"`
+	PID        int       `json:"pid"`
+	Socket     string    `json:"socket"`
+	Output     string    `json:"output"`
+	Detachable bool      `json:"detachable"`
+	Seq        uint64    `json:"seq"`
+	Started    time.Time `json:"started"`
+	Deadline   time.Time `json:"deadline"`
+	Issue      int       `json:"issue,omitempty"`
+	PR         int       `json:"pr,omitempty"`
+	BaseSHA    string    `json:"base_sha,omitempty"`
+	HeadSHA    string    `json:"head_sha,omitempty"`
+}
+
+func (r *WorkerRun) Validate(role Role) error {
+	if r == nil {
+		return nil
+	}
+	if !ValidAgentRole(role) {
+		return fmt.Errorf("%s worker cannot own an external run", role)
+	}
+	if r.PID <= 0 || r.Socket == "" || r.Bot == "" || !workerVersionPattern.MatchString(r.Version) || r.Command == "" {
+		return errors.New("invalid worker run handle")
+	}
+	if (r.BaseSHA != "" && !SHA(r.BaseSHA)) || (r.HeadSHA != "" && !SHA(r.HeadSHA)) || r.Issue < 0 || r.PR < 0 {
+		return errors.New("invalid worker run identity")
+	}
+	return nil
+}
+
 type Log struct {
 	At    time.Time `json:"at"`
 	Level string    `json:"level"`

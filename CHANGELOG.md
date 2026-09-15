@@ -8,6 +8,10 @@
 - Restart in place after an upgrade through the original install channel, roll
   a stale service forward when `bt` is newer, keep the browser address stable
   across restarts, and reload the page when the service version changes.
+- Keep external bots running across a Town service restart. Bot processes are
+  detached with durable run handles, the next service reconnects to them before
+  scheduling, `detach`-capable workers replay missed events, and only operator
+  stop, town deletion, or the dispatch deadline kills a bot.
 - Offer pinned Brokk Town upgrades through the browser and terminal interfaces.
 - Make the external pull-request ownership policy editable in Town settings.
 - Harden partial-release recovery when native archives were produced by a
