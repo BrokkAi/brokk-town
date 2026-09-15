@@ -16,6 +16,9 @@
   socket and durable handle with a visible failure if safe authentication fails.
 - After a persisted Release Bot is stopped successfully, clear its durable run
   and active agent profile and finalize it as paused under manual policy.
+- Keep the bounded adoption identity probe alive when manual policy is selected
+  during authentication. If safe authentication still fails while the process
+  may be alive, retain its durable handle and show the uncertain stop outcome.
 - Disclose beside Review Bot controls that starting it can merge eligible pull
   requests when the configured merge policy permits.
 - Cover default and persisted startup state, manual-policy controls and scheduling,

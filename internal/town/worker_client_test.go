@@ -36,6 +36,7 @@ import socketserver
 #            buffer events, and replay them through GET /v1/attach?after=N.
 MODE = os.environ.get('TOWN_WORKER_TEST_MODE', '')
 RELEASE = os.environ.get('TOWN_WORKER_TEST_RELEASE', '')
+INIT_BLOCK = RELEASE + '.initialize-block' if RELEASE else ''
 EVENTS = []
 COND = threading.Condition()
 RUN_STARTED = threading.Event()
@@ -119,6 +120,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != '/v1/initialize':
             self.send_error(404)
             return
+        if INIT_BLOCK and os.path.exists(INIT_BLOCK):
+            open(INIT_BLOCK + '.started', 'a').close()
+            while not os.path.exists(INIT_BLOCK + '.release'):
+                time.sleep(0.02)
         capabilities = ['run', 'progress', 'issue-result', 'exact-issue']
         if MODE == 'detach':
             capabilities.append('detach')

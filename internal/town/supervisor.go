@@ -362,6 +362,8 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		}
 	}()
 	detached := errors.Is(err, errWorkerDetached)
+	var unknown *WorkerOutcomeUnknownError
+	stopUnconfirmed := adopt != nil && stopRequested(ctx) && errors.As(err, &unknown) && unknown.processRunning
 	if err != nil && !detached && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 		log.Error("worker attempt failed", "error", err)
 	}
@@ -377,6 +379,19 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 			w.Status = "detached"
 			w.Phase = "detached"
 			w.Task = "Still running; the next town service will reconnect to it"
+			w.Updated = s.now()
+			return nil
+		}
+		if stopUnconfirmed {
+			// Authentication failed while a stop was pending, so there is no
+			// proof that the recorded process ended. Keep the handle for another
+			// safe adoption attempt and expose the uncertainty to the operator.
+			w.Status = "failed"
+			if !w.Enabled {
+				w.Status = "paused"
+			}
+			w.Error = err.Error()
+			w.Task = "Could not confirm that the persisted worker stopped"
 			w.Updated = s.now()
 			return nil
 		}
