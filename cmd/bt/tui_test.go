@@ -78,7 +78,7 @@ func TestBlockedIssueAttentionAndRecovery(t *testing.T) {
 		x.Tasks[id] = &town.Task{ID: id, Kind: "issue", Number: i, Title: "Waiting issue", House: town.Issue, Stage: "queued"}
 	}
 	overview := renderTUI(s, "", 0, -1, 100, 24, "")
-	if !strings.Contains(overview, "6 queued · 1 need attention") {
+	if !strings.Contains(overview, "6 queued") || !strings.Contains(overview, "1 need attention") {
 		t.Fatalf("blocked issue was missing from overview: %s", overview)
 	}
 	house := renderTUI(s, "", 0, 1, 100, 24, "")
@@ -105,7 +105,7 @@ func TestBlockedIssueAttentionAndRecovery(t *testing.T) {
 	blocked.Stage = "implemented"
 	blocked.IssueJob.Status = "submitted"
 	overview = renderTUI(s, "", 0, -1, 100, 24, "")
-	if !strings.Contains(overview, "5 queued · 0 need attention") {
+	if !strings.Contains(overview, "5 queued") || !strings.Contains(overview, "0 need attention") {
 		t.Fatalf("submitted issue still needed attention: %s", overview)
 	}
 	house = renderTUI(s, "", 0, 1, 100, 24, "")

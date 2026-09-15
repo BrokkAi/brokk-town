@@ -38,7 +38,7 @@ func (b *BotWorkers) CanRetryIssue(t *Town, issue int) (bool, error) {
 		return false, nil
 	}
 	job := state.Jobs[issue]
-	return job != nil && !job.ClaimPending && (job.Status == "blocked" || job.Status == "pending"), nil
+	return job != nil && (job.Status == "blocked" || job.Status == "pending"), nil
 }
 
 func (b *BotWorkers) RetryIssue(t *Town, issue int) error {
