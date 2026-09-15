@@ -537,13 +537,8 @@ const repairConfirmWait = 15 * time.Second
 // bounded time for the pull request to reflect it. A branch that is not at the
 // pushed commit leaves the saved intent uncertain for operator reconciliation.
 func (b *BotWorkers) confirmPush(ctx context.Context, t *Town, dir string, n int, branch, head string, log *slog.Logger) error {
-	out, err := git(ctx, dir, "ls-remote", "--exit-code", "--", b.remote(t.Config.Repo), "refs/heads/"+branch)
-	if err != nil {
-		return fmt.Errorf("repair push not confirmed: %w", err)
-	}
-	fields := strings.Fields(out)
-	if len(fields) == 0 || fields[0] != head {
-		return fmt.Errorf("repair push not confirmed at the exact head: %s is at %q", branch, strings.Join(fields, " "))
+	if err := b.checkRepairRef(ctx, t, dir, branch, head); err != nil {
+		return err
 	}
 	wait := b.confirmWait
 	if wait == 0 {
@@ -560,9 +555,12 @@ func (b *BotWorkers) confirmPush(ctx context.Context, t *Town, dir string, n int
 			return err
 		}
 		if p.Head.SHA == head {
-			return nil
+			return b.checkRepairRef(ctx, t, dir, branch, head)
 		}
 		if time.Now().After(deadline) {
+			if err := b.checkRepairRef(ctx, t, dir, branch, head); err != nil {
+				return err
+			}
 			log.Warn("pull request head lags the pushed branch; confirming from the remote ref", "pr", n, "branch", branch, "head", head, "reported", p.Head.SHA)
 			return nil
 		}
@@ -574,6 +572,18 @@ func (b *BotWorkers) confirmPush(ctx context.Context, t *Town, dir string, n int
 		case <-timer.C:
 		}
 	}
+}
+
+func (b *BotWorkers) checkRepairRef(ctx context.Context, t *Town, dir, branch, head string) error {
+	out, err := git(ctx, dir, "ls-remote", "--exit-code", "--", b.remote(t.Config.Repo), "refs/heads/"+branch)
+	if err != nil {
+		return fmt.Errorf("repair push not confirmed: %w", err)
+	}
+	fields := strings.Fields(out)
+	if len(fields) == 0 || fields[0] != head {
+		return fmt.Errorf("repair push not confirmed at the exact head: %s is at %q", branch, strings.Join(fields, " "))
+	}
+	return nil
 }
 func (b *BotWorkers) confirmRepair(id, taskID string, i *Intent) error {
 	return b.Store.Update(func(st *State) error {

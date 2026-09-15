@@ -215,6 +215,55 @@ func TestRepairRefusesConfirmationWhenBranchMovedPastPush(t *testing.T) {
 	}
 }
 
+type advancingRepairGH struct {
+	laggingGH
+	remote string
+	moved  bool
+}
+
+func (g *advancingRepairGH) Pull(ctx context.Context, repo string, n int) (Pull, error) {
+	p, err := g.laggingGH.Pull(ctx, repo, n)
+	if err != nil {
+		return p, err
+	}
+	head, err := git(ctx, "", "--git-dir", g.remote, "rev-parse", "refs/heads/issue-1")
+	if err != nil {
+		return p, err
+	}
+	if head != g.stale && !g.moved {
+		g.moved = true
+		tree, err := git(ctx, "", "--git-dir", g.remote, "rev-parse", head+"^{tree}")
+		if err != nil {
+			return p, err
+		}
+		extra, err := git(ctx, "", "-c", "user.name=Other", "-c", "user.email=other@example.test", "--git-dir", g.remote, "commit-tree", tree, "-p", head, "-m", "concurrent push")
+		if err != nil {
+			return p, err
+		}
+		if _, err := git(ctx, "", "--git-dir", g.remote, "update-ref", "refs/heads/issue-1", extra); err != nil {
+			return p, err
+		}
+		p.Head.SHA = extra
+	}
+	return p, nil
+}
+
+func TestRepairRefusesConcurrentPushDuringPullConfirmation(t *testing.T) {
+	b, x, task, remote := fixtureWorkers(t)
+	gh := &advancingRepairGH{laggingGH: laggingGH{gitFixtureGH: b.GitHub.(gitFixtureGH), stale: task.Head, lag: 1 << 20}, remote: remote}
+	b.GitHub = gh
+	b.confirmWait = 50 * time.Millisecond
+	b.confirmInterval = time.Millisecond
+	b.executeAgent = repairAgent()
+	err := b.repair(context.Background(), x, task, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "not confirmed at the exact head") || !gh.moved {
+		t.Fatalf("concurrent branch advance accepted: %v moved=%t", err, gh.moved)
+	}
+	if b.Store.Snapshot().Towns[x.ID].Intents[1].Status != "uncertain" {
+		t.Fatal("concurrent push did not preserve uncertain repair intent")
+	}
+}
+
 func TestCertifierAndOperatorVerifyCannotChangeReviewedRevision(t *testing.T) {
 	for _, scenario := range []string{"valid", "agent_commit", "verify_commit", "omitted_evidence"} {
 		t.Run(scenario, func(t *testing.T) {
