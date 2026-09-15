@@ -75,6 +75,7 @@ type Config struct {
 	MaxCycles            int                     `json:"max_cycles"`
 	Funnels              FunnelConfigs           `json:"funnels,omitempty"`
 	MayoralFeatureReview *bool                   `json:"mayoral_feature_review,omitempty"`
+	AutoUpdateBots       bool                    `json:"auto_update_bots,omitempty"`
 }
 
 // BotAgentConfig is a complete private selection. Omitted roles inherit the town
@@ -160,6 +161,7 @@ type PublicConfig struct {
 	BotVersions          map[Role]string               `json:"bot_versions"`
 	Funnels              []PublicFunnelConfig          `json:"funnels,omitempty"`
 	MayoralFeatureReview bool                          `json:"mayoral_feature_review"`
+	AutoUpdateBots       bool                          `json:"auto_update_bots"`
 }
 
 type PublicBotAgentConfig struct {
@@ -280,6 +282,16 @@ type Task struct {
 	RetryAt         time.Time         `json:"retry_at,omitempty"`
 	IssueJob        *IssueJob         `json:"issue_job,omitempty"`
 	Source          *WorkItem         `json:"source,omitempty"`
+	Upgrade         *BotUpgrade       `json:"upgrade,omitempty"`
+}
+
+// BotUpgrade records one published stable bot version that is newer than the
+// town's pin. Town applies it only after the Mayor approves it, or immediately
+// when the town has opted into automatic bot updates.
+type BotUpgrade struct {
+	Role Role   `json:"role"`
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 // IssueJob is the public scheduling outcome from issue-bot durable state.
@@ -479,7 +491,7 @@ func (c Config) Public() PublicConfig {
 	for _, role := range AgentRoles {
 		versions[role] = c.BotVersion(role)
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, MayoralFeatureReview: c.ReviewsFeaturesWithMayor()}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, MayoralFeatureReview: c.ReviewsFeaturesWithMayor(), AutoUpdateBots: c.AutoUpdateBots}
 }
 
 func (c Config) BotVersion(role Role) string {

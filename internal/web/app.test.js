@@ -269,6 +269,7 @@ const state = {
         "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Queue this change", house: "issue", stage: "queued" },
         "source:done": { id: "source:done", kind: "source", title: "Checked off in Slack", house: "issue", stage: "complete", source: { eligible: false } },
         "issue:3": { id: "issue:3", kind: "issue", number: 3, title: "Outside request", house: "hall", stage: "awaiting_mayor", external: true, mayoral_decision: "pending" },
+        "upgrade:feature": { id: "upgrade:feature", kind: "upgrade", title: "Feature Bot 0.1.2 is available (pinned 0.1.1)", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", upgrade: { role: "feature", from: "0.1.1", to: "0.1.2" } },
       },
       intents: {}, reports: [], events: [],
     },
@@ -368,6 +369,16 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(requests.some((request) => request.url === "/api/task-detail"), false, "demo never fetches live details");
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"')), true);
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  const upgrade = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "upgrade:feature");
+  assert.ok(upgrade, "Town Hall shows a bot update awaiting the Mayor");
+  assert.match(upgrade.innerHTML || upgrade.textContent || "", /bot update/);
+  upgrade.onclick();
+  const upgradeButtons = elements.inspection.querySelectorAll("button");
+  assert.ok(upgradeButtons.find((button) => button.id === "admit-task"), "a bot update can be approved");
+  assert.ok(upgradeButtons.find((button) => button.id === "decline-task"), "a bot update can be declined");
+  await upgradeButtons.find((button) => button.id === "delay-task").onclick();
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"delay"') && request.options.body.includes('"task":"upgrade:feature"')), true);
 
   elements["capacity-settings"].onclick();
   assert.equal(elements["capacity-dialog"].open, true);
@@ -467,10 +478,10 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   await import(`./app.js?inbox-test=${Date.now()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(elements["inbox-count"].textContent, "3", "header badge counts decisions and stuck work across towns");
+  assert.equal(elements["inbox-count"].textContent, "4", "header badge counts decisions and stuck work across towns");
   assert.equal(elements["inbox-count"].hidden, false);
   assert.ok(elements["inbox-count"].classList.contains("decisions"), "badge highlights pending Mayoral decisions");
-  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /2 awaiting your decision · 1 need attention/);
+  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /3 awaiting your decision · 1 need attention/);
   const betaLink = elements.towns.querySelectorAll("[data-town]").find((button) => button.dataset.town === "beta/tools");
   assert.match(betaLink.textContent, /1 to decide/, "sidebar shows each town's pending decisions");
   assert.match(betaLink.textContent, /1 attention/, "sidebar shows each town's stuck work");
@@ -481,14 +492,14 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   const opens = elements["inbox-list"].querySelectorAll("[data-inbox-open]");
   assert.deepEqual(
     opens.map((button) => [button.dataset.inboxTown, button.dataset.inboxHouse, button.dataset.inboxTask]),
-    [["acme/project", "hall", "issue:3"], ["beta/tools", "hall", "pr:12"], ["beta/tools", "review", ""]],
+    [["acme/project", "hall", "upgrade:feature"], ["acme/project", "hall", "issue:3"], ["beta/tools", "hall", "pr:12"], ["beta/tools", "review", ""]],
     "decisions from every town lead (an unknown age counts as the longest wait), then stuck work names the house to inspect",
   );
   assert.match(elements["inbox-list"].textContent, /outside arrival/);
   assert.match(elements["inbox-list"].textContent, /Review Bot/);
   assert.match(elements["inbox-list"].textContent, /gh exploded/, "failed workers carry their error");
 
-  opens[1].onclick();
+  opens[2].onclick();
   assert.equal(elements["inbox-dialog"].open, false, "opening an item closes the inbox");
   assert.equal(elements.inspector.classList.contains("open"), true);
   assert.equal(elements.overview.hidden, true, "opening an item leaves the all-towns overview");
