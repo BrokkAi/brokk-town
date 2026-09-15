@@ -69,7 +69,8 @@ let state = null,
   sequence = null,
   moving = [],
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
-  streamAbort = null;
+  streamAbort = null,
+  servedVersion = "";
 let liveDetail = null;
 let liveDetailEpoch = 0;
 function clearLiveDetail() {
@@ -209,19 +210,33 @@ function receive(next) {
   moving = moving.slice(-24);
   sequence = next.seq;
   state = next;
+  // The page's assets belong to the binary that served them. When a restart
+  // brings a different version, reload so the UI matches the API again.
+  if (next.version) {
+    if (servedVersion && next.version !== servedVersion) {
+      location.reload();
+      return;
+    }
+    servedVersion = next.version;
+  }
   const update = $("#update-notice");
   if (state.update) {
     update.textContent = `Upgrade Town to ${state.update.latest}`;
     update.title = state.update.command;
     update.hidden = false;
     update.onclick = async () => {
-      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nThe service will keep running; restart it afterward to use the new version.`)) return;
+      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
       update.disabled = true;
       update.textContent = "Upgrading Town…";
       try {
-        await api("/api/update", {});
-        update.textContent = `Town ${state.update.latest} installed · restart service`;
-        update.title = "Restart bt serve to use the installed version";
+        const result = await api("/api/update", {});
+        if (result.restarting) {
+          update.textContent = `Town ${state.update.latest} installed · restarting`;
+          update.title = "The service restarts itself; this page reloads when it is back";
+        } else {
+          update.textContent = `Town ${state.update.latest} installed · restart service`;
+          update.title = "Restart bt serve to use the installed version";
+        }
       } catch (error) {
         update.disabled = false;
         update.textContent = `Upgrade failed · try again`;

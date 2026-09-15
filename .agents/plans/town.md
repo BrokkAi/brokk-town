@@ -1,5 +1,42 @@
 # Brokk Town implementation plan
 
+## Self-managed service lifecycle (2026-09-15)
+
+- The tool owns its lifecycle; the operator installs nothing. Every client
+  command (`bt`, `tui`, `web`, `status`, controls) probes `connection.json`
+  (PID liveness plus an authenticated state request) and starts the service
+  when it is down. Real towns register with the login session through
+  `internal/daemon`: a launchd agent (`KeepAlive`, `RunAtLoad`, bounded
+  throttle) on macOS or a systemd user unit (`Restart=always`, no start limit,
+  best-effort lingering) on Linux. The unit captures the installing shell's
+  `PATH`, `HOME`, and `BROKK_TOWN_MANAGED=1`, and is rewritten whenever its
+  rendered content changes. Registration failure, `bt service off`, and demo
+  mode fall back to a detached spawn with owner-only log files under the state
+  directory. Temporary (`go run`/`go test`) binaries are refused for both
+  registration and detached spawn because they disappear; they use `bt serve`
+  in the foreground. `launch.json` also
+  remembers the last explicit `--listen` per town (real and demo) so a later
+  command's default cannot re-register the job onto a different port; `bt
+  service stop` unloads a supervised job even when no connection file exists,
+  so a crash-looping job can always be halted.
+- The service advertises version, executable, start time, and managed mode in
+  `connection.json` and `version` in public state. A newer release client, or
+  the same binary rebuilt since the service started, restarts the service:
+  `/api/restart` re-executes the binary at its own path (same PID, so
+  supervisors and the npm launcher see one job); a different path re-registers
+  or respawns. An older client never downgrades. The access key persists in
+  `token` so browser bookmarks, tabs, and a polling TUI survive restarts; the
+  page reloads itself when the served version changes.
+- In-app upgrades install through the original channel (npm for the package
+  layout, otherwise the checksum-verified release archive swapped over the
+  executable) and then restart in place. `bt serve` remains the foreground
+  mode and names the process holding the state lock.
+- Tests: fake supervisor runners assert launchctl/systemctl sequences and
+  template escaping; fake managers and services cover start, fallback, drift
+  rolling, and `bt service` verbs; the web tests cover restart responses,
+  version exposure, and asset revalidation; smoke covers real on-demand start,
+  crash recovery, and token stability for the demo town.
+
 ## Recoverable review outcomes (2026-09-14)
 
 - Reviewer execution/evidence failures are distinct from completed negative
@@ -360,6 +397,22 @@ queues and non-squash merge strategies currently require manual merging. Real
 agent judgment and repository-specific publishing policy need an operator-chosen
 live town before they can be exercised end to end.
 
+## Durable issue retry follow-up
+
+- Explicit retries of `issue:N` now reset that repository's pinned issue-bot
+  state through its released, issue-scoped Retry API when the selected durable
+  job is blocked or pending. Funnel-only failures and completed or absent jobs
+  require only the Town reset. PR review, repair, merge-intent, and saved-commit
+  recovery retain their separate behavior.
+- Town validates durable state before interrupting an active issue worker. A
+  verified reset drains that worker while scheduling is held until issue-bot
+  releases its state and checkout locks. Saved work and uncertain claim/publication
+  fields are preserved, and validation or reset failures leave Town's blocked task
+  counters intact and return an error to the caller.
+- Regression coverage seeds two exhausted durable jobs, retries one through the
+  real supervisor control path during an active fake worker, verifies only the
+  selected job becomes eligible and resumes, and checks failure atomicity.
+
 ## Public repository and distribution setup
 
 The user authorized creating a public repository and pushing this implementation,
@@ -568,3 +621,19 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   when the Mayor asks; never float or silently mutate a running configuration.
 - Save an explicitly selected semantic version per town and bot, then retain all
   worker protocol, capability, reported-version, and exact-run checks.
+
+## Master conflict recovery (2026-09-15)
+
+- Resolve the interrupted pull/rebase onto `1886354`: local commits `4aa63ee`
+  (Mayoral intake) and `54190d3` (review recovery) already landed through PR #43
+  as `4c23680` and `5188b98`, with upstream compatibility fixes. Skip both
+  duplicate replays, preserving the upstream implementation and original local
+  history in `backup/master-before-conflict-recovery-20260915`.
+- Audit remaining work: bot control gating, source/version UX, cross-town inbox,
+  bot upgrade decisions, and repair-push confirmation are on pushed branches
+  outside master. Service/bot handoff and shared agent defaults/onboarding also
+  have uncommitted changes in separate worktrees; leave that work intact.
+- `make check smoke` passed: Go race/vet, frontend syntax and tests,
+  packaging/license checks, and isolated demo CLI/API/TUI integration.
+  Commit this recovery record and push master; no release or live bot
+  automation is part of this recovery.

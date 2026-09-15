@@ -19,6 +19,11 @@ func TestSettingsCLISendsSpecificProfileOrDefaults(t *testing.T) {
 	}
 	received := make(chan input, 1)
 	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/state" && r.Method == "GET" {
+			// The CLI probes a running service before every command.
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		if r.URL.Path != "/api/settings" || r.Method != "POST" || r.Header.Get("Authorization") != "Bearer test-key" {
 			t.Errorf("incorrect settings request")
 		}
@@ -31,7 +36,7 @@ func TestSettingsCLISendsSpecificProfileOrDefaults(t *testing.T) {
 	}))
 	defer h.Close()
 	dir := t.TempDir()
-	conn, _ := json.Marshal(connection{URL: h.URL, Token: "test-key"})
+	conn, _ := json.Marshal(connection{URL: h.URL, Token: "test-key", PID: os.Getpid()})
 	if err := os.WriteFile(filepath.Join(dir, "connection.json"), conn, 0600); err != nil {
 		t.Fatal(err)
 	}

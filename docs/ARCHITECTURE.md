@@ -1,6 +1,9 @@
 # Local service and repository towns
 
-`cmd/bt` owns the service lifecycle, local connection file, CLI, and TUI.
+`cmd/bt` owns the service lifecycle, local connection file, CLI, and TUI. Every
+client command starts the service when it is down and rolls it forward when the
+client binary is newer; `internal/daemon` registers it with the login session
+(launchd agent or systemd user unit) so it survives crashes and reboots.
 `internal/town` owns persistent facts, routing, GitHub reads/writes, and worker
 scheduling. `internal/web` embeds the browser application and exposes the same
 state/commands to both clients. The service outlives client connections.
