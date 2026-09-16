@@ -514,6 +514,11 @@ an exhausted repair budget. Never delete an uncertain intent to force progress.
 Retry clears that one task's block; it never starts a paused house. If the house
 is paused, the task says so and waits for you to start it.
 
+An uncertain repair is settled by ancestry, not only by an equal revision: once
+the commit Town pushed is proven to be in the pull request's history, the push
+landed, the intent is closed, and the newer revision goes back for review. Town
+never republishes the saved commit over work that built on it.
+
 A worktree is kept only while a saved intent still needs it. Repairs that fail
 before anything is pushed release their worktree and its `town-repair-*` branch
 immediately, and the issue house collects worktrees whose intent has since been

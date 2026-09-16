@@ -3,6 +3,7 @@ package town
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -49,7 +50,10 @@ func fixtureWorkers(t *testing.T) (*BotWorkers, *Town, *Task, string) {
 	os.WriteFile(filepath.Join(source, "code.txt"), []byte("defect\n"), 0600)
 	run(source, "commit", "-am", "introduce change")
 	head := run(source, "rev-parse", "HEAD")
-	run("", "clone", "--bare", source, remote)
+	// --no-hardlinks for the same reason the daemon uses it: a local clone that
+	// hardlinks object files races with background maintenance in the source
+	// repository and fails with "hardlink different from source".
+	run("", "clone", "--bare", "--no-hardlinks", source, remote)
 	run("", "--git-dir", remote, "update-ref", "refs/pull/1/head", head)
 	p := pull(1)
 	p.Base.SHA = base
@@ -458,5 +462,135 @@ func TestCollectionLeavesAnotherHousesWorktreeAlone(t *testing.T) {
 	}
 	if _, err := git(ctx, audit.dir, "rev-parse", "HEAD"); err != nil {
 		t.Fatalf("collection broke a live audit worktree: %v", err)
+	}
+}
+
+// Contains answers the ancestry question against the fixture's bare repository,
+// the way the compare API answers it for a real repository: a revision the
+// remote has never seen has no comparison at all and answers with an error,
+// exactly as GitHub answers 404 for an unknown base.
+func (g gitFixtureGH) Contains(ctx context.Context, _ string, sha, ref string) (bool, error) {
+	if _, err := git(ctx, "", "--git-dir", g.directory, "cat-file", "-e", sha+"^{commit}"); err != nil {
+		return false, fmt.Errorf("no comparison for %s: %w", sha, err)
+	}
+	if _, err := git(ctx, "", "--git-dir", g.directory, "merge-base", "--is-ancestor", sha, ref); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
+// A repair whose push never reached GitHub has no commit to compare against.
+// The unusable answer must not replace the recovery paths: the operator still
+// gets the uncertain-write guidance, and an explicit retry still republishes
+// the saved commit.
+func TestRepairThatNeverReachedGitHubKeepsItsRecoveryPaths(t *testing.T) {
+	for _, status := range []string{"uncertain", "retry"} {
+		t.Run(status, func(t *testing.T) {
+			b, x, task, _ := fixtureWorkers(t)
+			missing := strings.Repeat("d", 40)
+			saved := t.TempDir()
+			if e := os.MkdirAll(filepath.Join(b.Root, "towns", Key(x.ID), "extensions", "repair"), 0700); e != nil {
+				t.Fatal(e)
+			}
+			update(t, b.Store, func(st *State) {
+				st.Towns[x.ID].Intents[1] = &Intent{Kind: "repair", PR: 1, Base: task.Base, Head: task.Head, NewHead: missing, Branch: "issue-1", Directory: saved, Status: status, At: time.Now()}
+			})
+			x = b.Store.Snapshot().Towns[x.ID]
+			err := b.repair(context.Background(), x, x.Tasks["pr:1"], func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			out := b.Store.Snapshot().Towns[x.ID]
+			if out.Intents[1].Status != status {
+				t.Fatalf("an unprovable repair changed its intent to %q", out.Intents[1].Status)
+			}
+			if status == "uncertain" {
+				if err != nil {
+					t.Fatalf("the comparison failure was reported instead of the operator guidance: %v", err)
+				}
+				if got := out.Tasks["pr:1"]; !got.Blocked || !strings.Contains(got.Detail, "Inspect GitHub") {
+					t.Fatalf("operator lost the uncertain-write guidance: %+v", got)
+				}
+				return
+			}
+			// Retry reaches the resume path, which checks the saved worktree.
+			if err == nil || !strings.Contains(err.Error(), "saved repair directory is outside this town") {
+				t.Fatalf("retry never reached the resume path: %v", err)
+			}
+		})
+	}
+}
+
+// A repair push whose outcome was uncertain is settled by ancestry once someone
+// commits on top of it. Requiring an equal head left the intent unresolved for
+// good, and no operator action could clear it.
+func TestUncertainRepairIsResolvedOnceTheHeadMovesPastIt(t *testing.T) {
+	b, x, task, remote := fixtureWorkers(t)
+	ctx := context.Background()
+	b.confirmWait = 50 * time.Millisecond
+	b.confirmInterval = time.Millisecond
+	b.executeAgent = repairAgent()
+	// A CI bot commits on top of the repair as soon as the push lands, so the
+	// pull request head is never equal to the saved commit again.
+	raced := false
+	b.remoteURL = func(string) string {
+		head, e := git(ctx, "", "--git-dir", remote, "rev-parse", "refs/heads/issue-1")
+		if e == nil && head != task.Head && !raced {
+			raced = true
+			tree, _ := git(ctx, "", "--git-dir", remote, "rev-parse", head+"^{tree}")
+			extra, e := git(ctx, "", "-c", "user.name=CI", "-c", "user.email=ci@example.test", "--git-dir", remote, "commit-tree", tree, "-p", head, "-m", "formatting")
+			if e != nil {
+				t.Fatal(e)
+			}
+			if _, e = git(ctx, "", "--git-dir", remote, "update-ref", "refs/heads/issue-1", extra); e != nil {
+				t.Fatal(e)
+			}
+		}
+		return remote
+	}
+	if err := b.repair(ctx, x, task, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil))); err == nil {
+		t.Fatal("a push the daemon could not confirm was reported as confirmed")
+	}
+	saved := b.Store.Snapshot().Towns[x.ID].Intents[1]
+	if saved.Status != "uncertain" {
+		t.Fatalf("intent is not uncertain: %+v", saved)
+	}
+
+	// Repo-bot observes the newer revision, and the task returns for repair.
+	newHead, err := git(ctx, "", "--git-dir", remote, "rev-parse", "refs/heads/issue-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newHead == saved.NewHead {
+		t.Fatal("the fixture never moved the branch past the repair")
+	}
+	update(t, b.Store, func(st *State) {
+		x := st.Towns[x.ID].Tasks["pr:1"]
+		x.Head = newHead
+		x.Stage, x.House = "fixes", Issue
+	})
+	x = b.Store.Snapshot().Towns[x.ID]
+	if err := b.repair(ctx, x, x.Tasks["pr:1"], func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatal(err)
+	}
+	state := b.Store.Snapshot().Towns[x.ID]
+	if state.Intents[1].Status != "confirmed" {
+		t.Fatalf("landed repair left an unresolvable intent: %+v", state.Intents[1])
+	}
+	out := state.Tasks["pr:1"]
+	if out.Blocked || out.Stage != "queued" || out.House != Review || out.Audit != nil || out.Cycles != 1 {
+		t.Fatalf("superseded repair did not return for review: %+v", out)
+	}
+	if out.Head != newHead {
+		t.Fatalf("superseded repair rewrote the observed revision: %s", out.Head)
+	}
+	// The saved commit was never republished over the work built on it.
+	head, err := git(ctx, "", "--git-dir", remote, "rev-parse", "refs/heads/issue-1")
+	if err != nil || head != newHead {
+		t.Fatalf("resolution moved the branch: %s (%v)", head, err)
+	}
+	// A settled intent no longer holds its worktree.
+	if err := b.CollectWorktrees(ctx, state); err != nil {
+		t.Fatal(err)
+	}
+	if dirs, branches := worktrees(t, b, x.ID); len(dirs) != 0 || len(branches) != 0 {
+		t.Fatalf("settled repair kept %v and %v", dirs, branches)
 	}
 }
