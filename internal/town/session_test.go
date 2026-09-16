@@ -3,6 +3,7 @@ package town
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -462,12 +463,56 @@ func TestCollectionLeavesAnotherHousesWorktreeAlone(t *testing.T) {
 }
 
 // Contains answers the ancestry question against the fixture's bare repository,
-// the way the compare API answers it for a real repository.
+// the way the compare API answers it for a real repository: a revision the
+// remote has never seen has no comparison at all and answers with an error,
+// exactly as GitHub answers 404 for an unknown base.
 func (g gitFixtureGH) Contains(ctx context.Context, _ string, sha, ref string) (bool, error) {
+	if _, err := git(ctx, "", "--git-dir", g.directory, "cat-file", "-e", sha+"^{commit}"); err != nil {
+		return false, fmt.Errorf("no comparison for %s: %w", sha, err)
+	}
 	if _, err := git(ctx, "", "--git-dir", g.directory, "merge-base", "--is-ancestor", sha, ref); err != nil {
 		return false, nil
 	}
 	return true, nil
+}
+
+// A repair whose push never reached GitHub has no commit to compare against.
+// The unusable answer must not replace the recovery paths: the operator still
+// gets the uncertain-write guidance, and an explicit retry still republishes
+// the saved commit.
+func TestRepairThatNeverReachedGitHubKeepsItsRecoveryPaths(t *testing.T) {
+	for _, status := range []string{"uncertain", "retry"} {
+		t.Run(status, func(t *testing.T) {
+			b, x, task, _ := fixtureWorkers(t)
+			missing := strings.Repeat("d", 40)
+			saved := t.TempDir()
+			if e := os.MkdirAll(filepath.Join(b.Root, "towns", Key(x.ID), "extensions", "repair"), 0700); e != nil {
+				t.Fatal(e)
+			}
+			update(t, b.Store, func(st *State) {
+				st.Towns[x.ID].Intents[1] = &Intent{Kind: "repair", PR: 1, Base: task.Base, Head: task.Head, NewHead: missing, Branch: "issue-1", Directory: saved, Status: status, At: time.Now()}
+			})
+			x = b.Store.Snapshot().Towns[x.ID]
+			err := b.repair(context.Background(), x, x.Tasks["pr:1"], func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			out := b.Store.Snapshot().Towns[x.ID]
+			if out.Intents[1].Status != status {
+				t.Fatalf("an unprovable repair changed its intent to %q", out.Intents[1].Status)
+			}
+			if status == "uncertain" {
+				if err != nil {
+					t.Fatalf("the comparison failure was reported instead of the operator guidance: %v", err)
+				}
+				if got := out.Tasks["pr:1"]; !got.Blocked || !strings.Contains(got.Detail, "Inspect GitHub") {
+					t.Fatalf("operator lost the uncertain-write guidance: %+v", got)
+				}
+				return
+			}
+			// Retry reaches the resume path, which checks the saved worktree.
+			if err == nil || !strings.Contains(err.Error(), "saved repair directory is outside this town") {
+				t.Fatalf("retry never reached the resume path: %v", err)
+			}
+		})
+	}
 }
 
 // A repair push whose outcome was uncertain is settled by ancestry once someone

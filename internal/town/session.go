@@ -306,12 +306,15 @@ func (b *BotWorkers) repair(ctx context.Context, t *Town, task *Task, observe fu
 		// or a CI bot commits on top of it, the head never equals the saved
 		// commit again: without an ancestry check the intent stays unresolved
 		// for good and the pull request can never be repaired again.
-		landed, err := b.GitHub.Contains(ctx, t.Config.Repo, intent.NewHead, p.Head.SHA)
-		if err != nil {
-			return err
-		}
-		if landed {
-			return b.supersedeRepair(t.ID, task.ID, intent)
+		//
+		// The probe only ever promotes a repair to settled. A push that never
+		// reached GitHub has no commit to compare against and answers with an
+		// error, which is the common uncertain case, so an unusable answer
+		// leaves the existing retry and uncertain handling in charge.
+		if landed, e := b.GitHub.Contains(ctx, t.Config.Repo, intent.NewHead, p.Head.SHA); e != nil {
+			log.Warn("could not check whether the saved repair is already on GitHub", "error", e)
+		} else if landed {
+			return b.supersedeRepair(t.ID, task.ID, intent, p.Head.SHA)
 		}
 		if intent.Status == "retry" {
 			return b.resumeRepair(ctx, t, task, p, intent)
@@ -616,7 +619,7 @@ func (b *BotWorkers) checkRepairRef(ctx context.Context, t *Town, dir, branch, h
 // request's history although the head has moved past it. The push landed, so
 // the intent is settled and the newer revision goes back for review; the saved
 // commit is never republished over work that built on it.
-func (b *BotWorkers) supersedeRepair(id, taskID string, i *Intent) error {
+func (b *BotWorkers) supersedeRepair(id, taskID string, i *Intent, head string) error {
 	return b.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		x := t.Tasks[taskID]
@@ -633,6 +636,9 @@ func (b *BotWorkers) supersedeRepair(id, taskID string, i *Intent) error {
 		x.RetryAt = time.Time{}
 		x.Audit = nil
 		x.Detail = detail
+		// The reviewer is dispatched for the task's revision, so it has to be
+		// the head just observed rather than the one the last audit covered.
+		x.Head = head
 		t.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("repair-round:%s:%s", x.ID, intent.NewHead), At: time.Now(), Class: "outcome", Kind: "repair_round", Status: "confirmed", Role: Issue, TaskID: x.ID, RelatedTaskID: fmt.Sprintf("issue:%d", t.Owned[i.PR].Issue), Revision: intent.NewHead, URL: x.URL, Detail: detail})
 		st.Move(t, x, "queued", Review, detail, time.Now())
 		return nil
