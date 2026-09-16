@@ -796,3 +796,13 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   build/preflight/publication gates, and record the change in the changelog.
 - During preparation, run the full local checks and candidate build without
   pushing the final tag, uploading release assets, or publishing packages.
+
+## Single-script release driver (2026-09-16)
+
+- `scripts/release.sh vX.Y.Z` runs the RELEASING.md flow in one command:
+  local validation, candidate build/version checks, preflight tag, non-publishing
+  dispatch, run watch with exact-SHA verification, and remote evidence gates.
+- Publishing stays behind an explicit `--publish` flag plus a retype-the-tag
+  confirmation (`--yes` skips only the prompt); without it the script stops after
+  evidence. The final tag is never moved and authorization evidence is refreshed
+  before the publish dispatch. Covered by `sh -n` in `make check`.
