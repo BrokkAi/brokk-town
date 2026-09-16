@@ -103,6 +103,14 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	t.Config = t.Config.ForRole(r)
 	dir, state := Workspace(b.Root, t.ID, r)
 	remote := b.remote(t.Config.Repo)
+	if r == Issue {
+		// Repairs own the private worktrees, so the house that creates them
+		// collects the ones no saved intent needs. Cleanup is advisory: a
+		// failure here must not stop the town from working.
+		if err := b.CollectWorktrees(ctx, t); err != nil {
+			log.Warn("could not collect finished worktrees", "error", err)
+		}
+	}
 	agent, err := agentConfig(ctx, t.Config, b.Root)
 	if err != nil {
 		return result, err

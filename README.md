@@ -514,6 +514,11 @@ an exhausted repair budget. Never delete an uncertain intent to force progress.
 Retry clears that one task's block; it never starts a paused house. If the house
 is paused, the task says so and waits for you to start it.
 
+A worktree is kept only while a saved intent still needs it. Repairs that fail
+before anything is pushed release their worktree and its `town-repair-*` branch
+immediately, and the issue house collects worktrees whose intent has since been
+confirmed, so an unattended town does not accumulate them.
+
 When the release house reports that Release Bot's retry budget is exhausted, fix
 the reported failure and ask Town to lift the budget:
 
