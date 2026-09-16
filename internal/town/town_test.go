@@ -904,3 +904,31 @@ func TestRepairConfirmationIsIdempotentAcrossReporterAndWorker(t *testing.T) {
 		t.Fatal("reporter and worker both counted the same fix")
 	}
 }
+
+// A worker that reports phases faster than the persisting consumer drains them
+// must leave the newest phase on display, not the first one that fit.
+func TestProgressChannelKeepsNewestPhase(t *testing.T) {
+	ch := make(chan Progress, 1)
+	latestProgress(ch, Progress{Phase: "starting", Task: "Preparing"})
+	latestProgress(ch, Progress{Phase: "reviewing", Task: "Reading the diff"})
+	latestProgress(ch, Progress{Phase: "certifying", Task: "Checking findings", Seq: 7})
+	select {
+	case got := <-ch:
+		if got.Phase != "certifying" || got.Task != "Checking findings" || got.Seq != 7 {
+			t.Fatalf("stale phase survived a burst: %+v", got)
+		}
+	default:
+		t.Fatal("no observation was published")
+	}
+	select {
+	case extra := <-ch:
+		t.Fatalf("replacement left a second observation queued: %+v", extra)
+	default:
+	}
+	// An empty channel still takes the observation, and a consumer that keeps up
+	// sees every phase in order.
+	latestProgress(ch, Progress{Phase: "reporting", Task: "Writing the audit"})
+	if got := <-ch; got.Phase != "reporting" {
+		t.Fatalf("observation was dropped on an empty channel: %+v", got)
+	}
+}
