@@ -71,7 +71,7 @@ func (b *BotWorkers) tree(ctx context.Context, t *Town, p Pull, role string, rep
 	}
 	args := []string{"worktree", "add", "--detach", tree.dir, p.Head.SHA}
 	if repair {
-		tree.branch = "town-repair-" + filepath.Base(tree.dir)
+		tree.branch = repairBranch(tree.dir)
 		args = []string{"worktree", "add", "-b", tree.branch, tree.dir, p.Head.SHA}
 	}
 	if _, err = run(args...); err != nil {
@@ -330,7 +330,12 @@ func (b *BotWorkers) repair(ctx context.Context, t *Town, task *Task, observe fu
 	if err != nil {
 		return err
 	}
-	preserve := true
+	// A worktree is preserved only once a durable intent names it, because then
+	// the saved commit may still have to be published or verified against
+	// GitHub. Every earlier failure — a bad receipt, no commit, a dirty tree, a
+	// failed verification, a requeue — leaves nothing worth keeping, so the
+	// worktree and its town-repair branch are removed.
+	preserve := false
 	defer func() {
 		if !preserve {
 			err = errors.Join(err, tree.close())
@@ -433,6 +438,9 @@ TOWN_REPAIR {"summary":"Changes addressing each finding","checks":["actual check
 	if err = b.Store.Update(func(st *State) error { st.Towns[t.ID].Intents[p.Number] = intent; return nil }); err != nil {
 		return err
 	}
+	// From here the saved commit is durable state: keep its worktree until the
+	// repair is confirmed on GitHub.
+	preserve = true
 	observe(Progress{Phase: "publishing", Task: "Pushing the verified fix without rewriting history"})
 	pushURL, err := git(ctx, tree.dir, "remote", "get-url", "--push", "origin")
 	if err != nil {
@@ -602,4 +610,104 @@ func (b *BotWorkers) confirmRepair(id, taskID string, i *Intent) error {
 		st.Move(t, x, "queued", Review, "Confirmed fixes delivered for another review", time.Now())
 		return nil
 	})
+}
+
+// CollectWorktrees removes private worktrees, and the town-repair branches that
+// belong to them, once no saved intent needs them. A repair worktree is retained
+// only while its intent is unresolved, because the saved commit may still have
+// to be published or verified against GitHub; everything else is disposable and
+// was previously left behind by every failed repair and every resumed one.
+//
+// It is safe to run at any time: a worktree in use fails to remove and is simply
+// retried by the next pass, and the whole pass is advisory.
+func (b *BotWorkers) CollectWorktrees(ctx context.Context, t *Town) error {
+	needed := map[string]bool{}
+	for _, intent := range t.Intents {
+		if intent != nil && intent.Kind == "repair" && intent.Status != "confirmed" && intent.Directory != "" {
+			needed[resolvedPath(intent.Directory)] = true
+		}
+	}
+	base := filepath.Join(b.Root, "towns", Key(t.ID), "extensions")
+	roles, err := os.ReadDir(base)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var failures error
+	for _, role := range roles {
+		repository := filepath.Join(base, role.Name(), "repository.git")
+		if info, e := os.Stat(repository); e != nil || !info.IsDir() {
+			continue
+		}
+		failures = errors.Join(failures, b.collectRepository(ctx, repository, needed))
+	}
+	return failures
+}
+
+func (b *BotWorkers) collectRepository(ctx context.Context, repository string, needed map[string]bool) error {
+	run := func(args ...string) (string, error) {
+		return git(ctx, "", append([]string{"--git-dir", repository}, args...)...)
+	}
+	// Drop administrative records of worktrees whose directories are already
+	// gone, so the listing below only reports real ones.
+	if _, err := run("worktree", "prune"); err != nil {
+		return err
+	}
+	listing, err := run("worktree", "list", "--porcelain")
+	if err != nil {
+		return err
+	}
+	kept := map[string]bool{}
+	var failures error
+	for _, block := range strings.Split(listing, "\n\n") {
+		path, bare := "", false
+		for _, line := range strings.Split(block, "\n") {
+			if value, ok := strings.CutPrefix(line, "worktree "); ok {
+				path = resolvedPath(value)
+			}
+			if line == "bare" {
+				bare = true
+			}
+		}
+		if path == "" || bare || path == resolvedPath(repository) {
+			continue
+		}
+		if needed[path] {
+			kept[repairBranch(path)] = true
+			continue
+		}
+		if _, err := run("worktree", "remove", "--force", path); err != nil {
+			failures = errors.Join(failures, err)
+			kept[repairBranch(path)] = true
+		}
+	}
+	branches, err := run("branch", "--list", "town-repair-*", "--format", "%(refname:short)")
+	if err != nil {
+		return errors.Join(failures, err)
+	}
+	for _, branch := range strings.Split(branches, "\n") {
+		branch = strings.TrimSpace(branch)
+		if branch == "" || kept[branch] {
+			continue
+		}
+		if _, err := run("branch", "-D", branch); err != nil {
+			failures = errors.Join(failures, err)
+		}
+	}
+	return failures
+}
+
+// repairBranch names the branch tree() creates for a repair worktree directory.
+func repairBranch(dir string) string { return "town-repair-" + filepath.Base(dir) }
+
+// resolvedPath compares saved directories with the paths Git reports, which are
+// fully resolved. A state directory reached through a symlink would otherwise
+// make every saved worktree look unreferenced.
+func resolvedPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(path)
 }
