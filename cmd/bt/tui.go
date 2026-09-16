@@ -335,7 +335,7 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 	} else {
 		townIndex = townIndex % len(ids)
 		t := s.Towns[ids[townIndex]]
-		add(fmt.Sprintf(" %s   [%d/%d towns]   branch %s", t.Config.Repo, townIndex+1, len(ids), t.Config.Branch))
+		add(fmt.Sprintf(" %s   [%d/%d towns]   branch %s", t.Config.Repo, townIndex+1, len(ids), t.Branch()))
 		add(" 0: all towns    Tab: next town    1–6 / j,k: select house")
 		add(" Settings and new issues: bt settings / bt request, or bt web")
 		add("    HOUSE        STATUS       CURRENT WORK")

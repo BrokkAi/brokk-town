@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -456,19 +457,20 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 				}
 				s.ServiceConfig = cfg
 			}
-			for _, cfg := range configs {
+			for _, entry := range configs {
+				cfg := entry.Config
 				if err := cfg.Validate(); err != nil {
 					return err
 				}
 				id := strings.ToLower(cfg.Repo)
 				if t := s.Towns[id]; t != nil {
-					if cfg.Branch == "" {
+					if !entry.BranchStated {
 						// An omitted branch keeps the town's own setting, which
 						// may be empty: such a town follows the repository default.
 						cfg.Branch = t.Config.Branch
 					}
 					if t.Initialized && cfg.Branch != "" && cfg.Branch != t.Branch() {
-						return errors.New("cannot change an initialized town branch; use a separate state directory")
+						return fmt.Errorf("cannot change town %s from branch %s to %s in place; use a separate state directory, or set branch to \"\" to follow the repository default", id, t.Branch(), cfg.Branch)
 					}
 					t.Config = cfg
 				} else {
@@ -632,23 +634,49 @@ func loopbackAddress(address string) error {
 // with one global max_workers value. Keeping the array form means existing town
 // files remain usable while the object form can persist service capacity beside
 // the town list.
-func decodeConfigFile(data []byte) ([]town.Config, *int, error) {
+// townEntry is one town from a config file together with whether that file
+// stated a branch at all. An omitted branch keeps the town's current setting; an
+// explicit empty branch clears it, so the town follows the repository default
+// again. Towns saved by an older Town have the branch observed at their first
+// inventory pinned in configuration, and this is how an operator releases it.
+type townEntry struct {
+	town.Config
+	BranchStated bool
+}
+
+// decodeTowns decodes the towns array strictly, then records which entries
+// stated a branch. Unknown fields remain rejected, inside towns as well.
+func decodeTowns(raw []byte) ([]townEntry, error) {
+	var configs []town.Config
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&configs); err != nil {
+		return nil, err
+	}
+	if d.Decode(new(any)) != io.EOF {
+		return nil, errors.New("expected one config array")
+	}
+	var fields []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || len(fields) != len(configs) {
+		return nil, errors.New("could not read the towns array")
+	}
+	entries := make([]townEntry, len(configs))
+	for i, cfg := range configs {
+		_, stated := fields[i]["branch"]
+		entries[i] = townEntry{Config: cfg, BranchStated: stated}
+	}
+	return entries, nil
+}
+
+func decodeConfigFile(data []byte) ([]townEntry, *int, error) {
 	trimmed := strings.TrimSpace(string(data))
 	if strings.HasPrefix(trimmed, "[") {
-		var configs []town.Config
-		d := json.NewDecoder(strings.NewReader(trimmed))
-		d.DisallowUnknownFields()
-		if err := d.Decode(&configs); err != nil {
-			return nil, nil, err
-		}
-		if d.Decode(new(any)) != io.EOF {
-			return nil, nil, errors.New("expected one config array")
-		}
-		return configs, nil, nil
+		entries, err := decodeTowns([]byte(trimmed))
+		return entries, nil, err
 	}
 	var file struct {
 		MaxWorkers json.RawMessage `json:"max_workers"`
-		Towns      []town.Config   `json:"towns"`
+		Towns      json.RawMessage `json:"towns"`
 	}
 	d := json.NewDecoder(strings.NewReader(trimmed))
 	d.DisallowUnknownFields()
@@ -658,8 +686,12 @@ func decodeConfigFile(data []byte) ([]town.Config, *int, error) {
 	if d.Decode(new(any)) != io.EOF {
 		return nil, nil, errors.New("expected one config object")
 	}
-	if file.Towns == nil {
+	if len(file.Towns) == 0 || string(file.Towns) == "null" {
 		return nil, nil, errors.New("config object requires a towns array")
+	}
+	towns, err := decodeTowns(file.Towns)
+	if err != nil {
+		return nil, nil, err
 	}
 	var limit *int
 	if len(file.MaxWorkers) > 0 {
@@ -675,5 +707,5 @@ func decodeConfigFile(data []byte) ([]town.Config, *int, error) {
 		}
 		limit = &value
 	}
-	return file.Towns, limit, nil
+	return towns, limit, nil
 }

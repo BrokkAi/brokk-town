@@ -408,7 +408,10 @@ array config without it preserves the saved limit. Town
 uses the repository's default branch when omitted, and keeps following it: the
 observed default is recorded as repository state, so renaming it moves the town
 with it and never overwrites a branch you chose. An initialized town's branch
-cannot be changed in place. Omitted towns are retained when loading a config.
+cannot be changed in place. A town saved by an older Town has the branch observed
+at its first inventory pinned in its configuration; setting `"branch": ""`
+explicitly releases that pin so the town follows the repository default again,
+while omitting the field keeps whatever the town already uses. Omitted towns are retained when loading a config.
 Agent configuration uses acp-go's `command`, `environment`, `auth_method`, `mode`, `model`, and `effort` fields.
 
 The top-level `harness` and `agent` define town defaults. `bot_agents` maps any of

@@ -15,11 +15,16 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 	// into Config.Branch pinned whatever GitHub reported at the first poll, so a
 	// later rename left the town looking up a branch that no longer exists, and
 	// an operator's own choice was silently replaced on every poll.
-	if remote.DefaultBranch != "" {
-		t.DefaultBranch = remote.DefaultBranch
-	} else if t.DefaultBranch == "" {
-		// Older inventories report only the branch they covered.
-		t.DefaultBranch = remote.Branch
+	observed := remote.DefaultBranch
+	if observed == "" && t.Config.Branch == "" {
+		// An inventory that reports only the branch it covered covered the
+		// repository default, because this town has not chosen a branch.
+		observed = remote.Branch
+	}
+	// A default Town cannot fetch is not recorded: keeping the last usable
+	// observation is better than failing every reconcile on state validation.
+	if ValidBranch(observed) {
+		t.DefaultBranch = observed
 	}
 	for _, i := range remote.Issues {
 		if len(i.Pull) > 0 {
