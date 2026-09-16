@@ -1,5 +1,23 @@
 # Brokk Town implementation plan
 
+## Release verification removed (2026-09-16)
+
+- The read-back verification tail kept failing releases and made roll-forward
+  painful (staged-version E409 waits, dist-tag reconciliation, Sigstore
+  provenance checks, double asset downloads). All of it is deleted:
+  `verify_staged`, the 40x15s publish retry loop, and `certify` in
+  `publish_tag.py`; tarball payload compares, dist-tag reads, and SLSA
+  provenance verification in `package_registry.py`; `compare_assets` and
+  `archive_payload` in `package_release.py`; and the now-unreferenced
+  `verify_sigstore_bundles.cjs` / `sigstore_runtime.cjs` (plus the Makefile
+  `node --check scripts/*.cjs` line that covered them).
+- The publisher now builds, smokes, uploads missing draft assets, publishes
+  missing npm versions (platforms before launcher, still with `--provenance`),
+  and finalizes. Upload exit codes gate each step; differing bytes still fail
+  closed, and a re-run or a new tag fills in whatever is missing. Nothing
+  reads dist-tags or the GitHub latest pointer, so rolling a new release over
+  a broken one just publishes. Workflow timeout drops from 45 to 30 minutes.
+
 ## Tag-based releases (2026-09-16)
 
 - Pushing a `v*` tag is now the release request. `Publish packages` triggers

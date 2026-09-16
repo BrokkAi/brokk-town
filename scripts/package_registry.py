@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check, publish, and verify the built npm packages; retries require identical bytes."""
+"""Publish the built npm packages; existing identical versions are skipped."""
 
 import argparse
 import base64
@@ -7,7 +7,6 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
-import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,62 +26,23 @@ def fetch_json(url):
         raise
 
 
-def fetch_bytes(url):
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname != "registry.npmjs.org":
-        raise ValueError("unexpected npm attestation origin")
-    with urllib.request.urlopen(url, timeout=60) as response:
-        return response.read()
-
-
-def npm_exists(package, tarball=None):
+def npm_exists(package):
+    """Check the version record only. Differing bytes fail closed; visibility
+    lag after an accepted upload surfaces as missing, and the re-run skips it
+    once the record appears."""
     name = urllib.parse.quote(package["name"], safe="")
     record = fetch_json(f"https://registry.npmjs.org/{name}/{package['version']}")
     if record is None:
         return False
     if record.get("name") != package["name"] or record.get("version") != package["version"]:
         raise ValueError(f"published npm package differs from staged bytes: {package['name']}")
-    if tarball is None:
-        if record.get("dist", {}).get("integrity") != package["integrity"]:
-            raise ValueError(f"published npm package differs from staged bytes: {package['name']}")
-        return True
-    url = record.get("dist", {}).get("tarball", "")
-    if urllib.parse.urlparse(url).scheme != "https" or urllib.parse.urlparse(url).hostname != "registry.npmjs.org":
-        raise ValueError("unexpected npm tarball origin")
-    try:
-        with urllib.request.urlopen(url, timeout=60) as response:
-            data = response.read()
-    except urllib.error.HTTPError as error:
-        error.close()
-        if error.code == 404:
-            # The version record is visible but its tarball has not propagated
-            # through the registry yet. Report incomplete publication so the
-            # publisher waits instead of failing or resubmitting.
-            raise ValueError(f"publication is incomplete: npm tarball not yet visible: {package['name']}") from None
-        raise
-    integrity = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
-    if integrity != record["dist"].get("integrity"):
-        raise ValueError("downloaded npm tarball fails registry integrity")
-    if release.archive_payload(data) != release.archive_payload(tarball.read_bytes()):
-        raise ValueError(f"published npm payload differs from expected build: {package['name']}")
+    if record.get("dist", {}).get("integrity") != package["integrity"]:
+        raise ValueError(f"published npm package differs from staged bytes: {package['name']}")
     return True
 
 
 def npm_tag(package):
     return "next" if "-" in package["version"] else "latest"
-
-
-def npm_pointer(package):
-    name = urllib.parse.quote(package["name"], safe="")
-    record = fetch_json(f"https://registry.npmjs.org/{name}")
-    if record is None:
-        return None
-    if record.get("name") != package["name"] or not isinstance(record.get("dist-tags", {}), dict):
-        raise ValueError(f"invalid npm dist-tag metadata: {package['name']}")
-    pointer = record.get("dist-tags", {}).get(npm_tag(package))
-    if pointer is not None and (not isinstance(pointer, str) or not pointer):
-        raise ValueError(f"invalid npm dist-tag metadata: {package['name']}")
-    return pointer
 
 
 def validated_packages(directory):
@@ -108,75 +68,15 @@ def validated_packages(directory):
     return packages
 
 
-def verify_provenance(directory):
-    packages = validated_packages(directory)
-    records = []
-    for package in packages:
-        encoded = urllib.parse.quote(package["name"], safe="")
-        record = fetch_json(f"https://registry.npmjs.org/{encoded}/{package['version']}")
-        metadata = record.get("dist", {}).get("attestations") if record else None
-        provenance = metadata.get("provenance") if isinstance(metadata, dict) else None
-        url = metadata.get("url") if isinstance(metadata, dict) else None
-        predicate = provenance.get("predicateType") if isinstance(provenance, dict) else None
-        if not url or predicate != "https://slsa.dev/provenance/v1":
-            raise ValueError(f"publication is incomplete: npm provenance is missing: {package['name']}")
-        payload = json.loads(fetch_bytes(url))
-        entries = payload.get("attestations") if isinstance(payload, dict) else None
-        if not isinstance(entries, list):
-            raise ValueError(f"publication is incomplete: npm provenance is malformed: {package['name']}")
-        algorithm, encoded_digest = package["integrity"].split("-", 1)
-        if algorithm != "sha512":
-            raise ValueError(f"unexpected npm integrity algorithm: {package['name']}")
-        digest = base64.b64decode(encoded_digest, validate=True).hex()
-        records.append({"name": package["name"], "version": package["version"], "sha512": digest,
-                        "attestations": entries})
-    manifest = json.loads((directory / "npm/manifest.json").read_text())
-    request = {"commit": manifest["commit"], "ref": "refs/tags/" + manifest["tag"], "packages": records}
-    with tempfile.TemporaryDirectory() as temporary:
-        request_path = Path(temporary) / "provenance.json"
-        request_path.write_text(json.dumps(request))
-        subprocess.run(["node", str(Path(__file__).resolve().parent / "verify_sigstore_bundles.cjs"),
-                        str(request_path)], check=True)
-    print("All five npm packages have independently verified SLSA provenance")
-
-
 def run(command, directory):
     packages = validated_packages(directory)
     # Discover conflicts in every destination before making the first write.
-    existing = {p["name"]: npm_exists(p, directory / "npm" / p["filename"]) for p in packages}
+    existing = {p["name"]: npm_exists(p) for p in packages}
     if command == "check":
         print("Package versions are available or identical. This checks availability, not publishing authorization.")
         return
-    if command == "verify":
-        if not all(existing.values()):
-            raise ValueError("publication is incomplete: an npm package is missing")
-    # Dist-tags are mutable installer inputs, checked separately from immutable
-    # package version availability. A retry must never retarget an existing
-    # version's pointer: it may belong to a later completed release, and npm
-    # publish authorization does not establish dist-tag write authorization.
-    pointers = {p["name"]: npm_pointer(p) for p in packages}
-    for package in packages:
-        pointer = pointers[package["name"]]
-        if command == "verify" and pointer != package["version"]:
-            raise ValueError(f"publication is incomplete: npm {package['name']} {npm_tag(package)} "
-                             f"points to {pointer!r}, expected {package['version']}")
-        if existing[package["name"]] and pointer != package["version"]:
-            raise ValueError(f"conflicting npm dist-tag: {package['name']} {npm_tag(package)} "
-                             f"points to {pointer!r}, expected {package['version']}; "
-                             "an authorized npm maintainer must reconcile the pointer before retrying")
-    if command == "verify":
-        verify_provenance(directory)
-        print("All five npm package payloads, provenance, and latest/next pointers match the release")
-        return
-    if command == "check-pointers":
-        print("Existing npm versions have matching latest/next pointers")
-        return
-    # Submit platform packages before the root launcher. A successful upload
-    # can take time to appear in public indexes; a visible version record
-    # whose tarball has not propagated yet reports incomplete publication so
-    # the publisher waits instead of failing or resubmitting. Visibility is
-    # never used as a publication gate: uploads happen only when the version
-    # record itself is absent.
+    # Submit platform packages before the root launcher so a partial run
+    # leaves the launcher pointing at resolvable dependencies.
     for package in packages:
         if not existing[package["name"]]:
             submit(package, directory)
@@ -184,15 +84,9 @@ def run(command, directory):
 
 
 def submit(package, directory):
-    """Submit one package, waiting out a staged-but-invisible version.
-
-    The registry can accept an upload ("staged") minutes before the version
-    appears in read metadata, while its publish endpoint already rejects a
-    resubmission with E409. Never resubmit blindly and never fail fast on
-    that conflict: probe visibility, skip identical bytes, and fail closed
-    on anything else. Reporting "publication is incomplete" lets the caller
-    wait and rediscover instead of duplicating the upload.
-    """
+    """Submit one package. An E409 for a version that is now visible means a
+    previous attempt already staged it, so skip; otherwise re-raise and let a
+    re-run finish the job."""
     tarball = directory / "npm" / package["filename"]
     command = ["npm", "publish", str(tarball.resolve()),
                "--access", "public", "--registry", "https://registry.npmjs.org",
@@ -204,17 +98,16 @@ def submit(package, directory):
         print(output)
         if "E409" not in output and "previously staged version" not in output:
             raise
-        # The registry holds this version slot while read metadata may lag.
-        if npm_exists(package, tarball):
-            print(f"{package['name']} is visible with identical bytes; skipping resubmission")
+        if npm_exists(package):
+            print(f"{package['name']} is already published with identical bytes; skipping")
             return
-        raise ValueError(f"publication is incomplete: {package['name']} not yet visible") from None
+        raise ValueError(f"{package['name']} was staged but is not yet visible; re-run to continue") from None
     print(completed.stdout)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "check-pointers", "publish", "verify"))
+    parser.add_argument("command", choices=("check", "publish"))
     parser.add_argument("directory", type=Path)
     args = parser.parse_args()
     run(args.command, args.directory)

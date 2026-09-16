@@ -9,7 +9,6 @@ licenses:
 check: test licenses
 	go vet ./...
 	sh -n install.sh
-	node --check scripts/*.cjs
 	node --test --test-isolation=none npm/bt.test.cjs
 	npm run check
 	python3 -m unittest discover -s scripts -p '*_test.py'

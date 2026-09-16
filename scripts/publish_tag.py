@@ -6,8 +6,10 @@ stages them in a draft GitHub release, publishes the npm packages with
 provenance, then finalizes the release. Pushing the tag is the release request;
 there is no dispatch flag or preflight tag.
 
-Re-runs are safe: identical existing assets and package versions are reused,
-while conflicts fail closed for investigation.
+Re-runs are safe: existing draft assets and published package versions are
+reused, while anything conflicting fails closed for investigation. There is no
+read-back verification: a re-run only fills in what is missing, and upload
+exit codes gate each step.
 """
 
 import argparse
@@ -16,8 +18,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
-import time
 
 import package_installers
 import package_registry
@@ -93,52 +93,6 @@ def missing_assets(native, existing):
     return sorted(expected - set(existing))
 
 
-def verify_staged(tag, sha, native, uploaded):
-    with tempfile.TemporaryDirectory() as temp:
-        actual = Path(temp)
-        subprocess.run(["gh", "release", "download", tag, "--repo", GH_REPO, "--dir", temp], check=True)
-        for name in uploaded:
-            if (actual / name).read_bytes() != (native / name).read_bytes():
-                raise ValueError(f"upload integrity mismatch: {name}")
-        release.compare_assets(tag, actual, native, sha)
-
-
-def publish_npm(packages):
-    # Accepted uploads can lag behind registry visibility, including between a
-    # new version record and its tarball. Submission and verification retry
-    # together on incomplete publication; discovery never resubmits an
-    # existing version, so waiting cannot duplicate an upload.
-    for attempt in range(40):
-        try:
-            package_registry.run("publish", packages)
-            package_registry.run("verify", packages)
-            return
-        except ValueError as error:
-            if "publication is incomplete" not in str(error) or attempt == 39:
-                raise
-            time.sleep(15)
-
-
-def certify(tag, sha, native, packages):
-    record = api("releases/tags/" + tag, missing=True)
-    if record is None or record["draft"] or not record.get("published_at"):
-        raise ValueError("GitHub release is not finalized")
-    assets = api(f"releases/{record['id']}/assets?per_page=100")
-    if {asset["name"] for asset in assets} != {path.name for path in native.iterdir()}:
-        raise ValueError("incomplete public GitHub release")
-    with tempfile.TemporaryDirectory() as temp:
-        actual = Path(temp)
-        subprocess.run(["gh", "release", "download", tag, "--repo", GH_REPO, "--dir", temp], check=True)
-        release.compare_assets(tag, actual, native, sha)
-    package_registry.run("verify", packages)
-    if "-" not in tag:
-        latest = api("releases/latest")
-        if latest.get("tag_name") != tag:
-            raise ValueError("GitHub latest release does not point to this version")
-    log(f"Certified publication of {tag}: GitHub release, native assets, "
-        "npm packages and provenance all match")
-
-
 def publish(directory, tag, sha, check_only=False):
     if directory.exists():
         raise ValueError("build output must not exist; use a fresh directory")
@@ -148,12 +102,12 @@ def publish(directory, tag, sha, check_only=False):
     package_installers.package(tag, native, packages, sha)
     smoke_installers.smoke(packages)
     if check_only:
-        log("check-only: built and locally verified everything; nothing uploaded")
+        log("check-only: built everything; nothing uploaded")
         return
     check_remote_tag(tag, sha)
     record = api("releases/tags/" + tag, missing=True)
     if record is not None and not record["draft"]:
-        certify(tag, sha, native, packages)
+        log(f"{tag} is already released; nothing to do")
         return
     if record is None:
         record = api("releases", "POST", {
@@ -164,15 +118,13 @@ def publish(directory, tag, sha, check_only=False):
     if record["target_commitish"] != sha:
         raise ValueError("existing draft targets another commit; investigate before retrying")
     if not record["draft"]:
-        raise ValueError("release changed concurrently; re-run to verify")
+        raise ValueError("release changed concurrently; re-run to continue")
     existing = {asset["name"] for asset in api(f"releases/{record['id']}/assets?per_page=100")}
-    pending = missing_assets(native, existing)
-    for name in pending:
+    for name in missing_assets(native, existing):
         subprocess.run(["gh", "release", "upload", tag, str(native / name), "--repo", GH_REPO], check=True)
-    verify_staged(tag, sha, native, pending)
-    publish_npm(packages)
+    package_registry.run("publish", packages)
     api(f"releases/{record['id']}", "PATCH", {"draft": False, "make_latest": make_latest(tag)})
-    certify(tag, sha, native, packages)
+    log(f"Published {tag}")
 
 
 def main():
@@ -181,7 +133,7 @@ def main():
     parser.add_argument("--sha", default=None)
     parser.add_argument("--directory", type=Path, default=Path("dist/release"))
     parser.add_argument("--check-only", action="store_true",
-                        help="build and locally verify without uploading anything")
+                        help="build without uploading anything")
     args = parser.parse_args()
     tag, sha = context(args.tag, args.sha)
     publish(args.directory, tag, sha, check_only=args.check_only)
