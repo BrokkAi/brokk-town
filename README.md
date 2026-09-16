@@ -218,7 +218,8 @@ Pause finishes active work and stops scheduling more. Stop also cancels active
 work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
 uncertain external writes retain their saved intent and are reconciled first.
 
-Stopping or restarting the service (Ctrl+C, SIGTERM, `bt service restart`, or
+Stopping or restarting the service (Ctrl+C, SIGTERM, SIGHUP from a closed
+terminal or dropped SSH session, `bt service restart`, or
 an in-app upgrade) does not stop the external bots. Each bot process runs detached, and Town commits its handle (PID,
 socket, and exact task) before requesting work. The next `bt serve` reconnects to
 those processes before scheduling anything new. Bots that advertise the `detach`

@@ -233,6 +233,15 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
                                 '--listen', '127.0.0.1:0'], text=True,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
         assert clash.returncode != 0 and f'pid {conn["pid"]}' in clash.stderr, clash.stderr
+        # Closing the terminal or dropping an SSH session runs the same shutdown
+        # sequence as Ctrl+C, rather than killing the service where it stands.
+        service.send_signal(signal.SIGHUP)
+        service.wait(timeout=10)
+        assert service.returncode == 0 and not conn_path.exists()
+
+        service = subprocess.Popen([binary, 'serve', '--demo', '--state-dir', directory,
+                                    '--listen', '127.0.0.1:0'], stdout=subprocess.DEVNULL)
+        wait_for(conn_path.exists)
         service.send_signal(signal.SIGTERM)
         service.wait(timeout=10)
         assert service.returncode == 0 and not conn_path.exists()
@@ -270,7 +279,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
             '--state-dir', directory], text=True, stderr=subprocess.DEVNULL, timeout=40)
         assert 'Stopped' in stop and not conn_path.exists()
         wait_for(lambda: not pid_alive(healed['pid']))
-        print('Demo smoke passed: assets, auth, SSE, registry, supplemental harnesses, per-bot profiles/defaults/reset, pinned settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, restart recovery, on-demand start, crash recovery, stable access key, in-place restart.')
+        print('Demo smoke passed: assets, auth, SSE, registry, supplemental harnesses, per-bot profiles/defaults/reset, pinned settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, hangup shutdown, restart recovery, on-demand start, crash recovery, stable access key, in-place restart.')
     finally:
         if terminal is not None and terminal.poll() is None:
             terminal.kill()
