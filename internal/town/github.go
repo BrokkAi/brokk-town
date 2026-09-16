@@ -65,13 +65,16 @@ type RemoteCommit struct {
 	} `json:"commit"`
 }
 type RepoSnapshot struct {
-	Branch, Head  string
-	Issues        []RemoteIssue
-	Pulls         []Pull
-	Releases      []RemoteRelease
-	Released      map[string]bool
-	Commits       []RemoteCommit
-	ObservedHeads map[int]string
+	// Branch is the branch this inventory covers: the town's configured branch
+	// when it has one, otherwise DefaultBranch. DefaultBranch is what GitHub
+	// currently reports as the repository default, which a rename can change.
+	Branch, DefaultBranch, Head string
+	Issues                      []RemoteIssue
+	Pulls                       []Pull
+	Releases                    []RemoteRelease
+	Released                    map[string]bool
+	Commits                     []RemoteCommit
+	ObservedHeads               map[int]string
 }
 type Discussion struct {
 	ID    string `json:"id"`
@@ -160,6 +163,7 @@ func (g GitHubClient) Snapshot(ctx context.Context, c Config) (RepoSnapshot, err
 	if err := g.api(ctx, "GET", "repos/"+c.Repo, nil, &metadata); err != nil {
 		return out, err
 	}
+	out.DefaultBranch = metadata.Branch
 	out.Branch = c.Branch
 	if out.Branch == "" {
 		out.Branch = metadata.Branch

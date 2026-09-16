@@ -11,7 +11,16 @@ import (
 func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 	initial := !t.Initialized
 	changes := []string{}
-	t.Config.Branch = remote.Branch
+	// The observed default is repository state, not configuration. Writing it
+	// into Config.Branch pinned whatever GitHub reported at the first poll, so a
+	// later rename left the town looking up a branch that no longer exists, and
+	// an operator's own choice was silently replaced on every poll.
+	if remote.DefaultBranch != "" {
+		t.DefaultBranch = remote.DefaultBranch
+	} else if t.DefaultBranch == "" {
+		// Older inventories report only the branch they covered.
+		t.DefaultBranch = remote.Branch
+	}
 	for _, i := range remote.Issues {
 		if len(i.Pull) > 0 {
 			continue

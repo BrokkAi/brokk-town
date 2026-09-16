@@ -80,7 +80,13 @@ var branchName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_./-]*$`)
 var slug = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
 func ValidRepo(r string) bool { return slug.MatchString(r) && !strings.Contains(r, "..") }
-func Key(v string) string     { return fmt.Sprintf("%x", sha256.Sum256([]byte(v)))[:24] }
+
+// ValidBranch accepts a Git branch name Town is willing to fetch and push to.
+func ValidBranch(b string) bool {
+	return branchName.MatchString(b) && !strings.Contains(b, "..") && !strings.Contains(b, "//") &&
+		!strings.HasSuffix(b, "/") && !strings.HasSuffix(b, ".") && !strings.HasSuffix(b, ".lock")
+}
+func Key(v string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(v)))[:24] }
 func SHA(v string) bool {
 	return (len(v) == 40 || len(v) == 64) && strings.Trim(v, "0123456789abcdef") == ""
 }
@@ -163,7 +169,7 @@ func (c Config) Validate() error {
 	if c.PollSeconds < 10 || c.ReportSeconds < 60 || c.MaxCycles < 1 || c.MaxCycles > 20 {
 		return fmt.Errorf("poll must be at least 10 seconds, reports at least 60 seconds, and cycles between 1 and 20")
 	}
-	if c.Branch != "" && (!branchName.MatchString(c.Branch) || strings.Contains(c.Branch, "..") || strings.Contains(c.Branch, "//") || strings.HasSuffix(c.Branch, "/") || strings.HasSuffix(c.Branch, ".") || strings.HasSuffix(c.Branch, ".lock")) {
+	if c.Branch != "" && !ValidBranch(c.Branch) {
 		return fmt.Errorf("invalid branch")
 	}
 	if err := c.Funnels.Validate(); err != nil {
@@ -386,9 +392,13 @@ type Town struct {
 	Reports       []Report                 `json:"reports"`
 	Outcomes      []OutcomeRecord          `json:"outcomes"`
 	Head          string                   `json:"head"`
-	LastSync      time.Time                `json:"last_sync"`
-	LastRelease   string                   `json:"last_release"`
-	Error         string                   `json:"error,omitempty"`
+	// DefaultBranch is the repository default GitHub reported at the last
+	// inventory. It is an observation, never configuration: Config.Branch stays
+	// whatever the operator chose, or empty to follow this default.
+	DefaultBranch string    `json:"default_branch,omitempty"`
+	LastSync      time.Time `json:"last_sync"`
+	LastRelease   string    `json:"last_release"`
+	Error         string    `json:"error,omitempty"`
 }
 
 // ServiceConfig governs the single local scheduler across every town.
@@ -449,6 +459,24 @@ func (s *State) Add(c Config) (*Town, error) {
 	s.Towns[id] = t
 	return t, nil
 }
+
+// Branch is the branch this town actually works on: the operator's choice when
+// they made one, otherwise the repository default observed at the last inventory.
+func (t *Town) Branch() string {
+	if t.Config.Branch != "" {
+		return t.Config.Branch
+	}
+	return t.DefaultBranch
+}
+
+// PublicConfig reports the branch in use so clients show the effective branch
+// rather than an empty setting on a town that follows the repository default.
+func (t *Town) PublicConfig() PublicConfig {
+	cfg := t.Config.Public()
+	cfg.Branch = t.Branch()
+	return cfg
+}
+
 func (s *State) Event(town, kind, from, to, cargo, title string, now time.Time) {
 	s.Seq++
 	s.Events = append(s.Events, Event{s.Seq, now, town, kind, from, to, cargo, title})
@@ -482,7 +510,7 @@ func (s State) Public() map[string]any {
 			delete(public["towns"].(map[string]any), id)
 			continue
 		}
-		public["towns"].(map[string]any)[id].(map[string]any)["config"] = t.Config.Public()
+		public["towns"].(map[string]any)[id].(map[string]any)["config"] = t.PublicConfig()
 	}
 	events := []Event{}
 	for _, e := range s.Events {

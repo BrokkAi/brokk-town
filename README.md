@@ -405,7 +405,9 @@ use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
 remains accepted. When `serve --config` includes `max_workers`, that value
 overrides the persisted service setting in the same atomic state update; an
 array config without it preserves the saved limit. Town
-uses the repository's default branch when omitted; an initialized town's branch
+uses the repository's default branch when omitted, and keeps following it: the
+observed default is recorded as repository state, so renaming it moves the town
+with it and never overwrites a branch you chose. An initialized town's branch
 cannot be changed in place. Omitted towns are retained when loading a config.
 Agent configuration uses acp-go's `command`, `environment`, `auth_method`, `mode`, `model`, and `effort` fields.
 

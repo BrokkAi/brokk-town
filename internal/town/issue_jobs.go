@@ -14,7 +14,7 @@ func (b *BotWorkers) issueConfig(t *Town) issuebot.Config {
 	dir, state := Workspace(b.Root, t.ID, Issue)
 	c := issuebot.DefaultConfig()
 	c.Remote = b.remote(t.Config.Repo)
-	c.Branch = t.Config.Branch
+	c.Branch = t.Branch()
 	c.Directory = dir
 	c.StateDirectory = state
 	c.GitHub.Repo = t.Config.Repo

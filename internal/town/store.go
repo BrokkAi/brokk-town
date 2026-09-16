@@ -119,6 +119,9 @@ func validateState(s State, demo bool) error {
 		if t == nil || t.ID != id || id != strings.ToLower(t.Config.Repo) || t.Config.Validate() != nil || t.Tasks == nil || t.Workers == nil || t.Owned == nil || t.Intents == nil {
 			return errors.New("invalid town state")
 		}
+		if t.DefaultBranch != "" && !ValidBranch(t.DefaultBranch) {
+			return errors.New("invalid observed default branch")
+		}
 		for _, r := range Roles {
 			if t.Workers[r] == nil || t.Workers[r].Role != r {
 				return errors.New("missing worker")

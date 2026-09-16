@@ -1041,3 +1041,65 @@ func TestRetryLeavesAPausedHousePaused(t *testing.T) {
 		t.Fatalf("start did not make the house eligible: %+v", w)
 	}
 }
+
+// The repository default is an observation. Recording it as configuration
+// pinned whatever GitHub reported first, so a later rename left the town
+// looking up a branch that no longer existed, and an operator's own choice was
+// replaced on every poll.
+func TestReconcileTracksTheDefaultBranchWithoutRewritingConfig(t *testing.T) {
+	s := testStore(t, false)
+	update(t, s, func(st *State) {
+		follower := DefaultConfig("acme/follower")
+		if _, e := st.Add(follower); e != nil {
+			t.Fatal(e)
+		}
+		chosen := DefaultConfig("acme/chosen")
+		chosen.Branch = "release"
+		if _, e := st.Add(chosen); e != nil {
+			t.Fatal(e)
+		}
+	})
+	observe := func(id, inventoried, def string) {
+		t.Helper()
+		update(t, s, func(st *State) {
+			Reconcile(st, st.Towns[id], RepoSnapshot{Branch: inventoried, DefaultBranch: def, Head: baseSHA}, time.Now())
+		})
+	}
+	observe("acme/follower", "main", "main")
+	observe("acme/chosen", "release", "main")
+
+	follower := s.Snapshot().Towns["acme/follower"]
+	if follower.Config.Branch != "" {
+		t.Fatalf("the observed default was written into configuration: %q", follower.Config.Branch)
+	}
+	if follower.DefaultBranch != "main" || follower.Branch() != "main" {
+		t.Fatalf("observed default not tracked: %+v", follower.DefaultBranch)
+	}
+	chosen := s.Snapshot().Towns["acme/chosen"]
+	if chosen.Config.Branch != "release" || chosen.Branch() != "release" {
+		t.Fatalf("operator's branch was overwritten: %q", chosen.Config.Branch)
+	}
+	if chosen.DefaultBranch != "main" {
+		t.Fatalf("repository default not observed alongside the choice: %q", chosen.DefaultBranch)
+	}
+
+	// Renaming the repository default moves a following town with it, and leaves
+	// a town that chose its own branch alone.
+	observe("acme/follower", "trunk", "trunk")
+	observe("acme/chosen", "release", "trunk")
+	if got := s.Snapshot().Towns["acme/follower"].Branch(); got != "trunk" {
+		t.Fatalf("renamed default did not reach a following town: %q", got)
+	}
+	if got := s.Snapshot().Towns["acme/chosen"].Branch(); got != "release" {
+		t.Fatalf("rename disturbed an operator's branch: %q", got)
+	}
+
+	// Clients read the branch actually in use, not an empty setting.
+	public := s.Snapshot().Public()["towns"].(map[string]any)
+	for id, want := range map[string]string{"acme/follower": "trunk", "acme/chosen": "release"} {
+		cfg := public[id].(map[string]any)["config"].(PublicConfig)
+		if cfg.Branch != want {
+			t.Fatalf("%s reported branch %q, want %q", id, cfg.Branch, want)
+		}
+	}
+}

@@ -463,9 +463,11 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 				id := strings.ToLower(cfg.Repo)
 				if t := s.Towns[id]; t != nil {
 					if cfg.Branch == "" {
+						// An omitted branch keeps the town's own setting, which
+						// may be empty: such a town follows the repository default.
 						cfg.Branch = t.Config.Branch
 					}
-					if t.Config.Branch != cfg.Branch && t.Initialized {
+					if t.Initialized && cfg.Branch != "" && cfg.Branch != t.Branch() {
 						return errors.New("cannot change an initialized town branch; use a separate state directory")
 					}
 					t.Config = cfg
