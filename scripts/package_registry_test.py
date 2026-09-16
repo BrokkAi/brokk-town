@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 import urllib.error
@@ -59,6 +60,44 @@ class PackageRegistry(unittest.TestCase):
             self.assertTrue(all(call[:2] == ["npm", "publish"] for call in calls[:5]))
             self.assertTrue(all("--provenance" in call for call in calls[:5]))
             self.assertTrue(calls[4][2].endswith("package-0.tgz"))
+
+    def test_staged_version_conflict_skips_identical_bytes_without_resubmitting(self):
+        calls = []
+
+        def publish(*args, **kwargs):
+            calls.append(args[0])
+            if len(calls) == 1:
+                raise subprocess.CalledProcessError(1, args[0], stderr=(
+                    "npm error code E409\n"
+                    "npm error 409 Conflict - Cannot publish over previously staged version \"0.1.0\".\n"))
+            return subprocess.CompletedProcess(args[0], 0, stdout="published\n")
+
+        with patch.object(package_registry, "npm_exists", side_effect=[False] * 5 + [True]), \
+                patch.object(package_registry, "npm_pointer", return_value=None), \
+                patch.object(package_registry.subprocess, "run", side_effect=publish):
+            package_registry.run("publish", self.root)
+            self.assertEqual(len(calls), 5)
+
+    def test_staged_version_conflict_with_differing_bytes_fails_closed(self):
+        def publish(*args, **kwargs):
+            raise subprocess.CalledProcessError(1, args[0], stderr="npm error code E409\n")
+
+        with patch.object(package_registry, "npm_exists",
+                           side_effect=[False] * 5 + [ValueError("published npm payload differs")]), \
+                patch.object(package_registry, "npm_pointer", return_value=None), \
+                patch.object(package_registry.subprocess, "run", side_effect=publish):
+            with self.assertRaisesRegex(ValueError, "differs"):
+                package_registry.run("publish", self.root)
+
+    def test_non_conflict_publish_failure_raises_immediately(self):
+        def publish(*args, **kwargs):
+            raise subprocess.CalledProcessError(1, args[0], stderr="npm error code E401\n")
+
+        with patch.object(package_registry, "npm_exists", return_value=False), \
+                patch.object(package_registry, "npm_pointer", return_value=None), \
+                patch.object(package_registry.subprocess, "run", side_effect=publish):
+            with self.assertRaises(subprocess.CalledProcessError):
+                package_registry.run("publish", self.root)
 
     def test_identical_existing_packages_are_verified_without_upload(self):
         with patch.object(package_registry, "npm_exists", return_value=True), \

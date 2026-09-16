@@ -17,6 +17,11 @@
   environment because the npm trusted publishers for all five packages are
   bound to them. Re-runs reuse identical assets and versions; conflicts fail
   closed.
+- The first tag-based release (v0.3.2) hit an npm staged-version race: one
+  package 409-conflicted as staged-but-invisible, which the publisher treated
+  as fatal. `package_registry.submit` now probes visibility on E409, skips
+  identical bytes, and reports incomplete publication so the run waits instead
+  of failing; covered by three new `package_registry_test.py` cases.
 
 ## Explicit worker startup and release authority (issue #4, 2026-09-15)
 

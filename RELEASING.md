@@ -47,7 +47,9 @@ without updating the trusted-publisher configuration for all five packages.
 
 Re-run the failed jobs from the Actions UI. Identical existing assets and
 package versions are reused; anything conflicting fails closed for
-investigation instead of overwriting.
+investigation instead of overwriting. An `E409 previously staged version`
+from npm means the upload was accepted but is not visible yet: the publisher
+waits for visibility and skips identical bytes rather than resubmitting.
 
 ## Local validation
 

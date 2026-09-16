@@ -179,11 +179,37 @@ def run(command, directory):
     # record itself is absent.
     for package in packages:
         if not existing[package["name"]]:
-            subprocess.run(["npm", "publish", str((directory / "npm" / package["filename"]).resolve()),
-                            "--access", "public", "--registry", "https://registry.npmjs.org",
-                            "--provenance",
-                            "--tag", npm_tag(package)], check=True)
+            submit(package, directory)
     print("Submitted npm packages; registry visibility may lag behind accepted uploads")
+
+
+def submit(package, directory):
+    """Submit one package, waiting out a staged-but-invisible version.
+
+    The registry can accept an upload ("staged") minutes before the version
+    appears in read metadata, while its publish endpoint already rejects a
+    resubmission with E409. Never resubmit blindly and never fail fast on
+    that conflict: probe visibility, skip identical bytes, and fail closed
+    on anything else. Reporting "publication is incomplete" lets the caller
+    wait and rediscover instead of duplicating the upload.
+    """
+    tarball = directory / "npm" / package["filename"]
+    command = ["npm", "publish", str(tarball.resolve()),
+               "--access", "public", "--registry", "https://registry.npmjs.org",
+               "--provenance", "--tag", npm_tag(package)]
+    try:
+        completed = subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as error:
+        output = (error.stdout or "") + (error.stderr or "")
+        print(output)
+        if "E409" not in output and "previously staged version" not in output:
+            raise
+        # The registry holds this version slot while read metadata may lag.
+        if npm_exists(package, tarball):
+            print(f"{package['name']} is visible with identical bytes; skipping resubmission")
+            return
+        raise ValueError(f"publication is incomplete: {package['name']} not yet visible") from None
+    print(completed.stdout)
 
 
 def main():
