@@ -64,6 +64,7 @@ type Supervisor struct {
 	running            map[string]context.CancelFunc
 	retrying           map[string]bool
 	reconciling        map[string]chan struct{}
+	vainCompares       map[string]string
 	wg                 sync.WaitGroup
 	wake               chan struct{}
 	fatal              chan error
@@ -76,7 +77,7 @@ func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	if provider, ok := gh.(GitHubFunnelProvider); ok {
 		registry[ProviderID("github")] = &GitHubFunnel{Client: provider}
 	}
-	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]chan struct{}{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]chan struct{}{}, vainCompares: map[string]string{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -612,6 +613,26 @@ func workerRunTask(run WorkerRun) string {
 // It is a one-slot channel rather than a mutex so that a pass waiting its turn
 // still answers a stop or a service shutdown: a full inventory of a large
 // repository can legitimately take minutes.
+// comparedInVain reports that comparing this release tag with the town's branch
+// already proved nothing, so the request is not worth repeating. A repository
+// that cuts releases from a separate branch answers "diverged" forever, and the
+// verdict holds while that tag is the latest: tags are immutable and the branch
+// head only moves forward. A failed request is deliberately not remembered.
+func (s *Supervisor) comparedInVain(id, tag string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.vainCompares[id] == tag
+}
+
+func (s *Supervisor) compareInVain(id, tag string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.vainCompares == nil {
+		s.vainCompares = map[string]string{}
+	}
+	s.vainCompares[id] = tag
+}
+
 func (s *Supervisor) reconcileGate(id string) chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -718,7 +739,42 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 				}
 			}
 		}
+		// One comparison names every commit the branch carries beyond the
+		// latest release, which settles most candidates without a request of
+		// their own: a first inventory of a mature repository otherwise spawns
+		// one gh process per merged pull request, and every still-unreleased
+		// merge commit is asked about again on every poll.
+		//
+		// Absence from that list is not proof on its own — a commit dropped
+		// from the branch is absent too — so anything not named there is still
+		// proven individually, once, before it is recorded as shipped.
+		pending := map[string]bool{}
+		if len(commits) > 0 && !s.comparedInVain(t.ID, latest.Tag) {
+			unreleased, usable, err := s.GitHub.Unreleased(ctx, t.Config.Repo, latest.Tag, remote.Head)
+			if err != nil {
+				// The comparison is an optimization with its own way of saying
+				// it proved nothing, so a failure falls back to the individual
+				// checks rather than taking the whole inventory down with it.
+				usable = false
+			} else if !usable {
+				s.compareInVain(t.ID, latest.Tag)
+			}
+			// An unusable comparison proves nothing at all, so every candidate
+			// falls back to the individual check rather than being assumed
+			// released by its absence.
+			if usable {
+				for _, c := range unreleased {
+					if SHA(c.SHA) {
+						pending[c.SHA] = true
+					}
+				}
+			}
+		}
 		for sha := range commits {
+			if pending[sha] {
+				remote.Released[sha] = false
+				continue
+			}
 			included, err := s.GitHub.Contains(ctx, t.Config.Repo, sha, latest.Tag)
 			if err != nil {
 				return err

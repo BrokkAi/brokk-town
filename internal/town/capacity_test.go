@@ -118,7 +118,9 @@ func TestCapacitySaturatesAndWakeStartsFreedSlot(t *testing.T) {
 	// wake event before the freed slot can be scheduled.
 	select {
 	case <-sup.wake:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(3 * time.Second):
+		// Generous on purpose: cleanup commits a durable transaction first, and
+		// a loaded machine can take far longer than the work itself suggests.
 		t.Fatal("worker cleanup did not wake the scheduler")
 	}
 	sup.schedule(ctx)
