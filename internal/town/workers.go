@@ -49,7 +49,7 @@ func (b *BotWorkers) issueRetryConfig(t *Town, issue int) issuebot.Config {
 	dir, state := Workspace(b.Root, t.ID, Issue)
 	cfg := issuebot.DefaultConfig()
 	cfg.Remote = b.remote(t.Config.Repo)
-	cfg.Branch = t.Config.Branch
+	cfg.Branch = t.Branch()
 	cfg.Directory = dir
 	cfg.StateDirectory = state
 	cfg.GitHub.Repo = t.Config.Repo
@@ -230,7 +230,7 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		return workerResult{}, err
 	}
 	observe(Progress{Phase: "starting", Task: "Using " + string(role) + "-bot " + bot.version})
-	branch := t.Config.Branch
+	branch := t.Branch()
 	request := workerRequest{
 		Protocol: workerProtocolVersion, Remote: remote, Branch: branch,
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",

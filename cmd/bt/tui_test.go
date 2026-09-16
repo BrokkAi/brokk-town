@@ -193,3 +193,21 @@ func TestRejectPublicBindAndUnexpectedArguments(t *testing.T) {
 		t.Fatal("extra argument ignored")
 	}
 }
+
+// A town that follows the repository default has no configured branch. The
+// header must still name the branch the town works on.
+func TestTUIHeaderShowsTheBranchInUse(t *testing.T) {
+	s := town.NewState(true)
+	follower, _ := s.Add(town.DefaultConfig("acme/follower"))
+	follower.DefaultBranch = "trunk"
+	chosen := town.DefaultConfig("acme/zchosen")
+	chosen.Branch = "release"
+	x, _ := s.Add(chosen)
+	x.DefaultBranch = "trunk"
+	if frame := renderTUI(s, "", 0, 0, 100, 24, ""); !strings.Contains(frame, "branch trunk") {
+		t.Fatalf("a town following the repository default shows no branch:\n%s", frame)
+	}
+	if frame := renderTUI(s, "", 1, 0, 100, 24, ""); !strings.Contains(frame, "branch release") {
+		t.Fatalf("a town with its own branch shows the wrong one:\n%s", frame)
+	}
+}

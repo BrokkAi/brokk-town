@@ -48,7 +48,7 @@ func (b *BotWorkers) tree(ctx context.Context, t *Town, p Pull, role string, rep
 	if origin != remote {
 		return tree, errors.New("extension repository origin changed")
 	}
-	if _, err = run("fetch", "origin", fmt.Sprintf("+refs/pull/%d/head:refs/town/pr/%d", p.Number, p.Number), "+refs/heads/"+t.Config.Branch+":refs/town/base"); err != nil {
+	if _, err = run("fetch", "origin", fmt.Sprintf("+refs/pull/%d/head:refs/town/pr/%d", p.Number, p.Number), "+refs/heads/"+t.Branch()+":refs/town/base"); err != nil {
 		return tree, err
 	}
 	head, err := run("rev-parse", fmt.Sprintf("refs/town/pr/%d", p.Number))

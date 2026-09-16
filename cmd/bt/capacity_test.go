@@ -142,3 +142,78 @@ func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 		t.Fatalf("failed town config partially changed capacity: %d", got)
 	}
 }
+
+// A town saved by an older Town has the branch observed at its first inventory
+// pinned in configuration. An omitted branch keeps it; an explicit empty branch
+// releases it so the town follows the repository default again.
+func TestServeConfigBranchOmittedKeepsPinAndEmptyClearsIt(t *testing.T) {
+	dir := t.TempDir()
+	store, err := town.Open(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(state *town.State) error {
+		cfg := town.DefaultConfig("acme/pinned")
+		cfg.Branch = "main"
+		cfg.Harness = "custom"
+		cfg.Agent.Command = []string{"fake"}
+		x, e := state.Add(cfg)
+		if e != nil {
+			return e
+		}
+		x.Initialized = true
+		x.DefaultBranch = "trunk" // The repository default was renamed.
+		return nil
+	}); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	apply := func(t *testing.T, branch string) error {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "towns.json")
+		entry := `{"repo":"acme/pinned","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":1800,"max_cycles":5` + branch + `}`
+		if e := os.WriteFile(path, []byte("["+entry+"]"), 0600); e != nil {
+			t.Fatal(e)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if e := serve(ctx, dir, "127.0.0.1:0", false, path, ""); e != nil && !errors.Is(e, context.Canceled) {
+			return e
+		}
+		return nil
+	}
+	read := func(t *testing.T) *town.Town {
+		t.Helper()
+		current, e := town.Open(dir, false)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer current.Close()
+		return current.Snapshot().Towns["acme/pinned"]
+	}
+
+	if e := apply(t, ""); e != nil {
+		t.Fatalf("omitted branch rejected: %v", e)
+	}
+	if got := read(t); got.Config.Branch != "main" || got.Branch() != "main" {
+		t.Fatalf("omitted branch did not keep the town's setting: %q", got.Config.Branch)
+	}
+	if e := apply(t, `,"branch":"other"`); e == nil {
+		t.Fatal("accepted an in-place branch change on an initialized town")
+	} else if !strings.Contains(e.Error(), `set branch to ""`) {
+		t.Fatalf("refusal does not name the way out: %v", e)
+	}
+	if e := apply(t, `,"branch":""`); e != nil {
+		t.Fatalf("explicit empty branch rejected: %v", e)
+	}
+	got := read(t)
+	if got.Config.Branch != "" {
+		t.Fatalf("explicit empty branch did not clear the pin: %q", got.Config.Branch)
+	}
+	if got.Branch() != "trunk" {
+		t.Fatalf("released town does not follow the repository default: %q", got.Branch())
+	}
+}
