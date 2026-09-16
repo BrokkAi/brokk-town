@@ -932,3 +932,49 @@ func TestProgressChannelKeepsNewestPhase(t *testing.T) {
 		t.Fatalf("observation was dropped on an empty channel: %+v", got)
 	}
 }
+
+// One failing verify command must not bloat state.json or the snapshot pushed
+// to every client, however much output the subprocess produced.
+func TestPersistedTextIsBounded(t *testing.T) {
+	s := testStore(t, false)
+	x := setupPR(t, s, 1)
+	huge := strings.Repeat("verify output ", 100000)
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		w := town.Workers[Review]
+		w.Error = huge
+		w.Task = "Work paused: " + huge
+		w.Phase = huge
+		w.Logs = append(w.Logs, Log{At: time.Now(), Level: "ERROR", Text: huge})
+		town.Error = huge
+		town.Tasks["pr:1"].Detail = huge
+		town.Intents[1] = &Intent{Kind: "merge", PR: 1, Base: baseSHA, Head: headSHA, Status: "uncertain", Detail: huge, At: time.Now()}
+		town.RecordOutcome(OutcomeRecord{ID: "blocked:pr:1:1", At: time.Now(), Class: "outcome", Kind: "blocked", Status: "blocked", Role: Review, TaskID: "pr:1", Detail: huge})
+		town.Report(huge, huge, time.Now())
+	})
+	town := s.Snapshot().Towns[x.ID]
+	w := town.Workers[Review]
+	fields := map[string]string{
+		"worker error": w.Error, "worker task": w.Task, "worker phase": w.Phase,
+		"worker log": w.Logs[len(w.Logs)-1].Text, "town error": town.Error,
+		"task detail": town.Tasks["pr:1"].Detail, "intent detail": town.Intents[1].Detail,
+		"outcome detail": town.Outcomes[len(town.Outcomes)-1].Detail,
+		"report body":    town.Reports[len(town.Reports)-1].Body,
+		"report title":   town.Reports[len(town.Reports)-1].Title,
+	}
+	for name, value := range fields {
+		if len(value) > StateTextLimit+64 {
+			t.Fatalf("%s kept %d bytes of subprocess output", name, len(value))
+		}
+		if !strings.Contains(value, "verify output") {
+			t.Fatalf("%s lost the explanation entirely: %q", name, value)
+		}
+	}
+	info, err := os.Stat(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > 256<<10 {
+		t.Fatalf("state file grew to %d bytes", info.Size())
+	}
+}
