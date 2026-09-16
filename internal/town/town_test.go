@@ -1150,7 +1150,13 @@ func TestReconcileIsSerializedPerTown(t *testing.T) {
 
 	first, second := make(chan error, 1), make(chan error, 1)
 	go func() { first <- sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]) }()
-	<-gh.entered
+	select {
+	case <-gh.entered:
+	case err := <-first:
+		t.Fatalf("the first reconcile never read GitHub: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first reconcile never started")
+	}
 	go func() { second <- sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]) }()
 	// A serialized second pass waits its turn and cannot finish while the first
 	// holds GitHub open. An unserialized one observes and commits immediately,
@@ -1184,5 +1190,40 @@ func TestReconcileIsSerializedPerTown(t *testing.T) {
 	}
 	if got := s.Snapshot().Towns[x.ID].Head; got != newer {
 		t.Fatalf("the town's head regressed to an older observation: %s", got)
+	}
+}
+
+// A reconcile waiting its turn still answers a stop, so a shutdown does not
+// have to wait out a full inventory of a large repository.
+func TestWaitingReconcileAnswersCancellation(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	gh := &orderedGH{fakeGH: newGH(1), entered: make(chan struct{}), release: make(chan struct{})}
+	sup := NewSupervisor(s, gh, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{}, nil
+	}))
+	update(t, s, func(st *State) { st.Towns[x.ID].Initialized = true })
+	held := make(chan error, 1)
+	go func() { held <- sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]) }()
+	select {
+	case <-gh.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first reconcile never started")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	waiting := make(chan error, 1)
+	go func() { waiting <- sup.reconcile(ctx, s.Snapshot().Towns[x.ID]) }()
+	cancel()
+	select {
+	case err := <-waiting:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("a canceled reconcile returned %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a canceled reconcile waited for the inventory in flight")
+	}
+	close(gh.release)
+	if err := <-held; err != nil {
+		t.Fatal(err)
 	}
 }
