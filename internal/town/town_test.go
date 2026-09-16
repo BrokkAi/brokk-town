@@ -1227,3 +1227,97 @@ func TestWaitingReconcileAnswersCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// countingGH records ancestry traffic and answers a compare between the latest
+// release and the branch head with the commits the branch carries beyond it.
+type countingGH struct {
+	*fakeGH
+	unreleased []string
+	compares   atomic.Int32
+	ancestry   atomic.Int32
+	released   map[string]bool
+}
+
+func (g *countingGH) Changes(_ context.Context, _, from, to string) ([]RemoteCommit, error) {
+	g.compares.Add(1)
+	commits := []RemoteCommit{}
+	for _, sha := range g.unreleased {
+		commits = append(commits, RemoteCommit{SHA: sha})
+	}
+	return commits, nil
+}
+
+func (g *countingGH) Contains(_ context.Context, _, sha, _ string) (bool, error) {
+	g.ancestry.Add(1)
+	return g.released[sha], nil
+}
+
+// A first inventory of a mature repository once spawned one ancestry request
+// per merged pull request, and re-asked about every unreleased merge commit on
+// every poll.
+func TestReleaseAncestryUsesOneComparisonPerPoll(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	shipped, pending := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	merged := time.Now().Add(-time.Hour)
+	pulls := []Pull{}
+	for n := 1; n <= 40; n++ {
+		p := pull(n)
+		p.MergedAt = &merged
+		p.MergeCommit = fmt.Sprintf("%040x", n)
+		p.State = "closed"
+		pulls = append(pulls, p)
+	}
+	gh := &countingGH{fakeGH: newGH(1), released: map[string]bool{}}
+	gh.snapshot = RepoSnapshot{Branch: "main", DefaultBranch: "main", Head: pending, Pulls: pulls,
+		Releases: []RemoteRelease{{Tag: "v1.0.0", At: merged}}}
+	// Half of the merge commits are already in the release; the rest are the
+	// unreleased set the single comparison reports.
+	for n, p := range pulls {
+		if n%2 == 0 {
+			gh.released[p.MergeCommit] = true
+			continue
+		}
+		gh.unreleased = append(gh.unreleased, p.MergeCommit)
+	}
+	gh.released[shipped] = true
+	sup := NewSupervisor(s, gh, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{}, nil
+	}))
+	if err := sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]); err != nil {
+		t.Fatal(err)
+	}
+	town := s.Snapshot().Towns[x.ID]
+	for n, p := range pulls {
+		task := town.Tasks["commit:"+p.MergeCommit]
+		if task == nil {
+			t.Fatalf("merge commit for PR #%d was not inventoried", n+1)
+		}
+		want := "unreleased"
+		if n%2 == 0 {
+			want = "shipped"
+		}
+		if task.Stage != want {
+			t.Fatalf("merge commit for PR #%d is %q, want %q", n+1, task.Stage, want)
+		}
+	}
+	firstCompares, firstAncestry := gh.compares.Load(), gh.ancestry.Load()
+	if firstCompares != 1 {
+		t.Fatalf("first inventory issued %d comparisons", firstCompares)
+	}
+	if int(firstAncestry) != len(pulls)/2 {
+		t.Fatalf("first inventory proved %d commits individually, want only the %d it could not settle", firstAncestry, len(pulls)/2)
+	}
+
+	// A steady poll settles every remaining commit from the same comparison and
+	// never asks about a shipped one again.
+	if err := sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if got := gh.compares.Load() - firstCompares; got != 1 {
+		t.Fatalf("a poll issued %d comparisons", got)
+	}
+	if got := gh.ancestry.Load() - firstAncestry; got != 0 {
+		t.Fatalf("a poll re-proved %d commits that the comparison already settled", got)
+	}
+}

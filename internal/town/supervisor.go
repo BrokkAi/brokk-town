@@ -718,7 +718,30 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 				}
 			}
 		}
+		// One comparison names every commit the branch carries beyond the
+		// latest release, which settles most candidates without a request of
+		// their own: a first inventory of a mature repository otherwise spawns
+		// one gh process per merged pull request, and every still-unreleased
+		// merge commit is asked about again on every poll.
+		//
+		// Absence from that list is not proof on its own — a commit dropped
+		// from the branch is absent too — so anything not named there is still
+		// proven individually, once, before it is recorded as shipped.
+		pending := map[string]bool{}
+		unreleased, err := s.GitHub.Changes(ctx, t.Config.Repo, latest.Tag, remote.Head)
+		if err != nil {
+			return err
+		}
+		for _, c := range unreleased {
+			if SHA(c.SHA) {
+				pending[c.SHA] = true
+			}
+		}
 		for sha := range commits {
+			if pending[sha] {
+				remote.Released[sha] = false
+				continue
+			}
 			included, err := s.GitHub.Contains(ctx, t.Config.Repo, sha, latest.Tag)
 			if err != nil {
 				return err
