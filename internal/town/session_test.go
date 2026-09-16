@@ -434,3 +434,29 @@ func TestUncertainRepairKeepsItsWorktreeUntilTheIntentResolves(t *testing.T) {
 		t.Fatalf("confirmed repair was never collected: %v %v", dirs, branches)
 	}
 }
+
+// Collection is forced, so it must never reach a worktree another house is
+// working in. The review house audits a PR in its own extension repository at
+// the same time as the issue house collects finished repairs.
+func TestCollectionLeavesAnotherHousesWorktreeAlone(t *testing.T) {
+	b, x, _, _ := fixtureWorkers(t)
+	ctx := context.Background()
+	p, err := b.GitHub.Pull(ctx, x.Config.Repo, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := b.tree(ctx, x, p, "audit", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer audit.close()
+	if err := b.CollectWorktrees(ctx, x); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(audit.dir); err != nil {
+		t.Fatalf("collection removed a live audit worktree: %v", err)
+	}
+	if _, err := git(ctx, audit.dir, "rev-parse", "HEAD"); err != nil {
+		t.Fatalf("collection broke a live audit worktree: %v", err)
+	}
+}

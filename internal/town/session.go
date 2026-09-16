@@ -337,10 +337,17 @@ func (b *BotWorkers) repair(ctx context.Context, t *Town, task *Task, observe fu
 	// worktree and its town-repair branch are removed.
 	preserve := false
 	defer func() {
-		if !preserve {
-			err = errors.Join(err, tree.close())
-		} else if err != nil {
-			err = fmt.Errorf("%w (worktree preserved at %s)", err, tree.dir)
+		if preserve {
+			if err != nil {
+				err = fmt.Errorf("%w (worktree preserved at %s)", err, tree.dir)
+			}
+			return
+		}
+		// Releasing a worktree is advisory and the collector retries it, so a
+		// repair that reached GitHub is never reported as failed because a
+		// directory could not be removed.
+		if closeErr := tree.close(); closeErr != nil {
+			log.Warn("could not release the repair worktree", "error", closeErr, "directory", tree.dir)
 		}
 	}()
 	path, err := snapshotFile(tree.dir, map[string]any{"pull_request": p, "review": task.Audit, "discussion": discussion})
@@ -612,14 +619,16 @@ func (b *BotWorkers) confirmRepair(id, taskID string, i *Intent) error {
 	})
 }
 
-// CollectWorktrees removes private worktrees, and the town-repair branches that
+// CollectWorktrees removes repair worktrees, and the town-repair branches that
 // belong to them, once no saved intent needs them. A repair worktree is retained
 // only while its intent is unresolved, because the saved commit may still have
-// to be published or verified against GitHub; everything else is disposable and
-// was previously left behind by every failed repair and every resumed one.
+// to be published or verified against GitHub; the rest were left behind by every
+// failed repair and every resumed one.
 //
-// It is safe to run at any time: a worktree in use fails to remove and is simply
-// retried by the next pass, and the whole pass is advisory.
+// Only the repair extension is collected, and only the issue house calls this,
+// immediately before it may create a repair worktree of its own. Removal is
+// forced, so it would take a live worktree with it: the review house's audit
+// trees run concurrently with this house and are released by their own dispatch.
 func (b *BotWorkers) CollectWorktrees(ctx context.Context, t *Town) error {
 	needed := map[string]bool{}
 	for _, intent := range t.Intents {
@@ -627,23 +636,11 @@ func (b *BotWorkers) CollectWorktrees(ctx context.Context, t *Town) error {
 			needed[resolvedPath(intent.Directory)] = true
 		}
 	}
-	base := filepath.Join(b.Root, "towns", Key(t.ID), "extensions")
-	roles, err := os.ReadDir(base)
-	if errors.Is(err, os.ErrNotExist) {
+	repository := filepath.Join(b.Root, "towns", Key(t.ID), "extensions", "repair", "repository.git")
+	if info, err := os.Stat(repository); err != nil || !info.IsDir() {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	var failures error
-	for _, role := range roles {
-		repository := filepath.Join(base, role.Name(), "repository.git")
-		if info, e := os.Stat(repository); e != nil || !info.IsDir() {
-			continue
-		}
-		failures = errors.Join(failures, b.collectRepository(ctx, repository, needed))
-	}
-	return failures
+	return b.collectRepository(ctx, repository, needed)
 }
 
 func (b *BotWorkers) collectRepository(ctx context.Context, repository string, needed map[string]bool) error {
