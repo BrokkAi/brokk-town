@@ -828,6 +828,7 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 				return errors.New("unknown task")
 			}
 			resetTaskForRetry(t, task)
+			st.Event(id, "control", "operator", string(task.House), task.ID, "retry "+task.ID, s.now())
 			return nil
 		}
 		for _, r := range Roles {
@@ -931,8 +932,27 @@ func resetTaskForRetry(t *Town, task *Task) {
 	if task.Cycles >= t.Config.MaxCycles {
 		task.Cycles = 0
 	}
-	t.Workers[task.House].Next = time.Time{}
-	t.Workers[task.House].Enabled = true
+	// Clearing the house's retry delay lets an enabled house pick the task up
+	// immediately. Enabled is deliberately untouched: one blocked task is not a
+	// reason to start a house the operator paused, which would release every
+	// other ready merge and queued review at once.
+	w := t.Workers[task.House]
+	if w == nil {
+		return
+	}
+	w.Next = time.Time{}
+	if !w.Enabled {
+		task.Detail = fmt.Sprintf("Ready to retry. %s Bot is paused; start it to run this task.", houseName(task.House))
+	}
+}
+
+// houseName is the operator-facing name of a house, matching the browser and
+// TUI labels.
+func houseName(role Role) string {
+	if role == Hall {
+		return "Town Hall"
+	}
+	return strings.ToUpper(string(role)[:1]) + string(role)[1:]
 }
 
 func (s *Supervisor) retryIssueTask(id, taskID string) error {
@@ -991,6 +1011,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 				return errors.New("issue task changed while committing retry")
 			}
 			resetTaskForRetry(current, currentTask)
+			st.Event(id, "control", "operator", string(currentTask.House), currentTask.ID, "retry "+currentTask.ID, s.now())
 			return nil
 		})
 		s.mu.Unlock()
@@ -1045,6 +1066,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 			return errors.New("issue task changed while committing retry")
 		}
 		resetTaskForRetry(current, currentTask)
+		st.Event(id, "control", "operator", string(currentTask.House), currentTask.ID, "retry "+currentTask.ID, s.now())
 		return nil
 	})
 }
