@@ -150,7 +150,7 @@ for tag rules, pipeline steps, and recovery.
 Install and authenticate `git`, GitHub CLI (`gh`), Node.js/npm, and your chosen
 coding agent. Town does not require a separate bot installation: each dispatch
 uses `npx --yes` with an exact compatible release of bug-bot, feature-bot,
-issue-bot, review-bot, or release-bot, then communicates with it over a private
+issue-bot, review-bot, release-bot, or simplifier-bot, then communicates with it over a private
 Unix socket. Town never selects an ambient or floating bot version.
 Each bot's Settings panel shows its current pin. **Check for bot update** reads
 npm's stable tag, and **Use VERSION** stages that exact version for the Mayor to
@@ -194,11 +194,11 @@ GitHub reconciliation.
 
 Town starts and manages the bot libraries internally; the standalone bot CLIs are
 not companion processes. New towns start with Bug Bot, Feature Bot, Issue Bot,
-Review Bot, and Release Bot **paused**. Repo Bot starts its read-only inventory.
+Review Bot, Release Bot, and Simplifier Bot **paused**. Repo Bot starts its read-only inventory.
 The town header shows whether the town is paused, awake,
 or partly awake, and its button offers the action that changes that state.
 Inspect the town, then start individual workers or choose **Wake the town**, which
-enables all five automation workers (except Release Bot under manual merge policy).
+enables all six automation workers (except Release Bot under manual merge policy).
 Starting workers authorizes their real work: filing issues,
 creating and repairing PRs, posting reviews, merging under the configured policy,
 and publishing releases. Agents and verification commands run with your local
@@ -238,10 +238,15 @@ where `N` is an integer from 1 through 64.
 
 Visit a town and choose **Settings**, then use **Configure agent for** to select
 the bot and configure its agent, model, and reasoning effort independently. Bug,
-feature, issue, review, and release bots can each use a different profile. Bots
+feature, issue, review, release, and simplifier bots can each use a different profile. Bots
 without a profile inherit **Town defaults**. Choose **Use town defaults** and save
 to remove a bot's independent profile. Save each changed profile before closing
 Settings. Repo-bot only reports repository state and does not use an agent.
+
+**Simplifier decisions** selects `suggest` (the default) or `auto`. Suggest keeps
+the Mayor as decision maker and shows Simplifier Bot's advice on every pending
+arrival. Auto lets the bot's assessment route routine work without a separate
+Mayoral decision, including closing low-value complex issues.
 
 For each profile, select any agent from the
 [official ACP registry](https://agentclientprotocol.com/get-started/registry),
@@ -349,6 +354,7 @@ finish before restoring a town.
 | --- | --- |
 | Bug greenhouse | Runs bug-bot's investigation and verification; observed filed issues travel to issue-bot. |
 | Feature study | Runs feature-bot to discover useful new capabilities, independently review their value and feasibility, and compare existing requests; confirmed feature issues travel to issue-bot. |
+| Simplifier clarifier | Reviews every incoming issue/PR for disproportionate complexity or low value, advises the Mayor, and discovers removal/replacement proposals. |
 | Issue workshop | Runs issue-bot on eligible issues, opens implementation-ready PRs, and repairs Town-owned PR branches from review feedback. |
 | Review observatory | Runs review-bot, independently checks the full change and every retained finding, then returns fixes or waits for merge requirements. |
 | Release depot | Runs release-bot's batching and publishing policy. Confirmed merged/direct commits accumulate here; a published stable release ships only commits proven to be its ancestors. |
@@ -361,12 +367,18 @@ Animation never initiates a GitHub write. Reconnecting does not replay previousl
 seen deliveries. External PRs receive reviews but their branches are left to their
 authors; only locally recorded Town-created branches enter automatic repair.
 
-New external issues and PRs first wait at Town Hall for a durable Mayoral
-decision. **Admit** sends the work to Issue Bot or Review Bot; **Decline** keeps
-Town from acting on it without changing GitHub. Feature Bot proposals follow the
-same route by default and can be exempted in **Town Settings → External
-contributions**. A proposal is the town's own work, so declining one also closes
-its issue as not planned; outside issues and PRs are only ignored. The browser provides the primary decision UX; scripts may use
+Every new issue and PR first waits at Simplifier Bot (including work filed by
+Bug Bot and Feature Bot and implementation PRs created by Issue Bot). In the
+default **suggest** mode, its bounded assessment is attached to the resulting
+durable Mayoral decision: **Admit** sends the work to Issue Bot or Review Bot;
+**Decline** keeps Town from acting on it. In **auto** mode, Simplifier Bot can
+admit routine work and decline low-value complex work itself; a declined issue is
+closed through Repo-bot, while a declined PR is ignored rather than closed.
+Simplifier Bot's own marked proposals do not recursively pass through intake.
+Between arrivals, the same worker scans the repository and may file marked
+proposals to remove or replace subsystems that add disproportionate complexity
+for little value.
+The browser provides the primary decision UX; scripts may use
 `bt admit --repo OWNER/REPO --task issue:123` or `bt decline ...`. Offered bot
 upgrades use the same commands with `--task upgrade:feature` (or another bot
 role), plus `bt delay ...` to be asked again in a day.
@@ -398,7 +410,7 @@ bot profiles, verification command, and policy, then run:
 
 Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
-`merge_policy`, `mayoral_feature_review`, `poll_seconds`, `report_seconds`, and
+`merge_policy`, `simplifier_mode`, `poll_seconds`, `report_seconds`, and
 `max_cycles`. The example
 lists all required values. To persist global capacity alongside the town list,
 use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
@@ -415,7 +427,7 @@ while omitting the field keeps whatever the town already uses. Omitted towns are
 Agent configuration uses acp-go's `command`, `environment`, `auth_method`, `mode`, `model`, and `effort` fields.
 
 The top-level `harness` and `agent` define town defaults. `bot_agents` maps any of
-`bug`, `feature`, `issue`, `review`, and `release` to a complete profile containing
+`bug`, `feature`, `issue`, `review`, `release`, and `simplifier` to a complete profile containing
 its own `harness` and `agent`, with an optional saved `harness_definition`.
 An absent role follows the town defaults. A configured role is independent:
 blank model or effort uses its harness default, and omitted agent fields do not
@@ -426,7 +438,7 @@ authenticating each harness. Verification and scheduling settings remain shared
 at town level.
 
 Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet reports
-use `report_seconds` (1800). Bug-bot and feature-bot run at most every 30 minutes; release-bot
+use `report_seconds` (1800). Bug-bot, feature-bot, and simplifier-bot run at most every 30 minutes; release-bot
 checks every five minutes and retains its own quiet window, minimum gap, and
 batching decisions. Each worker attempt has a two-hour deadline. Repair cycles
 default to five; failed PR attempts back off and block after three failures.
@@ -548,9 +560,9 @@ browsers use the ordinary interface.
 
 ## Keyboard and development
 
-Browser: `0` overview, `1`–`5` agent houses, `6` town hall, `?` help, Escape closes
+Browser: `0` overview, `1` Bug, `2` Issue, `3` Review, `4` Release, `5` Repo, `6` Town Hall, `7` Feature, `8` Simplifier, `?` help, Escape closes
 the inspector. Motion follows reduced-motion preferences and can be switched off.
-Terminal: `0` overview, Tab next town, `1`–`5` or `j`/`k` select a house, `s` start,
+Terminal: `0` overview, Tab next town, `1`–`7` or `j`/`k` select a house, `s` start,
 `p` pause, `x` stop, `a` wake the selected town, `d` delete with `y`/`n` confirmation,
 `q` detach. Use `bt settings` and `bt request` for agent settings and new work, or
 the forms in the browser. Bracketed paste is

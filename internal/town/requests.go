@@ -240,7 +240,7 @@ func (s *Supervisor) publishRequest(ctx context.Context, id, requestID string) {
 }
 
 func confirmRequest(st *State, t *Town, r *IssueRequest, issue RemoteIssue, now time.Time) {
-	r.Status, r.Number, r.URL, r.Detail = "confirmed", issue.Number, issue.URL, "Issue created and added to the workshop queue."
+	r.Status, r.Number, r.URL, r.Detail = "confirmed", issue.Number, issue.URL, "Issue created and sent to the simplifier."
 	r.Next = time.Time{}
 	id := fmt.Sprintf("issue:%d", issue.Number)
 	if t.Tasks[id] == nil {
@@ -248,10 +248,15 @@ func confirmRequest(st *State, t *Town, r *IssueRequest, issue RemoteIssue, now 
 		if issue.State == "closed" {
 			stage = "closed"
 		}
-		t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: issue.Number, Title: issue.Title, URL: issue.URL, Description: issue.Body, House: Issue, Stage: stage, Updated: now}
-		st.Event(t.ID, "delivery", "hall", "issue", id, "New "+r.Kind+": "+r.Title, now)
-	}
-	if t.Workers[Issue].Enabled {
-		t.Workers[Issue].Next = time.Time{}
+		if stage != "closed" {
+			stage = "simplifying"
+		}
+		house := Issue
+		if stage == "simplifying" {
+			house = Simplifier
+			t.Workers[Simplifier].Next = time.Time{}
+		}
+		t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: issue.Number, Title: issue.Title, URL: issue.URL, Description: issue.Body, House: house, Stage: stage, Updated: now}
+		st.Event(t.ID, "delivery", "hall", string(house), id, "New "+r.Kind+": "+r.Title, now)
 	}
 }

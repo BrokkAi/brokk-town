@@ -28,7 +28,7 @@ func TestBotProfilesInheritAndRemainIndependent(t *testing.T) {
 			t.Fatal("new bot does not inherit", role)
 		}
 	}
-	for _, role := range []Role{Review, Issue, Release} {
+	for _, role := range []Role{Review, Issue, Release, Simplifier} {
 		if err := sup.SettingsForRole(x.ID, role, AgentSettings{Model: ptr(string(role)), Effort: ptr("xhigh")}); err != nil {
 			t.Fatal(err)
 		}

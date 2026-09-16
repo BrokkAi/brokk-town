@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -87,6 +88,7 @@ const workerDeadline = 2 * time.Hour
 type dispatch struct {
 	issue, pr  int
 	base, head string
+	mode       string
 }
 
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
@@ -139,6 +141,17 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			return result, nil
 		}
 		d = dispatch{pr: task.Number, base: task.Base, head: task.Head}
+	case Simplifier:
+		task := nextTask(t, Simplifier, "simplifying")
+		if task == nil {
+			return result, nil
+		}
+		if task.Kind == "issue" {
+			d.issue = task.Number
+		} else {
+			d = dispatch{pr: task.Number, base: task.Base, head: task.Head}
+		}
+		d.mode = t.Config.SimplifierModeOrDefault()
 	default:
 		return result, fmt.Errorf("unsupported worker %s", r)
 	}
@@ -179,6 +192,9 @@ func (b *BotWorkers) Adopt(ctx context.Context, t *Town, r Role, run WorkerRun, 
 	}
 	t = clone(t)
 	d := dispatch{issue: run.Issue, pr: run.PR, base: run.BaseSHA, head: run.HeadSHA}
+	if r == Simplifier {
+		d.mode = run.Mode
+	}
 	workerResult, err := adoptWorker(ctx, r, run, observe)
 	return b.complete(ctx, t, r, d, workerResult, err, observe, log)
 }
@@ -196,6 +212,34 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 			return result, err
 		}
 		return result, validateWorkerResult(workerResult, r)
+	case Simplifier:
+		if d.issue > 0 {
+			result.Issue = d.issue
+		}
+		if d.pr > 0 {
+			result.PR = d.pr
+		}
+		if err != nil {
+			return result, err
+		}
+		if d.issue == 0 && d.pr == 0 {
+			if workerResult.Simplification != nil {
+				return result, errors.New("repository scan returned an item assessment")
+			}
+			if workerResult.Issue != nil || workerResult.Review != nil {
+				return result, errors.New("repository scan returned an unexpected typed result")
+			}
+			return result, nil
+		}
+		if err = validateWorkerResult(workerResult, r); err != nil {
+			return result, err
+		}
+		assessment := workerResult.Simplification
+		if assessment == nil || assessment.Mode != d.mode || (d.issue > 0 && assessment.Decision == "") {
+			return result, errors.New("simplifier worker returned an assessment for the wrong mode or target")
+		}
+		result.Simplification = &Simplification{Mode: assessment.Mode, Decision: assessment.Decision, Summary: assessment.Summary, Detail: assessment.Detail}
+		return result, nil
 	case Issue:
 		if workerResult.Issue != nil {
 			result.Owned = make(map[int]Ownership, len(workerResult.Issue.Owned))
@@ -244,6 +288,9 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
 		Agent: agent, Verify: t.Config.Verify, Issue: d.issue, PR: d.pr, BaseSHA: d.base, HeadSHA: d.head,
 	}
+	if role == Simplifier {
+		request.Mode = t.Config.SimplifierModeOrDefault()
+	}
 	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
 	// The handle is committed before the run request so a service that stops
 	// at any later point can find the process again.
@@ -285,8 +332,22 @@ func validateWorkerResult(result workerResult, role Role) error {
 		if result.Issue != nil {
 			return errors.New("review worker returned issue data")
 		}
-	default:
+	case Simplifier:
+		if result.Simplification == nil {
+			return errors.New("simplifier worker omitted its assessment")
+		}
 		if result.Issue != nil || result.Review != nil {
+			return errors.New("simplifier worker returned unexpected typed result")
+		}
+		s := result.Simplification
+		if (s.Mode != "suggest" && s.Mode != "auto") || (s.Decision != "admit" && s.Decision != "decline") || strings.TrimSpace(s.Detail) == "" {
+			return errors.New("simplifier worker returned an invalid assessment")
+		}
+		if len(s.Detail) > 16<<10 || len(s.Summary) > 1024 {
+			return errors.New("simplifier worker returned an oversized assessment")
+		}
+	default:
+		if result.Issue != nil || result.Review != nil || result.Simplification != nil {
 			return errors.New("worker returned an unexpected typed result")
 		}
 	}
@@ -296,7 +357,7 @@ func validateWorkerResult(result workerResult, role Role) error {
 func nextTask(t *Town, role Role, stage string) *Task {
 	tasks := []*Task{}
 	for _, task := range t.Tasks {
-		if task.Kind == "pr" && task.House == role && task.Stage == stage && !task.Blocked && !task.RetryAt.After(time.Now()) {
+		if (task.Kind == "pr" || (role == Simplifier && task.Kind == "issue")) && task.House == role && task.Stage == stage && !task.Blocked && !task.RetryAt.After(time.Now()) {
 			tasks = append(tasks, task)
 		}
 	}

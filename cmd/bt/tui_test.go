@@ -44,14 +44,14 @@ func TestTerminalFramesFitAndNeutralizeControls(t *testing.T) {
 	if strings.Contains(overview, "1 queued") {
 		t.Fatal("done source item was counted as queued", overview)
 	}
-	issue := renderTUI(s, "", 0, 1, 100, 30, "")
+	issue := renderTUI(s, "", 0, 2, 100, 30, "")
 	if strings.Contains(issue, "Checked off in Slack") {
 		t.Fatal("done source item remained at the issue-bot door", issue)
 	}
 	if !strings.Contains(issue, "Authority:") || !strings.Contains(issue, "create pull requests") {
 		t.Fatal("issue house omitted write authority", issue)
 	}
-	review := renderTUI(s, "", 0, 2, 140, 35, "")
+	review := renderTUI(s, "", 0, 3, 140, 35, "")
 	if !strings.Contains(review, "merge eligible pull requests when merge policy permits") {
 		t.Fatal("review house omitted policy-dependent merge authority", review)
 	}
@@ -62,7 +62,7 @@ func TestTUIShowsManualReleaseBoundaryAndWakeSet(t *testing.T) {
 	config := town.DefaultConfig("acme/orchard")
 	config.MergePolicy = "manual"
 	_, _ = state.Add(config)
-	frame := renderTUI(state, "", 0, 3, 140, 35, "")
+	frame := renderTUI(state, "", 0, 4, 140, 35, "")
 	for _, want := range []string{"release-preparation pull requests", "Paused while every merge is manual", "wake available workers"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("manual release authority omitted %q: %s", want, frame)
@@ -101,7 +101,7 @@ func TestBlockedIssueAttentionAndRecovery(t *testing.T) {
 	if !strings.Contains(overview, "6 queued") || !strings.Contains(overview, "1 need attention") {
 		t.Fatalf("blocked issue was missing from overview: %s", overview)
 	}
-	house := renderTUI(s, "", 0, 1, 100, 24, "")
+	house := renderTUI(s, "", 0, 2, 100, 24, "")
 	for _, detail := range []string{
 		blocked.Title,
 		blocked.Detail,
@@ -112,12 +112,13 @@ func TestBlockedIssueAttentionAndRecovery(t *testing.T) {
 			t.Fatalf("blocked issue inspection omitted %q: %s", detail, house)
 		}
 	}
-	if strings.Index(house, blocked.Title) > strings.Index(house, "Waiting issue") {
-		t.Fatal("blocked issue should precede waiting work")
+	ordered := renderTUI(s, "", 0, 2, 100, 35, "")
+	if strings.Index(ordered, blocked.Title) > strings.Index(ordered, "Waiting issue") {
+		t.Fatalf("blocked issue should precede waiting work:\n%s", ordered)
 	}
 	blocked.IssueJob.RetryEligible = false
 	blocked.IssueJob.RetryDetail = "Wait for the pending issue claim update."
-	house = renderTUI(s, "", 0, 1, 100, 24, "")
+	house = renderTUI(s, "", 0, 2, 100, 24, "")
 	if strings.Contains(house, "bt retry") || !strings.Contains(house, blocked.IssueJob.RetryDetail) {
 		t.Fatalf("unavailable retry was not explained: %s", house)
 	}
@@ -128,7 +129,7 @@ func TestBlockedIssueAttentionAndRecovery(t *testing.T) {
 	if !strings.Contains(overview, "5 queued") || !strings.Contains(overview, "0 need attention") {
 		t.Fatalf("submitted issue still needed attention: %s", overview)
 	}
-	house = renderTUI(s, "", 0, 1, 100, 24, "")
+	house = renderTUI(s, "", 0, 2, 100, 24, "")
 	if strings.Contains(house, blocked.Title) || strings.Contains(house, blocked.Detail) {
 		t.Fatalf("submitted issue remained in the queue: %s", house)
 	}

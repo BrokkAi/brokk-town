@@ -1,5 +1,25 @@
 # Brokk Town implementation plan
 
+## Simplifier Bot intake (2026-09-16)
+
+- Add a sixth paused automation house and persisted `simplifier` role, with
+  per-bot agent/profile/version support and state migration for existing towns.
+- Route every newly observed issue and PR through a durable `simplifying` task
+  before Issue Bot, Review Bot, or Town Hall. Operator-created requests enter the
+  same queue; simplifier-marked proposals bypass recursive self-review.
+- Add town-level `simplifier_mode`: `suggest` attaches the bot's bounded
+  admit/decline assessment to a Mayoral decision; `auto` applies admissions,
+  ignores declined PRs, and closes declined issues through Repo-bot's idempotent
+  closure path. Failed assessments retry and block rather than guessing.
+- Extend Worker Protocol v1 requests with the simplifier target/mode and add a
+  typed `result.simplification`. A no-target simplifier dispatch performs a
+  repository scan and files marked removal/replacement proposals.
+- Add browser/TUI/CLI visibility, authority text, routing, advisor rendering,
+  settings, protocol tests, and fake-worker coverage. The new
+  local `../simplifier-bot` project is worker-first, uses detached exact-revision
+  worktrees, durable issue-publication markers, and no live automation in tests.
+  It has not yet been published to GitHub or npm.
+
 ## Release verification removed (2026-09-16)
 
 - The read-back verification tail kept failing releases and made roll-forward

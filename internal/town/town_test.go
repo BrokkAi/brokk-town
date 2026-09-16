@@ -149,7 +149,7 @@ func TestReconcileArrivalsRevisionAndReleaseAncestry(t *testing.T) {
 			routes[e.Cargo] = e.From + ">" + e.To
 		}
 	}
-	if routes["issue:3"] != "outside>hall" || routes["issue:4"] != "bug>issue" || routes["issue:6"] != "feature>hall" || routes["pr:5"] != "issue>review" || x.Tasks["issue:6"].External {
+	if routes["issue:3"] != "outside>simplifier" || routes["issue:4"] != "bug>simplifier" || routes["issue:6"] != "feature>simplifier" || routes["pr:5"] != "issue>simplifier" || x.Tasks["issue:6"].External {
 		t.Fatal(routes)
 	}
 	task := x.Tasks["pr:5"]

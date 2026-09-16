@@ -15,6 +15,9 @@ func TestOutsideWorkWaitsForDurableMayoralDecision(t *testing.T) {
 		remote := inventory(pull(8))
 		remote.Issues = []RemoteIssue{{Number: 7, Title: "Outside issue", State: "open"}}
 		Reconcile(st, current, remote, time.Now())
+		for _, id := range []string{"issue:7", "pr:8"} {
+			applySimplification(st, current, current.Tasks[id], &Simplification{Mode: "suggest", Decision: "admit", Detail: "Focused work."}, nil, time.Now())
+		}
 	})
 	state := store.Snapshot()
 	for _, id := range []string{"issue:7", "pr:8"} {
@@ -45,36 +48,20 @@ func TestOutsideWorkWaitsForDurableMayoralDecision(t *testing.T) {
 	}
 }
 
-func TestFeatureProposalsRequireMayorByDefaultAndCanBeExempted(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		review *bool
-		stage  string
-		house  Role
-	}{
-		{name: "default", stage: "awaiting_mayor", house: Hall},
-		{name: "disabled", review: boolPointer(false), stage: "queued", house: Issue},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			state := NewState(false)
-			cfg := DefaultConfig("acme/orchard")
-			cfg.MayoralFeatureReview = test.review
-			town, err := state.Add(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			remote := inventory()
-			remote.Issues = []RemoteIssue{{Number: 3, Title: "Feature proposal", Body: "<!-- feature-bot: proposal -->", State: "open"}}
-			Reconcile(&state, town, remote, time.Now())
-			task := town.Tasks["issue:3"]
-			if task.Stage != test.stage || task.House != test.house {
-				t.Fatalf("unexpected feature route: %+v", task)
-			}
-		})
+func TestFeatureProposalsPassThroughSimplifierIntake(t *testing.T) {
+	state := NewState(false)
+	town, err := state.Add(DefaultConfig("acme/orchard"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := inventory()
+	remote.Issues = []RemoteIssue{{Number: 3, Title: "Feature proposal", Body: "<!-- feature-bot: proposal -->", State: "open"}}
+	Reconcile(&state, town, remote, time.Now())
+	task := town.Tasks["issue:3"]
+	if task.Stage != "simplifying" || task.House != Simplifier {
+		t.Fatalf("unexpected feature route: %+v", task)
 	}
 }
-
-func boolPointer(value bool) *bool { return &value }
 
 func TestDeclinedProposalIsClosedAtSourceExactlyOnce(t *testing.T) {
 	store := testStore(t, false)
@@ -86,6 +73,7 @@ func TestDeclinedProposalIsClosedAtSourceExactlyOnce(t *testing.T) {
 		remote := inventory()
 		remote.Issues = []RemoteIssue{proposal}
 		Reconcile(st, st.Towns[x.ID], remote, time.Now())
+		applySimplification(st, st.Towns[x.ID], st.Towns[x.ID].Tasks["issue:12"], &Simplification{Mode: "suggest", Decision: "admit", Detail: "Needs Mayor review."}, nil, time.Now())
 	})
 	task := store.Snapshot().Towns[x.ID].Tasks["issue:12"]
 	if task.External || task.Stage != "awaiting_mayor" {
@@ -128,6 +116,7 @@ func TestDeclinedOutsideIssueIsLeftOpen(t *testing.T) {
 		remote := inventory()
 		remote.Issues = []RemoteIssue{outside}
 		Reconcile(st, st.Towns[x.ID], remote, time.Now())
+		applySimplification(st, st.Towns[x.ID], st.Towns[x.ID].Tasks["issue:9"], &Simplification{Mode: "suggest", Decision: "decline", Detail: "Low value."}, nil, time.Now())
 	})
 	supervisor := NewSupervisor(store, gh, nil)
 	if err := supervisor.Control(x.ID, Hall, "decline", "issue:9"); err != nil {

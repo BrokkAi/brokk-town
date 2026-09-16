@@ -64,15 +64,15 @@ function fixture(extraAPI) {
     id: "acme/project",
     config: {
       repo: "acme/project", harness: "codex-acp", model: "default-model",
-      effort: "medium", harness_version: "1.0", bot_agents: {}, merge_policy: "bot", mayoral_feature_review: true,
-      bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1" },
+      effort: "medium", harness_version: "1.0", bot_agents: {}, merge_policy: "bot", simplifier_mode: "suggest",
+      bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1", simplifier: "0.1.0" },
     },
   };
   const overrides = {
     review: { harness: "claude-code", model: "review-model", effort: "high", harness_version: "1.5" },
   };
   const syncProfiles = () => {
-    for (const role of ["bug", "feature", "issue", "review", "release"])
+    for (const role of ["bug", "feature", "issue", "review", "release", "simplifier"])
       town.config.bot_agents[role] = overrides[role]
         ? { ...overrides[role], inherited: false }
         : { ...town.config, bot_agents: undefined, inherited: true };
@@ -84,9 +84,9 @@ function fixture(extraAPI) {
     if (url === "/api/harnesses") return catalog;
     if (url === "/api/settings") {
       if (extraAPI) await extraAPI(url, body, signal);
-      const { role, agent, merge_policy, mayoral_feature_review, auto_update_bots, bot_version } = body;
+      const { role, agent, merge_policy, simplifier_mode, auto_update_bots, bot_version } = body;
       if (merge_policy) town.config.merge_policy = merge_policy;
-      if (mayoral_feature_review !== undefined) town.config.mayoral_feature_review = mayoral_feature_review;
+      if (simplifier_mode) town.config.simplifier_mode = simplifier_mode;
       if (auto_update_bots !== undefined) town.config.auto_update_bots = auto_update_bots;
       if (bot_version) town.config.bot_versions[role] = bot_version;
       if (agent.inherit) delete overrides[role];
@@ -141,7 +141,7 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
     town: "acme/project", role: "review",
     agent: { harness: "claude-code", model: "next-review-model", effort: "xhigh", version: "1.5" },
     merge_policy: "bot",
-    mayoral_feature_review: true,
+    simplifier_mode: "suggest",
     auto_update_bots: false,
     bot_version: "0.2.1",
   });
