@@ -113,7 +113,7 @@ type GitHub interface {
 // and an exact revision. Fakes share it so they cannot accept arguments the
 // real client rejects.
 func ValidReleaseComparison(tag, head string) error {
-	if tag == "" || strings.Contains(tag, "..") || strings.ContainsAny(tag, "?#") || !SHA(head) {
+	if tag == "" || strings.Contains(tag, "..") || !SHA(head) {
 		return errors.New("invalid release comparison")
 	}
 	return nil

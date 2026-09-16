@@ -1242,6 +1242,7 @@ func TestWaitingReconcileAnswersCancellation(t *testing.T) {
 type countingGH struct {
 	*fakeGH
 	tag, head  string
+	diverged   bool
 	unreleased []string
 	compares   atomic.Int32
 	ancestry   atomic.Int32
@@ -1255,6 +1256,9 @@ func (g *countingGH) Unreleased(_ context.Context, _, tag, head string) ([]Remot
 	}
 	if tag != g.tag || head != g.head {
 		return nil, false, fmt.Errorf("compared %s...%s, want %s...%s", tag, head, g.tag, g.head)
+	}
+	if g.diverged {
+		return nil, false, nil
 	}
 	commits := []RemoteCommit{}
 	for _, sha := range g.unreleased {
@@ -1367,5 +1371,34 @@ func TestReleaseComparisonAcceptsATagAndRequiresARevision(t *testing.T) {
 	}))
 	if err := sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]); err != nil {
 		t.Fatalf("reconcile could not compare against the latest release: %v", err)
+	}
+}
+
+// A repository that cuts releases from a separate branch answers "diverged"
+// forever. Paying for that comparison on every poll would add traffic to the
+// very case the single comparison cannot help with.
+func TestUnusableReleaseComparisonIsNotRepeated(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	gh := &countingGH{fakeGH: newGH(1), tag: "v1.0.0", head: headSHA, released: map[string]bool{}}
+	gh.snapshot = RepoSnapshot{Branch: "main", DefaultBranch: "main", Head: headSHA,
+		Releases: []RemoteRelease{{Tag: "v1.0.0", At: time.Now()}}, Commits: []RemoteCommit{{SHA: fixSHA}}}
+	gh.diverged = true
+	sup := NewSupervisor(s, gh, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{}, nil
+	}))
+	for poll := 0; poll < 3; poll++ {
+		if err := sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := gh.compares.Load(); got != 1 {
+		t.Fatalf("an unusable comparison was repeated %d times", got)
+	}
+	if gh.ancestry.Load() == 0 {
+		t.Fatal("an unusable comparison suppressed the individual proof it falls back to")
+	}
+	if s.Snapshot().Towns[x.ID].Tasks["commit:"+fixSHA].Stage == "shipped" {
+		t.Fatal("a commit was recorded as released without proof")
 	}
 }
