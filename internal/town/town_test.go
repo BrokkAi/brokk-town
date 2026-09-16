@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -1101,5 +1102,128 @@ func TestReconcileTracksTheDefaultBranchWithoutRewritingConfig(t *testing.T) {
 		if cfg.Branch != want {
 			t.Fatalf("%s reported branch %q, want %q", id, cfg.Branch, want)
 		}
+	}
+}
+
+// orderedGH serves one inventory per call, holding the first open until it is
+// released, and reports whether two reconciliations were ever inside GitHub at
+// the same time.
+type orderedGH struct {
+	*fakeGH
+	heads      []string
+	calls      atomic.Int32
+	inFlight   atomic.Int32
+	overlapped atomic.Bool
+	entered    chan struct{}
+	release    chan struct{}
+}
+
+func (g *orderedGH) Snapshot(ctx context.Context, c Config) (RepoSnapshot, error) {
+	if g.inFlight.Add(1) > 1 {
+		g.overlapped.Store(true)
+	}
+	defer g.inFlight.Add(-1)
+	index := int(g.calls.Add(1)) - 1
+	if index == 0 {
+		close(g.entered)
+		<-g.release
+	}
+	snapshot, err := g.fakeGH.Snapshot(ctx, c)
+	if index < len(g.heads) {
+		snapshot.Head = g.heads[index]
+	}
+	return snapshot, err
+}
+
+// The repo worker and the merge path both reconcile. Overlapping passes could
+// commit in the order they finished rather than the order they observed,
+// leaving the town's recorded head behind the repository.
+func TestReconcileIsSerializedPerTown(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	older, newer := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	gh := &orderedGH{fakeGH: newGH(1), heads: []string{older, newer}, entered: make(chan struct{}), release: make(chan struct{})}
+	sup := NewSupervisor(s, gh, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{}, nil
+	}))
+	update(t, s, func(st *State) { st.Towns[x.ID].Initialized = true; st.Towns[x.ID].Head = baseSHA })
+
+	first, second := make(chan error, 1), make(chan error, 1)
+	go func() { first <- sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]) }()
+	select {
+	case <-gh.entered:
+	case err := <-first:
+		t.Fatalf("the first reconcile never read GitHub: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first reconcile never started")
+	}
+	go func() { second <- sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]) }()
+	// A serialized second pass waits its turn and cannot finish while the first
+	// holds GitHub open. An unserialized one observes and commits immediately,
+	// and its commit is then overtaken by the older inventory below.
+	overtaken := false
+	select {
+	case err := <-second:
+		overtaken = true
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+	}
+	close(gh.release)
+	waits := []chan error{first}
+	if !overtaken {
+		waits = append(waits, second)
+	}
+	for _, done := range waits {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("reconcile did not finish")
+		}
+	}
+	if gh.overlapped.Load() {
+		t.Fatal("two reconciliations read GitHub at the same time")
+	}
+	if got := s.Snapshot().Towns[x.ID].Head; got != newer {
+		t.Fatalf("the town's head regressed to an older observation: %s", got)
+	}
+}
+
+// A reconcile waiting its turn still answers a stop, so a shutdown does not
+// have to wait out a full inventory of a large repository.
+func TestWaitingReconcileAnswersCancellation(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	gh := &orderedGH{fakeGH: newGH(1), entered: make(chan struct{}), release: make(chan struct{})}
+	sup := NewSupervisor(s, gh, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{}, nil
+	}))
+	update(t, s, func(st *State) { st.Towns[x.ID].Initialized = true })
+	held := make(chan error, 1)
+	go func() { held <- sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]) }()
+	select {
+	case <-gh.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first reconcile never started")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	waiting := make(chan error, 1)
+	go func() { waiting <- sup.reconcile(ctx, s.Snapshot().Towns[x.ID]) }()
+	cancel()
+	select {
+	case err := <-waiting:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("a canceled reconcile returned %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a canceled reconcile waited for the inventory in flight")
+	}
+	close(gh.release)
+	if err := <-held; err != nil {
+		t.Fatal(err)
 	}
 }
