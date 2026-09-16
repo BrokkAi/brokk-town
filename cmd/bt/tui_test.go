@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BrokkAi/acp-go/runner"
 	"github.com/BrokkAi/brokk-town/internal/town"
 	"github.com/rivo/uniseg"
 )
@@ -209,5 +210,58 @@ func TestTUIHeaderShowsTheBranchInUse(t *testing.T) {
 	}
 	if frame := renderTUI(s, "", 1, 0, 100, 24, ""); !strings.Contains(frame, "branch release") {
 		t.Fatalf("a town with its own branch shows the wrong one:\n%s", frame)
+	}
+}
+
+func TestTerminalNamesEachHousesHarnessModelAndEffort(t *testing.T) {
+	s := town.NewState(false)
+	config := town.DefaultConfig("acme/orchard")
+	config.Agent.Model, config.Agent.Effort = "gpt-5-codex", "medium"
+	config.BotAgents = map[town.Role]town.BotAgentConfig{
+		town.Review: {Harness: "claude-acp", Agent: runner.AgentConfig{Model: "claude-opus-5", Effort: "high"}},
+	}
+	x, err := s.Add(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Bug-bot is mid-dispatch, so it must report the profile it was started
+	// with rather than whatever the configuration says a later run will use.
+	x.Workers[town.Bug].Status = "working"
+	x.Workers[town.Bug].Agent = &town.PublicBotAgentConfig{Harness: "codex-acp", Model: "gpt-5-codex", Effort: "low", Inherited: true}
+
+	frame := renderTUI(s, "", 0, 0, 140, 35, "")
+	for _, want := range []string{
+		"AGENT ▸ running · * own",
+		"▸ codex · gpt-5-codex · low",
+		"* claude · claude-opus-5 · high",
+		"  codex · gpt-5-codex · medium",
+		"no agent · read-only",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("house table omitted %q:\n%s", want, frame)
+		}
+	}
+	// The selected house spells the same profile out, unabbreviated.
+	review := renderTUI(s, "", 0, 2, 140, 35, "")
+	for _, want := range []string{
+		"AGENT (next run · set for this house only)  harness claude-acp · model claude-opus-5 · effort high",
+	} {
+		if !strings.Contains(review, want) {
+			t.Fatalf("selected house omitted %q:\n%s", want, review)
+		}
+	}
+	for _, want := range []string{
+		"AGENT (running now · inherited from town defaults)  harness codex-acp · model gpt-5-codex · effort low",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("running house omitted %q:\n%s", want, frame)
+		}
+	}
+	// A narrow terminal keeps current work readable and drops the column.
+	if narrow := renderTUI(s, "", 0, 0, 80, 35, ""); strings.Contains(narrow, "AGENT ▸") {
+		t.Fatalf("narrow terminal kept the agent column:\n%s", narrow)
+	}
+	if watchtower := renderTUI(s, "", 0, 4, 140, 35, ""); strings.Contains(watchtower, "AGENT (") {
+		t.Fatalf("the agentless watchtower advertised a profile:\n%s", watchtower)
 	}
 }

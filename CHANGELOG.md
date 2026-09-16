@@ -2,6 +2,11 @@
 
 ## 0.3.1 — pending
 
+- Show which harness, model and effort each bot runs without opening anything:
+  the browser's village labels, board, compact view and town cards carry the
+  profile as chips (effort shaded by level, outlined when a house overrides the
+  town default), and the terminal panel's house table gains an AGENT column with
+  the selected house's profile written out in full.
 - Harden release publication against npm registry visibility lag: a visible
   version record whose tarball has not propagated yet reports incomplete
   publication so submission and verification retry together instead of failing

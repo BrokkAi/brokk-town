@@ -8,8 +8,11 @@ hosts the towns and shares a configurable pool of agent worker slots between
 them (four by default, from one to 64).
 
 The browser shows worker houses, wheelbarrows carrying completed handoffs, trucks
-bringing external issues and PRs, and shipments leaving the release depot. Visit
-a house to inspect its queue, activity, errors, and controls. Town hall holds
+bringing external issues and PRs, and shipments leaving the release depot. Every
+house label names the harness, model and effort that house runs, so a bot on a
+different harness or a higher effort is visible without opening it; the terminal
+panel carries the same profile in its house table. Visit a house to inspect its
+queue, activity, errors, and controls. Town hall holds
 repo-bot's reports. The all-towns overview shows activity and attention counts
 without visiting each repository.
 

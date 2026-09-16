@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/BrokkAi/acp-go/runner"
 )
 
 // Demo is a closed simulation: it never receives a GitHub client or worker runner.
@@ -20,6 +22,14 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 		for _, repo := range []string{"BrokkAi/orchard", "BrokkAi/paper-trail"} {
 			c := DefaultConfig(repo)
 			c.Branch = "main"
+			// Demo never launches an agent, but the village only tells the truth
+			// about profiles if the houses actually differ: a town default, one
+			// house on another harness, and one that raises only the effort.
+			c.Agent.Model, c.Agent.Effort = "gpt-5-codex", "medium"
+			c.BotAgents = map[Role]BotAgentConfig{
+				Review:  {Harness: "claude-acp", Agent: runner.AgentConfig{Model: "claude-opus-5", Effort: "high"}},
+				Release: {Agent: runner.AgentConfig{Model: "gpt-5-codex", Effort: "xhigh"}},
+			}
 			c.Funnels = FunnelConfigs{{ID: "demo-github", Provider: "github", Location: SourceLocation{"repository": repo}, Enabled: true, PriorityPolicy: "demo-explicit", ReadOnly: true}, {ID: "demo-slack", Provider: "slack", Location: SourceLocation{"channel": "CDEMO"}, Enabled: true, PriorityPolicy: "demo-explicit", ReadOnly: true}}
 			t, _ := s.Add(c)
 			t.Initialized = true

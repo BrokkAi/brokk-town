@@ -261,7 +261,7 @@ const state = {
   towns: {
     "acme/project": {
       id: "acme/project",
-      config: { repo: "acme/project", branch: "main", bot_agents: {}, bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1" }, harness: "codex-acp", model: "m", effort: "medium" },
+      config: { repo: "acme/project", branch: "main", bot_agents: { review: { harness: "claude-acp", model: "claude-opus-5", effort: "high", inherited: false } }, bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1" }, harness: "codex-acp", model: "m", effort: "medium" },
       workers: {
         issue: { role: "issue", status: "working", enabled: true, task: "Implementing", logs: [], agent: { harness: "codex-acp", model: "m", effort: "medium" } },
         review: { role: "review", status: "waiting", enabled: true, next: "0001-01-01T00:00:00Z", logs: [] },
@@ -346,7 +346,12 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
     .querySelectorAll("[data-board-task]")
     .find((task) => task.dataset.boardTask === "source:done");
   assert.ok(doneTask, "board renders source-observed done work");
-  assert.doesNotMatch(doneTask.textContent, /Next profile:/, "done work does not advertise another dispatch");
+  assert.doesNotMatch(doneTask.textContent, /Next profile/, "done work does not advertise another dispatch");
+  for (const part of ["profile-chip harness", "profile-chip model", "profile-chip effort"])
+    assert.ok(
+      elements.board.innerHTML.includes(part),
+      `board names every part of a dispatch profile (${part})`,
+    );
   boardTask.onclick();
   assert.equal(elements.inspector.classList.contains("open"), true);
   assert.equal(elements.inspector.hidden, false, "board inspection is visible");
@@ -368,8 +373,23 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements["town-toggle"].textContent, "Ⅱ Pause the town", "toggle offers the action that changes state");
   assert.equal(elements["town-toggle"].classList.contains("primary"), false);
   assert.equal(elements["pause-all"].hidden, true, "no separate pause-all when every agent is awake");
+  const houseLabel = (role) =>
+    elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === role).textContent;
+  assert.match(houseLabel("review"), /claude/, "the village names each house's harness");
+  assert.match(houseLabel("review"), /claude-opus-5/, "the village names each house's model");
+  assert.match(houseLabel("review"), /high/, "the village names each house's effort");
+  assert.match(houseLabel("issue"), /codex/, "a house inheriting town defaults still shows them");
+  assert.match(houseLabel("issue"), /medium/, "a house inheriting town defaults still shows its effort");
+  assert.match(houseLabel("repo"), /no agent/, "the watchtower is marked as running without an agent");
+  assert.ok(
+    elements.houses.innerHTML.includes('class="profile own"'),
+    "a house with its own profile is distinguished from an inheriting one",
+  );
+  assert.ok(elements.houses.innerHTML.includes('class="profile inherited'), "inherited profiles are marked as inherited");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   assert.match(elements.inspection.textContent, /Authority:.*create pull requests/, "house controls explain their write authority");
+  assert.match(elements.inspection.textContent, /Harness.*codex-acp/s, "the inspector spells the harness out in full");
+  assert.match(elements.inspection.textContent, /Effort.*medium/s, "the inspector spells the effort out in full");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-outcome-days]").find((button) => button.dataset.outcomeDays === "0").onclick();
   await elements.inspection.querySelectorAll("[data-export-outcomes]")[0].onclick();
@@ -645,4 +665,8 @@ test("responsive and reduced-motion contracts remain shipped in the stylesheet",
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /\.view-switcher/);
   assert.match(css, /\.operations-board/);
+  // Effort is an ordinal, so each level has to be distinguishable at a glance.
+  for (const rank of ["default", "low", "medium", "high", "max", "custom"])
+    assert.match(css, new RegExp(`\\.profile-chip\\.rank-${rank}\\s*\\{`), `effort rank ${rank} has no shade`);
+  assert.match(css, /\.profile\.own\s+\.profile-chip/, "a profile set for one house is marked apart from an inherited one");
 });

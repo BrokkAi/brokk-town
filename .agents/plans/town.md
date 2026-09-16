@@ -847,3 +847,25 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   confirmation (`--yes` skips only the prompt); without it the script stops after
   evidence. The final tag is never moved and authorization evidence is refreshed
   before the publish dispatch. Covered by `sh -n` in `make check`.
+
+## Profiles visible at a glance (2026-09-16)
+
+- User asked to see which harness, model and effort each bot/house uses without
+  opening anything: the profile was only readable in the settings dialog and the
+  house inspector.
+- Shared the labels between clients: `harnessLabel`/`modelLabel`/`effortLabel`
+  and `profileSummary` in `town.js`, `HarnessLabel`/`ModelLabel`/`EffortLabel`
+  and `PublicBotAgentConfig.Label` in `internal/town`, so every surface
+  abbreviates a profile identically and a running worker keeps the profile it
+  was dispatched with.
+- Browser: each village house label now carries harness/model/effort chips, with
+  effort shaded by level and an outline when the house overrides the town
+  default. The status word moved onto the dot the legend already explains so the
+  label keeps its two lines and never reaches the road. Board, compact and the
+  overview cards use the same chips; the inspector spells the profile out.
+- Terminal: the house table gained an AGENT column (dropped on narrow
+  terminals), and the selected house replaces the table's spacer with its full
+  harness/model/effort and where the profile came from.
+- Demo gives Orchard a town default, a review house on another harness, and a
+  release house that only raises effort, so the difference is visible in the
+  first frame.

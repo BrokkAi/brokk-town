@@ -264,6 +264,38 @@ func townIDs(s town.State) []string {
 	sort.Strings(ids)
 	return ids
 }
+
+// The house table answers "which harness, model and effort is this bot using?"
+// without selecting the house first.  A running worker shows the profile it was
+// dispatched with; an idle one shows what its next run will use.
+func agentColumn(t *town.Town, role town.Role) string {
+	if role == town.Repo {
+		return "no agent · read-only"
+	}
+	profile, live := town.WorkerProfile(t, role)
+	mark := " "
+	if live {
+		mark = "▸"
+	} else if !profile.Inherited {
+		mark = "*"
+	}
+	return mark + " " + profile.Label()
+}
+
+func harnessOrDefault(harness string) string {
+	if harness == "" {
+		return "codex-acp"
+	}
+	return harness
+}
+
+func valueOrDefault(value string) string {
+	if value == "" {
+		return "harness default"
+	}
+	return value
+}
+
 func displayWorker(t *town.Town, role town.Role) *town.Worker {
 	if w := t.Workers[role]; w != nil {
 		return w
@@ -338,17 +370,54 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 		add(fmt.Sprintf(" %s   [%d/%d towns]   branch %s", t.Config.Repo, townIndex+1, len(ids), t.Branch()))
 		add(" 0: all towns    Tab: next town    1–6 / j,k: select house")
 		add(" Settings and new issues: bt settings / bt request, or bt web")
-		add("    HOUSE        STATUS       CURRENT WORK")
+		// The agent column is the point of the table on a wide terminal; on a
+		// narrow one the current work matters more, and the selected house
+		// still spells its profile out below.
+		agentWidth := 0
+		switch {
+		case width >= 112:
+			agentWidth = 34
+		case width >= 90:
+			agentWidth = 24
+		}
+		agentHeading := ""
+		if agentWidth > 0 {
+			agentHeading = cell("AGENT ▸ running · * own", agentWidth) + " "
+		}
+		add("    HOUSE        STATUS       " + agentHeading + "CURRENT WORK")
 		for i, r := range town.Roles {
 			w := displayWorker(t, r)
 			mark := " "
 			if i == roleIndex {
 				mark = ">"
 			}
-			add(fmt.Sprintf(" %s  %-11s %-12s %s", mark, r, w.Status, w.Task))
+			agent := ""
+			if agentWidth > 0 {
+				agent = cell(agentColumn(t, r), agentWidth) + " "
+			}
+			add(fmt.Sprintf(" %s  %-11s %-12s %s%s", mark, r, w.Status, agent, w.Task))
 		}
-		add("")
 		r := town.Roles[roleIndex]
+		// The table abbreviates; the selected house separates the table from its
+		// door with the same profile written out in full.
+		if r == town.Repo {
+			add("")
+		} else {
+			profile, live := town.WorkerProfile(t, r)
+			when, source := "next run", "inherited from town defaults"
+			if live {
+				when = "running now"
+			}
+			if !profile.Inherited {
+				source = "set for this house only"
+			}
+			version := ""
+			if profile.HarnessVersion != "" {
+				version = " " + profile.HarnessVersion
+			}
+			add(fmt.Sprintf(" AGENT (%s · %s)  harness %s%s · model %s · effort %s", when, source,
+				harnessOrDefault(profile.Harness), version, valueOrDefault(profile.Model), valueOrDefault(profile.Effort)))
+		}
 		add(" AT " + strings.ToUpper(string(r)) + "'S DOOR")
 		if r == town.Issue || r == town.Repo {
 			funnelIDs := make([]string, 0, len(t.FunnelSyncs))
