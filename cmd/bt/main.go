@@ -111,8 +111,15 @@ func buildVersion() string {
 	}
 	return v
 }
+
+// shutdownSignals end the process through the ordinary shutdown sequence.
+// SIGHUP belongs here: closing a terminal or dropping an SSH connection would
+// otherwise kill the service outright, leaving its workers running in their own
+// process groups and a stale connection.json advertising a dead URL.
+var shutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
+
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(context.Background(), shutdownSignals...)
 	defer cancel()
 	err := run(ctx, os.Args[1:])
 	cancel()
