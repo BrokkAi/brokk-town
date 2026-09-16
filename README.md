@@ -506,6 +506,8 @@ Retry explicitly permits another attempt after fresh checks. For an uncertain
 repair push, it reuses and verifies the saved commit; it does not rerun the agent.
 If the PR moved, the saved worktree is retained for inspection. A retry also resets
 an exhausted repair budget. Never delete an uncertain intent to force progress.
+Retry clears that one task's block; it never starts a paused house. If the house
+is paused, the task says so and waits for you to start it.
 
 When the release house reports that Release Bot's retry budget is exhausted, fix
 the reported failure and ask Town to lift the budget:

@@ -978,3 +978,66 @@ func TestPersistedTextIsBounded(t *testing.T) {
 		t.Fatalf("state file grew to %d bytes", info.Size())
 	}
 }
+
+// Retrying one blocked task must not start a house the operator paused: that
+// would release every other ready merge and queued review at the same time.
+func TestRetryLeavesAPausedHousePaused(t *testing.T) {
+	s := testStore(t, false)
+	x := setupPR(t, s, 1)
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		town.Workers[Review].Enabled = false
+		town.Workers[Review].Status = "paused"
+		task := town.Tasks["pr:1"]
+		task.Blocked = true
+		task.Attempts = 3
+		task.RetryAt = time.Now().Add(time.Hour)
+		task.Detail = "Merge outcome is uncertain."
+		town.Intents[1] = &Intent{Kind: "merge", PR: 1, Base: baseSHA, Head: headSHA, Status: "uncertain", At: time.Now()}
+	})
+	sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		t.Fatal("paused house dispatched work after a task retry")
+		return RunResult{}, nil
+	}))
+	before := len(s.Snapshot().Events)
+	if err := sup.Control(x.ID, Review, "retry", "pr:1"); err != nil {
+		t.Fatal(err)
+	}
+	town := s.Snapshot().Towns[x.ID]
+	w := town.Workers[Review]
+	if w.Enabled {
+		t.Fatal("retry started a paused house")
+	}
+	if w.Status != "paused" {
+		t.Fatalf("paused house changed status: %q", w.Status)
+	}
+	task := town.Tasks["pr:1"]
+	if task.Blocked || task.Attempts != 0 || !task.RetryAt.IsZero() {
+		t.Fatalf("retry did not clear the task's own block: %+v", task)
+	}
+	if town.Intents[1].Status != "retry" {
+		t.Fatalf("retry lost the uncertain write intent: %+v", town.Intents[1])
+	}
+	if !strings.Contains(task.Detail, "paused") {
+		t.Fatalf("operator is not told the house is paused: %q", task.Detail)
+	}
+	events := s.Snapshot().Events
+	if len(events) != before+1 {
+		t.Fatalf("retry recorded %d events", len(events)-before)
+	}
+	if last := events[len(events)-1]; last.Kind != "control" || last.Cargo != "pr:1" || last.From != "operator" {
+		t.Fatalf("retry was not recorded as an operator control event: %+v", last)
+	}
+	// Scheduling confirms it: the paused house stays out of the pool. The
+	// worker above fails the test if it is ever dispatched.
+	sup.schedule(context.Background())
+	sup.wg.Wait()
+
+	// Starting the house makes the same task eligible again.
+	if err := sup.Control(x.ID, Review, "start", ""); err != nil {
+		t.Fatal(err)
+	}
+	if w := s.Snapshot().Towns[x.ID].Workers[Review]; !w.Enabled || !w.Next.IsZero() {
+		t.Fatalf("start did not make the house eligible: %+v", w)
+	}
+}
