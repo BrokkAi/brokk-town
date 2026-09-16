@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 — pending
+
+- Harden release publication against npm registry visibility lag: a visible
+  version record whose tarball has not propagated yet reports incomplete
+  publication so submission and verification retry together instead of failing
+  or resubmitting an existing version.
+
 ## 0.3.0 — 2026-09-15
 
 - Make worker startup and write authority explicit across the browser, TUI, and

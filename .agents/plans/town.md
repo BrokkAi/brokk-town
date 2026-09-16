@@ -787,3 +787,12 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   changelog.
 - During preparation, run the full local checks and candidate build without
   pushing the final tag, uploading release assets, or publishing packages.
+
+## v0.3.1 release preparation (2026-09-16)
+
+- Prepare a patch release for the npm registry visibility-lag hardening now on
+  master (retry incomplete publication instead of failing or resubmitting).
+- Update the release candidate to `v0.3.1`, retain the existing exact-commit
+  build/preflight/publication gates, and record the change in the changelog.
+- During preparation, run the full local checks and candidate build without
+  pushing the final tag, uploading release assets, or publishing packages.
