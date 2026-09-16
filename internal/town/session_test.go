@@ -50,7 +50,10 @@ func fixtureWorkers(t *testing.T) (*BotWorkers, *Town, *Task, string) {
 	os.WriteFile(filepath.Join(source, "code.txt"), []byte("defect\n"), 0600)
 	run(source, "commit", "-am", "introduce change")
 	head := run(source, "rev-parse", "HEAD")
-	run("", "clone", "--bare", source, remote)
+	// --no-hardlinks for the same reason the daemon uses it: a local clone that
+	// hardlinks object files races with background maintenance in the source
+	// repository and fails with "hardlink different from source".
+	run("", "clone", "--bare", "--no-hardlinks", source, remote)
 	run("", "--git-dir", remote, "update-ref", "refs/pull/1/head", head)
 	p := pull(1)
 	p.Base.SHA = base
