@@ -306,39 +306,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		u, pch := updates, progress
-		for u != nil || pch != nil {
-			select {
-			case l, ok := <-u:
-				if !ok {
-					u = nil
-					continue
-				}
-				s.update(func(st *State) error {
-					w := st.Towns[t.ID].Workers[r]
-					w.Logs = append(w.Logs, l)
-					if len(w.Logs) > 100 {
-						w.Logs = w.Logs[len(w.Logs)-100:]
-					}
-					return nil
-				})
-			case p, ok := <-pch:
-				if !ok {
-					pch = nil
-					continue
-				}
-				s.update(func(st *State) error {
-					w := st.Towns[t.ID].Workers[r]
-					w.Phase = p.Phase
-					w.Task = p.Task
-					w.Updated = s.now()
-					if p.Seq > 0 && w.Run != nil {
-						w.Run.Seq = p.Seq
-					}
-					return nil
-				})
-			}
-		}
+		s.consumeWorkerChatter(t.ID, r, updates, progress)
 	}()
 	observe := func(p Progress) { latestProgress(progress, p) }
 	log := slog.New(&workerLog{role: r, out: updates, now: s.now})
@@ -506,6 +474,83 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		}
 		return nil
 	})
+}
+
+// WorkerChatterInterval bounds how often a worker's own log lines and phase
+// changes reach durable state. Each commit clones the whole state, revalidates
+// every task, writes and fsyncs the file and its directory under the write lock,
+// and pushes a fresh snapshot to every connected client: a chatty agent produces
+// lines far faster than that, and several towns of them make the daemon
+// I/O-bound. Coalescing costs at most this much staleness on a busy worker, and
+// nothing at all on a quiet one.
+var WorkerChatterInterval = 2 * time.Second
+
+// consumeWorkerChatter commits one worker's observations, coalescing bursts. The
+// first line after a quiet moment is committed immediately so the operator sees
+// work start; further lines within the interval ride along with it. Everything
+// buffered is committed before the consumer returns, so no observation is lost
+// and the final result still commits after all of them.
+func (s *Supervisor) consumeWorkerChatter(id string, r Role, updates <-chan Log, progress <-chan Progress) {
+	var pending []Log
+	var latest *Progress
+	flush := func() {
+		if len(pending) == 0 && latest == nil {
+			return
+		}
+		logs, phase := pending, latest
+		pending, latest = nil, nil
+		s.update(func(st *State) error {
+			w := st.Towns[id].Workers[r]
+			w.Logs = append(w.Logs, logs...)
+			if len(w.Logs) > 100 {
+				w.Logs = w.Logs[len(w.Logs)-100:]
+			}
+			if phase != nil {
+				w.Phase = phase.Phase
+				w.Task = phase.Task
+				w.Updated = s.now()
+				if phase.Seq > 0 && w.Run != nil {
+					w.Run.Seq = phase.Seq
+				}
+			}
+			return nil
+		})
+	}
+	ticker := time.NewTicker(WorkerChatterInterval)
+	defer ticker.Stop()
+	// quiet means nothing has been committed during the current interval, so the
+	// next observation is worth committing at once.
+	quiet := true
+	u, pch := updates, progress
+	for u != nil || pch != nil {
+		select {
+		case l, ok := <-u:
+			if !ok {
+				u = nil
+				continue
+			}
+			pending = append(pending, l)
+			if len(pending) > 100 {
+				pending = pending[len(pending)-100:]
+			}
+		case p, ok := <-pch:
+			if !ok {
+				pch = nil
+				continue
+			}
+			observation := p
+			latest = &observation
+		case <-ticker.C:
+			quiet = len(pending) == 0 && latest == nil
+			flush()
+			continue
+		}
+		if quiet {
+			quiet = false
+			flush()
+		}
+	}
+	flush()
 }
 
 // latestProgress publishes one observation on a single-slot channel, replacing
@@ -1256,7 +1301,7 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town) (bool, error) {
 
 type workerLog struct {
 	role  Role
-	out   chan<- Log
+	out   chan Log
 	now   func() time.Time
 	attrs []slog.Attr
 	group string
@@ -1279,8 +1324,21 @@ func (l *workerLog) Handle(_ context.Context, r slog.Record) error {
 	if len(text) > 4000 {
 		text = text[:4000] + "…"
 	}
+	entry := Log{l.now(), r.Level.String(), text}
 	select {
-	case l.out <- Log{l.now(), r.Level.String(), text}:
+	case l.out <- entry:
+		return nil
+	default:
+	}
+	// Logging never blocks an agent callback. The worker's log ring keeps only
+	// its newest lines, so a full buffer gives up the oldest pending line rather
+	// than the one just produced, which is the one an operator is watching for.
+	select {
+	case <-l.out:
+	default:
+	}
+	select {
+	case l.out <- entry:
 	default:
 	}
 	return nil

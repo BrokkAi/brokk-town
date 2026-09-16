@@ -1402,3 +1402,66 @@ func TestUnusableReleaseComparisonIsNotRepeated(t *testing.T) {
 		t.Fatal("a commit was recorded as released without proof")
 	}
 }
+
+// countCommits reports how many durable state transactions happen while fn runs.
+func countCommits(t *testing.T, s *Store, fn func()) int {
+	t.Helper()
+	var commits atomic.Int32
+	stop, watching := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(watching)
+		for {
+			changed := s.Watch()
+			select {
+			case <-changed:
+				commits.Add(1)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	fn()
+	close(stop)
+	// Wake the watcher so it observes the stop.
+	update(t, s, func(*State) {})
+	<-watching
+	return int(commits.Load())
+}
+
+// A chatty agent produces log lines far faster than a durable transaction can
+// commit them, and each transaction clones, revalidates and fsyncs the whole
+// state and pushes a snapshot to every client.
+func TestWorkerChatterIsCoalescedIntoFewTransactions(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	update(t, s, func(st *State) {
+		town := st.Towns[x.ID]
+		town.Initialized = true
+		town.Workers[Bug].Enabled = true
+	})
+	const lines = 300
+	workers := workerFunc(func(_ context.Context, _ *Town, _ Role, observe func(Progress), log *slog.Logger) (RunResult, error) {
+		for i := 0; i < lines; i++ {
+			log.Info("scanning", "file", fmt.Sprintf("source-%d.go", i))
+			observe(Progress{Phase: "scanning", Task: fmt.Sprintf("file %d", i)})
+		}
+		return RunResult{}, nil
+	})
+	sup := NewSupervisor(s, newGH(1), workers)
+	commits := countCommits(t, s, func() {
+		sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Bug, nil)
+	})
+	if commits > 12 {
+		t.Fatalf("%d durable transactions for one worker run of %d log lines", commits, lines)
+	}
+	w := s.Snapshot().Towns[x.ID].Workers[Bug]
+	if len(w.Logs) == 0 {
+		t.Fatal("coalescing dropped every log line")
+	}
+	if last := w.Logs[len(w.Logs)-1].Text; !strings.Contains(last, fmt.Sprintf("source-%d.go", lines-1)) {
+		t.Fatalf("the newest log line was not committed: %q", last)
+	}
+	if w.Phase != "scanning" || !strings.Contains(w.Task, fmt.Sprint(lines-1)) {
+		t.Fatalf("the newest phase was not committed: %q %q", w.Phase, w.Task)
+	}
+}
