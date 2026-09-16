@@ -63,6 +63,7 @@ type Supervisor struct {
 	mu                 sync.Mutex
 	running            map[string]context.CancelFunc
 	retrying           map[string]bool
+	reconciling        map[string]*sync.Mutex
 	wg                 sync.WaitGroup
 	wake               chan struct{}
 	fatal              chan error
@@ -75,7 +76,7 @@ func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	if provider, ok := gh.(GitHubFunnelProvider); ok {
 		registry[ProviderID("github")] = &GitHubFunnel{Client: provider}
 	}
-	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]*sync.Mutex{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -602,7 +603,29 @@ func workerRunTask(run WorkerRun) string {
 	return ""
 }
 
+// reconcileLock serializes repository reconciliation per town. The repo worker
+// and the merge path both reconcile, and each one commits a complete inventory:
+// two overlapping passes could commit in the order they finished rather than the
+// order they observed, regressing the recorded head and last release and
+// replaying deliveries that were already announced.
+func (s *Supervisor) reconcileLock(id string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reconciling == nil {
+		s.reconciling = map[string]*sync.Mutex{}
+	}
+	lock := s.reconciling[id]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		s.reconciling[id] = lock
+	}
+	return lock
+}
+
 func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
+	lock := s.reconcileLock(t.ID)
+	lock.Lock()
+	defer lock.Unlock()
 	if workers, ok := s.Workers.(issueStateWorkers); ok {
 		if err := workers.SyncIssues(t); err != nil {
 			return fmt.Errorf("import issue-bot jobs: %w", err)
