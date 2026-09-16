@@ -303,6 +303,7 @@ func (s *Store) Update(fn func(*State) error) error {
 	}
 	for _, town := range next.Towns {
 		enforceManualReleasePolicy(town)
+		boundStateText(town)
 	}
 	if err := validateState(next, s.state.Demo); err != nil {
 		return err

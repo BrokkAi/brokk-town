@@ -156,7 +156,27 @@ func RunRaw(ctx context.Context, dir string, env map[string]string, args ...stri
 		return "", errors.Join(fmt.Errorf("%s output exceeded 8 MiB", args[0]), err)
 	}
 	if err != nil {
-		return text, fmt.Errorf("%s: %w\n%s\n%s", args[0], err, detail, text)
+		// The message is persisted and pushed to every client, so it carries
+		// bounded tails. Callers that need the whole output read the returned
+		// text or the worker log.
+		return text, fmt.Errorf("%s: %w\n%s\n%s", args[0], err, Clip(detail, ErrorTextLimit), Clip(text, ErrorTextLimit))
 	}
 	return text, nil
+}
+
+// ErrorTextLimit bounds each captured stream embedded in a command failure.
+const ErrorTextLimit = 4 << 10
+
+// Clip returns at most limit bytes from the end of v, cut on a rune boundary,
+// marked when earlier content was omitted. The tail is kept because a command's
+// last output explains its failure.
+func Clip(v string, limit int) string {
+	if len(v) <= limit {
+		return v
+	}
+	b := v[len(v)-limit:]
+	for len(b) > 0 && !utf8.RuneStart(b[0]) {
+		b = b[1:]
+	}
+	return "…(earlier output omitted)\n" + b
 }
