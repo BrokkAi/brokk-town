@@ -454,6 +454,10 @@ Private state defaults to `$XDG_STATE_HOME/brokk-town` or
 appends `demo`. A single writer lock, atomic snapshots, per-role bot state, and
 private worktrees keep towns separate. Events, logs, and repo-bot reports have
 bounded recent histories; task, intent, and automation outcome history persists.
+A worker's own log lines and phase changes are committed in batches of at most a
+couple of seconds, because every commit rewrites and fsyncs the whole snapshot;
+the newest line and phase always win, and everything buffered is committed before
+a run's result is.
 Browser access uses a per-service
 local key in a URL fragment. `connection.json` and state snapshots are mode 0600.
 Private agent commands, environment, and authentication configuration are omitted
