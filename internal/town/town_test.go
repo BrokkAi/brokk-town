@@ -846,6 +846,15 @@ func (f *fakeGH) Changes(context.Context, string, string, string) ([]RemoteCommi
 	return nil, nil
 }
 
+// Unreleased holds fakes to the contract the real client enforces, so a caller
+// that hands it arguments GitHub would reject fails here too.
+func (f *fakeGH) Unreleased(_ context.Context, _, tag, head string) ([]RemoteCommit, bool, error) {
+	if err := ValidReleaseComparison(tag, head); err != nil {
+		return nil, false, err
+	}
+	return nil, false, nil
+}
+
 func TestDirectCommitArrivesAtReleaseAndAppearsInReport(t *testing.T) {
 	s := NewState(false)
 	x, _ := s.Add(DefaultConfig("acme/orchard"))
@@ -1232,19 +1241,26 @@ func TestWaitingReconcileAnswersCancellation(t *testing.T) {
 // release and the branch head with the commits the branch carries beyond it.
 type countingGH struct {
 	*fakeGH
+	tag, head  string
 	unreleased []string
 	compares   atomic.Int32
 	ancestry   atomic.Int32
 	released   map[string]bool
 }
 
-func (g *countingGH) Changes(_ context.Context, _, from, to string) ([]RemoteCommit, error) {
+func (g *countingGH) Unreleased(_ context.Context, _, tag, head string) ([]RemoteCommit, bool, error) {
 	g.compares.Add(1)
+	if err := ValidReleaseComparison(tag, head); err != nil {
+		return nil, false, err
+	}
+	if tag != g.tag || head != g.head {
+		return nil, false, fmt.Errorf("compared %s...%s, want %s...%s", tag, head, g.tag, g.head)
+	}
 	commits := []RemoteCommit{}
 	for _, sha := range g.unreleased {
 		commits = append(commits, RemoteCommit{SHA: sha})
 	}
-	return commits, nil
+	return commits, true, nil
 }
 
 func (g *countingGH) Contains(_ context.Context, _, sha, _ string) (bool, error) {
@@ -1268,7 +1284,7 @@ func TestReleaseAncestryUsesOneComparisonPerPoll(t *testing.T) {
 		p.State = "closed"
 		pulls = append(pulls, p)
 	}
-	gh := &countingGH{fakeGH: newGH(1), released: map[string]bool{}}
+	gh := &countingGH{fakeGH: newGH(1), tag: "v1.0.0", head: pending, released: map[string]bool{}}
 	gh.snapshot = RepoSnapshot{Branch: "main", DefaultBranch: "main", Head: pending, Pulls: pulls,
 		Releases: []RemoteRelease{{Tag: "v1.0.0", At: merged}}}
 	// Half of the merge commits are already in the release; the rest are the
@@ -1319,5 +1335,37 @@ func TestReleaseAncestryUsesOneComparisonPerPoll(t *testing.T) {
 	}
 	if got := gh.ancestry.Load() - firstAncestry; got != 0 {
 		t.Fatalf("a poll re-proved %d commits that the comparison already settled", got)
+	}
+}
+
+// The ancestry comparison is between a published tag and an exact revision.
+// Passing the tag where a revision is required would fail every poll for every
+// town whose repository has a release.
+func TestReleaseComparisonAcceptsATagAndRequiresARevision(t *testing.T) {
+	if err := ValidReleaseComparison("v1.0.0", strings.Repeat("a", 40)); err != nil {
+		t.Fatalf("a published tag was rejected: %v", err)
+	}
+	for _, bad := range [][2]string{
+		{"", strings.Repeat("a", 40)},
+		{"v1.0.0", "main"},
+		{"v1.0.0", ""},
+		{"../../etc", strings.Repeat("a", 40)},
+	} {
+		if err := ValidReleaseComparison(bad[0], bad[1]); err == nil {
+			t.Fatalf("accepted comparison %q...%q", bad[0], bad[1])
+		}
+	}
+	// The town's own reconcile must satisfy that contract: the shared fake
+	// rejects anything the real client would.
+	s := testStore(t, false)
+	x := addTown(t, s)
+	gh := newGH(1)
+	gh.snapshot = RepoSnapshot{Branch: "main", DefaultBranch: "main", Head: headSHA,
+		Releases: []RemoteRelease{{Tag: "v1.0.0", At: time.Now()}}, Commits: []RemoteCommit{{SHA: fixSHA}}}
+	sup := NewSupervisor(s, gh, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+		return RunResult{}, nil
+	}))
+	if err := sup.reconcile(context.Background(), s.Snapshot().Towns[x.ID]); err != nil {
+		t.Fatalf("reconcile could not compare against the latest release: %v", err)
 	}
 }

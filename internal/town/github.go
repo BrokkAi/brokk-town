@@ -106,7 +106,19 @@ type GitHub interface {
 	Actor(context.Context) (string, error)
 	Contains(context.Context, string, string, string) (bool, error)
 	Changes(context.Context, string, string, string) ([]RemoteCommit, error)
+	Unreleased(context.Context, string, string, string) ([]RemoteCommit, bool, error)
 }
+
+// ValidReleaseComparison states what Unreleased accepts: a published tag name
+// and an exact revision. Fakes share it so they cannot accept arguments the
+// real client rejects.
+func ValidReleaseComparison(tag, head string) error {
+	if tag == "" || strings.Contains(tag, "..") || strings.ContainsAny(tag, "?#") || !SHA(head) {
+		return errors.New("invalid release comparison")
+	}
+	return nil
+}
+
 type GitHubClient struct{}
 
 func (g GitHubClient) api(ctx context.Context, method, path string, body any, out any) error {
@@ -264,6 +276,37 @@ func (g GitHubClient) Contains(ctx context.Context, repo, sha, tag string) (bool
 	err := g.api(ctx, "GET", "repos/"+repo+"/compare/"+sha+"..."+url.PathEscape(tag), nil, &result)
 	return result.Status == "ahead" || result.Status == "identical", err
 }
+
+// Unreleased lists the commits a branch head carries beyond a published tag,
+// which settles the release state of every one of them in a single request.
+// The second result reports whether the comparison was usable at all: a head
+// that has diverged from the tag proves nothing, and the caller must fall back
+// to proving each commit on its own rather than assume anything.
+func (g GitHubClient) Unreleased(ctx context.Context, repo, tag, head string) ([]RemoteCommit, bool, error) {
+	if err := ValidReleaseComparison(tag, head); err != nil {
+		return nil, false, err
+	}
+	var commits []RemoteCommit
+	for page := 1; page <= 1000; page++ {
+		var result struct {
+			Status  string         `json:"status"`
+			Commits []RemoteCommit `json:"commits"`
+		}
+		path := fmt.Sprintf("repos/%s/compare/%s...%s?per_page=100&page=%d", repo, url.PathEscape(tag), url.PathEscape(head), page)
+		if err := g.api(ctx, "GET", path, nil, &result); err != nil {
+			return nil, false, err
+		}
+		if result.Status != "ahead" && result.Status != "identical" {
+			return nil, false, nil
+		}
+		commits = append(commits, result.Commits...)
+		if len(result.Commits) < 100 {
+			return commits, true, nil
+		}
+	}
+	return nil, false, errors.New("release comparison exceeded pagination limit")
+}
+
 func latestRelease(releases []RemoteRelease) *RemoteRelease {
 	var latest *RemoteRelease
 	for i := range releases {

@@ -728,13 +728,18 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 		// from the branch is absent too — so anything not named there is still
 		// proven individually, once, before it is recorded as shipped.
 		pending := map[string]bool{}
-		unreleased, err := s.GitHub.Changes(ctx, t.Config.Repo, latest.Tag, remote.Head)
-		if err != nil {
-			return err
-		}
-		for _, c := range unreleased {
-			if SHA(c.SHA) {
-				pending[c.SHA] = true
+		if len(commits) > 0 {
+			unreleased, usable, err := s.GitHub.Unreleased(ctx, t.Config.Repo, latest.Tag, remote.Head)
+			if err != nil {
+				return err
+			}
+			// An unusable comparison proves nothing at all, so every candidate
+			// falls back to the individual check rather than being assumed
+			// released by its absence.
+			for _, c := range unreleased {
+				if usable && SHA(c.SHA) {
+					pending[c.SHA] = true
+				}
 			}
 		}
 		for sha := range commits {
