@@ -1,5 +1,23 @@
 # Brokk Town implementation plan
 
+## Tag-based releases (2026-09-16)
+
+- Pushing a `v*` tag is now the release request. `Publish packages` triggers
+  on the tag push, runs the shared CI checks, then builds the four native
+  archives and five npm packages, stages a draft GitHub release, publishes
+  npm platform packages before the launcher with provenance, verifies every
+  destination, and finalizes the release.
+- Deleted the preflight/dispatch machinery: `release.yml`, `release.sh`,
+  `release_checks.py`, `publish_release.py`, and `sigstore_preflight.cjs`.
+  Kept the proven builders and verifiers (`package_release.py`,
+  `package_installers.py`, `package_registry.py`, `smoke_installers.py`,
+  `verify_sigstore_bundles.cjs`) behind the single `scripts/publish_tag.py`
+  driver, covered by `scripts/publish_tag_test.py`.
+- Kept the `publish-packages.yml` filename and `packages-publish`
+  environment because the npm trusted publishers for all five packages are
+  bound to them. Re-runs reuse identical assets and versions; conflicts fail
+  closed.
+
 ## Explicit worker startup and release authority (issue #4, 2026-09-15)
 
 - Explain across browser, TUI, CLI help, and README that Town launches its five

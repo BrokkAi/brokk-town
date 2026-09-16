@@ -1,62 +1,41 @@
 name: Publish packages
-run-name: Release ${{ inputs.tag }} (publish=${{ inputs.publish }})
+run-name: Release ${{ github.ref_name }}
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Proposed version; publish=true requires dispatch from this exact existing tag
-        required: true
-        type: string
-      publish:
-        description: Publish validated deliverables from this exact existing tag (false never uploads release assets or packages)
-        type: boolean
-        default: false
+  push:
+    tags:
+      - 'v*'
 permissions:
   contents: read
 concurrency:
-  group: brokk-town-packages
+  group: brokk-town-release-${{ github.ref_name }}
   cancel-in-progress: false
 jobs:
-  native:
-    uses: ./.github/workflows/release.yml
-    with:
-      tag: ${{ inputs.tag || github.ref_name }}
-  packages:
-    needs: native
+  checks:
+    uses: ./.github/workflows/ci.yml
+  release:
+    needs: checks
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     environment: packages-publish
     permissions:
-      actions: read
       contents: write
       id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
       RELEASE_COMMIT: ${{ github.sha }}
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Require exact existing tag for publication
-        if: inputs.publish
-        env:
-          RELEASE_REF: ${{ github.ref }}
-        run: test "$RELEASE_REF" = "refs/tags/$RELEASE_TAG"
-      - name: Download candidate from this exact workflow run
-        env:
-          RELEASE_RUN: ${{ github.run_id }}
-        run: gh run download "$RELEASE_RUN" --repo github.com/BrokkAi/brokk-town --name "release-candidate-$RELEASE_COMMIT-$RELEASE_TAG" --dir dist/candidate
-      - name: Check every version before any final upload
-        run: python3 scripts/release_checks.py version
-      - name: Validate actual publisher without publishing
-        if: inputs.publish != true
-        run: python3 scripts/release_checks.py authorization
-      - name: Recheck credentials, resume uploads, and finalize last
-        if: inputs.publish
-        run: python3 scripts/publish_release.py
+      - name: Build, publish, and certify the release
+        run: python3 scripts/publish_tag.py

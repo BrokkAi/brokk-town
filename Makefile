@@ -8,7 +8,7 @@ licenses:
 	python3 scripts/licenses.py
 check: test licenses
 	go vet ./...
-	sh -n install.sh scripts/release.sh
+	sh -n install.sh
 	node --check scripts/*.cjs
 	node --test --test-isolation=none npm/bt.test.cjs
 	npm run check

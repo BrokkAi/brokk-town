@@ -137,11 +137,13 @@ sh install.sh                       # From a checkout; defaults to ~/.local/bin
 npm install -g @brokkai/brokk-town   # Installs the bt launcher and native package
 ```
 
-The GitHub release workflow and npm OIDC workflow follow the bot repositories.
-The `packages-publish` environment accepts `v*` tags only. Actual npm trusted publishers are configured and verified for all five packages,
-restricted to this repository, `publish-packages.yml`, and `packages-publish`.
-Visibility is public and collaborator/developers-team access matches mjolnir. See [RELEASING.md](RELEASING.md)
-for first-release setup, access checks, publishing, and recovery.
+Pushing a `v*` tag publishes the release: the `Publish packages` workflow runs
+CI, builds the archives and npm packages, publishes with provenance, and
+finalizes the GitHub release. The `packages-publish` environment and npm
+trusted publishers are bound to this repository and `publish-packages.yml`;
+keep both names stable. Visibility is public and
+collaborator/developers-team access matches mjolnir. See [RELEASING.md](RELEASING.md)
+for tag rules, pipeline steps, and recovery.
 
 ## Connect real repositories
 
