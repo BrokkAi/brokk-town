@@ -39,7 +39,7 @@ if [ "$DRY_RUN" = 1 ]; then
   echo "  1. require clean tree at origin/master, Go/Node/Python toolchains"
   echo "  2. make check smoke && python3 scripts/licenses.py && actionlint"
   echo "  3. release_checks.py build + version into a fresh dist/candidate"
-  echo "  4. push preflight tag $TAG-preflight.<sha> and dispatch $WORKFLOW with publish=false"
+  echo "  4. reuse fresh preflight evidence at this commit, else push a new preflight tag and dispatch $WORKFLOW with publish=false"
   echo "  5. watch the run, verify its exact SHA, collect build/authorization/version evidence"
   if [ "$PUBLISH" = 1 ]; then
     echo "  6. re-verify authorization evidence, push final tag $TAG (never move it)"
@@ -97,21 +97,64 @@ watch_run() {
   echo "$label run $run_id completed successfully."
 }
 
-git ls-remote --tags origin "$PREFLIGHT_TAG" | grep -q . \
-  && fail "preflight tag $PREFLIGHT_TAG already exists; never reuse a preflight tag"
-git tag "$PREFLIGHT_TAG" "$MASTER_SHA"
-git push origin "$PREFLIGHT_TAG"
-echo "pushed preflight tag $PREFLIGHT_TAG."
+# Newest successful preflight run for a tag at this exact commit, if any.
+# Prints "<createdAt> <runId>" or nothing.
+successful_run() {
+  tag="$1"
+  gh run list --repo "$REPO" --workflow "$WORKFLOW" --branch "$tag" \
+    --limit 20 --json databaseId,headSha,event,status,conclusion,createdAt \
+    --jq "[.[] | select(.event == \"workflow_dispatch\" and .headSha == \"$MASTER_SHA\" and .status == \"completed\" and .conclusion == \"success\")] | sort_by(.createdAt) | last | \"\(.createdAt) \(.databaseId)\" // empty"
+}
 
-SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-gh workflow run "$WORKFLOW" --repo "github.com/$REPO" --ref "$PREFLIGHT_TAG" -f tag="$TAG" -F publish=false
-PREFLIGHT_RUN="$(find_run "$PREFLIGHT_TAG" "$SINCE")" \
-  || fail "preflight run did not appear; check 'gh run list --workflow $WORKFLOW'"
-watch_run "$PREFLIGHT_RUN" "preflight"
-python3 scripts/release_checks.py remote --gate build --run-id "$PREFLIGHT_RUN"
-python3 scripts/release_checks.py remote --gate authorization --run-id "$PREFLIGHT_RUN"
-python3 scripts/release_checks.py remote --gate version --run-id "$PREFLIGHT_RUN"
-echo "preflight evidence collected for $TAG."
+# Resume a preflight at this commit when its evidence still verifies; otherwise
+# dispatch a fresh one under a new uniquely named tag (base name, then .2, .3...).
+# An existing preflight tag pointing anywhere else is a hard error: tags never move.
+PREFLIGHT_RUN=""; PREFLIGHT_REF=""; FREE_TAG=""; BEST_TS=""
+n=1
+while [ "$n" -le 9 ]; do
+  if [ "$n" = 1 ]; then CANDIDATE="$PREFLIGHT_TAG"; else CANDIDATE="$PREFLIGHT_TAG.$n"; fi
+  AT_SHA="$(git ls-remote --tags origin "refs/tags/$CANDIDATE" | grep -v '\^{}' | awk '{print $1}')"
+  if [ -z "$AT_SHA" ]; then
+    [ -n "$FREE_TAG" ] || FREE_TAG="$CANDIDATE"
+  else
+    [ "$AT_SHA" = "$MASTER_SHA" ] \
+      || fail "preflight tag $CANDIDATE points at $AT_SHA; never move a tag"
+    ROW="$(successful_run "$CANDIDATE")"
+    if [ -n "$ROW" ] && [ "${ROW%% *}" \> "$BEST_TS" ]; then
+      BEST_TS="${ROW%% *}"; PREFLIGHT_RUN="${ROW##* }"; PREFLIGHT_REF="$CANDIDATE"
+    fi
+  fi
+  n=$((n + 1))
+done
+
+if [ -n "$PREFLIGHT_RUN" ]; then
+  echo "reusing preflight $PREFLIGHT_REF run $PREFLIGHT_RUN; re-validating evidence..."
+  if python3 scripts/release_checks.py remote --gate build --run-id "$PREFLIGHT_RUN" \
+  && python3 scripts/release_checks.py remote --gate version --run-id "$PREFLIGHT_RUN" \
+  && python3 scripts/release_checks.py remote --gate authorization --run-id "$PREFLIGHT_RUN"; then
+    echo "preflight evidence collected for $TAG."
+  else
+    echo "existing preflight evidence no longer verifies; dispatching a fresh preflight."
+    PREFLIGHT_RUN=""
+  fi
+fi
+
+if [ -z "$PREFLIGHT_RUN" ]; then
+  [ -n "$FREE_TAG" ] || fail "preflight tags $PREFLIGHT_TAG through $PREFLIGHT_TAG.9 all exist; investigate before continuing"
+  PREFLIGHT_REF="$FREE_TAG"
+  git tag "$PREFLIGHT_REF" "$MASTER_SHA"
+  git push origin "$PREFLIGHT_REF"
+  echo "pushed preflight tag $PREFLIGHT_REF."
+  SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  gh workflow run "$WORKFLOW" --repo "github.com/$REPO" --ref "$PREFLIGHT_REF" -f tag="$TAG" -F publish=false
+  PREFLIGHT_RUN="$(find_run "$PREFLIGHT_REF" "$SINCE")" \
+    || fail "preflight run did not appear; check 'gh run list --workflow $WORKFLOW'"
+  watch_run "$PREFLIGHT_RUN" "preflight"
+  python3 scripts/release_checks.py remote --gate build --run-id "$PREFLIGHT_RUN"
+  python3 scripts/release_checks.py remote --gate authorization --run-id "$PREFLIGHT_RUN"
+  python3 scripts/release_checks.py remote --gate version --run-id "$PREFLIGHT_RUN"
+  echo "preflight evidence collected for $TAG."
+fi
 
 if [ "$PUBLISH" = 0 ]; then
   echo "stopping before any publishing write. To publish, re-run with --publish"
