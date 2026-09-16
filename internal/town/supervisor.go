@@ -338,12 +338,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 			}
 		}
 	}()
-	observe := func(p Progress) {
-		select {
-		case progress <- p:
-		default:
-		}
-	}
+	observe := func(p Progress) { latestProgress(progress, p) }
 	log := slog.New(&workerLog{role: r, out: updates, now: s.now})
 	var result RunResult
 	var err error
@@ -509,6 +504,26 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		}
 		return nil
 	})
+}
+
+// latestProgress publishes one observation on a single-slot channel, replacing
+// an observation the consumer has not taken yet. The pending item is already
+// stale, so keeping it instead of the new one would leave a phase the worker
+// has already left behind on display until the run ends.
+func latestProgress(ch chan Progress, p Progress) {
+	select {
+	case ch <- p:
+		return
+	default:
+	}
+	select {
+	case <-ch:
+	default:
+	}
+	select {
+	case ch <- p:
+	default:
+	}
 }
 
 func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
