@@ -488,6 +488,19 @@ commit moves to the release house.
 
 ## Repo-bot and town hall
 
+Release setup (2026-09-17): all five `@brokkai/repo-bot` packages have
+`0.1.0` version records on npm. GitHub trusted publishers were read back for
+`BrokkAi/repo-bot`, `publish-packages.yml`, environment `packages-publish`, with
+`createPackage` permission. The first release required local bootstrap because
+npm rejected trust for unknown package names; those versions have no provenance
+attestations. The GitHub release has four native archives and checksums, and the
+Release workflow is active. Town's Go tests (including race), vet, frontend
+syntax checks, and 35 frontend tests pass. After an initial registry metadata
+propagation delay, `npm view @brokkai/repo-bot version` returns `0.1.0`, and
+`npm exec --yes --package=@brokkai/repo-bot@0.1.0 -- brp version` from Town
+returns `v0.1.0`. The Town branch remains unpushed; no follow-up automation work
+was started.
+
 Repo Bot is a released worker of its own (`@brokkai/repo-bot`, `brp`), not
 service code. It reports one complete observation of the repository over Worker
 Protocol v1 — branch, exact head, issues, pulls, releases, the commits gained
