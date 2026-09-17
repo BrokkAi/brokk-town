@@ -477,13 +477,14 @@ const harnessNames = {
 export function harnessLabel(harness) {
   const id = String(harness ?? "").trim().toLowerCase();
   if (!id) return "codex";
+  const trimmed = id.replace(/\/+$/, "");
   return (
-    harnessNames[id] || id.split("/").at(-1).replace(/-acp$/, "") || id
+    harnessNames[id] || trimmed.split("/").at(-1).replace(/-acp$/, "") || id
   );
 }
 export function modelLabel(model) {
   const id = String(model ?? "").trim();
-  return id ? id.split("/").at(-1) : "default";
+  return (id && id.split("/").at(-1)) || "default";
 }
 export function effortLabel(effort) {
   const id = String(effort ?? "").trim();

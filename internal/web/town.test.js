@@ -447,6 +447,8 @@ test("profile labels stay short, keep unfamiliar efforts distinguishable, and sa
   assert.equal(harnessLabel("custom"), "custom");
   assert.equal(modelLabel(""), "default");
   assert.equal(modelLabel(" anthropic/claude-opus-5 "), "claude-opus-5");
+  assert.equal(modelLabel("acme/"), "default", "a trailing slash leaves no model to name");
+  assert.equal(harnessLabel("acme/custom/"), "custom", "a trailing slash leaves the harness name intact");
   assert.equal(effortLabel(""), "default");
   assert.equal(effortLabel("very_high"), "very high");
   assert.equal(effortRank(""), "default");

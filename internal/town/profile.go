@@ -21,7 +21,8 @@ func HarnessLabel(id string) string {
 	if short, ok := harnessNames[id]; ok {
 		return short
 	}
-	short := strings.TrimSuffix(id[strings.LastIndex(id, "/")+1:], "-acp")
+	trimmed := strings.TrimRight(id, "/")
+	short := strings.TrimSuffix(trimmed[strings.LastIndex(trimmed, "/")+1:], "-acp")
 	if short == "" {
 		return id
 	}
@@ -33,7 +34,10 @@ func ModelLabel(model string) string {
 	if model == "" {
 		return "default"
 	}
-	return model[strings.LastIndex(model, "/")+1:]
+	if short := model[strings.LastIndex(model, "/")+1:]; short != "" {
+		return short
+	}
+	return "default"
 }
 
 func EffortLabel(effort string) string {
