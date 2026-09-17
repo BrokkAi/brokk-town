@@ -1,4 +1,4 @@
-.PHONY: build test check licenses smoke package-smoke
+.PHONY: build test check licenses smoke
 build:
 	go build -o bin/bt ./cmd/bt
 test:
@@ -15,6 +15,3 @@ check: test licenses
 
 smoke: build
 	python3 scripts/smoke.py
-
-package-smoke:
-	python3 scripts/smoke_installers.py
