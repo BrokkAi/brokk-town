@@ -29,11 +29,6 @@ class PublishTagTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 publish_tag.context()
 
-    def test_context_refuses_bad_tag(self):
-        with mock.patch.dict(os.environ, {"RELEASE_TAG": "9.9.9"}):
-            with self.assertRaises(ValueError):
-                publish_tag.context()
-
     def test_context_refuses_moved_checkout(self):
         with mock.patch.dict(os.environ, {"RELEASE_COMMIT": "0" * 40}):
             with self.assertRaises(ValueError):

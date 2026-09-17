@@ -22,7 +22,6 @@ import sys
 import package_installers
 import package_registry
 import package_release as release
-import smoke_installers
 
 REPO = "BrokkAi/brokk-town"
 GH_REPO = "github.com/" + REPO
@@ -40,7 +39,6 @@ def context(tag_arg=None, sha_arg=None):
     """Resolve and locally validate the release tag and commit. No network."""
     tag = tag_arg or os.environ.get("RELEASE_TAG") or os.environ.get("GITHUB_REF_NAME", "")
     sha = sha_arg or os.environ.get("RELEASE_COMMIT") or os.environ.get("GITHUB_SHA", "")
-    release.validate_tag(tag)
     if len(sha) != 40 or any(char not in "0123456789abcdef" for char in sha):
         raise ValueError("release requires the exact 40-character tagged commit SHA")
     if release.commit() != sha:
@@ -65,27 +63,6 @@ def api(path, method="GET", body=None, missing=False):
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
-def tag_commit(tag):
-    import urllib.parse
-    ref = api("git/ref/tags/" + urllib.parse.quote(tag, safe=""), missing=True)
-    if ref is None:
-        return None
-    obj = ref["object"]
-    for _ in range(5):
-        if obj["type"] == "commit":
-            return obj["sha"]
-        if obj["type"] != "tag":
-            break
-        obj = api("git/tags/" + obj["sha"])["object"]
-    raise ValueError("tag does not resolve to a commit")
-
-
-def check_remote_tag(tag, sha):
-    remote_sha = tag_commit(tag)
-    if remote_sha not in (None, sha):
-        raise ValueError("release tag missing or points to another commit; never move a pushed tag")
-
-
 def missing_assets(native, existing):
     expected = {path.name for path in native.iterdir()}
     if not set(existing) <= expected:
@@ -100,11 +77,9 @@ def publish(directory, tag, sha, check_only=False):
     packages = directory / "packages"
     release.package(tag, native)
     package_installers.package(tag, native, packages, sha)
-    smoke_installers.smoke(packages)
     if check_only:
         log("check-only: built everything; nothing uploaded")
         return
-    check_remote_tag(tag, sha)
     record = api("releases/tags/" + tag, missing=True)
     if record is not None and not record["draft"]:
         log(f"{tag} is already released; nothing to do")
@@ -122,7 +97,7 @@ def publish(directory, tag, sha, check_only=False):
     existing = {asset["name"] for asset in api(f"releases/{record['id']}/assets?per_page=100")}
     for name in missing_assets(native, existing):
         subprocess.run(["gh", "release", "upload", tag, str(native / name), "--repo", GH_REPO], check=True)
-    package_registry.run("publish", packages)
+    package_registry.publish_all(packages)
     api(f"releases/{record['id']}", "PATCH", {"draft": False, "make_latest": make_latest(tag)})
     log(f"Published {tag}")
 

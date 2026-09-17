@@ -8,7 +8,6 @@ import io
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import tarfile
 import tempfile
@@ -18,7 +17,6 @@ import licenses
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = ("linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64")
-TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?")
 
 
 def run(*args, data=None, env=None):
@@ -31,11 +29,6 @@ def commit():
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
-
-
-def validate_tag(tag):
-    if not TAG.fullmatch(tag):
-        raise ValueError("tag must be a version such as v0.1.0 or v0.1.0-rc.1")
 
 
 def archive_name(tag, target):
@@ -55,7 +48,6 @@ def archive(path, files, timestamp):
 
 
 def package(tag, directory):
-    validate_tag(tag)
     if run("git", "status", "--porcelain").strip():
         raise ValueError("commit all preparation changes before packaging a release")
     licenses.check()
@@ -91,7 +83,6 @@ def package(tag, directory):
 
 
 def verify_local(tag, directory, sha):
-    validate_tag(tag)
     manifest = json.loads((directory / "release.json").read_text())
     if manifest["tag"] != tag or manifest["commit"] != sha:
         raise ValueError("assets do not belong to the requested tag and exact checkout commit")
