@@ -266,7 +266,7 @@ func (s *Store) Snapshot() State {
 				continue
 			}
 			for role, w := range t.Workers {
-				if ValidAgentRole(role) && (w.Status == "working" || w.Status == "pausing") {
+				if OccupiesAgentSlot(role) && (w.Status == "working" || w.Status == "pausing") {
 					active++
 				}
 			}

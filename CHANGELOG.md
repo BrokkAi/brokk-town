@@ -2,6 +2,16 @@
 
 ## 0.3.1 — pending
 
+- Move the repo house out of the service and into the released `repo-bot`
+  worker. Town no longer reads repository inventory from GitHub itself: the
+  worker reports one complete observation over Worker Protocol v1, and Town
+  applies it with the reconciliation it already had.
+- Give Repo Bot the branch-health duty. When the checks on the branch a town
+  covers are failing, it repairs the branch with an agent in a private worktree
+  at the exact failing revision and publishes what passes the operator's
+  verification command. Attempts are budgeted per revision, and the house holds
+  an agent slot only while it is repairing.
+
 - Harden release publication against npm registry visibility lag: a visible
   version record whose tarball has not propagated yet reports incomplete
   publication so submission and verification retry together instead of failing

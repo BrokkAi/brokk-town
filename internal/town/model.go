@@ -28,8 +28,10 @@ const (
 
 var Roles = []Role{Bug, Simplifier, Issue, Review, Release, Repo, Feature}
 
-// AgentRoles excludes the reporter, which never starts an agent.
-var AgentRoles = []Role{Bug, Feature, Issue, Review, Release, Simplifier}
+// AgentRoles excludes the reporter, which never starts an agent. Repo Bot is
+// one of them: observing the repository needs no agent, but repairing the
+// branch it covers does.
+var AgentRoles = []Role{Bug, Feature, Issue, Review, Release, Simplifier, Repo}
 
 // WorkerAuthority is the concise operator-facing description shared by the
 // terminal clients. Browser code mirrors these strings near the same controls.
@@ -50,13 +52,18 @@ func WorkerAuthority(role Role, mergePolicy string) string {
 		}
 		return detail
 	case Repo:
-		return "Read-only: inventories and reconciles repository state without an agent or GitHub writes."
+		return "Inventories repository state, and repairs the branch it covers when its checks fail."
 	case Simplifier:
 		return "May inspect repository content, file simplification issues, and in auto mode recommend that Town decline or close low-value complex issues."
 	default:
 		return ""
 	}
 }
+
+// OccupiesAgentSlot reports the houses whose run holds one of the service's
+// agent slots for its whole length. The repo house observes the repository
+// without an agent, and holds a slot only while it repairs the branch.
+func OccupiesAgentSlot(r Role) bool { return ValidAgentRole(r) && r != Repo }
 
 func ValidAgentRole(r Role) bool {
 	for _, v := range AgentRoles {
@@ -270,6 +277,13 @@ func (r *WorkerRun) Validate(role Role) error {
 		if (r.Issue > 0 && r.PR > 0) || (r.BaseSHA != "" && r.PR == 0) || (r.HeadSHA != "" && r.PR == 0) {
 			return errors.New("invalid simplifier run target")
 		}
+	} else if role == Repo {
+		if r.Mode != "inventory" && r.Mode != "full" {
+			return errors.New("invalid repo run mode")
+		}
+		if r.Issue > 0 || r.PR > 0 || r.BaseSHA != "" || r.HeadSHA != "" {
+			return errors.New("a repository inventory names no issue, pull request or revision")
+		}
 	} else if r.Mode != "" {
 		return errors.New("invalid worker run mode")
 	}
@@ -422,10 +436,48 @@ type Town struct {
 	// DefaultBranch is the repository default GitHub reported at the last
 	// inventory. It is an observation, never configuration: Config.Branch stays
 	// whatever the operator chose, or empty to follow this default.
-	DefaultBranch string    `json:"default_branch,omitempty"`
-	LastSync      time.Time `json:"last_sync"`
-	LastRelease   string    `json:"last_release"`
-	Error         string    `json:"error,omitempty"`
+	DefaultBranch string `json:"default_branch,omitempty"`
+	// Health is what Repo Bot last reported about the branch this town covers.
+	Health      *BranchHealth `json:"health,omitempty"`
+	LastSync    time.Time     `json:"last_sync"`
+	LastRelease string        `json:"last_release"`
+	Error       string        `json:"error,omitempty"`
+}
+
+// BranchHealth is Repo Bot's report on the branch this town covers: the checks
+// GitHub reported on its head, and what the bot did about a failing one.
+type BranchHealth struct {
+	// State is "green", "pending", "unreported", "red", "repaired" when the bot
+	// published a fix this run, or "unrepairable" when no further attempt on
+	// this revision can land one.
+	State    string    `json:"state"`
+	Head     string    `json:"head"`
+	Failing  []string  `json:"failing,omitempty"`
+	Pushed   string    `json:"pushed,omitempty"`
+	Attempts int       `json:"attempts,omitempty"`
+	Detail   string    `json:"detail,omitempty"`
+	At       time.Time `json:"at,omitempty"`
+}
+
+// Healthy reports a branch nothing is owed on. An unreported branch is not a
+// failure to repair, so it counts as healthy for scheduling.
+func (h *BranchHealth) Healthy() bool {
+	return h == nil || h.State == "green" || h.State == "pending" || h.State == "unreported"
+}
+
+func ValidBranchHealth(h *BranchHealth) bool {
+	if h == nil {
+		return true
+	}
+	switch h.State {
+	case "green", "pending", "unreported", "red", "repaired", "unrepairable":
+	default:
+		return false
+	}
+	if h.Head != "" && !SHA(h.Head) {
+		return false
+	}
+	return h.Pushed == "" || SHA(h.Pushed)
 }
 
 // ServiceConfig governs the single local scheduler across every town.

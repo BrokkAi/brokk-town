@@ -23,6 +23,10 @@ type Progress struct {
 	Seq         uint64
 }
 type RunResult struct {
+	// Inventory is the repo worker's observation of the repository.
+	Inventory *RepoSnapshot
+	// Health is its report on the branch this town covers.
+	Health         *BranchHealth
 	Owned          map[int]Ownership
 	Audit          *Audit
 	PR             int
@@ -36,6 +40,24 @@ type RunResult struct {
 }
 type Workers interface {
 	Run(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error)
+	// Observe asks the repo worker for one repository inventory, and for its
+	// branch-health duty when the request carries it.
+	Observe(context.Context, *Town, InventoryRequest, func(Progress), *slog.Logger) (RunResult, error)
+}
+
+// InventoryRequest is what Town needs from one repository observation. Town's
+// task graph never crosses the worker protocol: the worker is told only which
+// revisions to compare, never what they mean.
+type InventoryRequest struct {
+	// SinceHead is the branch head Town last observed. The worker names the
+	// commits the branch gained beyond it.
+	SinceHead string
+	// Commits are the revisions Town still needs release ancestry for.
+	Commits []string
+	// Health asks for the branch-health duty as well. A confirmation read
+	// during a merge asks for the observation alone: it must never start a
+	// repair agent inside another house's work.
+	Health bool
 }
 type issueStateWorkers interface {
 	SyncIssues(*Town) error
@@ -66,11 +88,13 @@ type Supervisor struct {
 	running            map[string]context.CancelFunc
 	retrying           map[string]bool
 	reconciling        map[string]chan struct{}
-	vainCompares       map[string]string
-	wg                 sync.WaitGroup
-	wake               chan struct{}
-	fatal              chan error
-	now                func() time.Time
+	// repairing names the towns whose repo house holds an agent slot for a
+	// branch repair.
+	repairing map[string]bool
+	wg        sync.WaitGroup
+	wake      chan struct{}
+	fatal     chan error
+	now       func() time.Time
 }
 
 func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
@@ -79,7 +103,7 @@ func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	if provider, ok := gh.(GitHubFunnelProvider); ok {
 		registry[ProviderID("github")] = &GitHubFunnel{Client: provider}
 	}
-	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]chan struct{}{}, vainCompares: map[string]string{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]chan struct{}{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -202,15 +226,46 @@ func (s *Supervisor) adopt(ctx context.Context) {
 // activeWorkers counts only scheduled bot roles. Reporters, issue publishing,
 // and prompt-free model discovery do not belong to the agent worker pool.
 // Caller holds s.mu.
+// activeWorkers counts the runs holding an agent slot. The repo house observes
+// the repository without one; it holds a slot only while it is repairing the
+// branch, which is the only part of its work that starts an agent.
 func (s *Supervisor) activeWorkers() int {
 	active := 0
 	for key := range s.running {
-		_, role, ok := strings.Cut(key, ":")
-		if ok && ValidAgentRole(Role(role)) {
-			active++
+		id, role, ok := strings.Cut(key, ":")
+		if !ok || !ValidAgentRole(Role(role)) {
+			continue
 		}
+		if Role(role) == Repo && !s.repairing[id] {
+			continue
+		}
+		active++
 	}
 	return active
+}
+
+// claimRepair reserves an agent slot for one branch repair. The inventory runs
+// whatever the answer: a town that cannot spare an agent still has to see its
+// repository.
+func (s *Supervisor) claimRepair(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, limit := s.Store.dispatchEligibility(id, Repo, s.now()); s.activeWorkers() >= limit {
+		return false
+	}
+	if s.repairing == nil {
+		s.repairing = map[string]bool{}
+	}
+	s.repairing[id] = true
+	s.Store.setActive(s.activeWorkers())
+	return true
+}
+
+func (s *Supervisor) releaseRepair(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.repairing, id)
+	s.Store.setActive(s.activeWorkers())
 }
 func (s *Supervisor) notifyScheduler() {
 	select {
@@ -323,9 +378,13 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		if adopt != nil {
 			result, err = s.adoptRun(ctx, t, r, *adopt, observe, log)
 		} else if r == Repo {
-			err = s.reconcile(ctx, t)
+			repair := s.claimRepair(t.ID)
+			err = s.reconcile(ctx, t, repair, observe, log)
+			if repair {
+				s.releaseRepair(t.ID)
+			}
 		} else if r == Review {
-			handled, e := s.mergeReady(ctx, t)
+			handled, e := s.mergeReady(ctx, t, log)
 			err = e
 			if !handled && err == nil {
 				result, err = s.Workers.Run(ctx, t, r, observe, log)
@@ -737,24 +796,80 @@ func workerRunTask(run WorkerRun) string {
 // It is a one-slot channel rather than a mutex so that a pass waiting its turn
 // still answers a stop or a service shutdown: a full inventory of a large
 // repository can legitimately take minutes.
-// comparedInVain reports that comparing this release tag with the town's branch
-// already proved nothing, so the request is not worth repeating. A repository
-// that cuts releases from a separate branch answers "diverged" forever, and the
-// verdict holds while that tag is the latest: tags are immutable and the branch
-// head only moves forward. A failed request is deliberately not remembered.
-func (s *Supervisor) comparedInVain(id, tag string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.vainCompares[id] == tag
+// inventorySince is the branch head Town last observed, and only once the town
+// has an inventory to compare against.
+func inventorySince(t *Town) string {
+	if t.Initialized && SHA(t.Head) {
+		return t.Head
+	}
+	return ""
 }
 
-func (s *Supervisor) compareInVain(id, tag string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.vainCompares == nil {
-		s.vainCompares = map[string]string{}
+// unprovenCommits names the commits Town still needs release ancestry for. The
+// worker proves each one; what it means for them to be released is Town's.
+func unprovenCommits(t *Town) []string {
+	commits := []string{}
+	for _, task := range t.Tasks {
+		if task.Kind == "commit" && task.Stage != "shipped" && SHA(task.Head) {
+			commits = append(commits, task.Head)
+		}
 	}
-	s.vainCompares[id] = tag
+	sort.Strings(commits)
+	return commits
+}
+
+// applyBranchHealth commits the worker's report and announces what changed. A
+// published repair is an outcome; a branch that stays red is not announced
+// again on every poll.
+func applyBranchHealth(st *State, t *Town, health *BranchHealth, now time.Time) {
+	if t == nil || health == nil {
+		return
+	}
+	health.At = now
+	previous := t.Health
+	t.Health = health
+	if health.Pushed != "" {
+		t.RecordOutcome(OutcomeRecord{ID: "branch-repair:" + health.Pushed, At: now, Class: "outcome", Kind: "branch_repair", Status: "confirmed", Role: Repo, Revision: health.Pushed, Detail: branchHealthTask(health)})
+	}
+	if previous != nil && previous.State == health.State && previous.Head == health.Head {
+		return
+	}
+	switch health.State {
+	case "red", "unrepairable":
+		st.Event(t.ID, "error", string(Repo), "hall", "", branchHealthTask(health), now)
+	case "repaired":
+		st.Event(t.ID, "change", string(Repo), "hall", "", branchHealthTask(health), now)
+	case "green":
+		if previous != nil && !previous.Healthy() {
+			st.Event(t.ID, "report", string(Repo), "hall", "", "Branch checks are passing again", now)
+		}
+	}
+}
+
+// branchHealthTask is the one line the operator reads on the repo house.
+func branchHealthTask(health *BranchHealth) string {
+	if health == nil {
+		return "Repository inventory is current"
+	}
+	failing := strings.Join(health.Failing, ", ")
+	switch health.State {
+	case "red":
+		return "Branch checks are failing: " + failing
+	case "repaired":
+		return "Published a repair for " + failing
+	case "unrepairable":
+		detail := "Branch checks are failing and Repo Bot cannot repair them"
+		if health.Detail != "" {
+			detail += ": " + health.Detail
+		}
+		return detail
+	case "pending":
+		return "Branch checks are still running"
+	case "unreported":
+		return "Repository inventory is current; the branch reports no checks"
+	default:
+		return "Repository inventory is current"
+	}
 }
 
 func (s *Supervisor) reconcileGate(id string) chan struct{} {
@@ -771,7 +886,10 @@ func (s *Supervisor) reconcileGate(id string) chan struct{} {
 	return gate
 }
 
-func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
+// reconcile confirms Town's view of the repository from one worker inventory.
+// health asks for the branch-health duty as well; a confirmation read during a
+// merge does not, because a repair agent must not start inside another house.
+func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observe func(Progress), log *slog.Logger) error {
 	gate := s.reconcileGate(t.ID)
 	select {
 	case gate <- struct{}{}:
@@ -800,10 +918,14 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 		}
 		t = s.Store.Snapshot().Towns[t.ID]
 	}
-	remote, err := s.GitHub.Snapshot(ctx, t.Config)
+	result, err := s.Workers.Observe(ctx, t, InventoryRequest{SinceHead: inventorySince(t), Commits: unprovenCommits(t), Health: health}, observe, log)
 	if err != nil {
 		return err
 	}
+	if result.Inventory == nil {
+		return errors.New("the repo worker returned no inventory")
+	}
+	remote := *result.Inventory
 	// When this repository has configured GitHub funnels, the normalized
 	// selector result is the issue inventory. PRs/releases continue through the
 	// existing exact-revision path.
@@ -836,80 +958,12 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 			remote.ObservedHeads[task.Number] = task.Head
 		}
 	}
-	if t.Initialized && SHA(t.Head) && t.Head != remote.Head {
-		remote.Commits, err = s.GitHub.Changes(ctx, t.Config.Repo, t.Head, remote.Head)
-		if err != nil {
-			return err
-		}
-	}
-	remote.Released = map[string]bool{}
-	if latest := latestRelease(remote.Releases); latest != nil {
-		commits := map[string]bool{}
-		for _, c := range remote.Commits {
-			if SHA(c.SHA) {
-				commits[c.SHA] = true
-			}
-		}
-		for _, task := range t.Tasks {
-			if task.Kind == "commit" && task.Stage != "shipped" {
-				commits[task.Head] = true
-			}
-		}
-		for _, p := range remote.Pulls {
-			if p.MergedAt != nil && SHA(p.MergeCommit) && p.Base.Ref == remote.Branch {
-				known := t.Tasks["commit:"+p.MergeCommit]
-				if known == nil || known.Stage != "shipped" {
-					commits[p.MergeCommit] = true
-				}
-			}
-		}
-		// One comparison names every commit the branch carries beyond the
-		// latest release, which settles most candidates without a request of
-		// their own: a first inventory of a mature repository otherwise spawns
-		// one gh process per merged pull request, and every still-unreleased
-		// merge commit is asked about again on every poll.
-		//
-		// Absence from that list is not proof on its own — a commit dropped
-		// from the branch is absent too — so anything not named there is still
-		// proven individually, once, before it is recorded as shipped.
-		pending := map[string]bool{}
-		if len(commits) > 0 && !s.comparedInVain(t.ID, latest.Tag) {
-			unreleased, usable, err := s.GitHub.Unreleased(ctx, t.Config.Repo, latest.Tag, remote.Head)
-			if err != nil {
-				// The comparison is an optimization with its own way of saying
-				// it proved nothing, so a failure falls back to the individual
-				// checks rather than taking the whole inventory down with it.
-				usable = false
-			} else if !usable {
-				s.compareInVain(t.ID, latest.Tag)
-			}
-			// An unusable comparison proves nothing at all, so every candidate
-			// falls back to the individual check rather than being assumed
-			// released by its absence.
-			if usable {
-				for _, c := range unreleased {
-					if SHA(c.SHA) {
-						pending[c.SHA] = true
-					}
-				}
-			}
-		}
-		for sha := range commits {
-			if pending[sha] {
-				remote.Released[sha] = false
-				continue
-			}
-			included, err := s.GitHub.Contains(ctx, t.Config.Repo, sha, latest.Tag)
-			if err != nil {
-				return err
-			}
-			remote.Released[sha] = included
-		}
-	}
 	if err := s.Store.Update(func(st *State) error {
-		Reconcile(st, st.Towns[t.ID], remote, s.now())
-		w := st.Towns[t.ID].Workers[Repo]
-		w.Task = "Repository inventory is current"
+		current := st.Towns[t.ID]
+		Reconcile(st, current, remote, s.now())
+		applyBranchHealth(st, current, result.Health, s.now())
+		w := current.Workers[Repo]
+		w.Task = branchHealthTask(current.Health)
 		w.Phase = "reporting"
 		return nil
 	}); err != nil {
@@ -1301,7 +1355,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 		return nil
 	})
 }
-func (s *Supervisor) mergeReady(ctx context.Context, t *Town) (bool, error) {
+func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) (bool, error) {
 	numbers := []int{}
 	for _, task := range t.Tasks {
 		if task.Kind == "pr" && task.Stage == "ready" && !task.Blocked && !task.RetryAt.After(s.now()) {
@@ -1320,7 +1374,7 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town) (bool, error) {
 				return true, err
 			}
 			if p.MergedAt != nil {
-				return true, s.reconcile(ctx, t)
+				return true, s.reconcile(ctx, t, false, func(Progress) {}, log)
 			}
 			if err := s.block(t.ID, task.ID, "Merge outcome is uncertain. Repo-bot will reconcile it; inspect GitHub before retrying."); err != nil {
 				return true, err
@@ -1332,7 +1386,7 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town) (bool, error) {
 			return true, err
 		}
 		if p.MergedAt != nil {
-			return true, s.reconcile(ctx, t)
+			return true, s.reconcile(ctx, t, false, func(Progress) {}, log)
 		}
 		gate, err := s.GitHub.Gate(ctx, t.Config.Repo, n)
 		if err != nil {
@@ -1387,7 +1441,7 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town) (bool, error) {
 		if err != nil {
 			return true, err
 		}
-		return true, s.reconcile(ctx, t)
+		return true, s.reconcile(ctx, t, false, func(Progress) {}, log)
 	}
 	return false, nil
 }

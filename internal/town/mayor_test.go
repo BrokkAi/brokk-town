@@ -80,7 +80,7 @@ func TestDeclinedProposalIsClosedAtSourceExactlyOnce(t *testing.T) {
 		t.Fatalf("feature proposal was not an internal Hall task: %+v", task)
 	}
 
-	supervisor := NewSupervisor(store, gh, nil)
+	supervisor := NewSupervisor(store, gh, observing{gh: gh})
 	if err := supervisor.Control(x.ID, Hall, "decline", "issue:12"); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestDeclinedProposalIsClosedAtSourceExactlyOnce(t *testing.T) {
 	}
 
 	for pass := 0; pass < 2; pass++ {
-		if err := supervisor.reconcile(context.Background(), store.Snapshot().Towns[x.ID]); err != nil {
+		if err := supervisor.reconcileNow(context.Background(), store.Snapshot().Towns[x.ID]); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -118,11 +118,11 @@ func TestDeclinedOutsideIssueIsLeftOpen(t *testing.T) {
 		Reconcile(st, st.Towns[x.ID], remote, time.Now())
 		applySimplification(st, st.Towns[x.ID], st.Towns[x.ID].Tasks["issue:9"], &Simplification{Mode: "suggest", Decision: "decline", Detail: "Low value."}, nil, time.Now())
 	})
-	supervisor := NewSupervisor(store, gh, nil)
+	supervisor := NewSupervisor(store, gh, observing{gh: gh})
 	if err := supervisor.Control(x.ID, Hall, "decline", "issue:9"); err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.reconcile(context.Background(), store.Snapshot().Towns[x.ID]); err != nil {
+	if err := supervisor.reconcileNow(context.Background(), store.Snapshot().Towns[x.ID]); err != nil {
 		t.Fatal(err)
 	}
 	if len(gh.closed) != 0 {

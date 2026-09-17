@@ -96,8 +96,10 @@ func (g MergeGate) Allows(p Pull, a *Audit) bool {
 	return a.Clean(g.Base, g.Head) && p.Head.SHA == g.Head && p.Base.SHA == g.Base && p.State == "open" && !p.Draft && !p.Locked && !g.Draft && g.State == "OPEN" && g.Mergeable == "MERGEABLE" && g.MergeState == "CLEAN" && (g.Review == "" || g.Review == "APPROVED")
 }
 
+// GitHub is what Town itself still needs from GitHub: the writes it authorizes,
+// and the exact-revision reads that decide them. Repository inventory belongs to
+// Repo Bot, which reports it over the worker protocol.
 type GitHub interface {
-	Snapshot(context.Context, Config) (RepoSnapshot, error)
 	Pull(context.Context, string, int) (Pull, error)
 	Discussion(context.Context, string, int) ([]Discussion, error)
 	Gate(context.Context, string, int) (MergeGate, error)
@@ -105,18 +107,6 @@ type GitHub interface {
 	CloseIssue(context.Context, string, int) error
 	Actor(context.Context) (string, error)
 	Contains(context.Context, string, string, string) (bool, error)
-	Changes(context.Context, string, string, string) ([]RemoteCommit, error)
-	Unreleased(context.Context, string, string, string) ([]RemoteCommit, bool, error)
-}
-
-// ValidReleaseComparison states what Unreleased accepts: a published tag name
-// and an exact revision. Fakes share it so they cannot accept arguments the
-// real client rejects.
-func ValidReleaseComparison(tag, head string) error {
-	if tag == "" || strings.Contains(tag, "..") || !SHA(head) {
-		return errors.New("invalid release comparison")
-	}
-	return nil
 }
 
 type GitHubClient struct{}
@@ -166,40 +156,6 @@ func pages[T any](ctx context.Context, g GitHubClient, path string) ([]T, error)
 		}
 	}
 	return nil, errors.New("GitHub pagination limit reached; refusing an incomplete snapshot")
-}
-func (g GitHubClient) Snapshot(ctx context.Context, c Config) (RepoSnapshot, error) {
-	var out RepoSnapshot
-	var metadata struct {
-		Branch string `json:"default_branch"`
-	}
-	if err := g.api(ctx, "GET", "repos/"+c.Repo, nil, &metadata); err != nil {
-		return out, err
-	}
-	out.DefaultBranch = metadata.Branch
-	out.Branch = c.Branch
-	if out.Branch == "" {
-		out.Branch = metadata.Branch
-	}
-	var branch struct {
-		Commit struct {
-			SHA string `json:"sha"`
-		} `json:"commit"`
-	}
-	if err := g.api(ctx, "GET", "repos/"+c.Repo+"/branches/"+url.PathEscape(out.Branch), nil, &branch); err != nil {
-		return out, err
-	}
-	out.Head = branch.Commit.SHA
-	var err error
-	out.Issues, err = pages[RemoteIssue](ctx, g, "repos/"+c.Repo+"/issues?state=all&sort=updated&direction=desc")
-	if err != nil {
-		return out, err
-	}
-	out.Pulls, err = pages[Pull](ctx, g, "repos/"+c.Repo+"/pulls?state=all&sort=updated&direction=desc")
-	if err != nil {
-		return out, err
-	}
-	out.Releases, err = pages[RemoteRelease](ctx, g, "repos/"+c.Repo+"/releases")
-	return out, err
 }
 func (g GitHubClient) Pull(ctx context.Context, repo string, n int) (Pull, error) {
 	var p Pull
@@ -277,36 +233,6 @@ func (g GitHubClient) Contains(ctx context.Context, repo, sha, tag string) (bool
 	return result.Status == "ahead" || result.Status == "identical", err
 }
 
-// Unreleased lists the commits a branch head carries beyond a published tag,
-// which settles the release state of every one of them in a single request.
-// The second result reports whether the comparison was usable at all: a head
-// that has diverged from the tag proves nothing, and the caller must fall back
-// to proving each commit on its own rather than assume anything.
-func (g GitHubClient) Unreleased(ctx context.Context, repo, tag, head string) ([]RemoteCommit, bool, error) {
-	if err := ValidReleaseComparison(tag, head); err != nil {
-		return nil, false, err
-	}
-	var commits []RemoteCommit
-	for page := 1; page <= 1000; page++ {
-		var result struct {
-			Status  string         `json:"status"`
-			Commits []RemoteCommit `json:"commits"`
-		}
-		path := fmt.Sprintf("repos/%s/compare/%s...%s?per_page=100&page=%d", repo, url.PathEscape(tag), url.PathEscape(head), page)
-		if err := g.api(ctx, "GET", path, nil, &result); err != nil {
-			return nil, false, err
-		}
-		if result.Status != "ahead" && result.Status != "identical" {
-			return nil, false, nil
-		}
-		commits = append(commits, result.Commits...)
-		if len(result.Commits) < 100 {
-			return commits, true, nil
-		}
-	}
-	return nil, false, errors.New("release comparison exceeded pagination limit")
-}
-
 func latestRelease(releases []RemoteRelease) *RemoteRelease {
 	var latest *RemoteRelease
 	for i := range releases {
@@ -316,31 +242,6 @@ func latestRelease(releases []RemoteRelease) *RemoteRelease {
 		}
 	}
 	return latest
-}
-
-func (g GitHubClient) Changes(ctx context.Context, repo, from, to string) ([]RemoteCommit, error) {
-	if !SHA(from) || !SHA(to) {
-		return nil, errors.New("invalid comparison revisions")
-	}
-	var commits []RemoteCommit
-	for page := 1; page <= 1000; page++ {
-		var result struct {
-			Status  string         `json:"status"`
-			Commits []RemoteCommit `json:"commits"`
-		}
-		err := g.api(ctx, "GET", fmt.Sprintf("repos/%s/compare/%s...%s?per_page=100&page=%d", repo, from, to, page), nil, &result)
-		if err != nil {
-			return nil, err
-		}
-		if result.Status != "ahead" && result.Status != "identical" {
-			return nil, nil
-		}
-		commits = append(commits, result.Commits...)
-		if len(result.Commits) < 100 {
-			return commits, nil
-		}
-	}
-	return nil, errors.New("commit comparison exceeded pagination limit")
 }
 
 func description(p Pull) string { return Digest([]string{p.Title, p.Body}) }

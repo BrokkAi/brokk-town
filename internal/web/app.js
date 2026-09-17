@@ -21,6 +21,7 @@ import {
   focusIdentity,
   focusMatches,
   scheduleLabel,
+  branchHealthNote,
   workerControls,
   townControls,
   decisionReason,
@@ -424,7 +425,7 @@ function renderCompact() {
       return `<article class="compact-town"><div class="compact-title"><h2>${esc(repo)}</h2><span>${item.active} active · ${item.attention} attention</span></div><div class="compact-workers">${item.workers
         .map(
           (worker) =>
-            `<button class="compact-worker" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(worker.role)}"><i class="dot ${worker.active ? "active" : worker.status === "failed" ? "blocked" : "waiting"}"></i><strong>${esc(worker.role)}</strong><small>${esc(worker.status)} · ${worker.role === "repo" ? "No agent" : `${esc(worker.profile.harness)}${worker.profile.harness_version ? ` ${esc(worker.profile.harness_version)}` : ""} · ${esc(worker.profile.model || "default")} · ${esc(worker.profile.effort || "default")}`}</small><small>${esc(scheduleLabel(worker))}</small></button>`,
+            `<button class="compact-worker" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(worker.role)}"><i class="dot ${worker.active ? "active" : worker.status === "failed" ? "blocked" : "waiting"}"></i><strong>${esc(worker.role)}</strong><small>${esc(worker.status)} · ${`${esc(worker.profile.harness)}${worker.profile.harness_version ? ` ${esc(worker.profile.harness_version)}` : ""} · ${esc(worker.profile.model || "default")} · ${esc(worker.profile.effort || "default")}`}</small><small>${esc(scheduleLabel(worker))}</small></button>`,
         )
         .join("")}</div><div class="compact-tasks">${item.tasks
         .map(
@@ -820,10 +821,12 @@ function renderInspection() {
   const funnelDetails = selectedHouse === "issue" || selectedHouse === "repo"
     ? Object.values(t.funnel_syncs || {}).map((sync) => `<p class="muted"><strong>${esc(sync.funnel)}</strong> · ${esc(sync.provider)} · ${esc((sync.outcome?.kind || "incomplete").replaceAll("_", " "))}${sync.last_sync ? ` · ${esc(new Date(sync.last_sync).toLocaleString())}` : ""}${sync.outcome?.detail ? `<br>${esc(sync.outcome.detail)}` : ""}</p>`).join("")
     : "";
-  const agentDetails = selectedHouse === "repo"
-    ? '<p class="muted">Reports repository state without an agent.</p>'
+  const healthNote = selectedHouse === "repo" ? branchHealthNote(t.health) : "";
+  const healthDetails = healthNote ? `<p class="muted">${esc(healthNote)}</p>` : "";
+  const agentDetails = selectedHouse === "repo" && !t.health
+    ? '<p class="muted">Watches the repository. An agent starts only to repair a failing branch.</p>'
     : `<p class="muted">${projectedWorker.active ? "Active dispatch" : "Next run"}: ${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` ${esc(agent.harness_version)}` : ""} · ${esc(agent.model || "Default model")} · ${esc(agent.effort || "Default effort")}<br>${agent.source === "active" ? "Captured for this run" : agent.inherited === false ? "Own queued bot profile" : "Town defaults for queued work"}</p><button id="configure-agent" type="button">Configure agent</button>`;
-  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${agentDetails}${funnelDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
+  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${agentDetails}${healthDetails}${funnelDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
     queue
       .slice(0, 40)
       .map(

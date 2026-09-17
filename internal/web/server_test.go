@@ -411,7 +411,7 @@ func TestBotProfileAPIsIsolateSettingsAndValidateDiscoveryRole(t *testing.T) {
 	}
 	// Invalid roles must fail before a discovery session can start the fake command.
 	for _, path := range []string{"/api/settings", "/api/choices"} {
-		for _, role := range []string{"repo", "all", "wat"} {
+		for _, role := range []string{"hall", "all", "wat"} {
 			body := `{"town":"acme/team","role":"` + role + `","agent":{}}`
 			if r := call(t, h.URL, "POST", path, body, "test-key", ""); r.StatusCode != 400 {
 				t.Fatal(path, "accepted unsupported role", role)
