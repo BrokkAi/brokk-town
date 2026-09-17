@@ -29,9 +29,9 @@ func CheckBotVersions(ctx context.Context, client *http.Client) (map[Role]string
 		err = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&body)
 		status := resp.StatusCode
 		resp.Body.Close()
-		// The initial simplifier package may not be published yet. An absent
-		// package has no stable offer; other registry failures stay visible.
-		if role == Simplifier && status == http.StatusNotFound {
+		// An initial package may not be published yet. An absent package has no
+		// stable offer; other registry failures stay visible.
+		if (role == Simplifier || role == Repo) && status == http.StatusNotFound {
 			continue
 		}
 		if status != http.StatusOK || err != nil || !workerVersionPattern.MatchString(body.Version) {
