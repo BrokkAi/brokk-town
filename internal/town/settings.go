@@ -245,7 +245,7 @@ func (s *Supervisor) SettingsForRole(id string, role Role, settings AgentSetting
 // form submission cannot leave only half of the requested settings applied.
 // Turning on automatic bot updates applies every outstanding upgrade offer at
 // once, and an explicit pin withdraws an offer it has already caught up with.
-func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, mayoralFeatureReview *bool, botVersion *string, autoUpdateBots *bool) error {
+func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, simplifierMode *string, botVersion *string, autoUpdateBots *bool) error {
 	if err := settings.validateRole(role); err != nil {
 		return err
 	}
@@ -254,6 +254,9 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 	}
 	if botVersion != nil && (role == "" || !workerVersionPattern.MatchString(*botVersion)) {
 		return errors.New("a bot role and semantic bot version are required")
+	}
+	if simplifierMode != nil && *simplifierMode != "suggest" && *simplifierMode != "auto" {
+		return errors.New("simplifier mode must be suggest or auto")
 	}
 	cancelRelease := false
 	err := s.Store.Update(func(st *State) error {
@@ -269,9 +272,8 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 				t.Workers[Release].Task = "Ready when you are"
 			}
 		}
-		if mayoralFeatureReview != nil {
-			value := *mayoralFeatureReview
-			t.Config.MayoralFeatureReview = &value
+		if simplifierMode != nil {
+			t.Config.SimplifierMode = *simplifierMode
 		}
 		if botVersion != nil {
 			if t.Config.BotVersions == nil {

@@ -18,11 +18,15 @@
         "release": {
           "harness": "opencode",
           "agent": {"model": "", "effort": ""}
+        },
+        "simplifier": {
+          "harness": "codex",
+          "agent": {"model": "", "effort": ""}
         }
       },
       "verify": ["go", "test", "./..."],
       "merge_policy": "bot",
-      "mayoral_feature_review": true,
+      "simplifier_mode": "suggest",
       "poll_seconds": 60,
       "report_seconds": 1800,
       "max_cycles": 5,

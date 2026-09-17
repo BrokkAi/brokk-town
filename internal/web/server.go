@@ -353,13 +353,13 @@ func (s *Server) refreshHarnesses(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsInput struct {
-	Town                 string             `json:"town"`
-	Role                 town.Role          `json:"role,omitempty"`
-	Agent                town.AgentSettings `json:"agent"`
-	MergePolicy          *string            `json:"merge_policy,omitempty"`
-	MayoralFeatureReview *bool              `json:"mayoral_feature_review,omitempty"`
-	BotVersion           *string            `json:"bot_version,omitempty"`
-	AutoUpdateBots       *bool              `json:"auto_update_bots,omitempty"`
+	Town           string             `json:"town"`
+	Role           town.Role          `json:"role,omitempty"`
+	Agent          town.AgentSettings `json:"agent"`
+	MergePolicy    *string            `json:"merge_policy,omitempty"`
+	SimplifierMode *string            `json:"simplifier_mode,omitempty"`
+	BotVersion     *string            `json:"bot_version,omitempty"`
+	AutoUpdateBots *bool              `json:"auto_update_bots,omitempty"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -368,7 +368,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.MayoralFeatureReview, input.BotVersion, input.AutoUpdateBots); err != nil {
+	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.SimplifierMode, input.BotVersion, input.AutoUpdateBots); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

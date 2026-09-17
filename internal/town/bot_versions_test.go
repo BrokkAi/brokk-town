@@ -29,6 +29,23 @@ func TestCheckBotVersionsReadsEveryStablePackage(t *testing.T) {
 	}
 }
 
+func TestUnpublishedSimplifierPackageDoesNotHideOtherBotVersions(t *testing.T) {
+	client := &http.Client{Transport: botVersionTransport(func(r *http.Request) (*http.Response, error) {
+		status := http.StatusOK
+		if strings.HasSuffix(r.URL.Path, "/"+workerPackageNames[Simplifier]+"/latest") {
+			status = http.StatusNotFound
+		}
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{"version":"1.2.3"}`))}, nil
+	})}
+	versions, err := CheckBotVersions(context.Background(), client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := versions[Simplifier]; present || versions[Issue] != "1.2.3" {
+		t.Fatalf("unexpected simplifier registry state: %#v", versions)
+	}
+}
+
 func TestBotVersionPinsAreValidatedAndPublic(t *testing.T) {
 	cfg := DefaultConfig("acme/project")
 	if cfg.BotVersion(Issue) != "0.5.2" {

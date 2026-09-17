@@ -27,8 +27,14 @@ func CheckBotVersions(ctx context.Context, client *http.Client) (map[Role]string
 			Version string `json:"version"`
 		}
 		err = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&body)
+		status := resp.StatusCode
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK || err != nil || !workerVersionPattern.MatchString(body.Version) {
+		// The initial simplifier package may not be published yet. An absent
+		// package has no stable offer; other registry failures stay visible.
+		if role == Simplifier && status == http.StatusNotFound {
+			continue
+		}
+		if status != http.StatusOK || err != nil || !workerVersionPattern.MatchString(body.Version) {
 			return nil, fmt.Errorf("check %s bot: npm returned an invalid response", role)
 		}
 		versions[role] = body.Version

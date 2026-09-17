@@ -23,11 +23,13 @@ type Progress struct {
 	Seq         uint64
 }
 type RunResult struct {
-	Owned   map[int]Ownership
-	Audit   *Audit
-	PR      int
-	Usage   *OutcomeUsage
-	CostUSD *float64
+	Owned          map[int]Ownership
+	Audit          *Audit
+	PR             int
+	Issue          int
+	Simplification *Simplification
+	Usage          *OutcomeUsage
+	CostUSD        *float64
 	// Retried reports that the release worker accepted the requested attempt
 	// budget reset before this run, so the request is consumed.
 	Retried bool
@@ -372,7 +374,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		w.Status = "waiting"
 		w.Updated = s.now()
 		w.Next = s.now().Add(time.Duration(current.Config.PollSeconds) * time.Second)
-		if r == Bug || r == Feature {
+		if r == Bug || r == Feature || r == Simplifier {
 			w.Next = s.now().Add(30 * time.Minute)
 		}
 		if r == Release {
@@ -402,6 +404,17 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		}
 		for n, o := range result.Owned {
 			current.Owned[n] = o
+		}
+		if r == Simplifier {
+			var simplifierTask *Task
+			if result.Issue > 0 {
+				simplifierTask = current.Tasks[fmt.Sprintf("issue:%d", result.Issue)]
+			} else if result.PR > 0 {
+				simplifierTask = current.Tasks[fmt.Sprintf("pr:%d", result.PR)]
+			}
+			if simplifierTask != nil {
+				applySimplification(st, current, simplifierTask, result.Simplification, err, s.now())
+			}
 		}
 		if result.PR > 0 {
 			task := current.Tasks[fmt.Sprintf("pr:%d", result.PR)]
@@ -574,6 +587,13 @@ func latestProgress(ch chan Progress, p Progress) {
 }
 
 func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
+	if role == Simplifier && result.Issue > 0 {
+		id := fmt.Sprintf("issue:%d", result.Issue)
+		if task := t.Tasks[id]; task != nil {
+			return id, task.Head
+		}
+		return id, ""
+	}
 	if result.PR > 0 {
 		id := fmt.Sprintf("pr:%d", result.PR)
 		if task := t.Tasks[id]; task != nil {
@@ -593,6 +613,65 @@ func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+func applySimplification(st *State, t *Town, task *Task, assessment *Simplification, runErr error, now time.Time) {
+	if task.Kind == "issue" {
+		task.Attempts++
+	}
+	if runErr != nil {
+		if errors.Is(runErr, context.Canceled) {
+			task.Attempts--
+			return
+		}
+		task.RetryAt = now.Add(15 * time.Minute)
+		task.Blocked = task.Attempts >= 3
+		task.Detail = runErr.Error()
+		if task.Blocked {
+			st.Event(t.ID, "error", string(Simplifier), "hall", task.ID, "Simplifier blocked: "+task.Title, now)
+		}
+		return
+	}
+	if assessment == nil {
+		// A repository scan has no task-bound assessment; simplify-intake tasks
+		// always return one and fail validation before reaching here.
+		return
+	}
+	task.Simplification = assessment
+	task.Attempts = 0
+	task.RetryAt = time.Time{}
+	task.Blocked = false
+	task.Detail = assessment.Detail
+	if assessment.Summary != "" {
+		task.Detail = assessment.Summary + "\n\n" + assessment.Detail
+	}
+	if assessment.Mode == "suggest" {
+		task.Stage = "awaiting_mayor"
+		task.House = Hall
+		task.MayoralDecision = "pending"
+		st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Simplifier advises the Mayor on: "+task.Title, now)
+		return
+	}
+	task.MayoralDecision = ""
+	if assessment.Decision == "decline" {
+		task.Stage = "declined"
+		task.House = Hall
+		if task.Kind == "issue" {
+			task.Detail = "Simplifier declined this work. Town is closing the issue."
+			t.Workers[Repo].Next = time.Time{}
+			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Simplifier declined: "+task.Title, now)
+			return
+		}
+		task.Detail = "Simplifier declined this pull request. Town will not review it."
+		st.Event(t.ID, "decision", string(Simplifier), "outside", task.ID, "Simplifier declined: "+task.Title, now)
+		return
+	}
+	target := Review
+	if task.Kind == "issue" {
+		target = Issue
+	}
+	st.Move(t, task, "queued", target, "Simplifier admitted: "+task.Title, now)
+	t.Workers[target].Next = time.Time{}
 }
 
 // adoptRun resumes a persisted external run when the workers support it.
@@ -844,9 +923,10 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town) error {
 	return s.closeDeclinedProposals(ctx, s.Store.Snapshot().Towns[t.ID], remote)
 }
 
-// closeDeclinedProposals retires the town's own issues once the Mayor declines
-// them. Closing is idempotent, so an issue that is already closed is skipped and
-// an uncertain attempt is simply retried by the next inventory.
+// closeDeclinedProposals retires issues after an authorized final decision: the
+// Mayor's decline for Town's own proposals, or Simplifier's auto decline for an
+// intake issue. Closing is idempotent, so an issue that is already closed is
+// skipped and an uncertain attempt is retried by the next inventory.
 func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote RepoSnapshot) error {
 	if t == nil || t.Deleted {
 		return nil
@@ -859,7 +939,9 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	}
 	numbers := []int{}
 	for _, task := range t.Tasks {
-		if task.Kind == "issue" && !task.External && task.MayoralDecision == "declined" && open[task.Number] {
+		mayorDeclined := !task.External && task.MayoralDecision == "declined"
+		simplifierDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
+		if task.Kind == "issue" && (mayorDeclined || simplifierDeclined) && open[task.Number] {
 			numbers = append(numbers, task.Number)
 		}
 	}
@@ -873,11 +955,22 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 		}
 		if err := s.Store.Update(func(st *State) error {
 			current := st.Towns[t.ID]
-			if current == nil || current.Tasks[id] == nil || current.Tasks[id].MayoralDecision != "declined" {
+			task := current.Tasks[id]
+			if current == nil || task == nil {
 				return nil
 			}
-			current.Tasks[id].Detail = "The Mayor declined this proposal. Town closed the issue."
-			st.Event(t.ID, "decision", "hall", string(Repo), id, "Declined proposal closed: "+current.Tasks[id].Title, s.now())
+			mayorDeclined := task.MayoralDecision == "declined"
+			simplifierDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
+			if !mayorDeclined && !simplifierDeclined {
+				return nil
+			}
+			if mayorDeclined {
+				task.Detail = "The Mayor declined this proposal. Town closed the issue."
+				st.Event(t.ID, "decision", "hall", string(Repo), id, "Declined proposal closed: "+task.Title, s.now())
+			} else {
+				task.Detail = "Simplifier declined this low-value complex issue. Town closed it."
+				st.Event(t.ID, "decision", string(Simplifier), string(Repo), id, "Simplifier closed: "+task.Title, s.now())
+			}
 			return nil
 		}); err != nil {
 			return errors.Join(failures, err)

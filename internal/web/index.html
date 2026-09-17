@@ -157,8 +157,8 @@
           autocomplete="off"
         />
         <p class="muted">
-          Town starts and manages the five automation bots internally; no companion bot CLIs are needed.
-          Bug, Feature, Issue, Review, and Release Bots start paused, while read-only Repo Bot brings the first inventory.
+          Town starts and manages the six automation bots internally; no companion bot CLIs are needed.
+          Bug, Feature, Issue, Review, Release, and Simplifier Bots start paused, while read-only Repo Bot brings the first inventory.
           Enabled houses resume after Town restarts.
         </p>
         <label for="merge-policy">When a reviewed PR is ready</label
@@ -220,11 +220,12 @@
             Release Bot can create and merge its own release-preparation PRs, so
             the manual policy pauses it and prevents it from starting.
           </p>
-          <label class="check-row" for="settings-mayoral-feature-review">
-            <input id="settings-mayoral-feature-review" type="checkbox" checked />
-            Require a Mayoral decision for Feature Bot proposals
-          </label>
-          <p class="muted">Enabled by default. Proposed feature issues wait at Town Hall before Issue Bot may implement them.</p>
+          <label for="settings-simplifier-mode">Simplifier decisions</label>
+          <select id="settings-simplifier-mode">
+            <option value="suggest">Suggest: advise the Mayor</option>
+            <option value="auto">Auto: admit or decline routine arrivals</option>
+          </select>
+          <p class="muted">Every incoming issue and pull request passes through Simplifier Bot first. In suggest mode its assessment is attached to the Mayoral decision; in auto mode routine admissions and low-value complex issue closures act without the Mayor.</p>
         </section>
         <section class="settings-section" aria-labelledby="bot-updates-heading">
           <div class="eyebrow" id="bot-updates-heading">BOT UPDATES</div>
@@ -239,6 +240,7 @@
           <select id="agent-role">
             <option value="">Town defaults</option>
             <option value="bug">Bug Bot</option>
+            <option value="simplifier">Simplifier Bot</option>
             <option value="feature">Feature Bot</option>
             <option value="issue">Issue Bot</option>
             <option value="review">Review Bot</option>

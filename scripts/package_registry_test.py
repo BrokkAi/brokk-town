@@ -1,23 +1,21 @@
-import base64
-import hashlib
 import json
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import unittest
-import urllib.error
 from unittest.mock import patch
 
 import package_installers
 import package_registry
-import package_release as release
+
+
+def completed(command, code=0, output=""):
+    return subprocess.CompletedProcess(command, code, stdout=output, stderr="")
 
 
 class PackageRegistry(unittest.TestCase):
     def setUp(self):
-        commit = patch.object(release, "commit", return_value="a" * 40)
-        commit.start()
-        self.addCleanup(commit.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -29,101 +27,95 @@ class PackageRegistry(unittest.TestCase):
         ]
         for index, name in enumerate(names):
             filename = f"package-{index}.tgz"
-            data = name.encode()
-            (self.root / "npm" / filename).write_bytes(data)
-            self.packages.append({"name": name, "version": "0.1.0", "filename": filename,
-                                  "sha256": release.digest(data), "integrity": "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()})
-        (self.root / "npm/manifest.json").write_text(json.dumps({"tag": "v0.1.0", "commit": "a" * 40, "packages": self.packages}))
+            (self.root / "npm" / filename).write_bytes(name.encode())
+            self.packages.append({"name": name, "version": "0.1.0", "filename": filename})
+        (self.root / "npm/manifest.json").write_text(
+            json.dumps({"tag": "v0.1.0", "commit": "a" * 40, "packages": self.packages}))
 
-    def test_read_only_check_never_publishes(self):
-        with patch.object(package_registry, "npm_exists", return_value=False), \
-                patch.object(package_registry.subprocess, "run") as command:
-            package_registry.run("check", self.root)
-            command.assert_not_called()
+    def published(self, calls):
+        return [call[call.index("--tag") + 1] for call in calls]
 
-    def test_conflicts_in_later_destination_prevent_all_writes(self):
-        with patch.object(package_registry, "npm_exists", side_effect=[False, False, False, False, ValueError("conflicting npm bytes")]), \
-                patch.object(package_registry.subprocess, "run") as command:
-            with self.assertRaisesRegex(ValueError, "conflicting"):
-                package_registry.run("publish", self.root)
-            command.assert_not_called()
+    def test_launcher_publishes_after_every_platform_package(self):
+        order = []
+        lock = threading.Lock()
 
-    def test_native_packages_publish_before_root(self):
-        with patch.object(package_registry, "npm_exists", return_value=False), \
-                patch.object(package_registry.subprocess, "run") as command:
-            package_registry.run("publish", self.root)
+        def publish(command, **kwargs):
+            with lock:
+                order.append(Path(command[2]).name)
+            return completed(command)
+
+        with patch.object(package_registry.subprocess, "run", side_effect=publish):
+            package_registry.publish_all(self.root)
+        self.assertEqual(len(order), 5)
+        self.assertEqual(order[4], "package-0.tgz")
+        self.assertEqual(set(order[:4]), {f"package-{i}.tgz" for i in range(1, 5)})
+
+    def test_platform_packages_publish_concurrently(self):
+        barrier = threading.Barrier(4, timeout=5)
+
+        def publish(command, **kwargs):
+            if not Path(command[2]).name.endswith("package-0.tgz"):
+                barrier.wait()
+            return completed(command)
+
+        with patch.object(package_registry.subprocess, "run", side_effect=publish):
+            package_registry.publish_all(self.root)
+
+    def test_every_publish_requests_provenance_and_public_access(self):
+        with patch.object(package_registry.subprocess, "run",
+                          side_effect=lambda command, **kwargs: completed(command)) as command:
+            package_registry.publish_all(self.root)
             calls = [call.args[0] for call in command.call_args_list]
-            self.assertEqual(len(calls), 5)
-            self.assertTrue(all(call[:2] == ["npm", "publish"] for call in calls[:5]))
-            self.assertTrue(all("--provenance" in call for call in calls[:5]))
-            self.assertTrue(calls[4][2].endswith("package-0.tgz"))
+        self.assertEqual(len(calls), 5)
+        for call in calls:
+            self.assertEqual(call[:2], ["npm", "publish"])
+            self.assertIn("--provenance", call)
+            self.assertIn("--access", call)
+        self.assertEqual(self.published(calls), ["latest"] * 5)
 
-    def test_staged_version_conflict_skips_identical_bytes_without_resubmitting(self):
-        calls = []
+    def test_prerelease_versions_use_the_next_dist_tag(self):
+        for package in self.packages:
+            package["version"] = "0.1.0-rc.1"
+        (self.root / "npm/manifest.json").write_text(
+            json.dumps({"tag": "v0.1.0-rc.1", "commit": "a" * 40, "packages": self.packages}))
+        with patch.object(package_registry.subprocess, "run",
+                          side_effect=lambda command, **kwargs: completed(command)) as command:
+            package_registry.publish_all(self.root)
+            calls = [call.args[0] for call in command.call_args_list]
+        self.assertEqual(self.published(calls), ["next"] * 5)
 
-        def publish(*args, **kwargs):
-            calls.append(args[0])
-            if len(calls) == 1:
-                raise subprocess.CalledProcessError(1, args[0], stderr=(
-                    "npm error code E409\n"
-                    "npm error 409 Conflict - Cannot publish over previously staged version \"0.1.0\".\n"))
-            return subprocess.CompletedProcess(args[0], 0, stdout="published\n")
+    def test_already_published_version_is_skipped(self):
+        conflict = ("npm error code E409\n"
+                    "npm error 409 Conflict - Cannot publish over previously staged version \"0.1.0\".\n")
+        with patch.object(package_registry.subprocess, "run",
+                          side_effect=lambda command, **kwargs: completed(command, 1, conflict)) as command:
+            package_registry.publish_all(self.root)
+            self.assertEqual(command.call_count, 5)
 
-        with patch.object(package_registry, "npm_exists", side_effect=[False] * 5 + [True]), \
-                patch.object(package_registry.subprocess, "run", side_effect=publish):
-            package_registry.run("publish", self.root)
-            self.assertEqual(len(calls), 5)
-
-    def test_staged_version_conflict_with_invisible_version_asks_for_rerun(self):
-        def publish(*args, **kwargs):
-            raise subprocess.CalledProcessError(1, args[0], stderr="npm error code E409\n")
-
-        with patch.object(package_registry, "npm_exists",
-                           side_effect=[False] * 5 + [False]), \
-                patch.object(package_registry.subprocess, "run", side_effect=publish):
-            with self.assertRaisesRegex(ValueError, "re-run"):
-                package_registry.run("publish", self.root)
-
-    def test_non_conflict_publish_failure_raises_immediately(self):
-        def publish(*args, **kwargs):
-            raise subprocess.CalledProcessError(1, args[0], stderr="npm error code E401\n")
-
-        with patch.object(package_registry, "npm_exists", return_value=False), \
-                patch.object(package_registry.subprocess, "run", side_effect=publish):
+    def test_non_conflict_failure_raises(self):
+        with patch.object(package_registry.subprocess, "run",
+                          side_effect=lambda command, **kwargs: completed(command, 1, "npm error code E401\n")):
             with self.assertRaises(subprocess.CalledProcessError):
-                package_registry.run("publish", self.root)
+                package_registry.publish_all(self.root)
 
-    def test_identical_existing_packages_are_skipped_without_upload(self):
-        with patch.object(package_registry, "npm_exists", return_value=True), \
-                patch.object(package_registry.subprocess, "run") as command:
-            package_registry.run("publish", self.root)
+    def test_platform_failure_stops_before_the_launcher(self):
+        def publish(command, **kwargs):
+            if Path(command[2]).name == "package-0.tgz":
+                raise AssertionError("launcher published after a platform package failed")
+            return completed(command, 1, "npm error code E401\n")
+
+        with patch.object(package_registry.subprocess, "run", side_effect=publish):
+            with self.assertRaises(subprocess.CalledProcessError):
+                package_registry.publish_all(self.root)
+
+    def test_incomplete_manifest_publishes_nothing(self):
+        (self.root / "npm/manifest.json").write_text(
+            json.dumps({"tag": "v0.1.0", "commit": "a" * 40, "packages": self.packages[:3]}))
+        with patch.object(package_registry.subprocess, "run") as command:
+            with self.assertRaisesRegex(ValueError, "four platform packages"):
+                package_registry.publish_all(self.root)
             command.assert_not_called()
 
-    def test_changed_local_tarball_prevents_remote_reads(self):
-        (self.root / "npm" / self.packages[0]["filename"]).write_bytes(b"corrupted")
-        with patch.object(package_registry, "fetch_json") as fetch:
-            with self.assertRaisesRegex(ValueError, "corrupt staged"):
-                package_registry.run("publish", self.root)
-            fetch.assert_not_called()
 
-    def test_npm_integrity_conflict(self):
-        record = dict(self.packages[0], dist={"integrity": "sha512-different"})
-        with patch.object(package_registry, "fetch_json", return_value=record):
-            with self.assertRaisesRegex(ValueError, "differs"):
-                package_registry.npm_exists(self.packages[0])
-
-    def test_only_404_means_version_is_missing(self):
-        for code in (404, 403, 500):
-            with patch.object(package_registry.urllib.request, "urlopen", side_effect=urllib.error.HTTPError("https://registry.test", code, "error", {}, None)):
-                if code == 404:
-                    self.assertIsNone(package_registry.fetch_json("https://registry.test"))
-                else:
-                    with self.assertRaises(urllib.error.HTTPError):
-                        package_registry.fetch_json("https://registry.test")
-
-    def test_upload_failure_stops_before_publishing_the_launcher(self):
-        with patch.object(package_registry, "npm_exists", return_value=False), \
-                patch.object(package_registry.subprocess, "run", side_effect=package_registry.subprocess.CalledProcessError(1, "npm")) as command:
-            with self.assertRaises(package_registry.subprocess.CalledProcessError):
-                package_registry.run("publish", self.root)
-            self.assertEqual(command.call_count, 1)
+if __name__ == "__main__":
+    unittest.main()

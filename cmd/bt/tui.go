@@ -210,7 +210,7 @@ func tui(ctx context.Context, c connection) error {
 					case "k", "up":
 						overview = false
 						selectedRole = (selectedRole + len(town.Roles) - 1) % len(town.Roles)
-					case "1", "2", "3", "4", "5", "6":
+					case "1", "2", "3", "4", "5", "6", "7":
 						overview = false
 						selectedRole = int(key[0] - '1')
 					case "s", "p", "x", "a":
@@ -330,7 +330,7 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 		add(" No towns yet. Use bt add --repo OWNER/REPO or visit bt web.")
 	} else if roleIndex == -1 {
 		add(" ALL TOWNS · one repository per town")
-		add(" Tab: visit town   1–6: visit selected house   0: overview")
+		add(" Tab: visit town   1–7: visit selected house   0: overview")
 		add("")
 		for _, id := range ids {
 			t := s.Towns[id]
@@ -368,7 +368,7 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 		townIndex = townIndex % len(ids)
 		t := s.Towns[ids[townIndex]]
 		add(fmt.Sprintf(" %s   [%d/%d towns]   branch %s", t.Config.Repo, townIndex+1, len(ids), t.Branch()))
-		add(" 0: all towns    Tab: next town    1–6 / j,k: select house")
+		add(" 0: all towns    Tab: next town    1–7 / j,k: select house")
 		add(" Settings and new issues: bt settings / bt request, or bt web")
 		// The agent column is the point of the table on a wide terminal; on a
 		// narrow one the current work matters more, and the selected house

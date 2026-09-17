@@ -12,6 +12,7 @@ const esc = (v) =>
 const profileNames = {
   "": "Town defaults",
   bug: "Bug Bot",
+  simplifier: "Simplifier Bot",
   feature: "Feature Bot",
   issue: "Issue Bot",
   review: "Review Bot",
@@ -305,7 +306,7 @@ export function management({ api, getTown, getState, refresh }) {
       .forEach((field) => { field.disabled = false; });
     $("#settings-repo").textContent = t.config.repo;
     $("#settings-merge-policy").value = t.config.merge_policy || "bot";
-    $("#settings-mayoral-feature-review").checked = t.config.mayoral_feature_review !== false;
+    $("#settings-simplifier-mode").value = t.config.simplifier_mode || "suggest";
     $("#settings-auto-update-bots").checked = t.config.auto_update_bots === true;
     $("#settings-success").textContent = "";
     showProfile(Object.hasOwn(profileNames, role) ? role : "");
@@ -455,7 +456,7 @@ export function management({ api, getTown, getState, refresh }) {
           role,
           agent: readAgent(),
           merge_policy: $("#settings-merge-policy").value,
-          mayoral_feature_review: $("#settings-mayoral-feature-review").checked,
+          simplifier_mode: $("#settings-simplifier-mode").value,
           auto_update_bots: $("#settings-auto-update-bots").checked,
           ...(role ? { bot_version: selectedBotVersion } : {}),
         });

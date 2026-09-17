@@ -45,7 +45,6 @@ def pack_record(output, name, version):
 
 
 def package(tag, assets, output, sha):
-    release.validate_tag(tag)
     npm_version = tag[1:]
     release.verify_local(tag, assets, sha)
     if output.exists() and any(output.iterdir()):

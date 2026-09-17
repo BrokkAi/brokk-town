@@ -38,11 +38,14 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				from = "feature"
 			} else if strings.Contains(i.Body, "<!-- bug-bot:") {
 				from = "bug"
+			} else if strings.Contains(i.Body, "<!-- simplifier-bot:") {
+				from = "simplifier"
 			}
-			requiresMayor := from == "outside" || (from == "feature" && t.Config.ReviewsFeaturesWithMayor())
 			house, stage, decision := Issue, "queued", ""
-			if requiresMayor {
+			if from == "simplifier" && t.Config.SimplifierModeOrDefault() == "suggest" {
 				house, stage, decision = Hall, "awaiting_mayor", "pending"
+			} else if from != "simplifier" {
+				house, stage = Simplifier, "simplifying"
 			}
 			task = &Task{ID: id, Kind: "issue", Number: i.Number, Title: i.Title, URL: i.URL, House: house, External: from == "outside", Stage: stage, MayoralDecision: decision, Updated: now}
 			t.Tasks[id] = task
@@ -52,6 +55,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			if !initial && i.State == "open" {
 				s.Event(t.ID, "delivery", from, string(house), id, "Issue arrived: "+i.Title, now)
 				changes = append(changes, fmt.Sprintf("New issue #%d: %s", i.Number, i.Title))
+			}
+			if stage == "simplifying" && t.Workers[Simplifier] != nil {
+				t.Workers[Simplifier].Next = time.Time{}
 			}
 		}
 		task.Title = i.Title
@@ -84,8 +90,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		owned := t.Owned[p.Number]
 		isOwned := owned.Branch != "" && owned.Branch == p.Head.Ref && strings.EqualFold(p.Head.Repo.FullName, t.Config.Repo)
 		if task == nil {
-			house, stage, decision := Review, "queued", ""
-			if !isOwned {
+			house, stage := Simplifier, "simplifying"
+			decision := ""
+			if !isOwned && t.Config.SimplifierModeOrDefault() == "suggest" {
 				house, stage, decision = Hall, "awaiting_mayor", "pending"
 			}
 			task = &Task{ID: id, Kind: "pr", Number: p.Number, Title: p.Title, URL: p.URL, House: house, Stage: stage, External: !isOwned, MayoralDecision: decision, Updated: now}
@@ -97,6 +104,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				}
 				s.Event(t.ID, "delivery", from, string(house), id, "PR arrived: "+p.Title, now)
 				changes = append(changes, fmt.Sprintf("New PR #%d: %s", p.Number, p.Title))
+			}
+			if stage == "simplifying" && t.Workers[Simplifier] != nil {
+				t.Workers[Simplifier].Next = time.Time{}
 			}
 		}
 		if isOwned {
@@ -121,7 +131,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			task.Blocked = false
 			task.Attempts = 0
 			task.RetryAt = time.Time{}
-			if task.Stage != "merged" && task.Stage != "closed" && task.MayoralDecision != "pending" && task.MayoralDecision != "declined" {
+			if task.Stage != "merged" && task.Stage != "closed" && task.Stage != "simplifying" && task.MayoralDecision != "pending" && task.MayoralDecision != "declined" {
 				s.Move(t, task, "queued", Review, "New revision ready for review", now)
 			}
 		}
@@ -167,9 +177,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			}
 			task.Stage = "closed"
 			task.MayoralDecision = ""
-		} else if task.MayoralDecision == "pending" || task.MayoralDecision == "declined" {
+		} else if task.Stage == "simplifying" || task.MayoralDecision == "pending" || task.MayoralDecision == "declined" {
 			// A contributor revision or draft-state change never bypasses the
-			// durable Mayoral intake decision.
+			// durable Simplifier or Mayoral intake decision.
 		} else if p.Draft {
 			task.Stage = "draft"
 		} else if p.Locked {

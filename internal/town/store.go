@@ -59,6 +59,9 @@ func Open(dir string, demo bool) (*Store, error) {
 					if _, present := t.Workers[Feature]; !present {
 						t.Workers[Feature] = &Worker{Role: Feature, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
 					}
+					if _, present := t.Workers[Simplifier]; !present {
+						t.Workers[Simplifier] = &Worker{Role: Simplifier, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
+					}
 				}
 				if t != nil {
 					if t.FunnelIntents == nil {
@@ -142,6 +145,14 @@ func validateState(s State, demo bool) error {
 			}
 			if task.MayoralDecision == "declined" && (task.House != Hall || task.Stage != "declined") {
 				return errors.New("declined Mayoral decision is not final")
+			}
+			if task.Stage == "simplifying" && (task.House != Simplifier || (task.Kind != "issue" && task.Kind != "pr")) {
+				return errors.New("pending simplifier intake left the clarifier")
+			}
+			if s := task.Simplification; s != nil {
+				if (s.Mode != "suggest" && s.Mode != "auto") || (s.Decision != "admit" && s.Decision != "decline") || strings.TrimSpace(s.Detail) == "" || len(s.Detail) > 16<<10 || len(s.Summary) > 1024 {
+					return errors.New("invalid simplifier assessment")
+				}
 			}
 			switch task.Kind {
 			case "upgrade":

@@ -11,7 +11,7 @@ state and retry APIs for that scheduling metadata only.
 The initial transport is a Unix-domain socket created for one bot dispatch:
 
 ```text
-bbb|bfb|bib|brv|brb worker --socket PATH
+bbb|bfb|bib|brv|brb|bsb worker --socket PATH
 ```
 
 The socket's parent directory is private to the Town service and the socket is
@@ -79,6 +79,7 @@ The v1 request contains:
 - operator verify command;
 - PR number for review work;
 - expected base and head SHAs for review work.
+- issue or PR number and `mode` for Simplifier Bot intake work.
 
 Protocol v1 has no field for limiting Release Bot's release-preparation merge
 authority. Town therefore does not dispatch Release Bot while the town merge
@@ -110,7 +111,10 @@ Town rejects gaps, unknown types, events after a terminal event, missing result
 payloads, and streams that end without a terminal event. Worker diagnostics are
 kept as bounded tails.
 
-Issue workers return submitted PR ownership in `result.issue`. Review workers
+Issue workers return submitted PR ownership in `result.issue`. Simplifier item
+workers return the bounded admission/decline advice in
+`result.simplification`; repository simplification scans create marked GitHub
+issues and return no typed result. Review workers
 return exact base/head binding, completion evidence, and public finding details
 in `result.review`. Any worker may also return nonnegative `usage.input_tokens`,
 `usage.output_tokens`, and `cost_usd` fields when its provider makes those

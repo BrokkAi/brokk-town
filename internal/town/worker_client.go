@@ -32,20 +32,21 @@ const workerProtocolVersion = 1
 const workerDetachCapability = "detach"
 
 var workerPackageNames = map[Role]string{
-	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot",
+	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot", Simplifier: "@brokkai/simplifier-bot",
 }
 var workerDefaultVersions = map[Role]string{
-	Bug: "0.3.1", Feature: "0.1.1", Issue: "0.5.2", Review: "0.2.1", Release: "0.5.1",
+	Bug: "0.3.1", Feature: "0.1.1", Issue: "0.5.2", Review: "0.2.1", Release: "0.5.1", Simplifier: "0.1.0",
 }
 var workerBotNames = map[Role]string{
-	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot",
+	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot",
 }
 var workerCapabilities = map[Role][]string{
-	Bug:     {"run", "progress", "bug-scan"},
-	Feature: {"run", "progress", "feature-research"},
-	Issue:   {"run", "progress", "issue-result", "exact-issue"},
-	Review:  {"run", "progress", "exact-revision-review"},
-	Release: {"run", "progress", "release"},
+	Bug:        {"run", "progress", "bug-scan"},
+	Feature:    {"run", "progress", "feature-research"},
+	Issue:      {"run", "progress", "issue-result", "exact-issue"},
+	Review:     {"run", "progress", "exact-revision-review"},
+	Release:    {"run", "progress", "release"},
+	Simplifier: {"run", "progress", "simplifier-review"},
 }
 var workerVersionPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 
@@ -127,6 +128,7 @@ type workerRequest struct {
 	PR             int                `json:"pr,omitempty"`
 	BaseSHA        string             `json:"base_sha,omitempty"`
 	HeadSHA        string             `json:"head_sha,omitempty"`
+	Mode           string             `json:"mode,omitempty"`
 }
 
 type workerProgress struct {
@@ -152,12 +154,20 @@ type workerReviewResult struct {
 }
 
 type workerResult struct {
-	Issue   *workerIssueResult  `json:"issue,omitempty"`
-	Review  *workerReviewResult `json:"review,omitempty"`
-	Usage   *OutcomeUsage       `json:"usage,omitempty"`
-	CostUSD *float64            `json:"cost_usd,omitempty"`
+	Issue          *workerIssueResult    `json:"issue,omitempty"`
+	Review         *workerReviewResult   `json:"review,omitempty"`
+	Simplification *workerSimplification `json:"simplification,omitempty"`
+	Usage          *OutcomeUsage         `json:"usage,omitempty"`
+	CostUSD        *float64              `json:"cost_usd,omitempty"`
 	// retried records an accepted POST /v1/retry before this run.
 	retried bool
+}
+
+type workerSimplification struct {
+	Mode     string `json:"mode"`
+	Decision string `json:"decision"`
+	Summary  string `json:"summary,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 }
 
 type workerEvent struct {
@@ -343,6 +353,7 @@ func runWorker(ctx context.Context, bot externalBot, request workerRequest, retr
 		PID: pid, Socket: socketPath, Output: outputPath, Detachable: info.has(workerDetachCapability),
 		Started: time.Now(), Deadline: deadline,
 		Issue: request.Issue, PR: request.PR, BaseSHA: request.BaseSHA, HeadSHA: request.HeadSHA,
+		Mode: request.Mode,
 	}
 	if started != nil {
 		if err = started(run); err != nil {

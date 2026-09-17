@@ -17,7 +17,7 @@ const (
 	DefaultBotVersionInterval = 6 * time.Hour
 )
 
-var botDisplayNames = map[Role]string{Bug: "Bug Bot", Feature: "Feature Bot", Issue: "Issue Bot", Review: "Review Bot", Release: "Release Bot"}
+var botDisplayNames = map[Role]string{Bug: "Bug Bot", Feature: "Feature Bot", Issue: "Issue Bot", Review: "Review Bot", Release: "Release Bot", Simplifier: "Simplifier Bot"}
 
 func botDisplayName(role Role) string {
 	if name, ok := botDisplayNames[role]; ok {

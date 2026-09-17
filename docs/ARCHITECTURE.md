@@ -256,6 +256,26 @@ repeated inventories do not replay arrivals. Existing saved towns gain an absent
 feature worker paused, preserving every other worker's settings. The closed demo
 simulates feature research and its confirmed delivery without an agent or GitHub.
 
+## Simplifier intake and discovery
+
+Simplifier-bot is a separate Go/ACP worker modeled on bug-bot. Town starts it
+with the simplifier role's effective harness and a private workspace. Every new
+GitHub issue and PR is first routed to a durable `simplifying` task, including
+bug/feature findings and Town-owned implementation PRs. An item dispatch sends
+the exact issue/PR number plus the town's `suggest` or `auto` mode.
+
+In suggest mode, the worker returns a bounded admit/decline assessment that
+Town attaches to the subsequent Mayoral decision. In auto mode, Town applies
+that assessment itself: admitted work moves to Issue Bot or Review Bot, declined
+PRs are ignored, and declined issues are closed by Repo-bot through the normal
+idempotent closure path. A repository scan can file simplifier proposals using
+the bot's durable request marker; those marked issues bypass recursive intake,
+then follow the mode's normal decision route.
+
+Assessment worktrees are detached at an exact revision and checked for tracked
+edits afterward. The worker never closes GitHub issues itself; Town preserves
+one reconciliation and write-intent path for closures.
+
 ## ACP relationship and future execution
 
 Brokk Town is an operations view and scheduler for released Brokk bot libraries.

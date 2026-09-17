@@ -271,7 +271,7 @@ const state = {
         "pr:1": { id: "pr:1", kind: "pr", number: 1, title: "Review this change", house: "review", stage: "awaiting_author" },
         "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Queue this change", house: "issue", stage: "queued" },
         "source:done": { id: "source:done", kind: "source", title: "Checked off in Slack", house: "issue", stage: "complete", source: { eligible: false } },
-        "issue:3": { id: "issue:3", kind: "issue", number: 3, title: "Outside request", house: "hall", stage: "awaiting_mayor", external: true, mayoral_decision: "pending" },
+        "issue:3": { id: "issue:3", kind: "issue", number: 3, title: "Outside request", house: "hall", stage: "awaiting_mayor", external: true, mayoral_decision: "pending", simplification: { mode: "suggest", decision: "decline", summary: "Low value", detail: "The request adds a second registry for one caller." } },
         "upgrade:feature": { id: "upgrade:feature", kind: "upgrade", title: "Feature Bot 0.1.2 is available (pinned 0.1.1)", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", upgrade: { role: "feature", from: "0.1.1", to: "0.1.2" } },
       },
       intents: {}, reports: [], events: [],
@@ -405,6 +405,8 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.match(decision.textContent, /issue #3/, "Town Hall card carries the source number");
   assert.match(elements.inspection.textContent, /Issue #3/);
   assert.match(elements.inspection.textContent, /Issue Bot/, "decision names its destination");
+  assert.match(elements.inspection.textContent, /Simplifier Bot · suggest mode · decline/);
+  assert.match(elements.inspection.textContent, /second registry for one caller/);
   assert.match(elements.inspection.textContent, /Demo town/, "demo explains why no live body follows");
   assert.equal(requests.some((request) => request.url === "/api/task-detail"), false, "demo never fetches live details");
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();

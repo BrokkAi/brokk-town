@@ -1,15 +1,17 @@
 export const positions = {
-  bug: [142, 172],
-  feature: [420, 172],
-  issue: [700, 172],
-  review: [978, 172],
-  hall: [180, 446],
-  repo: [555, 446],
-  release: [930, 446],
+  bug: [118, 172],
+  simplifier: [354, 172],
+  issue: [590, 172],
+  review: [826, 172],
+  hall: [118, 446],
+  repo: [354, 446],
+  release: [590, 446],
+  feature: [826, 446],
   outside: [-50, 330],
 };
 export const houseNames = {
   bug: "BUG BOT",
+  simplifier: "SIMPLIFIER BOT",
   feature: "FEATURE BOT",
   issue: "ISSUE BOT",
   review: "REVIEW BOT",
@@ -19,6 +21,7 @@ export const houseNames = {
 };
 export const houseAuthorities = {
   bug: "May inspect repository content and file GitHub bug issues.",
+  simplifier: "May inspect repository content, file simplification issues, and in auto mode recommend that Town decline or close low-value complex issues.",
   feature: "May inspect repository content and propose or file GitHub feature issues.",
   issue: "May claim issues, create pull requests, and push repairs to Town-owned branches.",
   review: "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches.",
@@ -40,6 +43,7 @@ export const houseShortcuts = [
   "repo",
   "hall",
   "feature",
+  "simplifier",
 ];
 export const roadLevels = { upper: 330, lower: 540 };
 export const roadEdges = [40, 1080];
@@ -386,8 +390,8 @@ export function townControls(town) {
   );
   const awake = agents.filter((w) => w.enabled).length;
   const names = manual
-    ? "Bug Bot, Feature Bot, Issue Bot, and Review Bot; Release Bot stays paused while every merge is manual"
-    : "Bug Bot, Feature Bot, Issue Bot, Review Bot, and Release Bot";
+    ? "Bug Bot, Feature Bot, Issue Bot, Review Bot, and Simplifier Bot; Release Bot stays paused while every merge is manual"
+    : "Bug Bot, Feature Bot, Issue Bot, Review Bot, Simplifier Bot, and Release Bot";
   if (!awake)
     return { status: "Paused", statusClass: "paused", primary: { action: "start", label: `▶ Wake the town (${agents.length})` }, secondary: null, detail: `Starts ${names}. Repo Bot already runs read-only.` };
   if (awake === agents.length)
