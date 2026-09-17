@@ -15,12 +15,11 @@ git push origin vX.Y.Z
 
 Tag rules:
 
-- The tag must be a version such as `v0.4.0` or `v0.4.0-rc.1`.
+- The tag must be a version such as `v0.4.0`.
 - Never move or delete a pushed tag. All five npm packages already treat a
   published version as immutable, and the workflow refuses a tag that points
   anywhere unexpected.
-- Stable versions use npm `latest` and become GitHub's latest release.
-  Prereleases (a `-` suffix) use npm `next` and never become latest.
+- Releases use npm `latest` and become GitHub's latest release.
 
 ## What the tag workflow does
 

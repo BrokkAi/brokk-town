@@ -41,10 +41,6 @@ def npm_exists(package):
     return True
 
 
-def npm_tag(package):
-    return "next" if "-" in package["version"] else "latest"
-
-
 def validated_packages(directory):
     manifest = json.loads((directory / "npm/manifest.json").read_text())
     release.validate_tag(manifest["tag"])
@@ -90,7 +86,7 @@ def submit(package, directory):
     tarball = directory / "npm" / package["filename"]
     command = ["npm", "publish", str(tarball.resolve()),
                "--access", "public", "--registry", "https://registry.npmjs.org",
-               "--provenance", "--tag", npm_tag(package)]
+               "--provenance"]
     try:
         completed = subprocess.run(command, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as error:

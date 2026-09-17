@@ -1,5 +1,15 @@
 # Brokk Town implementation plan
 
+## Stable-only releases without dist-tags (2026-09-17)
+
+- No prereleases: `validate_tag` accepts strict `vX.Y.Z` only, GitHub
+  releases are never marked prerelease and always become latest, and npm
+  publishes with no `--tag` (registry default `latest`).
+- Deleted `npm_tag`/`next` handling in `package_registry.py`, the `-` branches
+  in `publish_tag.make_latest` and draft creation, and the prerelease wording
+  in `RELEASING.md`. Covered by a `validate_tag` rejection test and a
+  no-`--tag` publish-command assertion.
+
 ## Simplifier Bot intake (2026-09-16)
 
 - Add a sixth paused automation house and persisted `simplifier` role, with

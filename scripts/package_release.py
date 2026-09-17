@@ -18,7 +18,7 @@ import licenses
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = ("linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64")
-TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?")
+TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 
 def run(*args, data=None, env=None):
@@ -35,7 +35,7 @@ def digest(data):
 
 def validate_tag(tag):
     if not TAG.fullmatch(tag):
-        raise ValueError("tag must be a version such as v0.1.0 or v0.1.0-rc.1")
+        raise ValueError("tag must be a version such as v0.1.0")
 
 
 def archive_name(tag, target):

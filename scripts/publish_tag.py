@@ -33,7 +33,7 @@ def log(message):
 
 
 def make_latest(tag):
-    return "false" if "-" in tag else "true"
+    return "true"
 
 
 def context(tag_arg=None, sha_arg=None):
@@ -113,7 +113,7 @@ def publish(directory, tag, sha, check_only=False):
         record = api("releases", "POST", {
             "tag_name": tag, "target_commitish": sha, "name": f"Brokk Town {tag}",
             "body": f"Release {tag} from commit {sha}.",
-            "draft": True, "prerelease": "-" in tag,
+            "draft": True, "prerelease": False,
         })
     if record["target_commitish"] != sha:
         raise ValueError("existing draft targets another commit; investigate before retrying")

@@ -56,6 +56,7 @@ class PackageRegistry(unittest.TestCase):
             self.assertEqual(len(calls), 5)
             self.assertTrue(all(call[:2] == ["npm", "publish"] for call in calls[:5]))
             self.assertTrue(all("--provenance" in call for call in calls[:5]))
+            self.assertTrue(all("--tag" not in call for call in calls[:5]))
             self.assertTrue(calls[4][2].endswith("package-0.tgz"))
 
     def test_staged_version_conflict_skips_identical_bytes_without_resubmitting(self):

@@ -9,6 +9,13 @@ import package_installers
 import package_release as release
 
 
+class ValidateTag(unittest.TestCase):
+    def test_rejects_prerelease_suffix(self):
+        with self.assertRaisesRegex(ValueError, "such as v0.1.0"):
+            release.validate_tag("v0.2.1-rc.1")
+        release.validate_tag("v0.2.1")
+
+
 class ReleaseAssets(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

@@ -41,7 +41,6 @@ class PublishTagTest(unittest.TestCase):
 
     def test_make_latest(self):
         self.assertEqual(publish_tag.make_latest("v9.9.9"), "true")
-        self.assertEqual(publish_tag.make_latest("v9.9.9-rc.1"), "false")
 
     def test_missing_assets(self):
         with tempfile.TemporaryDirectory() as temp:
