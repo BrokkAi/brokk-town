@@ -478,6 +478,86 @@ header {
   border-color: #557da1;
   color: #afd1ee;
 }
+/* Dispatch profiles read the same everywhere: harness, model, effort.  An
+   inherited profile stays quiet; one chosen for a single house is outlined so a
+   difference between two houses is visible without reading either label. */
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  font: 600 10px var(--mono);
+  letter-spacing: 0;
+}
+.profile-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 1px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-chip.harness {
+  background: #16303c;
+  color: #9cd2e8;
+  flex-shrink: 0;
+}
+.profile-chip.model {
+  background: #1e2b40;
+  color: #b3c6ee;
+}
+.profile-chip.effort {
+  flex-shrink: 0;
+}
+.profile-chip.rank-default {
+  background: #22301f;
+  color: #93a78e;
+}
+.profile-chip.rank-low {
+  background: #253227;
+  color: #a8c39e;
+}
+.profile-chip.rank-medium {
+  background: #33401f;
+  color: #cbdd8c;
+}
+.profile-chip.rank-high {
+  background: #4a3f18;
+  color: #f0d187;
+}
+.profile-chip.rank-max {
+  background: #532d1c;
+  color: #ffb489;
+}
+.profile-chip.rank-custom {
+  background: #33283f;
+  color: #d3b6ee;
+}
+.profile.own .profile-chip {
+  border-color: currentColor;
+}
+.profile.inherited .profile-chip {
+  opacity: 0.82;
+}
+.profile.live {
+  filter: saturate(1.25);
+}
+.profile.none,
+.profile.mixed {
+  display: inline-block;
+  border: 1px dashed #4c6449;
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: #93a78e;
+}
+.profile-lead {
+  color: var(--muted);
+  font: 10px var(--mono);
+  margin-right: 5px;
+}
 .status-open { border-top-color: #6a8560; }
 .status-queued { border-top-color: #7a9463; }
 .status-in_progress { border-top-color: #85a961; }
@@ -546,7 +626,13 @@ header {
   grid-column: 2;
 }
 .compact-worker .dot {
-  grid-row: span 3;
+  grid-row: span 4;
+}
+.compact-worker small,
+.board-worker small,
+.board-task small,
+.compact-task small {
+  overflow: visible;
 }
 .compact-tasks {
   display: grid;
@@ -780,6 +866,15 @@ canvas {
   width: 5px;
   height: 5px;
   margin-right: 5px;
+  vertical-align: middle;
+}
+/* The label may not grow past the road the wheelbarrows travel, so the profile
+   takes the second line rather than a third one. */
+.house-label .profile {
+  margin-top: 4px;
+}
+.house-label .profile-chip {
+  font-size: 9px;
 }
 .count {
   display: inline-block;
@@ -888,6 +983,46 @@ canvas {
   letter-spacing: 1px;
   color: #9fb493;
   margin: 25px 0 14px;
+}
+/* The inspector spells the profile out in full: a chip row answers "which one",
+   this answers "exactly which version, model and effort". */
+.agent-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #102219;
+  padding: 12px 14px;
+  margin: 18px 0;
+}
+.inspector .agent-card h3 {
+  margin: 0 0 10px;
+}
+.agent-profile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 14px;
+  row-gap: 6px;
+  margin: 0;
+  font-size: 13px;
+}
+.agent-profile dt {
+  font: 11px var(--mono);
+  letter-spacing: 1px;
+  color: #9fb493;
+  text-transform: uppercase;
+  align-self: center;
+}
+.agent-profile dd {
+  margin: 0;
+  font: 13px var(--mono);
+  color: #e0eada;
+  overflow-wrap: anywhere;
+}
+.agent-card p {
+  margin: 12px 0;
+  font-size: 12px;
+}
+.agent-card button {
+  width: 100%;
 }
 .task-card {
   display: block;
@@ -1437,6 +1572,10 @@ textarea {
   .house-label small {
     font-size: 10px;
   }
+  .house-label .profile-chip {
+    font-size: 8px;
+    padding: 0 2px;
+  }
   .world-legend {
     font-size: 10px;
     gap: 8px;
@@ -1475,7 +1614,6 @@ textarea {
   .house-label strong {
     font-size: 9px;
     line-height: 11px;
-    padding-right: 7px;
   }
   .house-label .bot-suffix {
     display: none;
@@ -1494,6 +1632,9 @@ textarea {
   }
   .house-label .count {
     padding: 0 2px;
+  }
+  .house-label .profile {
+    display: none;
   }
   .world-legend {
     left: 7px;
@@ -1527,6 +1668,9 @@ textarea {
 .town-card h2 {
   font-size: 27px;
   margin: 8px 0;
+}
+.town-card > .profile {
+  margin-bottom: 8px;
 }
 .town-card-houses {
   height: 150px;

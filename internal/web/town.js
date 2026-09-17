@@ -468,6 +468,79 @@ export function workerProfile(town, role, worker = null) {
   };
 }
 
+// A profile only reads at a glance when it is short, so the registry decoration
+// (vendor prefix, -acp suffix, provider path) is dropped and the part an
+// operator actually chose is kept.
+const harnessNames = {
+  "codex-acp": "codex",
+  "claude-acp": "claude",
+  "brokkai/anvil": "anvil",
+  "brokkai/muse-acp": "muse",
+  "foundev/draupnir": "draupnir",
+};
+export function harnessLabel(harness) {
+  const id = String(harness ?? "").trim().toLowerCase();
+  if (!id) return "codex";
+  const trimmed = id.replace(/\/+$/, "");
+  return (
+    harnessNames[id] || trimmed.split("/").at(-1).replace(/-acp$/, "") || id
+  );
+}
+export function modelLabel(model) {
+  const id = String(model ?? "").trim();
+  return (id && id.split("/").at(-1)) || "default";
+}
+export function effortLabel(effort) {
+  const id = String(effort ?? "").trim();
+  return id ? id.replaceAll("_", " ") : "default";
+}
+// Effort names differ per harness, so unrecognized values keep their own shade
+// rather than being forced onto a scale the harness never advertised.
+const effortRanks = {
+  minimal: "low",
+  low: "low",
+  medium: "medium",
+  standard: "medium",
+  high: "high",
+  xhigh: "max",
+  "x-high": "max",
+  max: "max",
+};
+export function effortRank(effort) {
+  const id = String(effort ?? "").trim().toLowerCase().replaceAll("_", "-");
+  if (!id) return "default";
+  return effortRanks[id] || "custom";
+}
+
+// One description of a dispatch profile for every surface: the village label,
+// the operations views, the inspector and the tooltip all say the same thing.
+export function profileSummary(profile) {
+  const harness = harnessLabel(profile?.harness);
+  const model = modelLabel(profile?.model);
+  const effort = effortLabel(profile?.effort);
+  const inherited = profile?.inherited !== false;
+  const live = profile?.source === "active";
+  const version = profile?.harness_version || "";
+  return {
+    harness,
+    model,
+    effort,
+    rank: effortRank(profile?.effort),
+    inherited,
+    live,
+    version,
+    text: `${harness} · ${model} · ${effort}`,
+    title: [
+      `${live ? "Running now" : "Next run"}: ${profile?.harness || "codex-acp"}${version ? ` ${version}` : ""}`,
+      `Model: ${profile?.model || "harness default"}`,
+      `Effort: ${profile?.effort || "harness default"}`,
+      inherited
+        ? "Inherited from this town's defaults"
+        : "Set for this house only",
+    ].join("\n"),
+  };
+}
+
 export function taskStatus(town, task) {
   const stage = normalized(task?.stage);
   const intent = intentFor(town, task);
@@ -544,6 +617,27 @@ export function projectWorker(town, role, worker = town?.workers?.[role]) {
   };
 }
 
+// The overview answers "is this town running one profile or several?" before
+// anyone visits it.  Repo-bot has no agent, so it never counts as a profile.
+export function profileSpread(workers) {
+  const agents = workers.filter((worker) => worker.role !== "repo" && worker.role !== "hall");
+  const distinct = [];
+  for (const worker of agents) {
+    const summary = profileSummary(worker.profile);
+    if (!distinct.some((other) => other.text === summary.text)) distinct.push(summary);
+  }
+  return {
+    distinct,
+    overrides: agents.filter((worker) => worker.profile?.inherited === false).length,
+    label:
+      distinct.length === 0
+        ? ""
+        : distinct.length === 1
+          ? distinct[0].text
+          : `${distinct.length} profiles`,
+  };
+}
+
 export function projectTown(town) {
   const tasks = Object.values(town?.tasks || {})
     .filter(Boolean)
@@ -586,6 +680,7 @@ export function projectTown(town) {
     workers,
     tasks,
     counts,
+    profiles: profileSpread(workers),
     active: workers.filter((worker) => worker.active).length,
     failedWorkers: workers.filter((worker) => worker.status === "failed").length,
     attention: tasks.filter((task) => attentionStatuses.includes(task.status)).length +

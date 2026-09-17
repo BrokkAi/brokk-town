@@ -19,6 +19,12 @@ import {
   projectTown,
   projectState,
   workerProfile,
+  profileSummary,
+  profileSpread,
+  harnessLabel,
+  modelLabel,
+  effortLabel,
+  effortRank,
   boardColumn,
   normalizeView,
   focusIdentity,
@@ -431,4 +437,68 @@ test("townControls reports the town's wake state and offers the matching action"
   assert.deepEqual(manual.primary, { action: "start", label: "▶ Wake the town (5)" });
   assert.match(manual.detail, /Release Bot stays paused while every merge is manual/);
   assert.equal(townControls(null).status, "Paused");
+});
+
+test("profile labels stay short, keep unfamiliar efforts distinguishable, and say where a profile came from", () => {
+  assert.equal(harnessLabel(""), "codex", "an unset harness is the default harness, not a blank");
+  assert.equal(harnessLabel("codex-acp"), "codex");
+  assert.equal(harnessLabel("brokkai/muse-acp"), "muse");
+  assert.equal(harnessLabel("foundev/draupnir"), "draupnir");
+  assert.equal(harnessLabel("some-new-acp"), "some-new", "an unlisted registry agent still loses its decoration");
+  assert.equal(harnessLabel("custom"), "custom");
+  assert.equal(modelLabel(""), "default");
+  assert.equal(modelLabel(" anthropic/claude-opus-5 "), "claude-opus-5");
+  assert.equal(modelLabel("acme/"), "default", "a trailing slash leaves no model to name");
+  assert.equal(harnessLabel("acme/custom/"), "custom", "a trailing slash leaves the harness name intact");
+  assert.equal(effortLabel(""), "default");
+  assert.equal(effortLabel("very_high"), "very high");
+  assert.equal(effortRank(""), "default");
+  assert.equal(effortRank("XHigh"), "max");
+  assert.equal(effortRank("medium"), "medium");
+  assert.equal(
+    effortRank("thorough"),
+    "custom",
+    "an effort the harness invented is not forced onto a scale it never advertised",
+  );
+
+  const own = profileSummary({
+    harness: "claude-acp",
+    harness_version: "1.2.0",
+    model: "claude-opus-5",
+    effort: "high",
+    inherited: false,
+    source: "active",
+  });
+  assert.equal(own.text, "claude · claude-opus-5 · high");
+  assert.equal(own.rank, "high");
+  assert.equal(own.inherited, false);
+  assert.equal(own.live, true);
+  assert.match(own.title, /Running now: claude-acp 1\.2\.0/);
+  assert.match(own.title, /Set for this house only/);
+
+  const inherited = profileSummary({});
+  assert.equal(inherited.text, "codex · default · default");
+  assert.equal(inherited.live, false);
+  assert.match(inherited.title, /Next run: codex-acp/);
+  assert.match(inherited.title, /Model: harness default/);
+  assert.match(inherited.title, /Inherited from this town's defaults/);
+});
+
+test("a town reports whether its houses run one profile or several", () => {
+  const uniform = profileSpread([
+    { role: "bug", profile: { harness: "codex-acp", model: "m", effort: "medium", inherited: true } },
+    { role: "review", profile: { harness: "codex-acp", model: "m", effort: "medium", inherited: true } },
+    { role: "repo", profile: { harness: "codex-acp", model: "other", effort: "low", inherited: true } },
+    { role: "hall", profile: { harness: "codex-acp", model: "other", effort: "low", inherited: true } },
+  ]);
+  assert.equal(uniform.label, "codex · m · medium", "an agentless watchtower never counts as another profile");
+  assert.equal(uniform.overrides, 0);
+  const mixed = profileSpread([
+    { role: "bug", profile: { harness: "codex-acp", model: "m", effort: "medium", inherited: true } },
+    { role: "review", profile: { harness: "claude-acp", model: "claude-opus-5", effort: "high", inherited: false } },
+    { role: "release", profile: { harness: "codex-acp", model: "m", effort: "xhigh", inherited: false } },
+  ]);
+  assert.equal(mixed.label, "3 profiles");
+  assert.equal(mixed.overrides, 2);
+  assert.equal(profileSpread([]).label, "");
 });
