@@ -1003,3 +1003,13 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   In Progress. Counts refer to items, not worker processes.
 - Frontend regression tests cover mixed workloads, exact active targets, idle
   backlogs, and missing targets. Preview serves changes directly from checkout.
+
+## Keep workload counts clear of the animation (2026-09-18)
+
+- Move counts into a compact, horizontally scrollable strip above the town.
+  A shared active / waiting / blocked key keeps each house to two short lines.
+  Strip buttons open their house inspector; profiles stay under buildings.
+- Restore Town Hall's pending-decision count under its building and in the
+  strip, including zero. It opens the existing Mayoral decision list.
+- Verified layout with a Chrome fixture, frontend tests/syntax, Go race tests
+  and vet. The read-only preview serves these assets directly.

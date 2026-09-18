@@ -350,9 +350,9 @@ export function normalizeView(value) {
 
 export function focusIdentity(target) {
   if (!target) return null;
-  const surface = target.closest?.("#towns, #houses, #journal, #board, #compact, #inbox-list")?.id || "";
+  const surface = target.closest?.("#towns, #houses, #town-workloads, #journal, #board, #compact, #inbox-list")?.id || "";
   const dataset = target.dataset || {};
-  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
+  const key = dataset.town || dataset.house || dataset.workloadHouse || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return surface && key ? { surface, key, town } : null;
 }
@@ -360,7 +360,7 @@ export function focusIdentity(target) {
 export function focusMatches(target, identity) {
   if (!identity || !target) return false;
   const dataset = target.dataset || {};
-  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
+  const key = dataset.town || dataset.house || dataset.workloadHouse || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return key === identity.key && (!identity.town || town === identity.town);
 }

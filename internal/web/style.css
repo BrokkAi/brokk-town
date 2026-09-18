@@ -860,18 +860,6 @@ canvas {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.house-queue {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
-  padding: 3px 7px;
-  border: 1px solid #b4dc8c;
-  border-radius: 4px;
-  background: #203c28;
-  color: #d6f8be;
-  font: 600 11px var(--mono);
-  white-space: nowrap;
-}
 .workload-counts {
   display: flex;
   flex-wrap: wrap;
@@ -882,21 +870,24 @@ canvas {
 }
 .workload-active { color: #bbf785; }
 .workload-blocked { color: #f4a574; }
-.house-queue {
-  left: 0;
-  padding: 3px 5px;
+#town-workloads { margin-bottom: 12px; }
+.workload-key { margin: 0 0 5px; font-size: 11px; color: var(--muted); }
+.workload-strip {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(95px, 1fr));
+  gap: 5px;
+  overflow-x: auto;
 }
-.house-queue .workload-counts {
-  margin: 0;
-  font-size: 10px;
-  gap: 2px 7px;
+.workload-strip button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 6px;
+  font: 11px var(--mono);
+  white-space: nowrap;
 }
-.house-queue .workload-counts > :last-child {
-  flex-basis: 100%;
-}
-@media (max-width: 700px) {
-  .house-queue .workload-counts { font-size: 8px; gap: 1px 4px; }
-}
+.workload-strip button.selected { border-color: #b4dc8c; }
 .house-task-queue {
   max-height: 320px;
   overflow-y: auto;
@@ -1681,10 +1672,6 @@ textarea {
     width: 4px;
     height: 4px;
     margin: 0;
-  }
-  .house-queue {
-    font-size: 9px;
-    padding: 2px 4px;
   }
   .house-label .profile {
     display: none;
