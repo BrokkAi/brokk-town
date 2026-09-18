@@ -39,7 +39,7 @@ func TestBotProfilesInheritAndRemainIndependent(t *testing.T) {
 	cfg := store.Snapshot().Towns[x.ID].Config
 	for _, role := range AgentRoles {
 		model, effort := string(role), "xhigh"
-		if role == Bug || role == Feature {
+		if role == Bug || role == Feature || role == Repo {
 			model, effort = "new-default", "high"
 		}
 		effective := cfg.ForRole(role)
@@ -180,7 +180,7 @@ func TestBotProfileValidationIsAtomic(t *testing.T) {
 	x := addTown(t, store)
 	sup := NewSupervisor(store, nil, nil)
 	before := store.Snapshot()
-	for _, role := range []Role{Repo, "all", "unknown"} {
+	for _, role := range []Role{Hall, "all", "unknown"} {
 		if err := sup.SettingsForRole(x.ID, role, AgentSettings{}); err == nil {
 			t.Fatal("accepted invalid role", role)
 		}

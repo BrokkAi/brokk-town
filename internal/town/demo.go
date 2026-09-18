@@ -187,7 +187,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 					if !w.Enabled {
 						w.Status = "paused"
 					}
-					if ValidAgentRole(w.Role) && (w.Status == "working" || w.Status == "pausing") {
+					if OccupiesAgentSlot(w.Role) && (w.Status == "working" || w.Status == "pausing") {
 						p := t.Config.Public().BotAgents[w.Role]
 						w.Agent = &p
 					}

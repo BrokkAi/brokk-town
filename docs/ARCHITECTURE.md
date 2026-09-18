@@ -137,10 +137,12 @@ Re-adding waits for workers to stop, then restores the same identity, history, a
 private worktrees with automation disabled.
 
 Town config retains a default harness and ACP agent configuration, plus optional
-complete `bot_agents` profiles for bug, feature, issue, review, and release roles.
+complete `bot_agents` profiles for the bug, feature, issue, review, release,
+simplifier, and repo roles.
 An absent role inherits the town defaults; an explicit profile owns its harness,
 launch definition, model, effort, command, environment, authentication, and mode.
-Blank selectors use that profile's harness defaults. Repo-bot has no agent.
+Blank selectors use that profile's harness defaults. Repo Bot carries a profile
+like the rest, and starts an agent only to repair a failing branch.
 Agent settings preserve private command/authentication fields when changing only
 model or effort; switching harnesses resets harness-specific configuration only
 within the selected profile. Resetting a role removes its profile, restoring

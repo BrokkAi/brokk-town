@@ -32,13 +32,13 @@ const workerProtocolVersion = 1
 const workerDetachCapability = "detach"
 
 var workerPackageNames = map[Role]string{
-	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot", Simplifier: "@brokkai/simplifier-bot",
+	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot", Simplifier: "@brokkai/simplifier-bot", Repo: "@brokkai/repo-bot",
 }
 var workerDefaultVersions = map[Role]string{
-	Bug: "0.3.1", Feature: "0.1.1", Issue: "0.5.2", Review: "0.2.1", Release: "0.5.1", Simplifier: "0.1.0",
+	Bug: "0.3.1", Feature: "0.1.1", Issue: "0.5.2", Review: "0.2.1", Release: "0.5.1", Simplifier: "0.1.0", Repo: "0.1.0",
 }
 var workerBotNames = map[Role]string{
-	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot",
+	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot", Repo: "repo-bot",
 }
 var workerCapabilities = map[Role][]string{
 	Bug:        {"run", "progress", "bug-scan"},
@@ -47,6 +47,7 @@ var workerCapabilities = map[Role][]string{
 	Review:     {"run", "progress", "exact-revision-review"},
 	Release:    {"run", "progress", "release"},
 	Simplifier: {"run", "progress", "simplifier-review"},
+	Repo:       {"run", "progress", "repo-inventory", "branch-health"},
 }
 var workerVersionPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 
@@ -129,6 +130,11 @@ type workerRequest struct {
 	BaseSHA        string             `json:"base_sha,omitempty"`
 	HeadSHA        string             `json:"head_sha,omitempty"`
 	Mode           string             `json:"mode,omitempty"`
+	// SinceHead and Commits are the repo worker's inventory inputs: the branch
+	// head Town last observed, and the revisions it still needs release
+	// ancestry for. Town's task graph never crosses the protocol.
+	SinceHead string   `json:"since_head,omitempty"`
+	Commits   []string `json:"commits,omitempty"`
 }
 
 type workerProgress struct {
@@ -157,10 +163,33 @@ type workerResult struct {
 	Issue          *workerIssueResult    `json:"issue,omitempty"`
 	Review         *workerReviewResult   `json:"review,omitempty"`
 	Simplification *workerSimplification `json:"simplification,omitempty"`
+	Inventory      *workerInventory      `json:"inventory,omitempty"`
+	Health         *BranchHealth         `json:"health,omitempty"`
 	Usage          *OutcomeUsage         `json:"usage,omitempty"`
 	CostUSD        *float64              `json:"cost_usd,omitempty"`
 	// retried records an accepted POST /v1/retry before this run.
 	retried bool
+}
+
+// workerInventory is the repo worker's observation of the repository. Its
+// fields are the remote types Town already reconciles, so one observation is
+// read once and applied without a translation layer in between.
+type workerInventory struct {
+	Branch        string          `json:"branch"`
+	DefaultBranch string          `json:"default_branch"`
+	Head          string          `json:"head"`
+	Issues        []RemoteIssue   `json:"issues"`
+	Pulls         []Pull          `json:"pulls"`
+	Releases      []RemoteRelease `json:"releases"`
+	Commits       []RemoteCommit  `json:"commits,omitempty"`
+	Released      map[string]bool `json:"released,omitempty"`
+}
+
+func (i workerInventory) snapshot() RepoSnapshot {
+	return RepoSnapshot{
+		Branch: i.Branch, DefaultBranch: i.DefaultBranch, Head: i.Head,
+		Issues: i.Issues, Pulls: i.Pulls, Releases: i.Releases, Commits: i.Commits, Released: i.Released,
+	}
 }
 
 type workerSimplification struct {

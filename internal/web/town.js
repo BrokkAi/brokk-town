@@ -26,7 +26,7 @@ export const houseAuthorities = {
   issue: "May claim issues, create pull requests, and push repairs to Town-owned branches.",
   review: "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches.",
   release: "May create and merge release-preparation pull requests and publish releases and packages.",
-  repo: "Read-only: inventories and reconciles repository state without an agent or GitHub writes.",
+  repo: "Inventories repository state, and repairs the branch it covers when its checks fail.",
 };
 
 export function houseAuthority(role, mergePolicy = "bot") {
@@ -393,7 +393,7 @@ export function townControls(town) {
     ? "Bug Bot, Feature Bot, Issue Bot, Review Bot, and Simplifier Bot; Release Bot stays paused while every merge is manual"
     : "Bug Bot, Feature Bot, Issue Bot, Review Bot, Simplifier Bot, and Release Bot";
   if (!awake)
-    return { status: "Paused", statusClass: "paused", primary: { action: "start", label: `▶ Wake the town (${agents.length})` }, secondary: null, detail: `Starts ${names}. Repo Bot already runs read-only.` };
+    return { status: "Paused", statusClass: "paused", primary: { action: "start", label: `▶ Wake the town (${agents.length})` }, secondary: null, detail: `Starts ${names}. Repo Bot already watches the repository.` };
   if (awake === agents.length)
     return { status: `Awake · ${awake} agent${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Ⅱ Pause the town" }, secondary: null, detail: "" };
   return {
@@ -401,8 +401,31 @@ export function townControls(town) {
     statusClass: "partial",
     primary: { action: "start", label: "▶ Wake the rest" },
     secondary: { action: "pause", label: "Ⅱ Pause all" },
-    detail: `Starts the remaining available workers: ${names}. Repo Bot runs read-only.`,
+    detail: `Starts the remaining available workers: ${names}. Repo Bot already watches the repository.`,
   };
+}
+
+// branchHealthNote is what the watchtower reports about the branch it covers.
+// A branch nothing is wrong with says so in one line; a failing one names the
+// checks, and a repair names the commit that was published.
+export function branchHealthNote(health) {
+  if (!health || !health.state) return "";
+  const failing = (health.failing || []).join(", ");
+  const detail = health.detail ? ` ${health.detail}` : "";
+  switch (health.state) {
+    case "red":
+      return `Branch checks are failing: ${failing}.${detail}`;
+    case "repaired":
+      return `Published a repair for ${failing} as ${(health.pushed || "").slice(0, 8)}.`;
+    case "unrepairable":
+      return `Branch checks are failing and Repo Bot cannot repair them.${detail}`;
+    case "pending":
+      return "Branch checks are still running.";
+    case "unreported":
+      return "The branch reports no checks.";
+    default:
+      return "Branch checks are passing.";
+  }
 }
 
 export function scheduleLabel(worker, now = Date.now()) {

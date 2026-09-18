@@ -439,3 +439,9 @@ func TestDemoCapacityDerivesActiveFromWorkerStatus(t *testing.T) {
 		t.Fatalf("deleted demo town counted as active: %d", got)
 	}
 }
+
+// Observe reports an empty repository: this fixture's subject is dispatch, not
+// the inventory.
+func (w *capacityWorker) Observe(context.Context, *Town, InventoryRequest, func(Progress), *slog.Logger) (RunResult, error) {
+	return RunResult{Inventory: &RepoSnapshot{Branch: "main", DefaultBranch: "main", Head: baseSHA}}, nil
+}

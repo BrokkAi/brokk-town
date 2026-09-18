@@ -74,8 +74,8 @@ func TestSimplifierAutoDeclineClosesIssue(t *testing.T) {
 	update(t, store, func(st *State) { st.Towns[town.ID].Tasks[task.ID] = task })
 	gh := &fakeGH{snapshot: inventory()}
 	gh.snapshot.Issues = []RemoteIssue{{Number: 21, Title: task.Title, State: "open"}}
-	supervisor := NewSupervisor(store, gh, nil)
-	if err := supervisor.reconcile(context.Background(), store.Snapshot().Towns[town.ID]); err != nil {
+	supervisor := NewSupervisor(store, gh, observing{gh: gh})
+	if err := supervisor.reconcileNow(context.Background(), store.Snapshot().Towns[town.ID]); err != nil {
 		t.Fatal(err)
 	}
 	if len(gh.closed) != 1 || gh.closed[0] != 21 {

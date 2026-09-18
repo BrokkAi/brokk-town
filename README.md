@@ -197,7 +197,8 @@ GitHub reconciliation.
 
 Town starts and manages the bot libraries internally; the standalone bot CLIs are
 not companion processes. New towns start with Bug Bot, Feature Bot, Issue Bot,
-Review Bot, Release Bot, and Simplifier Bot **paused**. Repo Bot starts its read-only inventory.
+Review Bot, Release Bot, and Simplifier Bot **paused**. Repo Bot starts its inventory;
+its configured agent is used only when branch checks require a repair.
 The town header shows whether the town is paused, awake,
 or partly awake, and its button offers the action that changes that state.
 Inspect the town, then start individual workers or choose **Wake the town**, which
@@ -231,9 +232,10 @@ Older bots finish on their own, and Town records that attempt as uncertain rathe
 than guessing; repo-bot then reconciles whatever landed on GitHub. Only an explicit
 Stop, a town deletion, or the two-hour dispatch deadline ends a bot process.
 
-Capacity is a persisted service setting shared by every town. It reserves only
-non-reporter bot runs; repo-bot, issue publishing, and prompt-free model choice
-discovery stay outside the pool. Lowering the limit lets current work finish and
+Capacity is a persisted service setting shared by every town. It reserves
+non-reporter bot runs; repo-bot inventory, issue publishing, and prompt-free model
+choice discovery stay outside the pool, while a Repo Bot repair uses one slot.
+Lowering the limit lets current work finish and
 holds new dispatches until a slot is free. `bt capacity` requires `--max-workers N`,
 where `N` is an integer from 1 through 64.
 
@@ -241,10 +243,12 @@ where `N` is an integer from 1 through 64.
 
 Visit a town and choose **Settings**, then use **Configure agent for** to select
 the bot and configure its agent, model, and reasoning effort independently. Bug,
-feature, issue, review, release, and simplifier bots can each use a different profile. Bots
+feature, issue, review, release, simplifier, and repo bots can each use a different profile. Bots
 without a profile inherit **Town defaults**. Choose **Use town defaults** and save
 to remove a bot's independent profile. Save each changed profile before closing
-Settings. Repo-bot only reports repository state and does not use an agent.
+Settings. Repo Bot inventories the repository without an agent, then uses its
+configured profile only when repairing a failing branch. Choose **Repo Bot** in
+the profile selector to configure that repair agent.
 
 **Simplifier decisions** selects `suggest` (the default) or `auto`. Suggest keeps
 the Mayor as decision maker and shows Simplifier Bot's advice on every pending

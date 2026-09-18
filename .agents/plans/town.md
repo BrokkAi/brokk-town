@@ -1,5 +1,17 @@
 # Brokk Town implementation plan
 
+## Repo Bot split completion (2026-09-18)
+
+- Integrated the released Repo Bot worker and its branch-health duty into Town:
+  inventory stays outside the shared agent capacity, while a failing-branch
+  repair claims one slot and uses Repo Bot's resolved profile.
+- Finished the operator surface that the split was missing: Repo Bot appears in
+  the browser agent selector, can inherit or save an independent repair profile,
+  and its watchtower inspector explains the inventory/repair distinction.
+- Added browser regression coverage for Repo Bot profile saving and watchtower
+  inspection. Validation passed: Go tests, Go race tests, Go vet, frontend
+  syntax, all 38 frontend tests, and diff checks.
+
 ## Simplifier Bot artwork (2026-09-18)
 
 - Generate an original transparent Clarifier cottage sprite using the existing
@@ -400,8 +412,9 @@ Claude for review, Codex for issue implementation, and an OpenRouter-backed agen
 for releases.
 
 - Preserved town-wide agent settings as defaults; added complete private profiles
-  for bug, feature, issue, review, and release bots, with explicit inheritance
-  reset. Repo-bot performs repository reporting without an agent.
+  for bug, feature, issue, review, release, simplifier and repo bots, with
+  explicit inheritance reset. Repo Bot observes the repository without an agent
+  and starts its configured profile only to repair a failing branch.
 - Persisted per-profile harness versions, commands, authentication, environment,
   model and effort. The selected bot resolves at dispatch; active runs retain
   their settings, and nested repair/review sessions reuse the prepared launch.
@@ -508,7 +521,31 @@ commit moves to the release house.
 
 ## Repo-bot and town hall
 
-Repo-bot reconciles paginated GitHub state and reports deltas: new issues/PRs,
+Release setup (2026-09-17): all five `@brokkai/repo-bot` packages have
+`0.1.0` version records on npm. GitHub trusted publishers were read back for
+`BrokkAi/repo-bot`, `publish-packages.yml`, environment `packages-publish`, with
+`createPackage` permission. The first release required local bootstrap because
+npm rejected trust for unknown package names; those versions have no provenance
+attestations. The GitHub release has four native archives and checksums, and the
+Release workflow is active. Town's Go tests (including race), vet, frontend
+syntax checks, and 35 frontend tests pass. After an initial registry metadata
+propagation delay, `npm view @brokkai/repo-bot version` returns `0.1.0`, and
+`npm exec --yes --package=@brokkai/repo-bot@0.1.0 -- brp version` from Town
+returns `v0.1.0`. The Town branch remains unpushed; no follow-up automation work
+was started.
+
+Repo Bot is a released worker of its own (`@brokkai/repo-bot`, `brp`), not
+service code. It reports one complete observation of the repository over Worker
+Protocol v1 — branch, exact head, issues, pulls, releases, the commits gained
+since Town last looked, and proof of which commits a release contains — and Town
+applies it with the reconciliation it already had. It also keeps the branch it
+covers healthy: when the checks on the head are failing, it repairs the branch
+with an agent in a private worktree at that exact revision, publishes only what
+passes the operator's verification command, and pushes the repair onto the
+branch. Attempts are budgeted per revision and the house holds one of the
+service's agent slots only while it is repairing.
+
+Town reports deltas from that inventory: new issues/PRs,
 merges, release-branch commit titles, releases, growing queues and stalled work.
 The initial report is an inventory, not a burst of newly arrived trucks. Later
 observed arrivals generate deliveries exactly once. Reports persist in town hall;

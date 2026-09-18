@@ -261,7 +261,7 @@ const state = {
   towns: {
     "acme/project": {
       id: "acme/project",
-      config: { repo: "acme/project", branch: "main", bot_agents: { review: { harness: "claude-acp", model: "claude-opus-5", effort: "high", inherited: false } }, bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1" }, harness: "codex-acp", model: "m", effort: "medium" },
+      config: { repo: "acme/project", branch: "main", bot_agents: { review: { harness: "claude-acp", model: "claude-opus-5", effort: "high", inherited: false }, repo: { harness: "codex-acp", model: "repo-repair-model", effort: "low", inherited: false } }, bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1", repo: "0.1.0" }, harness: "codex-acp", model: "m", effort: "medium" },
       workers: {
         issue: { role: "issue", status: "working", enabled: true, task: "Implementing", logs: [], agent: { harness: "codex-acp", model: "m", effort: "medium" } },
         review: { role: "review", status: "waiting", enabled: true, next: "0001-01-01T00:00:00Z", logs: [] },
@@ -380,7 +380,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.match(houseLabel("review"), /high/, "the village names each house's effort");
   assert.match(houseLabel("issue"), /codex/, "a house inheriting town defaults still shows them");
   assert.match(houseLabel("issue"), /medium/, "a house inheriting town defaults still shows its effort");
-  assert.match(houseLabel("repo"), /no agent/, "the watchtower is marked as running without an agent");
+  assert.match(houseLabel("repo"), /repo-repair-model/, "the watchtower names its repair profile");
   assert.ok(
     elements.houses.innerHTML.includes('class="profile own"'),
     "a house with its own profile is distinguished from an inheriting one",
@@ -390,6 +390,9 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.match(elements.inspection.textContent, /Authority:.*create pull requests/, "house controls explain their write authority");
   assert.match(elements.inspection.textContent, /Harness.*codex-acp/s, "the inspector spells the harness out in full");
   assert.match(elements.inspection.textContent, /Effort.*medium/s, "the inspector spells the effort out in full");
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "repo").onclick();
+  assert.match(elements.inspection.textContent, /Configure agent/, "the watchtower exposes its repair profile");
+  assert.match(elements.inspection.textContent, /Inventory runs without an agent/, "the watchtower explains when its profile is used");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-outcome-days]").find((button) => button.dataset.outcomeDays === "0").onclick();
   await elements.inspection.querySelectorAll("[data-export-outcomes]")[0].onclick();

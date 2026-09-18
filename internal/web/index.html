@@ -158,7 +158,7 @@
         />
         <p class="muted">
           Town starts and manages the six automation bots internally; no companion bot CLIs are needed.
-          Bug, Feature, Issue, Review, Release, and Simplifier Bots start paused, while read-only Repo Bot brings the first inventory.
+          Bug, Feature, Issue, Review, Release, and Simplifier Bots start paused, while Repo Bot brings the first inventory and uses its repair profile when branch checks fail.
           Enabled houses resume after Town restarts.
         </p>
         <label for="merge-policy">When a reviewed PR is ready</label
@@ -245,6 +245,7 @@
             <option value="issue">Issue Bot</option>
             <option value="review">Review Bot</option>
             <option value="release">Release Bot</option>
+            <option value="repo">Repo Bot</option>
           </select>
           <div class="profile-actions">
             <p id="agent-profile-status" class="muted" role="status"></p>

@@ -34,7 +34,7 @@ beforeEach(() => {
   for (const [, id, body] of html.matchAll(/<form id="([^"]+)">([\s\S]*?)<\/form>/g)) {
     elements[id].children = [...body.matchAll(/\bid="([^"]+)"/g)].map(([, child]) => elements[child]);
   }
-  for (const role of ["", "bug", "feature", "issue", "review", "release"])
+  for (const role of ["", "bug", "feature", "issue", "review", "release", "simplifier", "repo"])
     elements["agent-role"].append(new Element("option", role));
   const document = new Element("document");
   document.querySelector = (selector) => {
@@ -65,14 +65,14 @@ function fixture(extraAPI) {
     config: {
       repo: "acme/project", harness: "codex-acp", model: "default-model",
       effort: "medium", harness_version: "1.0", bot_agents: {}, merge_policy: "bot", simplifier_mode: "suggest",
-      bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1", simplifier: "0.1.0" },
+      bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1", simplifier: "0.1.0", repo: "0.1.0" },
     },
   };
   const overrides = {
     review: { harness: "claude-code", model: "review-model", effort: "high", harness_version: "1.5" },
   };
   const syncProfiles = () => {
-    for (const role of ["bug", "feature", "issue", "review", "release", "simplifier"])
+    for (const role of ["bug", "feature", "issue", "review", "release", "simplifier", "repo"])
       town.config.bot_agents[role] = overrides[role]
         ? { ...overrides[role], inherited: false }
         : { ...town.config, bot_agents: undefined, inherited: true };
@@ -169,6 +169,19 @@ test("bot updates are explicit and save a new exact pin", async () => {
   await save();
   assert.equal(app.saves()[0].body.bot_version, "0.6.0");
   assert.equal(app.town.config.bot_versions.issue, "0.6.0");
+});
+
+test("Repo Bot exposes and saves its repair agent profile", async () => {
+  const app = fixture();
+  await open("repo");
+  assert.match(elements["agent-profile-status"].textContent, /Uses town defaults/);
+  assert.match(elements["agent-profile-note"].textContent, /repairing a failing branch/);
+  edit("model-input", "repo-repair-model");
+  edit("effort-input", "high");
+  await save();
+  assert.equal(app.saves()[0].body.role, "repo");
+  assert.equal(app.saves()[0].body.agent.model, "repo-repair-model");
+  assert.equal(app.saves()[0].body.agent.effort, "high");
 });
 
 test("automatic bot updates are off until the Mayor saves the town setting", async () => {

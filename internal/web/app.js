@@ -22,6 +22,7 @@ import {
   focusIdentity,
   focusMatches,
   scheduleLabel,
+  branchHealthNote,
   workerControls,
   townControls,
   decisionReason,
@@ -334,8 +335,6 @@ function summaryChips(p, extra = "") {
   return `<span class="profile ${p.inherited ? "inherited" : "own"}${p.live ? " live" : ""}${extra ? ` ${extra}` : ""}" title="${esc(p.title)}"><b class="profile-chip harness">${esc(p.harness)}</b><b class="profile-chip model">${esc(p.model)}</b><b class="profile-chip effort rank-${esc(p.rank)}">${esc(p.effort)}</b></span>`;
 }
 function profileChips(profile, role = "", extra = "") {
-  if (role === "repo")
-    return '<span class="profile none" title="Repo-bot inventories the repository without an agent.">no agent</span>';
   return summaryChips(profileSummary(profile), extra);
 }
 function queuedProfileText(task) {
@@ -675,7 +674,7 @@ function renderHouses() {
       // the legend already explains, and into the label's tooltip.
       const words = status.replaceAll("_", " "),
         profile = role === "hall" ? null : profileSummary(worker.profile),
-        agentLabel = role === "hall" ? "" : role === "repo" ? "no agent" : profile.text,
+        agentLabel = role === "hall" ? "" : profile.text,
         name = `<i class="dot ${dot}"></i>${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}${count ? `<span class="count">${count}</span>` : ""}`;
       return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small>${esc(words)}</small>` : profileChips(worker.profile, role)}</span></button>`;
     })
@@ -844,10 +843,10 @@ function renderInspection() {
   const funnelDetails = selectedHouse === "issue" || selectedHouse === "repo"
     ? Object.values(t.funnel_syncs || {}).map((sync) => `<p class="muted"><strong>${esc(sync.funnel)}</strong> · ${esc(sync.provider)} · ${esc((sync.outcome?.kind || "incomplete").replaceAll("_", " "))}${sync.last_sync ? ` · ${esc(new Date(sync.last_sync).toLocaleString())}` : ""}${sync.outcome?.detail ? `<br>${esc(sync.outcome.detail)}` : ""}</p>`).join("")
     : "";
-  const agentDetails = selectedHouse === "repo"
-    ? '<p class="muted">Reports repository state without an agent.</p>'
-    : `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this house only" : "Inherited from this town's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
-  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${agentDetails}${funnelDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
+  const healthNote = selectedHouse === "repo" ? branchHealthNote(t.health) : "";
+  const healthDetails = healthNote ? `<p class="muted">${esc(healthNote)}</p>` : "";
+  const agentDetails = `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${selectedHouse === "repo" ? "Inventory runs without an agent. The configured agent starts only to repair a failing branch." : agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this house only" : "Inherited from this town's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
+  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${agentDetails}${healthDetails}${funnelDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
 
     queue
       .slice(0, 40)

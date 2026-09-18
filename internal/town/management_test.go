@@ -67,12 +67,17 @@ func TestNewTownWorkersStartSafelyAndEnabledStateSurvivesRestart(t *testing.T) {
 			return addErr
 		}
 		for _, role := range AgentRoles {
+			// The repo house starts enabled: a town that cannot see its
+			// repository has nothing to decide about.
+			if role == Repo {
+				continue
+			}
 			if town.Workers[role].Enabled || town.Workers[role].Status != "paused" {
 				t.Fatalf("%s did not start paused: %+v", role, town.Workers[role])
 			}
 		}
 		if !town.Workers[Repo].Enabled {
-			t.Fatal("read-only repo worker did not start enabled")
+			t.Fatal("repo worker did not start enabled")
 		}
 		town.Workers[Issue].Enabled = true
 		return nil

@@ -11,7 +11,7 @@ state and retry APIs for that scheduling metadata only.
 The initial transport is a Unix-domain socket created for one bot dispatch:
 
 ```text
-bbb|bfb|bib|brv|brb|bsb worker --socket PATH
+bbb|bfb|bib|brv|brb|bsb|brp worker --socket PATH
 ```
 
 The socket's parent directory is private to the Town service and the socket is
@@ -79,7 +79,8 @@ The v1 request contains:
 - operator verify command;
 - PR number for review work;
 - expected base and head SHAs for review work.
-- issue or PR number and `mode` for Simplifier Bot intake work.
+- issue or PR number and `mode` for Simplifier Bot intake work;
+- `mode`, `since_head` and `commits` for Repo Bot inventory work.
 
 Protocol v1 has no field for limiting Release Bot's release-preparation merge
 authority. Town therefore does not dispatch Release Bot while the town merge
@@ -110,6 +111,16 @@ Event types are:
 Town rejects gaps, unknown types, events after a terminal event, missing result
 payloads, and streams that end without a terminal event. Worker diagnostics are
 kept as bounded tails.
+
+Repo workers return one complete repository observation in `result.inventory`
+and their report on the branch it covers in `result.health`. Their `mode` names
+the duty: `full` observes and repairs, `inventory` observes only, which is what
+Town asks for when it is confirming a merge, so a repair agent never starts
+inside another house's work. `since_head` is the branch head Town last observed
+and `commits` are the revisions it still needs release ancestry for; Town's task
+graph never crosses the protocol. A failed run still carries whatever inventory
+the worker completed, because Town's view of the repository must not depend on
+the health duty that follows it.
 
 Issue workers return submitted PR ownership in `result.issue`. Simplifier item
 workers return the bounded admission/decline advice in

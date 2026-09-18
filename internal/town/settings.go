@@ -27,7 +27,7 @@ type AgentSettings struct {
 
 func (a AgentSettings) validateRole(role Role) error {
 	if role != "" && !ValidAgentRole(role) {
-		return errors.New("agent settings require bug, feature, issue, review, or release")
+		return errors.New("agent settings require bug, feature, issue, review, release, simplifier, or repo")
 	}
 	if a.Inherit {
 		if role == "" {

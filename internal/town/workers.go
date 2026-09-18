@@ -89,6 +89,9 @@ type dispatch struct {
 	issue, pr  int
 	base, head string
 	mode       string
+	// sinceHead and commits are the repo worker's inventory inputs.
+	sinceHead string
+	commits   []string
 }
 
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
@@ -157,6 +160,67 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	}
 	workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, d, deadline, observe)
 	return b.complete(ctx, t, r, d, workerResult, err, observe, log)
+}
+
+// Observe runs the repo worker for one repository inventory. The worker is the
+// only reader of GitHub's repository state; Town applies what it reports.
+func (b *BotWorkers) Observe(ctx context.Context, t *Town, request InventoryRequest, observe func(Progress), log *slog.Logger) (RunResult, error) {
+	deadline := time.Now().Add(workerDeadline)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	t = clone(t)
+	t.Config = t.Config.ForRole(Repo)
+	dir, state := Workspace(b.Root, t.ID, Repo)
+	agent := runner.AgentConfig{}
+	if request.Health {
+		// Only the branch-health duty needs an agent, and only that duty may be
+		// told how to start one.
+		resolved, err := agentConfig(ctx, t.Config, b.Root)
+		if err != nil {
+			return RunResult{}, err
+		}
+		agent = resolved
+		t.Config.Agent = agent
+	}
+	d := dispatch{mode: inventoryMode(request.Health), sinceHead: request.SinceHead, commits: request.Commits}
+	result, err := b.runBot(ctx, t, Repo, agent, dir, state, b.remote(t.Config.Repo), d, deadline, observe)
+	return repoResult(result, err)
+}
+
+// inventoryMode names the duty the repo worker is asked for. A confirmation
+// read asks for the observation alone.
+func inventoryMode(health bool) string {
+	if health {
+		return "full"
+	}
+	return "inventory"
+}
+
+// repoResult keeps a reported inventory even when the run failed: Town's view
+// of the repository must not depend on the health duty that follows it.
+func repoResult(worker workerResult, err error) (RunResult, error) {
+	result := RunResult{Usage: worker.Usage, CostUSD: worker.CostUSD}
+	if worker.Inventory != nil {
+		inventory := worker.Inventory.snapshot()
+		result.Inventory = &inventory
+	}
+	result.Health = worker.Health
+	if err != nil {
+		return result, err
+	}
+	if result.Inventory == nil {
+		return result, errors.New("repo worker omitted its inventory")
+	}
+	if !SHA(result.Inventory.Head) || !ValidBranch(result.Inventory.Branch) {
+		return result, errors.New("repo worker returned an inventory without a usable branch head")
+	}
+	if !ValidBranchHealth(result.Health) {
+		return result, errors.New("repo worker returned an invalid branch health report")
+	}
+	if worker.Issue != nil || worker.Review != nil || worker.Simplification != nil {
+		return result, errors.New("repo worker returned an unexpected typed result")
+	}
+	return result, nil
 }
 
 const manualReleaseTask = "Paused by manual merge policy; Release Bot may merge release-preparation pull requests"
@@ -253,6 +317,11 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 			return result, err
 		}
 		return result, validateWorkerResult(workerResult, r)
+	case Repo:
+		// Adoption reports only that the run ended. An inventory observed by a
+		// service that is gone is not applied behind the scheduler's back; the
+		// next scheduled observation is.
+		return result, err
 	case Review:
 		result.PR = d.pr
 		if err != nil {
@@ -290,6 +359,11 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 	}
 	if role == Simplifier {
 		request.Mode = t.Config.SimplifierModeOrDefault()
+	}
+	if role == Repo {
+		request.Mode = d.mode
+		request.SinceHead = d.sinceHead
+		request.Commits = d.commits
 	}
 	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
 	// The handle is committed before the run request so a service that stops

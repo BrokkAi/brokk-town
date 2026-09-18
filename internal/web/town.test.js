@@ -4,6 +4,7 @@ import {
   positions,
   houseNames,
   houseAuthority,
+  branchHealthNote,
   houseShortcuts,
   roadSegments,
   routePosition,
@@ -363,7 +364,21 @@ test("worker controls only offer actions that change the worker's state", () => 
   assert.deepEqual(workerControls({ enabled: false, status: "paused" }, true), { start: false, pause: false, stop: false });
   assert.match(houseAuthority("review", "bot"), /merge eligible pull requests when merge policy permits/);
   assert.match(houseAuthority("release", "manual"), /release-preparation pull requests.*Paused/);
-  assert.match(houseAuthority("repo"), /^Read-only:/);
+  assert.match(houseAuthority("repo"), /repairs the branch it covers/);
+});
+
+test("the watchtower reports what it found on the branch", () => {
+  assert.equal(branchHealthNote(undefined), "");
+  assert.equal(branchHealthNote({ state: "green" }), "Branch checks are passing.");
+  assert.match(branchHealthNote({ state: "red", failing: ["build", "vet"] }), /failing: build, vet/);
+  assert.match(
+    branchHealthNote({ state: "repaired", failing: ["build"], pushed: "abcdef1234567890" }),
+    /Published a repair for build as abcdef12/,
+  );
+  assert.match(
+    branchHealthNote({ state: "unrepairable", detail: "Spent 3 of 3 repair attempts." }),
+    /cannot repair them. Spent 3 of 3/,
+  );
 });
 test("optional tools validate input and use the visible navigation", async () => {
   const registered = new Map(),

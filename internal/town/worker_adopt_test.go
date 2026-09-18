@@ -380,15 +380,25 @@ func TestOpenKeepsRunHandlesForAdoption(t *testing.T) {
 	}
 }
 
-func TestStateRejectsRunHandleOnReporter(t *testing.T) {
+// The repo house owns a bot process like any other, but its run names one
+// repository observation: never an issue, a pull request or a revision.
+func TestStateRejectsRepoRunHandleWithATarget(t *testing.T) {
 	s := testStore(t, false)
 	x := addTown(t, s)
-	err := s.Update(func(st *State) error {
-		st.Towns[x.ID].Workers[Repo].Run = &WorkerRun{Bot: "issue-bot", Version: "1.0.0", Command: "/x", PID: 1, Socket: "/s"}
-		return nil
-	})
-	if err == nil {
-		t.Fatal("repo worker accepted an external run handle")
+	handle := func(run WorkerRun) error {
+		return s.Update(func(st *State) error {
+			st.Towns[x.ID].Workers[Repo].Run = &run
+			return nil
+		})
+	}
+	if err := handle(WorkerRun{Bot: "repo-bot", Version: "0.1.0", Command: "/x", PID: 1, Socket: "/s", Mode: "full"}); err != nil {
+		t.Fatalf("a repository observation was rejected: %v", err)
+	}
+	if err := handle(WorkerRun{Bot: "repo-bot", Version: "0.1.0", Command: "/x", PID: 1, Socket: "/s", Mode: "full", PR: 7}); err == nil {
+		t.Fatal("repo run handle accepted a pull request target")
+	}
+	if err := handle(WorkerRun{Bot: "repo-bot", Version: "0.1.0", Command: "/x", PID: 1, Socket: "/s"}); err == nil {
+		t.Fatal("repo run handle accepted a run with no duty")
 	}
 }
 

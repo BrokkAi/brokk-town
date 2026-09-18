@@ -48,3 +48,9 @@ func TestReleaseRetryControlIsConsumedByTheNextRun(t *testing.T) {
 		t.Fatalf("accepted retry was not consumed: %+v runs=%d", w, worker.runs)
 	}
 }
+
+// Observe reports an empty repository: this fixture's subject is dispatch, not
+// the inventory.
+func (w *releaseRetryWorker) Observe(context.Context, *Town, InventoryRequest, func(Progress), *slog.Logger) (RunResult, error) {
+	return RunResult{Inventory: &RepoSnapshot{Branch: "main", DefaultBranch: "main", Head: baseSHA}}, nil
+}

@@ -17,6 +17,7 @@ const profileNames = {
   issue: "Issue Bot",
   review: "Review Bot",
   release: "Release Bot",
+  repo: "Repo Bot",
 };
 
 function agentDraft(config, role) {
@@ -74,8 +75,10 @@ export function management({ api, getTown, getState, refresh }) {
     $("#agent-profile-note").textContent = pendingReset()
       ? "Save to use town defaults before customizing this bot."
       : settingsRole
-        ? `${profileNames[settingsRole]} uses this profile on its next run. Editing an inherited profile creates a custom profile for this bot.`
-        : "Town defaults apply on the next run to bots that use them. Custom bot profiles keep their own settings. Repo Bot does not use an agent.";
+        ? settingsRole === "repo"
+          ? `${profileNames[settingsRole]} uses this profile only when repairing a failing branch. Editing an inherited profile creates a custom profile for this bot.`
+          : `${profileNames[settingsRole]} uses this profile on its next run. Editing an inherited profile creates a custom profile for this bot.`
+        : "Town defaults apply on the next run to bots that use them. Custom bot profiles keep their own settings. Repo Bot uses its profile only when repairing a failing branch.";
     $("#bot-version-panel").hidden = !settingsRole;
     if (settingsRole) {
       selectedBotVersion ||= settingsConfig.bot_versions?.[settingsRole] || "unknown";
