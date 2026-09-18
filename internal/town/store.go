@@ -88,6 +88,17 @@ func Open(dir string, demo bool) (*Store, error) {
 	// worker returns to its scheduled state, and durable intents are kept.
 	for _, t := range s.state.Towns {
 		for _, w := range t.Workers {
+			// Older releases persisted the discovery scan's thirty-minute delay
+			// for intake too. Only shorten a successful, idle intake schedule;
+			// failures, explicit pauses and per-task retry times remain intact.
+			if w.Role == Simplifier && w.Enabled && w.Run == nil && w.Error == "" && w.Status == "waiting" && !t.Deleted {
+				if nextTask(t, Simplifier, "simplifying") != nil {
+					due := w.Updated.Add(time.Duration(t.Config.PollSeconds) * time.Second)
+					if w.Next.After(due) {
+						w.Next = due
+					}
+				}
+			}
 			if w.Run != nil && !t.Deleted {
 				w.Status = "working"
 				w.Phase = "reconnecting"

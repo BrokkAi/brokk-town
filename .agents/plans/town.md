@@ -20,7 +20,12 @@
    record verification or any remaining release prerequisite. No registry release
    or GitHub publication is requested by this implementation task.
 
-Status: investigation underway. Live PR #58 still reports the exact base/head
+Milestone 1 complete: successful idle Simplifier schedules are shortened on
+restart when eligible intake exists. Pauses, failures, task retry delays, deleted
+towns and empty queues are preserved. Focused race tests passed with local
+socket access (the sandbox prevented a fake worker from initializing).
+
+Status: review investigation underway. Live PR #58 still reports the exact base/head
 Town requested; the stale marker alone does not establish an inventory mismatch.
 
 ## Simplifier Bot reachable on the map (2026-09-18)
