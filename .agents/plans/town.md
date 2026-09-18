@@ -966,3 +966,17 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
 - Demo gives Orchard a town default, a review house on another harness, and a
   release house that only raises effort, so the difference is visible in the
   first frame.
+
+## Intake backlog and queue labels (2026-09-18)
+
+- Live muse-acp inventory was current: 18 open PRs were split between 14
+  Simplifier tasks and four blocked reviews. The 38 open issues were split
+  between 18 implemented, nine Issue Bot tasks, nine Simplifier tasks, and
+  two Mayoral decisions. House badges describe assignments, not GitHub totals.
+- Remove Simplifier's discovery-scan delay: intake now uses the configured
+  polling interval, with existing failure backoff and retry limits preserved.
+- Label house counts as queued work and explain their scope in the inspector.
+  Keep badges visible when a long house name needs truncation.
+- Add regression coverage for intake cadence with another arrival waiting.
+- Existing blocked reviews and Git failures require separate recovery; this
+  change does not reset their evidence or retry budgets.
