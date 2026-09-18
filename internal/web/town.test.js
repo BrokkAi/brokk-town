@@ -17,6 +17,7 @@ import {
   townSummary,
   taskStatus,
   projectTask,
+  houseWorkload,
   projectTown,
   projectState,
   workerProfile,
@@ -529,4 +530,24 @@ test("Simplifier intake has an explicit queue while blocked intake stays visible
     assert.equal(blocked.statusLabel, "Blocked");
     assert.equal(boardColumn(blocked), "blocked");
   }
+});
+
+test("workload counts distinguish active items, waiting items and blocked intake", () => {
+  const town = {
+    workers: { simplifier: { status: "working", run: { issue: 1 } } },
+    tasks: {
+      a: { kind: "issue", number: 1, house: "simplifier", stage: "simplifying" },
+      b: { kind: "pr", number: 2, house: "simplifier", stage: "simplifying" },
+      c: { kind: "issue", number: 3, house: "simplifier", stage: "simplifying", blocked: true },
+      d: { kind: "issue", number: 4, house: "simplifier", stage: "closed", blocked: true },
+    },
+  };
+  assert.deepEqual(houseWorkload(town, "simplifier"), { active: 1, waiting: 1, blocked: 1 });
+  assert.equal(boardColumn(projectTask(town, town.tasks.a)), "in_progress");
+  assert.equal(taskStatus(town, town.tasks.b), "simplifying");
+  delete town.workers.simplifier.run;
+  assert.deepEqual(houseWorkload(town, "simplifier"), { active: 0, waiting: 2, blocked: 1 });
+  town.workers.simplifier.status = "waiting";
+  assert.deepEqual(houseWorkload(town, "simplifier"), { active: 0, waiting: 2, blocked: 1 });
+  assert.deepEqual(houseWorkload(null, "review"), { active: 0, waiting: 0, blocked: 0 });
 });

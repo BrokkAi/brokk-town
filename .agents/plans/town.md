@@ -992,3 +992,14 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
 - Regression checks cover stage projection, board rendering, badge counts and
   inspector ordering. Verified rendered markup with an isolated Chrome fixture;
   frontend checks, Go race tests and vet pass. Live service remains unchanged.
+
+## Show work in progress per bot (2026-09-18)
+
+- Show active, waiting, and blocked item counts on house badges, board worker
+  cards, and the inspector. Keep idle bots with backlogs visible on the board.
+- Identify active intake from the running worker's exact persisted issue/PR
+  target; do not count every queued item as active just because its bot runs.
+  Preserve terminal and blocked states, and classify active targets under
+  In Progress. Counts refer to items, not worker processes.
+- Frontend regression tests cover mixed workloads, exact active targets, idle
+  backlogs, and missing targets. Preview serves changes directly from checkout.

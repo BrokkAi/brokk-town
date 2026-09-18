@@ -16,6 +16,7 @@ import {
   projectState,
   projectTown,
   projectWorker,
+  houseWorkload,
   boardColumns,
   boardColumn,
   normalizeView,
@@ -402,6 +403,12 @@ function restoreBoardViewport(board, viewport) {
       ?.focus({ preventScroll: true });
   }
 }
+function workloadText(counts) {
+  return `${counts.active} active · ${counts.waiting} waiting · ${counts.blocked} blocked`;
+}
+function workloadChips(counts) {
+  return `<span class="workload-counts" title="Active items · waiting items · blocked items"><span class="workload-active">${counts.active} active</span><span>${counts.waiting} waiting</span><span class="${counts.blocked ? "workload-blocked" : ""}">${counts.blocked} blocked</span></span>`;
+}
 function renderBoard() {
   const board = $("#board");
   const viewport = captureBoardViewport(board);
@@ -414,8 +421,9 @@ function renderBoard() {
         .map((item) => {
           const townName = item.town?.config?.repo || item.town?.id || "Town";
           const workerCards = item.workers
-            .filter((worker) => worker.active || worker.status === "failed" || worker.status === "pausing")
-            .map((worker) => `<button class="board-worker ${worker.status === "failed" ? "failed" : ""}" data-board-town="${esc(item.town.id)}" data-board-house="${esc(worker.role)}"><strong>${esc(worker.role)} · ${esc(worker.status)}</strong><small>${profileChips(worker.profile, worker.role)}</small></button>`)
+            .map((worker) => ({ worker, counts: houseWorkload(item.town, worker.role) }))
+            .filter(({ worker, counts }) => worker.active || worker.status === "failed" || counts.waiting || counts.blocked)
+            .map(({ worker, counts }) => `<button class="board-worker ${counts.blocked || worker.status === "failed" ? "failed" : ""}" data-board-town="${esc(item.town.id)}" data-board-house="${esc(worker.role)}"><strong>${esc(worker.role)} · ${esc(worker.status)}</strong>${workloadChips(counts)}<small>${profileChips(worker.profile, worker.role)}</small></button>`)
             .join("");
           const cards = boardColumns
             .map((column) => {
@@ -682,7 +690,7 @@ function renderHouses() {
     .map(([role, [x, y]]) => {
       const w = t?.workers[role],
         worker = projectWorker(t, role, w),
-        count = t ? queueFor(t, role).length : 0,
+        counts = houseWorkload(t, role),
         status = role === "hall" ? "Town reports" : worker.status,
         dot =
           status === "working" || status === "pausing"
@@ -697,7 +705,7 @@ function renderHouses() {
         profile = role === "hall" ? null : profileSummary(worker.profile),
         agentLabel = role === "hall" ? "" : profile.text,
         name = `<i class="dot ${dot}"></i><span class="house-name">${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}</span>`;
-      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}, ${count} queued${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)} · ${count} queued${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label">${count ? `<span class="house-queue">${count} queued</span>` : ""}<strong>${name}</strong>${role === "hall" ? `<small>${esc(words)}</small>` : profileChips(worker.profile, role)}</span></button>`;
+      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label">${role !== "hall" ? `<span class="house-queue">${workloadChips(counts)}</span>` : ""}<strong>${name}</strong>${role === "hall" ? `<small>${esc(words)}</small>` : profileChips(worker.profile, role)}</span></button>`;
     })
     .join("");
   $("#houses")
@@ -874,7 +882,7 @@ function renderInspection() {
   const healthNote = selectedHouse === "repo" ? branchHealthNote(t.health) : "";
   const healthDetails = healthNote ? `<p class="muted">${esc(healthNote)}</p>` : "";
   const agentDetails = `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${selectedHouse === "repo" ? "Inventory runs without an agent. The configured agent starts only to repair a failing branch." : agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this house only" : "Inherited from this town's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
-  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div><h3>BOT QUEUE · ${queue.length}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
+  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${workloadChips(houseWorkload(t, selectedHouse))}<h3>BOT QUEUE · ${queue.length}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
 
     queue
       .slice(0, 40)

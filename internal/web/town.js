@@ -586,6 +586,12 @@ export function taskStatus(town, task) {
     return "inconclusive";
   if (task?.blocked || stage === "blocked") return "blocked";
   if (stage === "failed") return "failed";
+  const worker = town?.workers?.[task?.house];
+  const run = worker?.run;
+  if ((workerIsActive(worker) || worker?.agent) && run &&
+      ((task?.kind === "issue" && task.number > 0 && run.issue === task.number) ||
+       (task?.kind === "pr" && task.number > 0 && run.pr === task.number)))
+    return "working";
   if (stage === "ready") return "ready";
   if (stage === "draft") return "draft";
   if (stage === "open") return "open";
@@ -628,6 +634,20 @@ export function projectTask(town, task) {
     // another task running with a captured profile.
     profile: workerProfile(town, task?.house),
     intent: intentFor(town, task),
+  };
+}
+
+// Active, waiting and blocked count assigned work items.
+// Only an exact persisted run target moves a queued item into active work.
+export function houseWorkload(town, role) {
+  const tasks = queueFor(town || {}, role);
+  const statuses = tasks.map((task) => taskStatus(town, task));
+  const blocked = statuses.filter((status) => attentionStatuses.includes(status)).length;
+  const working = statuses.filter((status) => status === "working").length;
+  return {
+    active: working,
+    waiting: tasks.length - blocked - working,
+    blocked,
   };
 }
 
