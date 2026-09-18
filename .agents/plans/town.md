@@ -1,5 +1,28 @@
 # Brokk Town implementation plan
 
+## Blocked-town recovery milestones (2026-09-18)
+
+1. **Scheduling recovery:** migrate saved Simplifier discovery delays when eligible
+   intake is waiting; preserve pauses, running work, task retry budgets and errors.
+   Add restart regressions and commit after focused validation.
+2. **Review revision recovery:** reproduce the stale-review failure with fake Git
+   repositories, fix exact-revision fetching and expose stale/ineligible outcomes
+   explicitly across the worker boundary. Reconcile safely without certifying an
+   incomplete review or allowing one failed PR to stall unrelated work. Validate
+   and commit changes in each affected repository.
+3. **Interrupted-worker recovery:** preserve the exact unresolved dispatch and
+   actionable recovery instructions across restarts. Reconcile landed issue work
+   before retrying; retain uncertain write evidence and avoid duplicate scans.
+   Add restart/retry regressions and commit.
+4. **Integration and local operation:** run required Go race/vet, frontend and
+   isolated integration checks; document recovery and commit. Inspect installed
+   binaries and live state, apply supported local recovery where authorized, and
+   record verification or any remaining release prerequisite. No registry release
+   or GitHub publication is requested by this implementation task.
+
+Status: investigation underway. Live PR #58 still reports the exact base/head
+Town requested; the stale marker alone does not establish an inventory mismatch.
+
 ## Simplifier Bot reachable on the map (2026-09-18)
 
 - The artwork drop painted the Clarifier but left every other surface keyed to
