@@ -42,7 +42,25 @@ Explicit task retry clears only the matching hold; starting a discovery house
 explicitly authorizes another scan. Legacy uncertainty is migrated from the
 attempt ledger. Focused restart/adoption/stop and migration race tests passed.
 
-Status: full integration validation and operational recovery assessment underway. Live PR #58 still reports the exact base/head
+Milestone 4 complete: `make check smoke` passed (full Go race suite, vet,
+license policy, frontend tests/syntax, npm launcher, 25 Python packaging tests,
+and isolated demo lifecycle/CLI/API/PTY smoke). Recovery UI refinements passed
+all 42 frontend tests and syntax checks; focused Go recovery tests and vet were
+rerun after the final message change. The recovery guide is in
+`docs/blocked-town-recovery.md`.
+
+Operational inspection: the live service executable is the npm-installed
+v0.4.6; its Review Bot pin is 0.2.2. Issue #63 is pending with context canceled,
+no saved result/URL, and the GitHub all-state PR lookup for its expected branch
+returned no PR. These observations are not an authorization to bypass review or
+uncertain write safeguards. The live service has not been replaced or its bots
+retriggered as a development test. Deployment requires installation of the Town
+changes and a released Review Bot containing 3ddf1f7; registry publication remains
+outside this implementation request. No contributor branches, GitHub checks,
+release tags or package publications were changed.
+
+Status: all implementation milestones complete and locally validated; production
+rollout and live retries remain a separately documented operational step. Live PR #58 still reports the exact base/head
 Town requested; the stale marker alone does not establish an inventory mismatch.
 
 ## Simplifier Bot reachable on the map (2026-09-18)

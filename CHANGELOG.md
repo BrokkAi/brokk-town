@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Recover persisted Simplifier intake delays on restart without clearing failures.
+- Refresh incomplete reviews and keep unrelated PRs moving after a review fails.
+- Preserve interrupted worker targets and hold replacement work until recovery;
+  resolve issue work from saved publication evidence and expose recovery guidance.
+
 ## 0.4.6 — 2026-09-18
 
 - Keep Simplifier intake moving on the normal polling interval and show its

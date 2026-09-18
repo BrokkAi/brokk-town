@@ -425,7 +425,10 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 				w.Status = "paused"
 			}
 			w.Error = err.Error()
-			w.Task = "Could not confirm that the persisted worker stopped"
+			w.Task = "Could not authenticate the persisted worker; reconnect before starting replacement work"
+			if stopRequested(ctx) {
+				w.Task = "Could not confirm that the persisted worker stopped"
+			}
 			w.Updated = s.now()
 			return nil
 		}

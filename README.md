@@ -590,3 +590,6 @@ Licensed under [Apache-2.0](LICENSE). Attribution is in [NOTICE](NOTICE) and
 [third-party notices](licenses/THIRD_PARTY_NOTICES.txt). Artwork provenance is in
 [docs/ARTWORK.md](docs/ARTWORK.md). Native and npm packaging is configured, and the npm bootstrap and trusted
 publishers are established. Stable GitHub release publication remains separate.
+
+For scheduling stalls, stale reviews, and interrupted workers, see
+[blocked-town recovery](docs/blocked-town-recovery.md).

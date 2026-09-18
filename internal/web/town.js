@@ -279,7 +279,7 @@ export function inbox(state) {
         status: "failed",
         statusLabel: taskStatuses.failed.label,
         statusClass: taskStatuses.failed.className,
-        detail: worker.error || "",
+        detail: worker.recovery?.detail || worker.error || "",
       });
     }
   }
@@ -376,7 +376,7 @@ export function workerControls(worker, blocked = false) {
   const enabled = !!worker?.enabled;
   const active = activeWorkerStatuses.has(status) || !!worker?.agent;
   return {
-    start: !blocked && (!enabled || status === "failed"),
+    start: !blocked && !worker?.recovery?.task_id && (!enabled || status === "failed"),
     pause: enabled && status !== "pausing",
     stop: enabled || active,
   };
@@ -431,6 +431,7 @@ export function branchHealthNote(health) {
 }
 
 export function scheduleLabel(worker, now = Date.now()) {
+  if (worker?.recovery) return "Recovery required";
   if (!worker?.enabled) return "Paused";
   if (worker?.agent) return "After current run";
   const next = Date.parse(worker?.next || "");

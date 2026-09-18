@@ -559,3 +559,11 @@ test("an active task keeps its running profile while queued siblings use next-ru
   assert.equal(projectTask(town, task).profile.source, "active");
   assert.equal(projectTask(town, { ...task, number: 8 }).profile.model, "next-model");
 });
+
+test("unresolved dispatches show recovery instead of a runnable schedule", () => {
+  const recovery = { task_id: "issue:63", detail: "Check GitHub, then retry issue:63" };
+  const worker = { enabled: true, status: "failed", recovery, next: "0001-01-01T00:00:00Z" };
+  assert.equal(scheduleLabel(worker), "Recovery required");
+  assert.equal(workerControls(worker).start, false);
+  assert.equal(workerControls({ ...worker, recovery: { detail: "Check recent issues, then start the scan" } }).start, true);
+});
