@@ -632,7 +632,7 @@ export function projectTask(town, task) {
     workerStatus: normalized(worker?.status) || "paused",
     // A queued task must use the configured profile even while its house has
     // another task running with a captured profile.
-    profile: workerProfile(town, task?.house),
+    profile: workerProfile(town, task?.house, status === "working" ? worker : null),
     intent: intentFor(town, task),
   };
 }

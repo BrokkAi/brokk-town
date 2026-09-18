@@ -141,10 +141,10 @@ class Element {
       button._surface = this;
       this.children.push(button);
     }
-    // Board list containers are the only non-button descendants needed by
+    // Scrollable list containers are the non-button descendants needed by
     // this shim. Keep them shallow: app.js only needs their identity, focus,
     // and scroll offsets to exercise redraw preservation.
-    const lists = /<div\b([^>]*\bdata-board-list="[^"]+"[^>]*)>[\s\S]*?<\/div>/gi;
+    const lists = /<div\b([^>]*(?:\bdata-board-list="[^"]+"|class="house-task-queue")[^>]*)>[\s\S]*?<\/div>/gi;
     for (const match of html.matchAll(lists)) {
       const list = new Element("div");
       for (const attr of match[1].matchAll(/([\w-]+)="([^"]*)"/g)) {
@@ -292,11 +292,12 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   const elements = installFixture();
   const requests = [];
   const createdLinks = [];
-  let releaseSecond, releaseThird;
+  let releaseSecond, releaseIntake, releaseThird;
   const messages = [
     `data: ${JSON.stringify(state)}\n\n`,
     new Promise((resolve) => { releaseSecond = () => resolve(`data: ${JSON.stringify({ ...state, seq: 2, capacity: { active: 2, limit: 7 } })}\n\n`); }),
-    new Promise((resolve) => { releaseThird = () => resolve(`data: ${JSON.stringify({ ...state, seq: 3, capacity: { active: 3, limit: 8 } })}\n\n`); }),
+    new Promise((resolve) => { releaseIntake = () => resolve(`data: ${JSON.stringify({ ...state, seq: 3 })}\n\n`); }),
+    new Promise((resolve) => { releaseThird = () => resolve(`data: ${JSON.stringify({ ...state, seq: 4, capacity: { active: 3, limit: 8 } })}\n\n`); }),
   ];
   document.createElement = (tag) => {
     const element = new Element(tag);
@@ -405,6 +406,16 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.match(houseLabel("hall"), /2 to decide/);
   assert.match(elements.board.textContent, /simplifier · waiting.*0 active.*1 waiting.*1 blocked/s);
   assert.match(elements.inspection.textContent, /1 issue · 1 pull request · 1 blocked/);
+  const intakeScroll = elements.inspection.querySelector(".house-task-queue");
+  intakeScroll.scrollTop = 127;
+  for (let number = 100; number < 145; number++) {
+    state.towns["acme/project"].tasks[`issue:${number}`] = { id: `issue:${number}`, kind: "issue", number, title: `Intake ${number}`, house: "simplifier", stage: "simplifying" };
+  }
+  releaseIntake();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(elements.inspection.querySelector(".house-task-queue").scrollTop, 127, "queue scroll survives changed inspector markup");
+  assert.ok(elements.inspection.querySelectorAll("[data-task]").some((button) => button.dataset.task === "issue:144"), "backlog beyond forty items remains accessible");
+
   assert.ok(elements.inspection.innerHTML.indexOf('data-task="issue:70"') < elements.inspection.innerHTML.indexOf('class="agent-card"'), "intake is visible before agent configuration");
   assert.match(elements.board.textContent, /Simplifier queue/);
   assert.match(elements.board.textContent, /Awaiting Simplifier/);

@@ -551,3 +551,11 @@ test("workload counts distinguish active items, waiting items and blocked intake
   assert.deepEqual(houseWorkload(town, "simplifier"), { active: 0, waiting: 2, blocked: 1 });
   assert.deepEqual(houseWorkload(null, "review"), { active: 0, waiting: 0, blocked: 0 });
 });
+
+test("an active task keeps its running profile while queued siblings use next-run settings", () => {
+  const town = { config: { model: "next-model" }, workers: { issue: { status: "working", agent: { model: "running-model" }, run: { issue: 7 } } } };
+  const task = { kind: "issue", number: 7, house: "issue", stage: "queued" };
+  assert.equal(projectTask(town, task).profile.model, "running-model");
+  assert.equal(projectTask(town, task).profile.source, "active");
+  assert.equal(projectTask(town, { ...task, number: 8 }).profile.model, "next-model");
+});

@@ -1664,6 +1664,11 @@ textarea {
   .house-label .profile {
     display: none;
   }
+  .house-label .hall-count {
+    position: static;
+    font-size: 9px;
+    margin-top: 3px;
+  }
   .world-legend {
     left: 7px;
     bottom: 5px;

@@ -361,7 +361,7 @@ function profileChips(profile, role = "", extra = "") {
 }
 function queuedProfileText(task) {
   if (["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(task.stage)) return "";
-  return `<span class="profile-lead">Next profile</span>${profileChips(task.profile, task.house)}`;
+  return `<span class="profile-lead">${task.profile?.source === "active" ? "Running profile" : "Next profile"}</span>${profileChips(task.profile, task.house)}`;
 }
 function captureBoardViewport(board) {
   const townColumns = new Map(
@@ -708,7 +708,7 @@ function renderHouses() {
         profile = role === "hall" ? null : profileSummary(worker.profile),
         agentLabel = role === "hall" ? "" : profile.text,
         name = `<i class="dot ${dot}"></i><span class="house-name">${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}</span>`;
-      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small>${esc(words)}</small>` : `${profileChips(worker.profile, role)}<span class="house-counts" title="${workloadText(counts)}" aria-label="${workloadText(counts)}"><span class="workload-active" title="Active items">${counts.active}</span> / <span title="Waiting items">${counts.waiting}</span> / <span class="workload-blocked" title="Blocked items">${counts.blocked}</span></span>`}</span></button>`;
+      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small class="hall-count">${esc(words)}</small>` : `${profileChips(worker.profile, role)}<span class="house-counts" title="${workloadText(counts)}" aria-label="${workloadText(counts)}"><span class="workload-active" title="Active items">${counts.active}</span> / <span title="Waiting items">${counts.waiting}</span> / <span class="workload-blocked" title="Blocked items">${counts.blocked}</span></span>`}</span></button>`;
     })
     .join("");
   $("#houses")
@@ -738,8 +738,11 @@ function writeInspection(out, html) {
   if (signature === inspectionSignature) return false;
   const sameSelection = inspectionSignature.startsWith(`${key}\u0000`);
   const frames = sameSelection ? inspectionFrames(out) : [];
+  const queueScroll = sameSelection ? out.querySelector(".house-task-queue")?.scrollTop : undefined;
   inspectionSignature = signature;
   out.innerHTML = html;
+  const queue = out.querySelector(".house-task-queue");
+  if (queue && queueScroll !== undefined) queue.scrollTop = queueScroll;
   for (const [el, top, left] of frames) {
     if (el.scrollTop !== top) el.scrollTop = top;
     if (el.scrollLeft !== left) el.scrollLeft = left;
@@ -888,7 +891,6 @@ function renderInspection() {
   if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${workloadChips(houseWorkload(t, selectedHouse))}<h3>BOT QUEUE · ${queue.length}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
 
     queue
-      .slice(0, 40)
       .map(
         (task) =>
           `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectTask(t, task).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}</small></button>`,

@@ -1021,3 +1021,12 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
 - Show one short active / waiting / blocked line with hover explanations;
   retain Town Hall's pending-decision count. Board and inspector keep their
   spelled-out counts. Frontend tests cover the numbers and tooltip.
+
+## PR 93 review and v0.4.6 release (2026-09-18)
+
+- Review fixes: retain nested queue scrolling across snapshot updates, expose
+  all items in long queues, show captured profiles for active tasks, and keep
+  Town Hall's decision count visible on narrow screens. Add regressions.
+- Validate with make check smoke and a non-publishing package build. Merge
+  PR 93 only with green CI, then publish v0.4.6 from green origin/master via
+  the tag-driven Publish packages workflow documented in RELEASING.md.
