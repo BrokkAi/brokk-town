@@ -399,10 +399,9 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   document.dispatchEvent({ type: "keydown", key: "8", target: new Element("div") });
   assert.match(elements.inspection.textContent, /THE CLARIFIER/, "the eighth shortcut visits Simplifier Bot");
   document.dispatchEvent({ type: "keydown", key: "t", target: new Element("div") });
-  assert.equal(elements["town-workloads"].hidden, false);
-  assert.equal(elements.houses.innerHTML.includes("workload-counts"), false, "counts do not cover the animation");
-  assert.match(elements["town-workloads"].innerHTML, /SIMPLIFIER BOT: 0 active · 1 waiting · 1 blocked/);
-  assert.match(elements["town-workloads"].textContent, /TOWN HALL.*2 to decide/s);
+  assert.equal(elements.houses.innerHTML.includes("workload-counts"), false, "houses use the compact count line");
+  assert.match(houseLabel("simplifier"), /0 \/ 1 \/ 1/);
+  assert.match(elements.houses.innerHTML, /class="house-counts" title="0 active · 1 waiting · 1 blocked"/);
   assert.match(houseLabel("hall"), /2 to decide/);
   assert.match(elements.board.textContent, /simplifier · waiting.*0 active.*1 waiting.*1 blocked/s);
   assert.match(elements.inspection.textContent, /1 issue · 1 pull request · 1 blocked/);

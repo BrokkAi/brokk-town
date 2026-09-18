@@ -1013,3 +1013,11 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
   strip, including zero. It opens the existing Mayoral decision list.
 - Verified layout with a Chrome fixture, frontend tests/syntax, Go race tests
   and vet. The read-only preview serves these assets directly.
+
+## Compact counts inside each house panel (2026-09-18)
+
+- User preferred the colored numeric counts locally, below the profile inside
+  each bot panel. Remove the separate strip above the animation.
+- Show one short active / waiting / blocked line with hover explanations;
+  retain Town Hall's pending-decision count. Board and inspector keep their
+  spelled-out counts. Frontend tests cover the numbers and tooltip.

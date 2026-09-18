@@ -870,24 +870,13 @@ canvas {
 }
 .workload-active { color: #bbf785; }
 .workload-blocked { color: #f4a574; }
-#town-workloads { margin-bottom: 12px; }
-.workload-key { margin: 0 0 5px; font-size: 11px; color: var(--muted); }
-.workload-strip {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(95px, 1fr));
-  gap: 5px;
-  overflow-x: auto;
+.house-counts {
+  display: block;
+  margin-top: 3px;
+  color: #b9c9bc;
+  font: 600 10px/12px var(--mono);
+  text-align: center;
 }
-.workload-strip button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 5px 6px;
-  font: 11px var(--mono);
-  white-space: nowrap;
-}
-.workload-strip button.selected { border-color: #b4dc8c; }
 .house-task-queue {
   max-height: 320px;
   overflow-y: auto;
@@ -911,8 +900,7 @@ canvas {
   margin-right: 5px;
   vertical-align: middle;
 }
-/* The label may not grow past the road the wheelbarrows travel, so the profile
-   takes the second line rather than a third one. */
+/* Keep the profile and compact workload line inside the house panel. */
 .house-label .profile {
   margin-top: 4px;
 }

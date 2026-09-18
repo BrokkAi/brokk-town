@@ -686,23 +686,8 @@ $("#capacity-form").onsubmit = async (event) => {
 function pendingDecisions(t) {
   return queueFor(t || {}, "hall").filter((task) => task.mayoral_decision === "pending").length;
 }
-function renderTownWorkloads(t) {
-  const strip = $("#town-workloads");
-  strip.hidden = !t || overview || viewMode !== "town";
-  if (strip.hidden) return;
-  strip.innerHTML = `<p class="workload-key">Items per bot: <span class="workload-active">active</span> / waiting / <span class="workload-blocked">blocked</span></p><div class="workload-strip">${Object.keys(houseNames).map((role) => {
-    const counts = houseWorkload(t, role);
-    const decisions = pendingDecisions(t);
-    const description = role === "hall" ? `${decisions} pending decisions` : workloadText(counts);
-    return `<button data-workload-house="${role}" class="${selectedHouse === role ? "selected" : ""}" title="${houseNames[role]}: ${description}" aria-label="${houseNames[role]}: ${description}"><strong>${houseNames[role].replace(" BOT", "")}</strong><span>${role === "hall" ? `${decisions} to decide` : `<span class="workload-active">${counts.active}</span> / ${counts.waiting} / <span class="${counts.blocked ? "workload-blocked" : ""}">${counts.blocked}</span>`}</span></button>`;
-  }).join("")}</div>`;
-  strip.querySelectorAll("[data-workload-house]").forEach((button) => {
-    button.onclick = () => chooseHouse(button.dataset.workloadHouse);
-  });
-}
 function renderHouses() {
   const t = town();
-  renderTownWorkloads(t);
   $("#houses").innerHTML = Object.entries(positions)
     .filter(([role]) => isHouse(role))
     .map(([role, [x, y]]) => {
@@ -723,7 +708,7 @@ function renderHouses() {
         profile = role === "hall" ? null : profileSummary(worker.profile),
         agentLabel = role === "hall" ? "" : profile.text,
         name = `<i class="dot ${dot}"></i><span class="house-name">${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}</span>`;
-      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small>${esc(words)}</small>` : profileChips(worker.profile, role)}</span></button>`;
+      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small>${esc(words)}</small>` : `${profileChips(worker.profile, role)}<span class="house-counts" title="${workloadText(counts)}" aria-label="${workloadText(counts)}"><span class="workload-active" title="Active items">${counts.active}</span> / <span title="Waiting items">${counts.waiting}</span> / <span class="workload-blocked" title="Blocked items">${counts.blocked}</span></span>`}</span></button>`;
     })
     .join("");
   $("#houses")
