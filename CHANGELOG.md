@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.3 — 2026-09-18
+
+- Put Simplifier Bot on the map: its cottage had artwork but no house, so the
+  label, status dot, queue count, profile chips and click target were missing
+  and journal, inbox and courier clicks headed for it opened Town Hall. Key 8
+  now visits it, and its worker walks on its own phase.
+
+## 0.4.2 — 2026-09-18
+
+- Launch Muse ACP against a derived config directory.
+
+## 0.4.1 — 2026-09-18
+
+- Draw Simplifier Bot's Clarifier cottage.
+
 ## 0.4.0 — 2026-09-18
 
 - Route every newly observed issue and pull request through Simplifier Bot, a

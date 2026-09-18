@@ -1,5 +1,24 @@
 # Brokk Town implementation plan
 
+## Simplifier Bot reachable on the map (2026-09-18)
+
+- The artwork drop painted the Clarifier but left every other surface keyed to
+  the buildings atlas, so the house had no label, no status dot, no queue count
+  and no click target, and journal, inbox and courier clicks bound for it landed
+  in Town Hall instead.
+- Ask one question, `isHouse(role)`, wherever a role needs a house: the atlas
+  index or a standalone sprite both count. The village labels, the canvas loop,
+  the journal, the inbox and the courier hit-test share it.
+- Raise the keyboard shortcut ceiling to the number of shortcuts town.js
+  publishes, so key 8 visits the Clarifier as its `aria-keyshortcuts` promises,
+  and list it in the help dialog.
+- Give `workerPose` the simplifier role so its worker keeps its own walk phase
+  instead of moving in lockstep with Bug Bot.
+- Validation: Go race tests and vet, frontend syntax and tests including a new
+  DOM-shim check that the house renders, answers key 8 and states its own
+  authority, and an isolated demo serve confirming the simplifier worker reaches
+  the browser state.
+
 ## Simplifier Bot artwork (2026-09-18)
 
 - Generate an original transparent Clarifier cottage sprite using the existing

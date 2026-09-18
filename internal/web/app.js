@@ -136,6 +136,11 @@ const indices = {
   bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5, feature: 6,
 };
 const standaloneBuildings = { feature: featureStudy, simplifier: simplifierClarifier };
+// A house stands on the map whether its art comes from the shared atlas or
+// from its own sprite, so every lookup asks whether the role has a house at
+// all rather than which sheet it was painted on.
+const isHouse = (role) =>
+  indices[role] !== undefined || standaloneBuildings[role] !== undefined;
 async function api(path, body, signal) {
   const response = await fetch(path, {
     method: body ? "POST" : "GET",
@@ -658,7 +663,7 @@ $("#capacity-form").onsubmit = async (event) => {
 function renderHouses() {
   const t = town();
   $("#houses").innerHTML = Object.entries(positions)
-    .filter(([role]) => indices[role] !== undefined)
+    .filter(([role]) => isHouse(role))
     .map(([role, [x, y]]) => {
       const w = t?.workers[role],
         worker = projectWorker(t, role, w),
@@ -901,8 +906,7 @@ function renderJournal() {
     .forEach(
       (b) =>
         (b.onclick = () => {
-          selectedHouse =
-            indices[b.dataset.house] !== undefined ? b.dataset.house : "hall";
+          selectedHouse = isHouse(b.dataset.house) ? b.dataset.house : "hall";
           selectedTask = b.dataset.cargo;
           $("#inspector").classList.add("open");
           renderInspection();
@@ -970,7 +974,7 @@ function openInboxItem(id, house, task) {
   if (!state?.towns[id]) return;
   $("#inbox-dialog").close();
   selectTown(id);
-  inspectOperation(id, indices[house] !== undefined ? house : "hall", task);
+  inspectOperation(id, isHouse(house) ? house : "hall", task);
 }
 async function decideFromInbox(id, task, action) {
   $("#inbox-error").textContent = "";
@@ -1019,7 +1023,7 @@ function draw(now) {
   ctx.drawImage(field, 0, 0);
   const t = town();
   for (const [role, [x, y]] of Object.entries(positions)) {
-    if (indices[role] === undefined && !standaloneBuildings[role]) continue;
+    if (!isHouse(role)) continue;
     if (role === selectedHouse) {
       ctx.fillStyle = "#b0e98115";
       ctx.beginPath();
@@ -1149,7 +1153,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "b") selectView("board");
   if (e.key.toLowerCase() === "c") selectView("compact");
   if (e.key === "Escape") closeInspector();
-  if (/^[1-7]$/.test(e.key)) chooseHouse(houseShortcuts[Number(e.key) - 1]);
+  if (/^[1-9]$/.test(e.key) && houseShortcuts[Number(e.key) - 1])
+    chooseHouse(houseShortcuts[Number(e.key) - 1]);
 });
 canvas.onclick = (e) => {
   const r = canvas.getBoundingClientRect(),
@@ -1163,7 +1168,7 @@ canvas.onclick = (e) => {
     );
     if (Math.hypot(x - p.x, y - p.y) < 50) {
       selectedTask = m.cargo;
-      selectedHouse = indices[m.to] !== undefined ? m.to : "hall";
+      selectedHouse = isHouse(m.to) ? m.to : "hall";
       $("#inspector").classList.add("open");
       renderInspection();
       return;
