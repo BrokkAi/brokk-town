@@ -860,10 +860,25 @@ canvas {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.house-label .count {
-  flex-shrink: 0;
-  font-size: 10px;
-  letter-spacing: 0;
+.house-queue {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  padding: 3px 7px;
+  border: 1px solid #b4dc8c;
+  border-radius: 4px;
+  background: #203c28;
+  color: #d6f8be;
+  font: 600 11px var(--mono);
+  white-space: nowrap;
+}
+.house-task-queue {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.queue-summary {
+  color: #d6f8be;
+  font-size: 13px;
 }
 .house-label small {
   display: block;
@@ -874,6 +889,7 @@ canvas {
   margin-top: 4px;
 }
 .house-label .dot {
+  flex-shrink: 0;
   width: 5px;
   height: 5px;
   margin-right: 5px;
@@ -1641,8 +1657,9 @@ textarea {
     height: 4px;
     margin: 0;
   }
-  .house-label .count {
-    padding: 0 2px;
+  .house-queue {
+    font-size: 9px;
+    padding: 2px 4px;
   }
   .house-label .profile {
     display: none;

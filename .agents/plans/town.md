@@ -980,3 +980,15 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
 - Add regression coverage for intake cadence with another arrival waiting.
 - Existing blocked reviews and Git failures require separate recovery; this
   change does not reset their evidence or retry budgets.
+
+## Expose Simplifier intake across browser views (2026-09-18)
+
+- Recognize the persisted simplifying stage as Awaiting Simplifier in board
+  and compact views, with a dedicated Simplifier queue board column. Blocked
+  intake retains its stronger blocked classification.
+- Render house queue badges outside the truncating name row, including counts
+  in accessible names and tooltips. Move inspector queue cards and issue/PR/
+  blocked totals above last activity, authority, and agent configuration.
+- Regression checks cover stage projection, board rendering, badge counts and
+  inspector ordering. Verified rendered markup with an isolated Chrome fixture;
+  frontend checks, Go race tests and vet pass. Live service remains unchanged.

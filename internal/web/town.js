@@ -314,6 +314,7 @@ export const taskStatuses = {
   draft: { label: "Draft", className: "draft" },
   working: { label: "Working", className: "working" },
   queued: { label: "Queued", className: "queued" },
+  simplifying: { label: "Awaiting Simplifier", className: "queued" },
   awaiting_mayor: { label: "Mayoral decision", className: "waiting-github" },
   declined: { label: "Declined by Mayor", className: "closed" },
   delayed: { label: "Delayed by Mayor", className: "waiting-github" },
@@ -332,6 +333,7 @@ export const taskStatuses = {
 };
 export const boardColumns = [
   { id: "open", label: "Open" },
+  { id: "simplifier", label: "Simplifier queue" },
   { id: "queued", label: "Queued" },
   { id: "in_progress", label: "In Progress" },
   { id: "blocked", label: "Blocked" },
@@ -602,6 +604,7 @@ export function boardColumn(task) {
   if (["complete", "merged", "closed", "implemented", "declined"].includes(status)) return "completed";
   if (status === "unreleased") return "ready";
   if (attentionStatuses.includes(status)) return "blocked";
+  if (status === "simplifying") return "simplifier";
   if (status === "unknown") return "open";
   if (status === "ready") return "ready";
   if (["waiting_github", "review"].includes(status) || ["awaiting_author", "checks"].includes(stage)) return "review";
@@ -674,6 +677,7 @@ export function projectTown(town) {
         unknown: 4,
         working: 5,
         queued: 6,
+        simplifying: 6,
         waiting_github: 7,
         ready: 8,
         unreleased: 9,

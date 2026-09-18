@@ -517,3 +517,16 @@ test("a town reports whether its houses run one profile or several", () => {
   assert.equal(mixed.overrides, 2);
   assert.equal(profileSpread([]).label, "");
 });
+
+test("Simplifier intake has an explicit queue while blocked intake stays visible as blocked", () => {
+  const town = { workers: { simplifier: { status: "waiting" } } };
+  for (const kind of ["issue", "pr"]) {
+    const task = { id: `${kind}:70`, kind, house: "simplifier", stage: "simplifying" };
+    const queued = projectTask(town, task);
+    assert.equal(queued.statusLabel, "Awaiting Simplifier");
+    assert.equal(boardColumn(queued), "simplifier");
+    const blocked = projectTask(town, { ...task, blocked: true });
+    assert.equal(blocked.statusLabel, "Blocked");
+    assert.equal(boardColumn(blocked), "blocked");
+  }
+});

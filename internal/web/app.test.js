@@ -281,7 +281,14 @@ const state = {
   events: [],
 };
 
+const baseState = state;
+
 test("app handlers render views, inspect work, preserve focused capacity input, and retain keyboard control", async () => {
+  const state = structuredClone(baseState);
+  Object.assign(state.towns["acme/project"].tasks, {
+        "issue:70": { id: "issue:70", kind: "issue", number: 70, title: "Waiting intake issue", house: "simplifier", stage: "simplifying" },
+        "pr:74": { id: "pr:74", kind: "pr", number: 74, title: "Waiting intake PR", house: "simplifier", stage: "simplifying", blocked: true },
+  });
   const elements = installFixture();
   const requests = [];
   const createdLinks = [];
@@ -327,7 +334,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements.world.hidden, true);
   assert.equal(elements.compact.hidden, true);
   const boardLists = elements.board.querySelectorAll("[data-board-list]");
-  assert.equal(boardLists.length, 4, "board exposes each populated column as its own list");
+  assert.equal(boardLists.length, 6, "board exposes each populated column as its own list");
   const queuedList = boardLists.find((list) => list.dataset.boardList.endsWith(":queued"));
   const reviewList = boardLists.find((list) => list.dataset.boardList.endsWith(":review"));
   queuedList.scrollTop = 113;
@@ -391,6 +398,12 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.ok(elements.houses.innerHTML.includes('class="profile inherited'), "inherited profiles are marked as inherited");
   document.dispatchEvent({ type: "keydown", key: "8", target: new Element("div") });
   assert.match(elements.inspection.textContent, /THE CLARIFIER/, "the eighth shortcut visits Simplifier Bot");
+  assert.match(houseLabel("simplifier"), /2 queued/);
+  assert.match(elements.inspection.textContent, /1 issue · 1 pull request · 1 blocked/);
+  assert.ok(elements.inspection.innerHTML.indexOf('data-task="issue:70"') < elements.inspection.innerHTML.indexOf('class="agent-card"'), "intake is visible before agent configuration");
+  assert.match(elements.board.textContent, /Simplifier queue/);
+  assert.match(elements.board.textContent, /Awaiting Simplifier/);
+
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   assert.match(elements.inspection.textContent, /Authority:.*create pull requests/, "house controls explain their write authority");
   assert.match(elements.inspection.textContent, /Harness.*codex-acp/s, "the inspector spells the harness out in full");
