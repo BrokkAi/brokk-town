@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.5 — 2026-09-18
+
+- Complete the Repo Bot split: repository inventory remains read-only and
+  agentless, while branch health repair runs through the released Repo Bot
+  worker with a configured, independently selectable agent profile.
+- Add Repo Bot to the browser profile selector and inspector so operators can
+  configure, save, reset and understand the repair profile directly in the UI.
+
 ## 0.4.4 — 2026-09-18
 
 - Stop trusting an installer's exit code during an in-place upgrade. bt ships
