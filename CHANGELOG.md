@@ -1,12 +1,50 @@
 # Changelog
 
-## 0.3.1 — pending
+## 0.4.0 — 2026-09-18
 
+- Route every newly observed issue and pull request through Simplifier Bot, a
+  sixth paused automation house: new intake passes a durable simplifying task
+  before Issue Bot, Review Bot, or Town Hall. A town-level simplifier mode
+  either attaches the bot's bounded admit/decline assessment to a Mayoral
+  decision or applies admissions, ignores declined PRs, and closes declined
+  issues automatically.
 - Show which harness, model and effort each bot runs without opening anything:
   the browser's village labels, board, compact view and town cards carry the
   profile as chips (effort shaded by level, outlined when a house overrides the
   town default), and the terminal panel's house table gains an AGENT column with
-  the selected house's profile written out in full.
+  the selected house's profile written out in full. Trailing slashes in profile
+  labels are tolerated.
+- Harden worker supervision and repair: coalesced worker log and phase commits,
+  release ancestry settled with one comparison per poll, serialized repository
+  reconciliation, repair intents settled by ancestry, unneeded repair worktrees
+  released, the observed default branch tracked separately from the configured
+  one, paused houses kept paused on retry, clean shutdown on SIGHUP, bounded
+  persisted subprocess failure text, and the newest worker phase kept when
+  progress bursts.
+- Strip unearned verification from the release publisher: the tag workflow
+  builds, smokes, uploads missing draft assets, publishes missing npm versions,
+  and finalizes, with upload exit codes gating each step and a re-run filling
+  in whatever is still missing.
+
+## 0.3.3 — 2026-09-16
+
+- Remove the release read-back verification tail that kept failing releases:
+  staged-version waits, dist-tag reconciliation, provenance checks, and double
+  asset downloads are gone, so rolling a new release over a broken one just
+  publishes.
+- Wait out npm staged-version conflicts instead of failing: a visible version
+  record whose tarball has not propagated yet reports incomplete publication so
+  submission retries instead of resubmitting an existing version.
+
+## 0.3.2 — 2026-09-16
+
+- Switch to tag-based releases: pushing a `v*` tag runs the shared CI checks,
+  then builds the native archives and npm packages, stages a draft GitHub
+  release, publishes npm platform packages before the launcher, and finalizes.
+  The preflight/dispatch machinery is deleted.
+
+## 0.3.1 — 2026-09-16
+
 - Harden release publication against npm registry visibility lag: a visible
   version record whose tarball has not propagated yet reports incomplete
   publication so submission and verification retry together instead of failing

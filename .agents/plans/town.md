@@ -1,5 +1,15 @@
 # Brokk Town implementation plan
 
+## v0.4.0 release (2026-09-18)
+
+- Tagged `v0.4.0` on master at 61741a6 per RELEASING.md; the `Publish packages`
+  workflow went green, the GitHub release finalized with all six assets, and
+  all five npm packages resolved at 0.4.0 with `latest` pointing at it.
+- CHANGELOG caught up: dated the stale `0.3.1 — pending` section, recorded the
+  infra-only 0.3.2 (tag-based releases) and 0.3.3 (verification removal,
+  staged-version wait), and wrote the 0.4.0 notes (Simplifier Bot intake, agent
+  profiles, worker supervision fixes, publisher cleanup).
+
 ## Simplifier Bot intake (2026-09-16)
 
 - Add a sixth paused automation house and persisted `simplifier` role, with
