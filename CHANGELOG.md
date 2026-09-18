@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.4 — 2026-09-18
+
+- Stop trusting an installer's exit code during an in-place upgrade. bt ships
+  in an optional npm dependency, and npm exits 0 when it skips one, so a
+  "successful" upgrade could leave the executable stale or absent; the service
+  then restarted into nothing and took bt on PATH with it. Both install
+  channels now run the binary a restart will exec and require the version just
+  installed, an upgrade is only offered once this platform's payload is
+  actually fetchable, and a failed upgrade reports why in the service log and
+  the page instead of a tooltip.
+
 ## 0.4.3 — 2026-09-18
 
 - Put Simplifier Bot on the map: its cottage had artwork but no house, so the
