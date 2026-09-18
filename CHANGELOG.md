@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.9 — 2026-09-18
+
+- Check npm for new stable bot releases every fifteen minutes instead of every
+  six hours, so a town with automatic bot updates picks a release up within
+  the quarter hour.
+
 ## 0.4.8 — 2026-09-18
 
 - Every pull request now ends merged or closed. The first review sends all

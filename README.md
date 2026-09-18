@@ -160,7 +160,7 @@ npm's stable tag, and **Use VERSION** stages that exact version for the Mayor to
 save. The pin changes only for that town and takes effect on the bot's next run;
 capability and reported-version checks still run before any repository work.
 
-Town also checks npm's stable tags on its own, at start and every six hours.
+Town also checks npm's stable tags on its own, at start and every fifteen minutes.
 When a bot has a newer stable release than a town's pin, the town receives a
 Mayoral decision at Town Hall: **Upgrade now** pins the new version for the
 bot's next run, **Delay a day** asks again after 24 hours, and **Decline** keeps

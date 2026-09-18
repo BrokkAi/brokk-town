@@ -82,7 +82,7 @@ type Supervisor struct {
 	Funnels   FunnelRegistry
 	Harnesses *harness.Catalog
 	// BotVersions reads npm's stable tag for every bot package. When set, Run
-	// checks it at start and every BotVersionInterval (default six hours) and
+	// checks it at start and every BotVersionInterval (default fifteen minutes) and
 	// offers newer versions to each town as Mayoral decisions or auto-updates.
 	BotVersions        func(context.Context) (map[Role]string, error)
 	BotVersionInterval time.Duration

@@ -14,7 +14,7 @@ import (
 // town auto-updates; a declined version is never offered again.
 const (
 	BotUpgradeDelay           = 24 * time.Hour
-	DefaultBotVersionInterval = 6 * time.Hour
+	DefaultBotVersionInterval = 15 * time.Minute
 )
 
 var botDisplayNames = map[Role]string{Bug: "Bug Bot", Feature: "Feature Bot", Issue: "Issue Bot", Review: "Review Bot", Release: "Release Bot", Simplifier: "Simplifier Bot"}
