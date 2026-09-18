@@ -1,5 +1,16 @@
 # Brokk Town implementation plan
 
+## Simplifier Bot artwork (2026-09-18)
+
+- Generate an original transparent Clarifier cottage sprite using the existing
+  town buildings as style references, with pruning shears and a robot simplifying
+  plans. Preserve generated alpha and record the prompt and asset metadata.
+- Render the standalone Simplifier building instead of skipping its house because
+  it has no atlas index; retain the shared selection and working-state rendering.
+- Include the new PNG in embedded-asset and isolated demo smoke checks.
+- Validation passed: Go race tests and vet, frontend syntax and all 36 tests,
+  and isolated demo smoke including the new embedded PNG; no live automation.
+
 ## v0.4.0 release (2026-09-18)
 
 - Tagged `v0.4.0` on master at 61741a6 per RELEASING.md; the `Publish packages`

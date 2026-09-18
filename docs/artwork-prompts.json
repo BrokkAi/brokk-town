@@ -1,4 +1,15 @@
 {
+  "simplifier_clarifier": {
+    "file": "internal/web/assets/simplifier-clarifier.png",
+    "generated": "2026-09-18",
+    "mode": "built-in image_gen",
+    "prompt": "Use case: stylized-concept.\nAsset type: original transparent PNG building sprite for Brokk Town.\nInput images: existing buildings atlas and Feature Bot cottage are STYLE REFERENCES ONLY. Create one NEW distinct companion building, not a copy, recolor, or edited atlas.\nPrimary request: Simplifier Bot's Clarifier, a cozy small timber-and-cream-stone cottage where a friendly compact gray robot sorts a tangled pile of plans into one neat simple plan. A muted copper/sage tiled roof, prominent wooden sign with a simple pruning-shears pictogram, an open front desk with the robot and a few rolled plans. Restrained tidy details convey reducing complexity. Small grass island and a few white flowers beneath the building.\nStyle: closely match references' crisp cozy village-game pixel art, hard stepped pixel clusters, dark navy outlines, warm golden windows and lanterns, top-down three-quarter perspective showing front and right wall, upper-left lighting. Comparable level of detail and silhouette scale to the other buildings, visibly its own design.\nComposition: exactly one centered complete building on square canvas, occupying about 80 percent of width and height, generous empty margin, no cropping.\nBackground: genuine transparent alpha, RGBA PNG with alpha=0 outside cottage and little lawn. No painted checkerboard, no solid background, no background glow.\nConstraints: no words, letters, numbers, logos, watermark, humans, roads, scenery, grid or duplicate sprites. Do not modify reference assets.",
+    "inputs": [
+      "internal/web/assets/buildings-atlas.png (style reference)",
+      "internal/web/assets/feature-study.png (style reference)"
+    ],
+    "outcome": "Original Simplifier Bot Clarifier building with genuine RGBA transparency; generated alpha preserved. Existing assets unchanged."
+  },
   "feature_study": {
     "file": "internal/web/assets/feature-study.png",
     "generated": "2026-09-10",

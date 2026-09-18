@@ -327,6 +327,27 @@
         1225
       ],
       "alphaPreserved": true
+    },
+    {
+      "name": "simplifier-clarifier",
+      "file": "simplifier-clarifier.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "recommendedSourceRect": [
+        0,
+        0,
+        1254,
+        1254
+      ],
+      "opaqueCoreBoundsInSourceRect": [
+        161,
+        118,
+        1185,
+        1158
+      ],
+      "alphaPreserved": true
     }
   ]
 }

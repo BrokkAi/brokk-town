@@ -79,7 +79,8 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
             assert snapshot()['towns']['brokkai/orchard']['workers']['feature']['enabled'] == (action == 'start')
         for path in ['/', '/app.js', '/town.js', '/tools.js', '/manage.js', '/scenery.js', '/style.css',
                      '/assets/buildings-atlas.png', '/assets/actors-atlas.png',
-                     '/assets/feature-study.png', '/assets/feature-reader.png']:
+                     '/assets/feature-study.png', '/assets/feature-reader.png',
+                     '/assets/simplifier-clarifier.png']:
             with request(path, auth=False) as response:
                 assert response.status == 200 and response.read()
         try:

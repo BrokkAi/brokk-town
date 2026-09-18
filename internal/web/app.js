@@ -106,10 +106,12 @@ const canvas = $("#world"),
   ctx = canvas.getContext("2d"),
   buildings = new Image(),
   actors = new Image(),
+  simplifierClarifier = new Image(),
   featureStudy = new Image(),
   featureReader = new Image();
 buildings.src = "/assets/buildings-atlas.png";
 actors.src = "/assets/actors-atlas.png";
+simplifierClarifier.src = "/assets/simplifier-clarifier.png";
 featureStudy.src = "/assets/feature-study.png";
 featureReader.src = "/assets/feature-reader.png";
 const crops = [
@@ -133,6 +135,7 @@ const actorCrops = [
 const indices = {
   bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5, feature: 6,
 };
+const standaloneBuildings = { feature: featureStudy, simplifier: simplifierClarifier };
 async function api(path, body, signal) {
   const response = await fetch(path, {
     method: body ? "POST" : "GET",
@@ -1016,14 +1019,14 @@ function draw(now) {
   ctx.drawImage(field, 0, 0);
   const t = town();
   for (const [role, [x, y]] of Object.entries(positions)) {
-    if (indices[role] === undefined) continue;
+    if (indices[role] === undefined && !standaloneBuildings[role]) continue;
     if (role === selectedHouse) {
       ctx.fillStyle = "#b0e98115";
       ctx.beginPath();
       ctx.ellipse(x, y + 72, 118, 28, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (role === "feature") singleSprite(featureStudy, x, y, 235);
+    if (standaloneBuildings[role]) singleSprite(standaloneBuildings[role], x, y, 235);
     else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
     const w = t?.workers[role];
     if (w?.status === "working" || w?.status === "pausing") {
