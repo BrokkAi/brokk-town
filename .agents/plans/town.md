@@ -9,6 +9,17 @@
 - Preserve the current paused state while awaiting the requested worker scope;
   reconcile GitHub before retrying stale reviews and interrupted issue work.
 - Verify installed versions, worker activity and resulting task transitions.
+- Published Town v0.4.7 from 681fbf4 and Review Bot v0.2.3 from f890039;
+  both tag workflows and their Linux/macOS checks passed. Review Bot's local
+  packaging preflight exposed npm 12 output changes, fixed with regression tests.
+- Installed Town through global npm and restarted the service at v0.4.7; saved
+  Review Bot pin 0.2.3 through the authenticated settings API. npm propagation
+  delayed installation briefly after successful uploads, then both versions
+  became visible without changing tags or republishing.
+- User selected Repo, Simplifier, Issue and Review for resumption. Those four
+  are enabled; Bug, Feature and Release remain paused. PR #57–60 retry budgets
+  were reset. Issue #63 was open/unlocked and had no PR on its expected branch
+  at the immediate pre-retry GitHub check; its durable pending job was reset.
 
 ## Blocked-town recovery milestones (2026-09-18)
 

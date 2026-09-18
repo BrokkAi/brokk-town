@@ -50,17 +50,19 @@ scan with no individual task, inspect recent issues for publications, then use
 `bt start --repo BrokkAi/muse-acp --role bug` to explicitly authorize another scan.
 The uncertainty itself is not proof that no work landed.
 
-## Implementation and rollout status, 2026-09-18
+## Released recovery versions
 
-Town's local implementation contains scheduling migration, review isolation and
-reconciliation, and durable interrupted-dispatch recovery. Review Bot's local
-implementation contains exact-base fetching and explicit stale result details.
+The recovery fixes ship in Town v0.4.7 and Review Bot v0.2.3. The Review Bot
+release also handles both npm 11 and npm 12 package metadata during packaging.
+A Town update alone does not change an existing town's independent Review Bot
+pin: select 0.2.3 or a later fixed release in that bot's settings.
 
-The inspected live service runs the npm-installed Town v0.4.6 and pins Review Bot
-0.2.2. It does not run these local commits. Rollout requires building/installing
-Town and publishing/installing a Review Bot version with the fix, then selecting
-that exact pin. Registry publication is a separate release action.
+For the muse-acp rollout on 2026-09-18, Town was installed through its existing
+npm channel and restarted at v0.4.7. Review Bot was pinned to 0.2.3. Repo,
+Simplifier, Issue and Review were explicitly resumed; Bug, Feature and Release
+remained paused. Failed attempts for PRs #57–60 were reset. Issue #63 was retried
+after confirming it was open, unlocked, and had no PR on its expected branch.
+Its retry does not jump ahead of existing PR repairs.
 
-At inspection, Issue Bot's saved #63 job was pending with `context canceled`, no
-result and no PR URL. Always recheck GitHub immediately before retrying; that
-snapshot alone does not prove that nothing landed.
+Feature's interrupted scan remains recorded as uncertain and paused. It was not
+restarted as part of the requested backlog recovery.
