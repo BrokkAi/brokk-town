@@ -391,12 +391,13 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.ok(elements.houses.innerHTML.includes('class="profile inherited'), "inherited profiles are marked as inherited");
   document.dispatchEvent({ type: "keydown", key: "8", target: new Element("div") });
   assert.match(elements.inspection.textContent, /THE CLARIFIER/, "the eighth shortcut visits Simplifier Bot");
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "simplifier").onclick();
-  assert.match(elements.inspection.textContent, /Authority:.*file simplification issues/, "the clarifier explains its own authority");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   assert.match(elements.inspection.textContent, /Authority:.*create pull requests/, "house controls explain their write authority");
   assert.match(elements.inspection.textContent, /Harness.*codex-acp/s, "the inspector spells the harness out in full");
   assert.match(elements.inspection.textContent, /Effort.*medium/s, "the inspector spells the effort out in full");
+  // Arriving from another house, so the clarifier's own label is what opens it.
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "simplifier").onclick();
+  assert.match(elements.inspection.textContent, /Authority:.*file simplification issues/, "the clarifier's label opens the clarifier");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-outcome-days]").find((button) => button.dataset.outcomeDays === "0").onclick();
   await elements.inspection.querySelectorAll("[data-export-outcomes]")[0].onclick();
