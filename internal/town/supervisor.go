@@ -433,7 +433,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		w.Status = "waiting"
 		w.Updated = s.now()
 		w.Next = s.now().Add(time.Duration(current.Config.PollSeconds) * time.Second)
-		if r == Bug || r == Feature || r == Simplifier {
+		// Intake is queued work, so Simplifier uses the normal poll cadence.
+		// Only discovery scans wait thirty minutes between runs.
+		if r == Bug || r == Feature {
 			w.Next = s.now().Add(30 * time.Minute)
 		}
 		if r == Release {

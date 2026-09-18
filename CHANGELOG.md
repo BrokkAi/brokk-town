@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.6 — 2026-09-18
+
+- Keep Simplifier intake moving on the normal polling interval and show its
+  backlog explicitly on the board instead of labeling it Unknown stage.
+- Show compact active / waiting / blocked item counts inside each bot panel,
+  with hover explanations, and restore Town Hall's pending-decision count.
+- Put assigned work first in the inspector, preserve queue scrolling across
+  updates, and keep large backlogs accessible. Active tasks show their running
+  agent profile; waiting tasks show the next-run configuration.
+
 ## 0.4.5 — 2026-09-18
 
 - Complete the Repo Bot split: repository inventory remains read-only and

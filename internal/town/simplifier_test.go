@@ -92,6 +92,7 @@ func TestSupervisorAppliesSimplifierResult(t *testing.T) {
 	update(t, store, func(st *State) {
 		current := st.Towns[town.ID]
 		current.Workers[Simplifier].Enabled = true
+		current.Tasks["issue:32"] = &Task{ID: "issue:32", Kind: "issue", Number: 32, Title: "Next arrival", Stage: "simplifying", House: Simplifier, Updated: time.Now()}
 		current.Tasks["issue:31"] = &Task{ID: "issue:31", Kind: "issue", Number: 31, Title: "Tiny focused fix", Stage: "simplifying", House: Simplifier, Updated: time.Now()}
 	})
 	workers := workerFunc(func(_ context.Context, _ *Town, role Role, _ func(Progress), _ *slog.Logger) (RunResult, error) {
@@ -102,7 +103,12 @@ func TestSupervisorAppliesSimplifierResult(t *testing.T) {
 	})
 	supervisor := NewSupervisor(store, nil, workers)
 	supervisor.execute(context.Background(), store.Snapshot().Towns[town.ID], Simplifier, nil)
-	task := store.Snapshot().Towns[town.ID].Tasks["issue:31"]
+	current := store.Snapshot().Towns[town.ID]
+	worker := current.Workers[Simplifier]
+	if delay := worker.Next.Sub(worker.Updated); delay < 0 || delay > time.Duration(current.Config.PollSeconds+1)*time.Second {
+		t.Fatalf("simplifier backlog waits %s instead of the poll cadence", delay)
+	}
+	task := current.Tasks["issue:31"]
 	if task.House != Issue || task.Stage != "queued" || task.Attempts != 0 || task.Simplification.Decision != "admit" {
 		t.Fatalf("supervisor did not apply simplifier result: %+v", task)
 	}

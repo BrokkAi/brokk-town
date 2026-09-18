@@ -847,12 +847,43 @@ canvas {
   white-space: nowrap;
 }
 .house-label strong {
-  display: block;
+  display: flex;
+  align-items: center;
   overflow: hidden;
   text-overflow: ellipsis;
   letter-spacing: 1px;
   font: 600 12px var(--mono);
   color: #dbe6d3;
+}
+.house-label .house-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workload-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 9px;
+  font: 600 11px var(--mono);
+  color: #b9c9bc;
+  margin: 5px 0;
+}
+.workload-active { color: #bbf785; }
+.workload-blocked { color: #f4a574; }
+.house-counts {
+  display: block;
+  margin-top: 3px;
+  color: #b9c9bc;
+  font: 600 10px/12px var(--mono);
+  text-align: center;
+}
+.house-task-queue {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.queue-summary {
+  color: #d6f8be;
+  font-size: 13px;
 }
 .house-label small {
   display: block;
@@ -863,13 +894,13 @@ canvas {
   margin-top: 4px;
 }
 .house-label .dot {
+  flex-shrink: 0;
   width: 5px;
   height: 5px;
   margin-right: 5px;
   vertical-align: middle;
 }
-/* The label may not grow past the road the wheelbarrows travel, so the profile
-   takes the second line rather than a third one. */
+/* Keep the profile and compact workload line inside the house panel. */
 .house-label .profile {
   margin-top: 4px;
 }
@@ -1630,11 +1661,13 @@ textarea {
     height: 4px;
     margin: 0;
   }
-  .house-label .count {
-    padding: 0 2px;
-  }
   .house-label .profile {
     display: none;
+  }
+  .house-label .hall-count {
+    position: static;
+    font-size: 9px;
+    margin-top: 3px;
   }
   .world-legend {
     left: 7px;

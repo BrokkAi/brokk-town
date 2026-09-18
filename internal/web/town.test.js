@@ -17,6 +17,7 @@ import {
   townSummary,
   taskStatus,
   projectTask,
+  houseWorkload,
   projectTown,
   projectState,
   workerProfile,
@@ -516,4 +517,45 @@ test("a town reports whether its houses run one profile or several", () => {
   assert.equal(mixed.label, "3 profiles");
   assert.equal(mixed.overrides, 2);
   assert.equal(profileSpread([]).label, "");
+});
+
+test("Simplifier intake has an explicit queue while blocked intake stays visible as blocked", () => {
+  const town = { workers: { simplifier: { status: "waiting" } } };
+  for (const kind of ["issue", "pr"]) {
+    const task = { id: `${kind}:70`, kind, house: "simplifier", stage: "simplifying" };
+    const queued = projectTask(town, task);
+    assert.equal(queued.statusLabel, "Awaiting Simplifier");
+    assert.equal(boardColumn(queued), "simplifier");
+    const blocked = projectTask(town, { ...task, blocked: true });
+    assert.equal(blocked.statusLabel, "Blocked");
+    assert.equal(boardColumn(blocked), "blocked");
+  }
+});
+
+test("workload counts distinguish active items, waiting items and blocked intake", () => {
+  const town = {
+    workers: { simplifier: { status: "working", run: { issue: 1 } } },
+    tasks: {
+      a: { kind: "issue", number: 1, house: "simplifier", stage: "simplifying" },
+      b: { kind: "pr", number: 2, house: "simplifier", stage: "simplifying" },
+      c: { kind: "issue", number: 3, house: "simplifier", stage: "simplifying", blocked: true },
+      d: { kind: "issue", number: 4, house: "simplifier", stage: "closed", blocked: true },
+    },
+  };
+  assert.deepEqual(houseWorkload(town, "simplifier"), { active: 1, waiting: 1, blocked: 1 });
+  assert.equal(boardColumn(projectTask(town, town.tasks.a)), "in_progress");
+  assert.equal(taskStatus(town, town.tasks.b), "simplifying");
+  delete town.workers.simplifier.run;
+  assert.deepEqual(houseWorkload(town, "simplifier"), { active: 0, waiting: 2, blocked: 1 });
+  town.workers.simplifier.status = "waiting";
+  assert.deepEqual(houseWorkload(town, "simplifier"), { active: 0, waiting: 2, blocked: 1 });
+  assert.deepEqual(houseWorkload(null, "review"), { active: 0, waiting: 0, blocked: 0 });
+});
+
+test("an active task keeps its running profile while queued siblings use next-run settings", () => {
+  const town = { config: { model: "next-model" }, workers: { issue: { status: "working", agent: { model: "running-model" }, run: { issue: 7 } } } };
+  const task = { kind: "issue", number: 7, house: "issue", stage: "queued" };
+  assert.equal(projectTask(town, task).profile.model, "running-model");
+  assert.equal(projectTask(town, task).profile.source, "active");
+  assert.equal(projectTask(town, { ...task, number: 8 }).profile.model, "next-model");
 });

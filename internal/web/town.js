@@ -314,6 +314,7 @@ export const taskStatuses = {
   draft: { label: "Draft", className: "draft" },
   working: { label: "Working", className: "working" },
   queued: { label: "Queued", className: "queued" },
+  simplifying: { label: "Awaiting Simplifier", className: "queued" },
   awaiting_mayor: { label: "Mayoral decision", className: "waiting-github" },
   declined: { label: "Declined by Mayor", className: "closed" },
   delayed: { label: "Delayed by Mayor", className: "waiting-github" },
@@ -332,6 +333,7 @@ export const taskStatuses = {
 };
 export const boardColumns = [
   { id: "open", label: "Open" },
+  { id: "simplifier", label: "Simplifier queue" },
   { id: "queued", label: "Queued" },
   { id: "in_progress", label: "In Progress" },
   { id: "blocked", label: "Blocked" },
@@ -584,6 +586,12 @@ export function taskStatus(town, task) {
     return "inconclusive";
   if (task?.blocked || stage === "blocked") return "blocked";
   if (stage === "failed") return "failed";
+  const worker = town?.workers?.[task?.house];
+  const run = worker?.run;
+  if ((workerIsActive(worker) || worker?.agent) && run &&
+      ((task?.kind === "issue" && task.number > 0 && run.issue === task.number) ||
+       (task?.kind === "pr" && task.number > 0 && run.pr === task.number)))
+    return "working";
   if (stage === "ready") return "ready";
   if (stage === "draft") return "draft";
   if (stage === "open") return "open";
@@ -602,6 +610,7 @@ export function boardColumn(task) {
   if (["complete", "merged", "closed", "implemented", "declined"].includes(status)) return "completed";
   if (status === "unreleased") return "ready";
   if (attentionStatuses.includes(status)) return "blocked";
+  if (status === "simplifying") return "simplifier";
   if (status === "unknown") return "open";
   if (status === "ready") return "ready";
   if (["waiting_github", "review"].includes(status) || ["awaiting_author", "checks"].includes(stage)) return "review";
@@ -623,8 +632,22 @@ export function projectTask(town, task) {
     workerStatus: normalized(worker?.status) || "paused",
     // A queued task must use the configured profile even while its house has
     // another task running with a captured profile.
-    profile: workerProfile(town, task?.house),
+    profile: workerProfile(town, task?.house, status === "working" ? worker : null),
     intent: intentFor(town, task),
+  };
+}
+
+// Active, waiting and blocked count assigned work items.
+// Only an exact persisted run target moves a queued item into active work.
+export function houseWorkload(town, role) {
+  const tasks = queueFor(town || {}, role);
+  const statuses = tasks.map((task) => taskStatus(town, task));
+  const blocked = statuses.filter((status) => attentionStatuses.includes(status)).length;
+  const working = statuses.filter((status) => status === "working").length;
+  return {
+    active: working,
+    waiting: tasks.length - blocked - working,
+    blocked,
   };
 }
 
@@ -674,6 +697,7 @@ export function projectTown(town) {
         unknown: 4,
         working: 5,
         queued: 6,
+        simplifying: 6,
         waiting_github: 7,
         ready: 8,
         unreleased: 9,

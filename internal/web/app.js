@@ -16,6 +16,7 @@ import {
   projectState,
   projectTown,
   projectWorker,
+  houseWorkload,
   boardColumns,
   boardColumn,
   normalizeView,
@@ -360,7 +361,7 @@ function profileChips(profile, role = "", extra = "") {
 }
 function queuedProfileText(task) {
   if (["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(task.stage)) return "";
-  return `<span class="profile-lead">Next profile</span>${profileChips(task.profile, task.house)}`;
+  return `<span class="profile-lead">${task.profile?.source === "active" ? "Running profile" : "Next profile"}</span>${profileChips(task.profile, task.house)}`;
 }
 function captureBoardViewport(board) {
   const townColumns = new Map(
@@ -402,6 +403,12 @@ function restoreBoardViewport(board, viewport) {
       ?.focus({ preventScroll: true });
   }
 }
+function workloadText(counts) {
+  return `${counts.active} active · ${counts.waiting} waiting · ${counts.blocked} blocked`;
+}
+function workloadChips(counts) {
+  return `<span class="workload-counts" title="Active items · waiting items · blocked items"><span class="workload-active">${counts.active} active</span><span>${counts.waiting} waiting</span><span class="${counts.blocked ? "workload-blocked" : ""}">${counts.blocked} blocked</span></span>`;
+}
 function renderBoard() {
   const board = $("#board");
   const viewport = captureBoardViewport(board);
@@ -414,8 +421,9 @@ function renderBoard() {
         .map((item) => {
           const townName = item.town?.config?.repo || item.town?.id || "Town";
           const workerCards = item.workers
-            .filter((worker) => worker.active || worker.status === "failed" || worker.status === "pausing")
-            .map((worker) => `<button class="board-worker ${worker.status === "failed" ? "failed" : ""}" data-board-town="${esc(item.town.id)}" data-board-house="${esc(worker.role)}"><strong>${esc(worker.role)} · ${esc(worker.status)}</strong><small>${profileChips(worker.profile, worker.role)}</small></button>`)
+            .map((worker) => ({ worker, counts: houseWorkload(item.town, worker.role) }))
+            .filter(({ worker, counts }) => worker.active || worker.status === "failed" || counts.waiting || counts.blocked)
+            .map(({ worker, counts }) => `<button class="board-worker ${counts.blocked || worker.status === "failed" ? "failed" : ""}" data-board-town="${esc(item.town.id)}" data-board-house="${esc(worker.role)}"><strong>${esc(worker.role)} · ${esc(worker.status)}</strong>${workloadChips(counts)}<small>${profileChips(worker.profile, worker.role)}</small></button>`)
             .join("");
           const cards = boardColumns
             .map((column) => {
@@ -675,6 +683,9 @@ $("#capacity-form").onsubmit = async (event) => {
     submit.disabled = false;
   }
 };
+function pendingDecisions(t) {
+  return queueFor(t || {}, "hall").filter((task) => task.mayoral_decision === "pending").length;
+}
 function renderHouses() {
   const t = town();
   $("#houses").innerHTML = Object.entries(positions)
@@ -682,8 +693,8 @@ function renderHouses() {
     .map(([role, [x, y]]) => {
       const w = t?.workers[role],
         worker = projectWorker(t, role, w),
-        count = t ? queueFor(t, role).length : 0,
-        status = role === "hall" ? "Town reports" : worker.status,
+        counts = houseWorkload(t, role),
+        status = role === "hall" ? `${pendingDecisions(t)} to decide` : worker.status,
         dot =
           status === "working" || status === "pausing"
             ? "active"
@@ -696,8 +707,8 @@ function renderHouses() {
       const words = status.replaceAll("_", " "),
         profile = role === "hall" ? null : profileSummary(worker.profile),
         agentLabel = role === "hall" ? "" : profile.text,
-        name = `<i class="dot ${dot}"></i>${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}${count ? `<span class="count">${count}</span>` : ""}`;
-      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small>${esc(words)}</small>` : profileChips(worker.profile, role)}</span></button>`;
+        name = `<i class="dot ${dot}"></i><span class="house-name">${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}</span>`;
+      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small class="hall-count">${esc(words)}</small>` : `${profileChips(worker.profile, role)}<span class="house-counts" title="${workloadText(counts)}" aria-label="${workloadText(counts)}"><span class="workload-active" title="Active items">${counts.active}</span> / <span title="Waiting items">${counts.waiting}</span> / <span class="workload-blocked" title="Blocked items">${counts.blocked}</span></span>`}</span></button>`;
     })
     .join("");
   $("#houses")
@@ -727,8 +738,11 @@ function writeInspection(out, html) {
   if (signature === inspectionSignature) return false;
   const sameSelection = inspectionSignature.startsWith(`${key}\u0000`);
   const frames = sameSelection ? inspectionFrames(out) : [];
+  const queueScroll = sameSelection ? out.querySelector(".house-task-queue")?.scrollTop : undefined;
   inspectionSignature = signature;
   out.innerHTML = html;
+  const queue = out.querySelector(".house-task-queue");
+  if (queue && queueScroll !== undefined) queue.scrollTop = queueScroll;
   for (const [el, top, left] of frames) {
     if (el.scrollTop !== top) el.scrollTop = top;
     if (el.scrollLeft !== left) el.scrollLeft = left;
@@ -858,6 +872,13 @@ function renderInspection() {
     projectedWorker = projectWorker(t, selectedHouse, w),
     queue = queueFor(t, selectedHouse);
   if (!w) return;
+  const queueSummary = [
+    [queue.filter((task) => task.kind === "issue").length, "issue", "issues"],
+    [queue.filter((task) => task.kind === "pr").length, "pull request", "pull requests"],
+    [queue.filter((task) => !["issue", "pr"].includes(task.kind)).length, "other item", "other items"],
+    [queue.filter((task) => task.blocked).length, "blocked", "blocked"],
+  ].filter(([count]) => count > 0)
+    .map(([count, singular, plural]) => `${count} ${count === 1 ? singular : plural}`).join(" · ");
   const agent = projectedWorker.profile;
   const releaseBlocked = selectedHouse === "release" && t.config.merge_policy === "manual";
   const controls = workerControls(w, releaseBlocked);
@@ -867,16 +888,15 @@ function renderInspection() {
   const healthNote = selectedHouse === "repo" ? branchHealthNote(t.health) : "";
   const healthDetails = healthNote ? `<p class="muted">${esc(healthNote)}</p>` : "";
   const agentDetails = `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${selectedHouse === "repo" ? "Inventory runs without an agent. The configured agent starts only to repair a failing branch." : agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this house only" : "Inherited from this town's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
-  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${agentDetails}${healthDetails}${funnelDetails}${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}<h3>AT THE DOOR · ${queue.length}</h3>${
+  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${workloadChips(houseWorkload(t, selectedHouse))}<h3>BOT QUEUE · ${queue.length}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
 
     queue
-      .slice(0, 40)
       .map(
         (task) =>
-          `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.stage.replaceAll("_", " "))}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}</small></button>`,
+          `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectTask(t, task).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}</small></button>`,
       )
       .join("") || '<p class="muted">Nothing waiting at the door.</p>'
-  }<h3>WORKBENCH LOG</h3><div class="worker-logs">${
+  }</div><h3>LATEST ACTIVITY</h3><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}${agentDetails}${healthDetails}${funnelDetails}<h3>WORKBENCH LOG</h3><div class="worker-logs">${
     esc(
       (w.logs || [])
         .slice(-35)

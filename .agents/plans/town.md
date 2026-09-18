@@ -966,3 +966,67 @@ Pulled master in both Town and bug-bot before beginning. Standalone source is co
 - Demo gives Orchard a town default, a review house on another harness, and a
   release house that only raises effort, so the difference is visible in the
   first frame.
+
+## Intake backlog and queue labels (2026-09-18)
+
+- Live muse-acp inventory was current: 18 open PRs were split between 14
+  Simplifier tasks and four blocked reviews. The 38 open issues were split
+  between 18 implemented, nine Issue Bot tasks, nine Simplifier tasks, and
+  two Mayoral decisions. House badges describe assignments, not GitHub totals.
+- Remove Simplifier's discovery-scan delay: intake now uses the configured
+  polling interval, with existing failure backoff and retry limits preserved.
+- Label house counts as queued work and explain their scope in the inspector.
+  Keep badges visible when a long house name needs truncation.
+- Add regression coverage for intake cadence with another arrival waiting.
+- Existing blocked reviews and Git failures require separate recovery; this
+  change does not reset their evidence or retry budgets.
+
+## Expose Simplifier intake across browser views (2026-09-18)
+
+- Recognize the persisted simplifying stage as Awaiting Simplifier in board
+  and compact views, with a dedicated Simplifier queue board column. Blocked
+  intake retains its stronger blocked classification.
+- Render house queue badges outside the truncating name row, including counts
+  in accessible names and tooltips. Move inspector queue cards and issue/PR/
+  blocked totals above last activity, authority, and agent configuration.
+- Regression checks cover stage projection, board rendering, badge counts and
+  inspector ordering. Verified rendered markup with an isolated Chrome fixture;
+  frontend checks, Go race tests and vet pass. Live service remains unchanged.
+
+## Show work in progress per bot (2026-09-18)
+
+- Show active, waiting, and blocked item counts on house badges, board worker
+  cards, and the inspector. Keep idle bots with backlogs visible on the board.
+- Identify active intake from the running worker's exact persisted issue/PR
+  target; do not count every queued item as active just because its bot runs.
+  Preserve terminal and blocked states, and classify active targets under
+  In Progress. Counts refer to items, not worker processes.
+- Frontend regression tests cover mixed workloads, exact active targets, idle
+  backlogs, and missing targets. Preview serves changes directly from checkout.
+
+## Keep workload counts clear of the animation (2026-09-18)
+
+- Move counts into a compact, horizontally scrollable strip above the town.
+  A shared active / waiting / blocked key keeps each house to two short lines.
+  Strip buttons open their house inspector; profiles stay under buildings.
+- Restore Town Hall's pending-decision count under its building and in the
+  strip, including zero. It opens the existing Mayoral decision list.
+- Verified layout with a Chrome fixture, frontend tests/syntax, Go race tests
+  and vet. The read-only preview serves these assets directly.
+
+## Compact counts inside each house panel (2026-09-18)
+
+- User preferred the colored numeric counts locally, below the profile inside
+  each bot panel. Remove the separate strip above the animation.
+- Show one short active / waiting / blocked line with hover explanations;
+  retain Town Hall's pending-decision count. Board and inspector keep their
+  spelled-out counts. Frontend tests cover the numbers and tooltip.
+
+## PR 93 review and v0.4.6 release (2026-09-18)
+
+- Review fixes: retain nested queue scrolling across snapshot updates, expose
+  all items in long queues, show captured profiles for active tasks, and keep
+  Town Hall's decision count visible on narrow screens. Add regressions.
+- Validate with make check smoke and a non-publishing package build. Merge
+  PR 93 only with green CI, then publish v0.4.6 from green origin/master via
+  the tag-driven Publish packages workflow documented in RELEASING.md.
