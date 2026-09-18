@@ -117,6 +117,10 @@ type Config struct {
 	Funnels           FunnelConfigs           `json:"funnels,omitempty"`
 	SimplifierMode    string                  `json:"simplifier_mode,omitempty"`
 	AutoUpdateBots    bool                    `json:"auto_update_bots,omitempty"`
+	// ReviewCloseSeverity is the least severe finding (P1, P2 or P3) that
+	// still closes a pull request when it survives the second review. Findings
+	// below it are filed as follow-up issues and the pull request merges.
+	ReviewCloseSeverity string `json:"review_close_severity,omitempty"`
 }
 
 // BotAgentConfig is a complete private selection. Omitted roles inherit the town
@@ -155,6 +159,40 @@ func (c Config) SimplifierModeOrDefault() string {
 	}
 	return c.SimplifierMode
 }
+
+// DefaultReviewCloseSeverity closes on P1 and P2 and defers P3.
+const DefaultReviewCloseSeverity = "P2"
+
+func (c Config) ReviewCloseSeverityOrDefault() string {
+	if c.ReviewCloseSeverity == "" {
+		return DefaultReviewCloseSeverity
+	}
+	return c.ReviewCloseSeverity
+}
+
+// ValidSeverity accepts the review-bot rating scale.
+func ValidSeverity(s string) bool { return s == "P1" || s == "P2" || s == "P3" }
+
+// Blocking reports whether a finding of this severity keeps a pull request from
+// merging under the town's close threshold. An unrated finding is treated as
+// blocking: the reviewer could not bound it, so the town does not either.
+func Blocking(severity, threshold string) bool {
+	rank := func(s string) int {
+		switch s {
+		case "P1":
+			return 1
+		case "P2":
+			return 2
+		case "P3":
+			return 3
+		}
+		return 0
+	}
+	if !ValidSeverity(threshold) {
+		threshold = DefaultReviewCloseSeverity
+	}
+	return rank(severity) <= rank(threshold)
+}
 func (c Config) Validate() error {
 	if err := validateAgent(c); err != nil {
 		return err
@@ -187,6 +225,9 @@ func (c Config) Validate() error {
 	if mode := c.SimplifierModeOrDefault(); mode != "suggest" && mode != "auto" {
 		return fmt.Errorf("simplifier mode must be suggest or auto")
 	}
+	if !ValidSeverity(c.ReviewCloseSeverityOrDefault()) {
+		return fmt.Errorf("review close severity must be P1, P2 or P3")
+	}
 	if err := c.Funnels.Validate(); err != nil {
 		return err
 	}
@@ -208,6 +249,9 @@ type PublicConfig struct {
 	Funnels        []PublicFunnelConfig          `json:"funnels,omitempty"`
 	SimplifierMode string                        `json:"simplifier_mode"`
 	AutoUpdateBots bool                          `json:"auto_update_bots"`
+	// ReviewCloseSeverity is the least severe finding that closes a pull
+	// request after its second review.
+	ReviewCloseSeverity string `json:"review_close_severity"`
 }
 
 type PublicBotAgentConfig struct {
@@ -310,6 +354,8 @@ type Finding struct {
 	ID     string `json:"id"`
 	State  string `json:"state"`
 	Detail string `json:"detail"`
+	// Severity is the reviewer's P1, P2 or P3 rating when one is known.
+	Severity string `json:"severity,omitempty"`
 }
 type Audit struct {
 	Base        string    `json:"base"`
@@ -329,11 +375,26 @@ func (a *Audit) Clean(base, head string) bool {
 		return false
 	}
 	for _, f := range a.Findings {
-		if f.State != "resolved" && f.State != "dismissed" {
+		if f.State != "resolved" && f.State != "dismissed" && f.State != "deferred" {
 			return false
 		}
 	}
 	return true
+}
+
+// OpenFindings are the certified findings that still stand against the
+// revision: open defects and anything the certifier could not check.
+func (a *Audit) OpenFindings() []Finding {
+	var open []Finding
+	if a == nil {
+		return open
+	}
+	for _, f := range a.Findings {
+		if f.State == "open" || f.State == "uncertain" {
+			open = append(open, f)
+		}
+	}
+	return open
 }
 
 type Task struct {
@@ -362,6 +423,14 @@ type Task struct {
 	Source          *WorkItem         `json:"source,omitempty"`
 	Upgrade         *BotUpgrade       `json:"upgrade,omitempty"`
 	Simplification  *Simplification   `json:"simplification,omitempty"`
+	// Severities maps evidence IDs to the reviewer's P1, P2 or P3 rating.
+	Severities map[string]string `json:"severities,omitempty"`
+	// FollowUps are findings below the close threshold that survived the
+	// second review. They are filed as issues once the pull request merges.
+	FollowUps []Finding `json:"follow_ups,omitempty"`
+	// Requeue names the pull request Town closed after review. Issue-bot's
+	// next run on this issue starts over and never counts that PR again.
+	Requeue int `json:"requeue,omitempty"`
 }
 
 // BotUpgrade records one published stable bot version that is newer than the
@@ -638,7 +707,7 @@ func (c Config) Public() PublicConfig {
 	for _, role := range AgentRoles {
 		versions[role] = c.BotVersion(role)
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), AutoUpdateBots: c.AutoUpdateBots}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), AutoUpdateBots: c.AutoUpdateBots, ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault()}
 }
 
 func (c Config) BotVersion(role Role) string {

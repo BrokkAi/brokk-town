@@ -13,6 +13,7 @@ import (
 // help, and a help command. Flag parsing stays on the standard library.
 
 type cliFlags struct {
+	closeSeverity  *string
 	dir            *string
 	listen         *string
 	demo           *bool
@@ -53,6 +54,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.effort = fs.String("effort", "", "ACP reasoning effort; empty uses harness default (add/settings)")
 	fl.agentCommand = fs.String("agent-command", "", "custom ACP command as a JSON argument array (add/settings)")
 	fl.inherit = fs.Bool("inherit", false, "restore a bot's town defaults (settings --role BOT)")
+	fl.closeSeverity = fs.String("review-close-severity", "", "least severe finding (P1, P2 or P3) that closes a pull request after its second review; lower findings become follow-up issues (settings)")
 	fl.kind = fs.String("kind", "feature", "feature or bug (request)")
 	fl.title = fs.String("title", "", "GitHub issue title (request)")
 	fl.bodyFile = fs.String("body-file", "", "issue description file, or - for stdin (request)")
@@ -95,7 +97,7 @@ var cliCommands = []commandInfo{
 	{name: "add", short: "Add a town", long: "Add a town for a GitHub repository.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "model", "repo"}},
 	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog.", args: "[flags]", flags: []string{"refresh"}},
-	{name: "settings", short: "Configure a town or bot", long: "Configure a town's defaults or one bot house. Omit --role to edit town defaults.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "inherit", "model", "repo", "role"}},
+	{name: "settings", short: "Configure a town or bot", long: "Configure a town's defaults or one bot house. Omit --role to edit town defaults.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "inherit", "model", "repo", "review-close-severity", "role"}},
 	{name: "request", short: "Submit a GitHub issue request", long: "Submit a GitHub issue as work for a town.", args: "--repo OWNER/REPO --title TITLE --body-file FILE [flags]", flags: []string{"body-file", "kind", "repo", "request-id", "title"}},
 	{name: "check-request", short: "Check a submitted request", long: "Check the status of a submitted request.", args: "--repo OWNER/REPO --request-id ID [flags]", flags: []string{"repo", "request-id"}},
 	{name: "start", short: "Start a town or bot house", long: "Start a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},

@@ -125,7 +125,7 @@ func snapshotFile(dir string, value any) (string, error) {
 	}
 	return f.Name(), nil
 }
-func (b *BotWorkers) certify(ctx context.Context, t *Town, task *Task, known map[string]string, log *slog.Logger) (audit *Audit, err error) {
+func (b *BotWorkers) certify(ctx context.Context, t *Town, task *Task, known map[string]string, severities map[string]string, log *slog.Logger) (audit *Audit, err error) {
 	p, err := b.GitHub.Pull(ctx, t.Config.Repo, task.Number)
 	if err != nil {
 		return nil, err
@@ -160,7 +160,14 @@ func (b *BotWorkers) certify(ctx context.Context, t *Town, task *Task, known map
 	for _, d := range discussion {
 		evidence[d.ID] = d.Body + "\n" + d.Path + "\n" + d.State
 	}
-	path, err := snapshotFile(tree.dir, map[string]any{"pull_request": p, "merge_base": mergeBase, "diff": diff, "evidence": evidence})
+	rated := map[string]string{}
+	for id, severity := range task.Severities {
+		rated[id] = severity
+	}
+	for id, severity := range severities {
+		rated[id] = severity
+	}
+	path, err := snapshotFile(tree.dir, map[string]any{"pull_request": p, "merge_base": mergeBase, "diff": diff, "evidence": evidence, "severities": rated})
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +184,10 @@ check the full change or a finding, use uncertain and an inconclusive overall ve
 invent successful checks. A clean verdict requires complete coverage and no unresolved concerns.
 Return one entry for each evidence ID exactly once, with state resolved, dismissed, open, or uncertain.
 Include any additional defects you discover using unique new: IDs with open or uncertain state.
+Rate every open or uncertain finding: P1 breaks users or loses data, P2 is a real defect in the
+change, P3 is a quality or robustness concern. Keep the supplied severity unless the code proves it wrong.
 The last line must be:
-TOWN_REVIEW {"verdict":"clean|changes_needed|inconclusive","complete":true,"summary":"Coverage and evidence","checks":["actual check and result"],"findings":[{"id":"supplied ID","state":"resolved|dismissed|open|uncertain","detail":"concrete evidence"}]}
+TOWN_REVIEW {"verdict":"clean|changes_needed|inconclusive","complete":true,"summary":"Coverage and evidence","checks":["actual check and result"],"findings":[{"id":"supplied ID","state":"resolved|dismissed|open|uncertain","severity":"P1|P2|P3","detail":"concrete evidence"}]}
 `
 	text, err := b.agent(ctx, t, tree, "review", log, prompt)
 	if err != nil {
@@ -194,9 +203,21 @@ TOWN_REVIEW {"verdict":"clean|changes_needed|inconclusive","complete":true,"summ
 	if err = receipt(text, "TOWN_REVIEW", &result); err != nil {
 		return nil, err
 	}
+	for _, f := range result.Findings {
+		// Only Town defers a finding, and only after the second review.
+		if f.State == "deferred" {
+			return nil, errors.New("certifier may not defer findings")
+		}
+	}
 	audit = &Audit{Base: p.Base.SHA, Head: p.Head.SHA, Discussion: Digest(discussion), Description: description(p), Verdict: result.Verdict, Complete: result.Complete, Summary: result.Summary, Checks: result.Checks, Findings: result.Findings, At: time.Now()}
 	if err = validateAudit(audit, evidence); err != nil {
 		return nil, err
+	}
+	// The reviewer's rating stands when the certifier gives none.
+	for i := range audit.Findings {
+		if audit.Findings[i].Severity == "" {
+			audit.Findings[i].Severity = rated[audit.Findings[i].ID]
+		}
 	}
 	status, err := git(ctx, tree.dir, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
@@ -252,8 +273,11 @@ func validateAudit(a *Audit, evidence map[string]string) error {
 			return errors.New("missing, duplicate or unsupported certification finding")
 		}
 		seen[f.ID] = true
+		if f.Severity != "" && !ValidSeverity(f.Severity) {
+			return errors.New("finding severity must be P1, P2 or P3")
+		}
 		switch f.State {
-		case "resolved", "dismissed":
+		case "resolved", "dismissed", "deferred":
 		case "open":
 			open = true
 		case "uncertain":
@@ -286,11 +310,12 @@ func (b *BotWorkers) repair(ctx context.Context, t *Town, task *Task, observe fu
 	if task.External || t.Owned[task.Number].Branch == "" {
 		return errors.New("cannot repair a contributor-owned PR")
 	}
-	if task.Cycles >= t.Config.MaxCycles {
+	if task.Cycles >= 1 {
+		// One fix round is all a pull request gets. A second review that still
+		// finds blocking defects closes it, so a repair request here is stale.
 		return b.Store.Update(func(st *State) error {
-			x := st.Towns[t.ID].Tasks[task.ID]
-			x.Blocked = true
-			x.Detail = "Review/repair cycle limit reached; inspect before retry."
+			town := st.Towns[t.ID]
+			markClosing(st, town, town.Tasks[task.ID], "The pull request already had its fix round; the town closes it and starts the issue over.", time.Now())
 			return nil
 		})
 	}

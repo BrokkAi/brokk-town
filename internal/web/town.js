@@ -327,6 +327,7 @@ export const taskStatuses = {
   unreleased: { label: "Unreleased", className: "unreleased" },
   implemented: { label: "Implemented", className: "implemented" },
   complete: { label: "Done", className: "complete" },
+  closing: { label: "Closing after review", className: "closed" },
   closed: { label: "Closed", className: "closed" },
   merged: { label: "Merged", className: "merged" },
   shipped: { label: "Shipped", className: "shipped" },

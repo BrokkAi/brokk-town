@@ -142,6 +142,7 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
     agent: { harness: "claude-code", model: "next-review-model", effort: "xhigh", version: "1.5" },
     merge_policy: "bot",
     simplifier_mode: "suggest",
+    review_close_severity: "P2",
     auto_update_bots: false,
     bot_version: "0.2.1",
   });

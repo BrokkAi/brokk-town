@@ -558,7 +558,7 @@ func TestSupervisorRetainsPersistedRunWhenPolicyChangesDuringAuthentication(t *t
 		t.Fatal("persisted release run did not begin authentication")
 	}
 	manual := "manual"
-	if err := supervisor.SettingsForRoleAndPolicy(town.ID, "", AgentSettings{}, &manual, nil, nil, nil); err != nil {
+	if err := supervisor.SettingsForRoleAndPolicy(town.ID, "", AgentSettings{}, &manual, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !<-workers.stops {

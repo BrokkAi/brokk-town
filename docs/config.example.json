@@ -27,6 +27,7 @@
       "verify": ["go", "test", "./..."],
       "merge_policy": "bot",
       "simplifier_mode": "suggest",
+      "review_close_severity": "P2",
       "poll_seconds": 60,
       "report_seconds": 1800,
       "max_cycles": 5,

@@ -48,7 +48,7 @@ func TestUnpublishedSimplifierPackageDoesNotHideOtherBotVersions(t *testing.T) {
 
 func TestBotVersionPinsAreValidatedAndPublic(t *testing.T) {
 	cfg := DefaultConfig("acme/project")
-	if cfg.BotVersion(Issue) != "0.5.2" {
+	if cfg.BotVersion(Issue) != "0.5.4" {
 		t.Fatal("default Issue Bot pin changed unexpectedly")
 	}
 	cfg.BotVersions = map[Role]string{Issue: "0.6.0"}

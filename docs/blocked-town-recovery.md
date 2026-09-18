@@ -15,19 +15,18 @@ Paused workers, active runs, failure backoff, and task retry delays stay intact.
 Review Bot must include the exact-base fetch fix: GitHub may report a PR base
 older than the target branch tip. The bot fetches that commit and still verifies
 the pull head ref and checks GitHub again before publication. A stale or incomplete
-review never certifies a PR. Town requests fresh inventory, retains the task's
-bounded retry budget, and lets other PRs continue.
+review never certifies a PR. Town requests fresh inventory and lets other PRs
+continue; pull requests that have never been tried are reviewed before ones
+that failed.
+
+There is nothing to retry by hand. A revision gets two attempts; the second
+failure closes Town's own pull request and queues the issue for a fresh attempt
+from the current branch, which also leaves the stale base behind. A
+contributor's pull request goes to the Mayor instead.
 
 After installing a Review Bot release containing this fix, set its exact pin in
-Town's bot settings. Retry blocked reviews individually, for example:
-
-```sh
-bt retry --repo BrokkAi/muse-acp --task pr:58
-bt retry --repo BrokkAi/muse-acp --task pr:59
-```
-
-A new Town binary alone cannot fix the independently pinned Review Bot. No
-registry release is created by building these repositories locally.
+Town's bot settings. A new Town binary alone cannot fix the independently pinned
+Review Bot. No registry release is created by building these repositories locally.
 
 ## Interrupted workers
 

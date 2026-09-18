@@ -288,7 +288,7 @@ func TestCertifierAndOperatorVerifyCannotChangeReviewedRevision(t *testing.T) {
 			if scenario == "omitted_evidence" {
 				known["old"] = "previous finding"
 			}
-			audit, e := b.certify(context.Background(), x, task, known, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			audit, e := b.certify(context.Background(), x, task, known, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			if scenario == "valid" {
 				if e != nil || !audit.Clean(task.Base, task.Head) {
 					t.Fatal(audit, e)

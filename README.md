@@ -393,8 +393,20 @@ role), plus `bt delay ...` to be asked again in a day.
 A review is bound to the exact base, head, PR description, and discussion snapshot. A suppressed
 duplicate comment is still a finding to check. Complete coverage, explicit
 resolution of every concern, and validation evidence are required for a clean
-result. New commits invalidate review readiness. Uncertain reviews and exhausted
-repair cycles become visible tasks needing attention.
+result. New commits invalidate review readiness.
+
+Every pull request Town works on ends merged or closed, and nothing waits on a
+person to press retry. The first review sends every finding back to Issue Bot
+for one fix round. If the second review still finds work at or above the town's
+`review_close_severity` (default `P2`, so P1 and P2 close), Town closes the pull
+request, deletes its branch, leaves the findings on the issue, and queues the
+issue for a fresh attempt from the current branch. Findings below the threshold
+are filed as follow-up issues and the pull request merges. A revision gets at
+most two attempts at any step: a reviewer or repair failure earns one more
+attempt after a short delay, and a second failure retires the pull request the
+same way. A contributor's pull request is never closed by Town; it goes to the
+Mayor instead. Review Bot picks pull requests that have never been tried before
+ones that failed, so one bad pull request cannot hold the queue.
 
 The default merge policy is `bot`: auto-merge eligible Town-created PRs. `manual`
 leaves every merge to the operator; because the current Release Bot protocol cannot
@@ -417,7 +429,8 @@ bot profiles, verification command, and policy, then run:
 
 Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
-`merge_policy`, `simplifier_mode`, `poll_seconds`, `report_seconds`, and
+`merge_policy`, `simplifier_mode`, optional `review_close_severity` (`P1`, `P2`
+or `P3`, default `P2`), `poll_seconds`, `report_seconds`, and
 `max_cycles`. The example
 lists all required values. To persist global capacity alongside the town list,
 use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
@@ -447,8 +460,9 @@ at town level.
 Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet reports
 use `report_seconds` (1800). Bug-bot, feature-bot, and simplifier-bot run at most every 30 minutes; release-bot
 checks every five minutes and retains its own quiet window, minimum gap, and
-batching decisions. Each worker attempt has a two-hour deadline. Repair cycles
-default to five; failed PR attempts back off and block after three failures.
+batching decisions. Each worker attempt has a two-hour deadline. A pull request
+gets one fix round and two attempts per revision at any step; `max_cycles` is
+accepted for compatibility but no longer extends that.
 
 Feature-bot uses its own effective ACP harness, model, and effort, plus the town's
 optional verifier, with a private workspace and durable publication state.

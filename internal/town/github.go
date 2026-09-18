@@ -105,6 +105,14 @@ type GitHub interface {
 	Gate(context.Context, string, int) (MergeGate, error)
 	Merge(context.Context, string, int, string) (string, error)
 	CloseIssue(context.Context, string, int) error
+	// ClosePull closes a pull request without merging it.
+	ClosePull(context.Context, string, int) error
+	// Comment posts one comment on an issue or pull request.
+	Comment(context.Context, string, int, string) error
+	// DeleteBranch removes a branch Town's own bots created.
+	DeleteBranch(context.Context, string, string) error
+	// CreateIssue files a new issue.
+	CreateIssue(context.Context, string, string, string) (RemoteIssue, error)
 	Actor(context.Context) (string, error)
 	Contains(context.Context, string, string, string) (bool, error)
 }
@@ -217,6 +225,22 @@ func (g GitHubClient) Merge(ctx context.Context, repo string, n int, sha string)
 // the next inventory.
 func (g GitHubClient) CloseIssue(ctx context.Context, repo string, n int) error {
 	return g.api(ctx, "PATCH", fmt.Sprintf("repos/%s/issues/%d", repo, n), map[string]string{"state": "closed", "state_reason": "not_planned"}, nil)
+}
+func (g GitHubClient) ClosePull(ctx context.Context, repo string, n int) error {
+	return g.api(ctx, "PATCH", fmt.Sprintf("repos/%s/pulls/%d", repo, n), map[string]string{"state": "closed"}, nil)
+}
+func (g GitHubClient) Comment(ctx context.Context, repo string, n int, body string) error {
+	return g.api(ctx, "POST", fmt.Sprintf("repos/%s/issues/%d/comments", repo, n), map[string]string{"body": body}, nil)
+}
+func (g GitHubClient) DeleteBranch(ctx context.Context, repo, branch string) error {
+	if !ValidBranch(branch) {
+		return fmt.Errorf("invalid branch %q", branch)
+	}
+	err := g.api(ctx, "DELETE", fmt.Sprintf("repos/%s/git/refs/heads/%s", repo, branch), nil, nil)
+	if err != nil && strings.Contains(err.Error(), "Reference does not exist") {
+		return nil
+	}
+	return err
 }
 func Digest(v any) string { b, _ := json.Marshal(v); return Key(string(b)) }
 

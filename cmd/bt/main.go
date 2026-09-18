@@ -336,7 +336,14 @@ func run(ctx context.Context, args []string) error {
 			}
 			settingsRole = *role
 		}
-		return request(ctx, conn, "POST", "/api/settings", map[string]any{"town": strings.ToLower(*repo), "role": settingsRole, "agent": agent}, &result)
+		payload := map[string]any{"town": strings.ToLower(*repo), "role": settingsRole, "agent": agent}
+		if *fl.closeSeverity != "" {
+			if settingsRole != "" {
+				return errors.New("--review-close-severity is a town setting; omit --role")
+			}
+			payload["review_close_severity"] = strings.ToUpper(*fl.closeSeverity)
+		}
+		return request(ctx, conn, "POST", "/api/settings", payload, &result)
 	case "request":
 		if *repo == "" || *title == "" || *bodyFile == "" {
 			return errors.New("--repo, --title, and --body-file are required")

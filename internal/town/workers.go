@@ -93,6 +93,8 @@ type dispatch struct {
 	issue, pr  int
 	base, head string
 	mode       string
+	// supersededPR is the closed pull request an issue run starts over from.
+	supersededPR int
 	// sinceHead and commits are the repo worker's inventory inputs.
 	sinceHead string
 	commits   []string
@@ -142,6 +144,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			return result, nil
 		}
 		d.issue = task.Number
+		d.supersededPR = task.Requeue
 	case Review:
 		task := nextTask(t, Review, "queued")
 		if task == nil {
@@ -343,8 +346,14 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 		if !review.Complete || review.ExactBase != d.base || review.ExactHead != d.head || task.Base != d.base || task.Head != d.head {
 			return result, &ReviewAttemptError{Status: review.Status, Detail: review.Detail, Complete: review.Complete, ExpectedBase: task.Base, ExpectedHead: task.Head, ReturnedBase: review.ExactBase, ReturnedHead: review.ExactHead}
 		}
+		result.Severities = map[string]string{}
+		for id, severity := range review.Severities {
+			if ValidSeverity(severity) {
+				result.Severities["finding:"+id] = severity
+			}
+		}
 		observe(Progress{Phase: "certifying", Task: "Checking all outstanding findings on this revision"})
-		result.Audit, err = b.certify(ctx, t, task, review.Findings, log)
+		result.Audit, err = b.certify(ctx, t, task, review.Findings, result.Severities, log)
 		return result, err
 	}
 	return result, fmt.Errorf("unsupported worker %s", r)
@@ -364,6 +373,9 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 	}
 	if role == Simplifier {
 		request.Mode = t.Config.SimplifierModeOrDefault()
+	}
+	if role == Issue {
+		request.SupersededPR = d.supersededPR
 	}
 	if role == Repo {
 		request.Mode = d.mode
@@ -440,7 +452,15 @@ func nextTask(t *Town, role Role, stage string) *Task {
 			tasks = append(tasks, task)
 		}
 	}
-	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Number < tasks[j].Number })
+	// Work that has never been tried goes first. A task whose last attempt
+	// failed waits behind every fresh one, so one bad pull request cannot hold
+	// the house while the rest of the queue sits untouched.
+	sort.Slice(tasks, func(i, j int) bool {
+		if tasks[i].Attempts != tasks[j].Attempts {
+			return tasks[i].Attempts < tasks[j].Attempts
+		}
+		return tasks[i].Number < tasks[j].Number
+	})
 	if len(tasks) > 0 {
 		return tasks[0]
 	}

@@ -360,6 +360,9 @@ type settingsInput struct {
 	SimplifierMode *string            `json:"simplifier_mode,omitempty"`
 	BotVersion     *string            `json:"bot_version,omitempty"`
 	AutoUpdateBots *bool              `json:"auto_update_bots,omitempty"`
+	// ReviewCloseSeverity is the least severe finding that closes a pull
+	// request after its second review: P1, P2 or P3.
+	ReviewCloseSeverity *string `json:"review_close_severity,omitempty"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -368,7 +371,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.SimplifierMode, input.BotVersion, input.AutoUpdateBots); err != nil {
+	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.SimplifierMode, input.BotVersion, input.AutoUpdateBots, input.ReviewCloseSeverity); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

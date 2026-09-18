@@ -40,6 +40,8 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				from = "bug"
 			} else if strings.Contains(i.Body, "<!-- simplifier-bot:") {
 				from = "simplifier"
+			} else if strings.Contains(i.Body, "<!-- review-bot:") {
+				from = "review"
 			}
 			house, stage, decision := Issue, "queued", ""
 			if from == "simplifier" && t.Config.SimplifierModeOrDefault() == "suggest" {
@@ -131,7 +133,8 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			task.Blocked = false
 			task.Attempts = 0
 			task.RetryAt = time.Time{}
-			if task.Stage != "merged" && task.Stage != "closed" && task.Stage != "simplifying" && task.MayoralDecision != "pending" && task.MayoralDecision != "declined" {
+			task.FollowUps = nil
+			if task.Stage != "merged" && task.Stage != "closed" && task.Stage != "closing" && task.Stage != "simplifying" && task.MayoralDecision != "pending" && task.MayoralDecision != "declined" {
 				s.Move(t, task, "queued", Review, "New revision ready for review", now)
 			}
 		}
@@ -172,7 +175,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				}
 			}
 		} else if p.State == "closed" {
-			if isOwned {
+			if isOwned && task.Stage != "closed" {
 				t.RecordOutcome(OutcomeRecord{ID: "abandoned:" + id + ":" + p.Head.SHA, At: now, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: id, RelatedTaskID: fmt.Sprintf("issue:%d", owned.Issue), Revision: p.Head.SHA, URL: p.URL, Detail: "Implementation PR closed without a confirmed merge"})
 			}
 			task.Stage = "closed"
@@ -184,12 +187,14 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			task.Stage = "draft"
 		} else if p.Locked {
 			task.Stage = "locked"
+		} else if task.Stage == "closing" {
+			// Town is closing this pull request; the next inventory finishes it.
 		} else if task.Stage == "draft" || task.Stage == "locked" || task.Stage == "closed" {
 			task.Stage = "queued"
 			task.House = Review
 		}
-		if isOwned {
-			if it := t.Tasks[fmt.Sprintf("issue:%d", owned.Issue)]; it != nil && it.Stage != "closed" {
+		if isOwned && (p.MergedAt != nil || p.State != "closed") {
+			if it := t.Tasks[fmt.Sprintf("issue:%d", owned.Issue)]; it != nil && it.Stage != "closed" && it.Requeue != p.Number {
 				it.Stage = "implemented"
 			}
 		}

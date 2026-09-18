@@ -273,7 +273,7 @@ func TestNestedCertificationAndRepairUseTheirBotProfiles(t *testing.T) {
 		seen[role] = true
 		return "", stop
 	}
-	if _, err := b.certify(context.Background(), town, task, nil, slog.Default()); !errors.Is(err, stop) {
+	if _, err := b.certify(context.Background(), town, task, nil, nil, slog.Default()); !errors.Is(err, stop) {
 		t.Fatal(err)
 	}
 	if _, err := b.Run(context.Background(), town, Issue, func(Progress) {}, slog.Default()); !errors.Is(err, stop) {

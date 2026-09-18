@@ -86,7 +86,7 @@ func eventually(t *testing.T, fn func() bool) {
 func TestAuditMustCoverOldFindingsAndNewConcerns(t *testing.T) {
 	evidence := map[string]string{"finding:old": "Previously posted concern", "comment:7": "Author response"}
 	a := clean()
-	a.Findings = []Finding{{"finding:old", "resolved", "fixed by guard"}, {"comment:7", "dismissed", "question answered"}}
+	a.Findings = []Finding{{ID: "finding:old", State: "resolved", Detail: "fixed by guard"}, {ID: "comment:7", State: "dismissed", Detail: "question answered"}}
 	if e := validateAudit(a, evidence); e != nil {
 		t.Fatal(e)
 	}
@@ -97,7 +97,7 @@ func TestAuditMustCoverOldFindingsAndNewConcerns(t *testing.T) {
 			t.Fatalf("accepted incomplete or unclean result: %+v", b)
 		}
 	}
-	a.Findings = append(a.Findings, Finding{"new:reconnect", "open", "new defect found in the full diff"})
+	a.Findings = append(a.Findings, Finding{ID: "new:reconnect", State: "open", Detail: "new defect found in the full diff"})
 	a.Verdict = "changes_needed"
 	if e := validateAudit(a, evidence); e != nil {
 		t.Fatal(e)
@@ -251,6 +251,13 @@ type fakeGH struct {
 	health     *BranchHealth
 	closed     []int
 	closeError error
+	// Pull requests Town closed, branches it deleted, comments it posted and
+	// issues it filed, in order.
+	closedPulls []int
+	deleted     []string
+	comments    []string
+	filed       []RemoteIssue
+	fileError   error
 }
 
 func newGH(n int) *fakeGH {
@@ -292,6 +299,42 @@ func (f *fakeGH) CloseIssue(_ context.Context, _ string, n int) error {
 		}
 	}
 	return nil
+}
+func (f *fakeGH) ClosePull(_ context.Context, _ string, n int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closeError != nil {
+		return f.closeError
+	}
+	f.closedPulls = append(f.closedPulls, n)
+	if f.p.Number == n {
+		f.p.State = "closed"
+		f.snapshot.Pulls = []Pull{f.p}
+	}
+	return nil
+}
+func (f *fakeGH) Comment(_ context.Context, _ string, n int, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.comments = append(f.comments, fmt.Sprintf("#%d: %s", n, body))
+	return nil
+}
+func (f *fakeGH) DeleteBranch(_ context.Context, _ string, branch string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleted = append(f.deleted, branch)
+	return nil
+}
+func (f *fakeGH) CreateIssue(_ context.Context, _ string, title, body string) (RemoteIssue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fileError != nil {
+		return RemoteIssue{}, f.fileError
+	}
+	issue := RemoteIssue{Number: 900 + len(f.filed), Title: title, Body: body, URL: fmt.Sprintf("https://github.com/acme/orchard/issues/%d", 900+len(f.filed)), State: "open"}
+	f.filed = append(f.filed, issue)
+	f.snapshot.Issues = append(f.snapshot.Issues, issue)
+	return issue, nil
 }
 func (f *fakeGH) Gate(context.Context, string, int) (MergeGate, error) { return f.gate, nil }
 func (f *fakeGH) Actor(context.Context) (string, error)                { return "operator", nil }
@@ -670,7 +713,7 @@ func TestMergePersistsIntentAndChecksFreshEvidence(t *testing.T) {
 	}
 }
 
-func TestReviewFailuresRetryFiveTimesAndRemainOperatorRecoverable(t *testing.T) {
+func TestReviewFailuresGetOneMoreAttemptThenCloseAndRequeue(t *testing.T) {
 	s := testStore(t, false)
 	x := setupPR(t, s, 1)
 	update(t, s, func(st *State) {
@@ -678,32 +721,64 @@ func TestReviewFailuresRetryFiveTimesAndRemainOperatorRecoverable(t *testing.T) 
 		town.Workers[Review].Enabled = true
 		task := town.Tasks["pr:1"]
 		task.Stage, task.Audit = "queued", nil
+		town.Tasks["issue:1"] = &Task{ID: "issue:1", Kind: "issue", Number: 1, Title: "Issue 1", Stage: "implemented", House: Issue, Updated: time.Now()}
 	})
 	failure := &ReviewAttemptError{Complete: false, ExpectedBase: baseSHA, ExpectedHead: headSHA}
-	sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+	gh := newGH(1)
+	sup := NewSupervisor(s, gh, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
 		return RunResult{PR: 1}, failure
 	}))
-	for attempt := 1; attempt <= 5; attempt++ {
-		sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
-		town := s.Snapshot().Towns[x.ID]
-		task := town.Tasks["pr:1"]
-		if task.Attempts != attempt || task.Blocked != (attempt == 5) {
-			t.Fatalf("attempt %d: %+v", attempt, task)
-		}
-		if attempt < 5 && strings.Contains(task.Detail, "<missing>") {
-			t.Fatalf("detailed reviewer error exposed before retry budget exhausted: %q", task.Detail)
-		}
-	}
+	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
 	task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
-	if !strings.Contains(task.Detail, "complete=false") || !strings.Contains(task.Detail, "<missing>") {
-		t.Fatalf("final failure omitted actionable evidence: %q", task.Detail)
+	if task.Attempts != 1 || task.Blocked || task.Stage != "queued" || task.RetryAt.IsZero() || !strings.Contains(task.Detail, "one more attempt") {
+		t.Fatalf("first failure did not schedule exactly one more attempt: %+v", task)
 	}
-	if err := sup.Control(x.ID, Review, "retry", "pr:1"); err != nil {
+	if !strings.Contains(task.Detail, "<missing>") {
+		t.Fatalf("reviewer error hidden from the task: %q", task.Detail)
+	}
+	update(t, s, func(st *State) { st.Towns[x.ID].Tasks["pr:1"].RetryAt = time.Time{} })
+	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
+	town := s.Snapshot().Towns[x.ID]
+	task = town.Tasks["pr:1"]
+	if task.Stage != "closing" || task.House != Hall || task.Blocked || !strings.Contains(task.Detail, "Two Review attempts") {
+		t.Fatalf("second failure did not retire the pull request: %+v", task)
+	}
+	if town.Workers[Review].Status == "failed" {
+		t.Fatal("a pull request failure marked the whole house failed")
+	}
+	// The next inventory closes the pull request, deletes Town's branch, leaves
+	// the reason on both the PR and the issue, and queues a fresh attempt.
+	if err := sup.closeRetiredPulls(context.Background(), town, inventory(pull(1))); err != nil {
 		t.Fatal(err)
 	}
-	task = s.Snapshot().Towns[x.ID].Tasks["pr:1"]
-	if task.Blocked || task.Attempts != 0 || !task.RetryAt.IsZero() {
-		t.Fatalf("operator could not unblock review: %+v", task)
+	if len(gh.closedPulls) != 1 || gh.closedPulls[0] != 1 || len(gh.deleted) != 1 || gh.deleted[0] != "issue-1" || len(gh.comments) != 2 {
+		t.Fatalf("GitHub side of the close is incomplete: closed=%v deleted=%v comments=%d", gh.closedPulls, gh.deleted, len(gh.comments))
+	}
+	town = s.Snapshot().Towns[x.ID]
+	if got := town.Tasks["pr:1"]; got.Stage != "closed" || got.House != Hall {
+		t.Fatalf("closed pull request not recorded: %+v", got)
+	}
+	if issue := town.Tasks["issue:1"]; issue.Stage != "queued" || issue.House != Issue || issue.Requeue != 1 || issue.Attempts != 0 {
+		t.Fatalf("issue was not queued for a fresh attempt: %+v", issue)
+	}
+	if !town.Workers[Issue].Next.IsZero() {
+		t.Fatal("issue house not woken for the fresh attempt")
+	}
+	// Closing is idempotent: a second inventory pass touches nothing.
+	if err := sup.closeRetiredPulls(context.Background(), town, inventory(pull(1))); err != nil {
+		t.Fatal(err)
+	}
+	if len(gh.closedPulls) != 1 || len(gh.comments) != 2 {
+		t.Fatal("closing repeated GitHub writes")
+	}
+	closed := false
+	for _, o := range town.Outcomes {
+		if o.Kind == "closed" && o.TaskID == "pr:1" {
+			closed = true
+		}
+	}
+	if !closed {
+		t.Fatal("close outcome not recorded")
 	}
 }
 

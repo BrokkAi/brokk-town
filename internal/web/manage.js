@@ -310,6 +310,7 @@ export function management({ api, getTown, getState, refresh }) {
     $("#settings-repo").textContent = t.config.repo;
     $("#settings-merge-policy").value = t.config.merge_policy || "bot";
     $("#settings-simplifier-mode").value = t.config.simplifier_mode || "suggest";
+    $("#settings-review-close-severity").value = t.config.review_close_severity || "P2";
     $("#settings-auto-update-bots").checked = t.config.auto_update_bots === true;
     $("#settings-success").textContent = "";
     showProfile(Object.hasOwn(profileNames, role) ? role : "");
@@ -460,6 +461,7 @@ export function management({ api, getTown, getState, refresh }) {
           agent: readAgent(),
           merge_policy: $("#settings-merge-policy").value,
           simplifier_mode: $("#settings-simplifier-mode").value,
+          review_close_severity: $("#settings-review-close-severity").value,
           auto_update_bots: $("#settings-auto-update-bots").checked,
           ...(role ? { bot_version: selectedBotVersion } : {}),
         });

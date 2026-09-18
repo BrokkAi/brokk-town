@@ -31,11 +31,15 @@ const workerProtocolVersion = 1
 // restarted service can resume where the previous one stopped reading.
 const workerDetachCapability = "detach"
 
+// workerRequeueCapability marks an issue worker that can start an issue over
+// after Town closed its pull request.
+const workerRequeueCapability = "requeue"
+
 var workerPackageNames = map[Role]string{
 	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot", Simplifier: "@brokkai/simplifier-bot", Repo: "@brokkai/repo-bot",
 }
 var workerDefaultVersions = map[Role]string{
-	Bug: "0.3.1", Feature: "0.1.1", Issue: "0.5.2", Review: "0.2.1", Release: "0.5.1", Simplifier: "0.1.0", Repo: "0.1.0",
+	Bug: "0.3.5", Feature: "0.1.2", Issue: "0.5.4", Review: "0.2.4", Release: "0.6.1", Simplifier: "0.1.1", Repo: "0.1.0",
 }
 var workerBotNames = map[Role]string{
 	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot", Repo: "repo-bot",
@@ -135,6 +139,9 @@ type workerRequest struct {
 	// ancestry for. Town's task graph never crosses the protocol.
 	SinceHead string   `json:"since_head,omitempty"`
 	Commits   []string `json:"commits,omitempty"`
+	// SupersededPR asks the issue worker to start the issue over because Town
+	// closed this pull request after review. Requires the "requeue" capability.
+	SupersededPR int `json:"superseded_pr,omitempty"`
 }
 
 type workerProgress struct {
@@ -153,12 +160,13 @@ type workerIssueResult struct {
 }
 
 type workerReviewResult struct {
-	Status    string            `json:"status,omitempty"`
-	Detail    string            `json:"detail,omitempty"`
-	Complete  bool              `json:"complete"`
-	Findings  map[string]string `json:"findings,omitempty"`
-	ExactBase string            `json:"exact_base,omitempty"`
-	ExactHead string            `json:"exact_head,omitempty"`
+	Status     string            `json:"status,omitempty"`
+	Detail     string            `json:"detail,omitempty"`
+	Complete   bool              `json:"complete"`
+	Findings   map[string]string `json:"findings,omitempty"`
+	Severities map[string]string `json:"severities,omitempty"`
+	ExactBase  string            `json:"exact_base,omitempty"`
+	ExactHead  string            `json:"exact_head,omitempty"`
 }
 
 type workerResult struct {
@@ -378,6 +386,10 @@ func runWorker(ctx context.Context, bot externalBot, request workerRequest, retr
 	if err = validateWorkerInitialize(bot, info); err != nil {
 		abort()
 		return workerResult{}, err
+	}
+	if request.SupersededPR > 0 && !info.has(workerRequeueCapability) {
+		abort()
+		return workerResult{}, fmt.Errorf("issue-bot %s cannot start issue #%d over after PR #%d was closed; it does not advertise %q, upgrade the bot", bot.version, request.Issue, request.SupersededPR, workerRequeueCapability)
 	}
 	run := WorkerRun{
 		Bot: info.Bot, Version: bot.version, Command: bot.command, Args: bot.args, Hash: bot.hash,

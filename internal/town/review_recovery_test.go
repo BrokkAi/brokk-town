@@ -14,7 +14,7 @@ func TestExhaustedReviewRefreshesInventoryWithoutStallingOtherPRs(t *testing.T) 
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]
 		task := town.Tasks["pr:1"]
-		task.Stage, task.Audit, task.Attempts = "queued", nil, 4
+		task.Stage, task.Audit, task.Attempts = "queued", nil, 1
 		town.Tasks["pr:2"] = &Task{ID: "pr:2", Kind: "pr", Number: 2, Stage: "queued", House: Review, Base: baseSHA, Head: headSHA}
 		town.Workers[Review].Enabled = true
 		town.Workers[Repo].Next = at.Add(time.Hour)
@@ -25,8 +25,10 @@ func TestExhaustedReviewRefreshesInventoryWithoutStallingOtherPRs(t *testing.T) 
 	sup.now = func() time.Time { return at }
 	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
 	got := s.Snapshot().Towns[x.ID]
-	if !got.Tasks["pr:1"].Blocked || got.Tasks["pr:1"].Audit != nil {
-		t.Fatal("incomplete review certified or retry limit lost")
+	// The second failed attempt on a revision retires the pull request: Town
+	// closes it and starts the issue over instead of parking it as blocked.
+	if task := got.Tasks["pr:1"]; task.Stage != "closing" || task.House != Hall || task.Audit != nil || task.Blocked {
+		t.Fatalf("second failed attempt did not retire the pull request: %+v", task)
 	}
 	if !got.Workers[Repo].Next.IsZero() {
 		t.Fatal("inventory refresh not requested")

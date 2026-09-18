@@ -226,6 +226,13 @@
             <option value="auto">Auto: admit or decline routine arrivals</option>
           </select>
           <p class="muted">Every incoming issue and pull request passes through Simplifier Bot first. In suggest mode its assessment is attached to the Mayoral decision; in auto mode routine admissions and low-value complex issue closures act without the Mayor.</p>
+          <label for="settings-review-close-severity">Second review closes on</label>
+          <select id="settings-review-close-severity">
+            <option value="P1">P1 only: P2 and P3 become follow-up issues</option>
+            <option value="P2">P1 and P2: P3 becomes follow-up issues</option>
+            <option value="P3">Any finding</option>
+          </select>
+          <p class="muted">Every pull request gets one fix round. If the second review still finds work at or above this severity, Town closes the pull request and starts the issue over from the current branch. Anything below it is filed as a follow-up issue and the pull request merges.</p>
         </section>
         <section class="settings-section" aria-labelledby="bot-updates-heading">
           <div class="eyebrow" id="bot-updates-heading">BOT UPDATES</div>

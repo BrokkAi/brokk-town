@@ -26,9 +26,11 @@ type RunResult struct {
 	// Inventory is the repo worker's observation of the repository.
 	Inventory *RepoSnapshot
 	// Health is its report on the branch this town covers.
-	Health         *BranchHealth
-	Owned          map[int]Ownership
-	Audit          *Audit
+	Health *BranchHealth
+	Owned  map[int]Ownership
+	Audit  *Audit
+	// Severities are the reviewer's ratings for the audit's evidence IDs.
+	Severities     map[string]string
 	PR             int
 	Issue          int
 	Simplification *Simplification
@@ -456,13 +458,10 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		if !w.Enabled {
 			w.Status = "paused"
 		}
-		reviewRetrying := err != nil && r == Review && result.PR > 0
-		if reviewRetrying {
-			if task := current.Tasks[fmt.Sprintf("pr:%d", result.PR)]; task != nil {
-				reviewRetrying = task.Attempts+1 < 5
-			}
-		}
-		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil && !reviewRetrying {
+		// A failure on one pull request belongs to that pull request. The
+		// house stays available for the rest of its queue.
+		taskOwned := err != nil && result.PR > 0 && (r == Review || r == Issue)
+		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil && !taskOwned {
 			w.Status = "failed"
 			w.Error = err.Error()
 			w.Task = "Work paused: " + err.Error()
@@ -500,50 +499,39 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 			task := current.Tasks[fmt.Sprintf("pr:%d", result.PR)]
 			if task != nil {
 				if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
-					task.Attempts++
-					task.RetryAt = s.now().Add(15 * time.Minute)
-					limit := 3
-					if r == Review {
-						limit = 5
-					}
-					task.Blocked = task.Attempts >= limit
-					if task.Blocked {
-						task.Detail = err.Error()
-						current.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("blocked:%s:%d", task.ID, task.Attempts), At: s.now(), Class: "outcome", Kind: "blocked", Status: "blocked", Role: r, TaskID: task.ID, Revision: task.Head, URL: task.URL, Detail: task.Detail})
-					} else if r == Review {
-						task.Detail = fmt.Sprintf("Reviewer attempt %d of %d did not complete; retry scheduled.", task.Attempts, limit)
+					s.failPullAttempt(st, current, task, r, err.Error())
+					if r == Review && task.Stage == "queued" {
 						w.Task = task.Detail
 						w.Error = ""
-					} else {
-						task.Detail = err.Error()
 					}
 				} else if result.Audit != nil && task.Head == result.Audit.Head && task.Base == result.Audit.Base && task.Description == result.Audit.Description {
-					task.Audit = result.Audit
-					if task.Concerns == nil {
-						task.Concerns = map[string]string{}
+					if task.Severities == nil {
+						task.Severities = map[string]string{}
+					}
+					for id, severity := range result.Severities {
+						task.Severities[id] = severity
 					}
 					for _, f := range result.Audit.Findings {
-						task.Concerns[f.ID] = f.Detail
-					}
-					task.Attempts = 0
-					task.RetryAt = time.Time{}
-					task.Detail = result.Audit.Summary
-					switch result.Audit.Verdict {
-					case "clean":
-						st.Move(current, task, "ready", Review, "Review complete: ready for merge checks", s.now())
-					case "changes_needed":
-						if task.External {
-							task.Stage = "awaiting_mayor"
-							task.House = Hall
-							task.MayoralDecision = "pending"
-							task.Detail = "Review found changes are needed in this external PR. Decide whether Town should review it again or decline it."
-							st.Event(t.ID, "decision", "review", "hall", task.ID, "External PR needs a Mayoral decision: "+task.Title, s.now())
-						} else {
-							st.Move(current, task, "fixes", Issue, "Review feedback delivered to issue-bot", s.now())
+						if ValidSeverity(f.Severity) {
+							task.Severities[f.ID] = f.Severity
 						}
-					default:
-						task.Stage = "inconclusive"
-						task.Blocked = true
+					}
+					if result.Audit.Verdict == "inconclusive" {
+						// No decision was reached about this revision, so the
+						// attempt counts like any other that produced none.
+						s.failPullAttempt(st, current, task, r, "inconclusive review: "+result.Audit.Summary)
+					} else {
+						task.Audit = result.Audit
+						if task.Concerns == nil {
+							task.Concerns = map[string]string{}
+						}
+						for _, f := range result.Audit.Findings {
+							task.Concerns[f.ID] = f.Detail
+						}
+						task.Attempts = 0
+						task.RetryAt = time.Time{}
+						task.Detail = result.Audit.Summary
+						s.settleReview(st, current, task)
 					}
 				}
 			}
@@ -998,7 +986,9 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 			return fmt.Errorf("preserve issue-bot jobs after inventory: %w", err)
 		}
 	}
-	return s.closeDeclinedProposals(ctx, s.Store.Snapshot().Towns[t.ID], remote)
+	current := s.Store.Snapshot().Towns[t.ID]
+	err = errors.Join(s.closeDeclinedProposals(ctx, current, remote), s.closeRetiredPulls(ctx, current, remote))
+	return errors.Join(err, s.fileFollowUps(ctx, s.Store.Snapshot().Towns[t.ID]))
 }
 
 // closeDeclinedProposals retires issues after an authorized final decision: the

@@ -51,6 +51,21 @@ func (b *BotWorkers) SyncIssues(t *Town) error {
 			task.IssueJob = public
 			task.Attempts = job.Tries
 			task.RetryAt = job.RetryAt
+			if task.Requeue > 0 {
+				// Town closed this issue's pull request and queued a fresh
+				// attempt. Until issue-bot has started over, its saved job
+				// still names the closed PR and must not put the issue back
+				// to "implemented".
+				if submittedPR(t.Config.Repo, job.URL) == task.Requeue || job.Status == "has_pr" {
+					task.Blocked = false
+					task.Stage = "queued"
+					task.House = Issue
+					task.Attempts = 0
+					task.RetryAt = time.Time{}
+					continue
+				}
+				task.Requeue = 0
+			}
 
 			terminalOnGitHub := task.Stage == "closed" || task.Stage == "locked"
 			switch job.Status {

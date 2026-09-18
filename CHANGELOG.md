@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.8 — 2026-09-18
+
+- Every pull request now ends merged or closed. The first review sends all
+  findings to Issue Bot for one fix round; a second review that still finds work
+  at or above the town's `review_close_severity` (default P2) closes the pull
+  request, deletes its branch, explains why on the PR and the issue, and queues
+  the issue for a fresh attempt from the current branch. Findings below the
+  threshold become follow-up issues and the pull request merges.
+- A revision gets two attempts at any step. The second failed reviewer or repair
+  attempt retires the pull request the same way instead of parking it as
+  blocked; a contributor's pull request goes to the Mayor instead.
+- Review Bot picks pull requests that have never been tried before ones that
+  failed, so a failing pull request no longer holds the queue.
+- `review_close_severity` is a town setting in the browser, `bt settings
+  --review-close-severity`, and config files. Requires Review Bot with the
+  `finding-severity` capability and Issue Bot with the `requeue` capability.
+- Default bot pins move to the current releases: Bug Bot 0.3.5, Feature Bot
+  0.1.2, Issue Bot 0.5.4, Review Bot 0.2.4, Release Bot 0.6.1, Simplifier Bot
+  0.1.1. Towns with explicit pins keep them.
+
 ## 0.4.7 — 2026-09-18
 
 - Recover persisted Simplifier intake delays on restart without clearing failures.
