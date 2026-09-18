@@ -82,6 +82,10 @@ let state = null,
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
   streamAbort = null,
   servedVersion = "";
+// A failed upgrade is the one error the town itself cannot report: the service
+// that would have carried it is the thing that did not change. It survives the
+// renders that follow until the next attempt clears it.
+let upgradeError = "";
 let liveDetail = null;
 let liveDetailEpoch = 0;
 let outcomeDays = 7;
@@ -259,6 +263,7 @@ function receive(next) {
     update.hidden = false;
     update.onclick = async () => {
       if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
+      upgradeError = "";
       update.disabled = true;
       update.textContent = "Upgrading Town…";
       try {
@@ -271,9 +276,14 @@ function receive(next) {
           update.title = "Restart bt serve to use the installed version";
         }
       } catch (error) {
+        // The reason is the whole story of a failed upgrade, and a tooltip is
+        // not a place anyone looks: it goes in the banner, where the next
+        // render keeps it until an attempt succeeds.
+        upgradeError = `Upgrade to ${state.update.latest} failed: ${error.message}`;
         update.disabled = false;
         update.textContent = `Upgrade failed · try again`;
         update.title = error.message;
+        showError(upgradeError);
       }
     };
   } else {
@@ -554,7 +564,7 @@ function render() {
   renderOverview();
   renderBoard();
   renderCompact();
-  showError(t?.error || "");
+  showError(upgradeError || t?.error || "");
   renderHouses();
   renderInspection();
   renderJournal();

@@ -100,3 +100,51 @@ func TestArchiveUpdateVerifiesChecksumAndReplacesBinaryInPlace(t *testing.T) {
 		t.Fatal("missing release accepted")
 	}
 }
+
+// A stale binary is what npm leaves behind when it skips the optional package
+// that carries bt, and an exit code alone cannot tell that from success.
+func TestInstallRefusesAVersionThatNeverReachedTheBinary(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "bt")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\necho v1.0.0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	err := verifyInstalled(context.Background(), executable, "1.1.0")
+	if err == nil || !strings.Contains(err.Error(), "still 1.0.0") {
+		t.Fatalf("a stale binary passed verification: %v", err)
+	}
+	if err = os.WriteFile(executable, []byte("#!/bin/sh\necho v1.1.0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err = verifyInstalled(context.Background(), executable, "1.1.0"); err != nil {
+		t.Fatalf("the installed version was rejected: %v", err)
+	}
+	if err = os.Remove(executable); err != nil {
+		t.Fatal(err)
+	}
+	if err = verifyInstalled(context.Background(), executable, "1.1.0"); err == nil {
+		t.Fatal("a missing binary passed verification")
+	}
+}
+
+// Releases publish in pieces, so a version npm already names as latest can have
+// no payload for this platform yet. Offering it would install nothing.
+func TestReleaseReadyWaitsForThisPlatformsPayload(t *testing.T) {
+	asset := archiveAsset("v1.1.0")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/download/v1.1.0/"+asset {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	base := ReleaseURL
+	ReleaseURL = server.URL
+	defer func() { ReleaseURL = base }()
+	if err := ReleaseReady(context.Background(), server.Client(), "/home/me/.local/bin/bt", "1.1.0"); err != nil {
+		t.Fatalf("a published release was withheld: %v", err)
+	}
+	if err := ReleaseReady(context.Background(), server.Client(), "/home/me/.local/bin/bt", "1.2.0"); err == nil {
+		t.Fatal("a release with no archive for this platform was offered")
+	}
+}

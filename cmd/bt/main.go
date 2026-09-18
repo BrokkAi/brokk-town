@@ -113,6 +113,13 @@ func buildVersion() string {
 	return v
 }
 
+// updateInterval is the ordinary release-check cadence; releaseSettleInterval
+// is how soon a release that is only half published is looked at again.
+const (
+	updateInterval        = 6 * time.Hour
+	releaseSettleInterval = time.Minute
+)
+
 // shutdownSignals end the process through the ordinary shutdown sequence.
 // SIGHUP belongs here: closing a terminal or dropping an SSH connection would
 // otherwise kill the service outright, leaving its workers running in their own
@@ -538,6 +545,10 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		installCtx, installCancel := context.WithTimeout(upgradeCtx, 2*time.Minute)
 		defer installCancel()
 		if e := town.InstallUpdate(installCtx, dir, exe, notice.Latest); e != nil {
+			// The browser reduces this to one line and the TUI to none, so the
+			// whole installer output belongs in the service log; without it a
+			// failed upgrade leaves nothing behind to diagnose.
+			fmt.Fprintf(os.Stderr, "bt: upgrade to %s failed: %v\n", notice.Latest, e)
 			return fmt.Errorf("upgrade failed: %w", e)
 		}
 		available.Store(nil)
@@ -554,26 +565,40 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	// quiet: inability to check must never prevent a local town from starting.
 	go func() {
 		client := &http.Client{Timeout: 8 * time.Second}
-		check := func() {
+		// check reports whether a release was seen but withheld, which is a
+		// minutes-long state rather than the ordinary six-hour cadence.
+		check := func() (held bool) {
 			checkCtx, checkCancel := context.WithTimeout(ctx, 10*time.Second)
 			defer checkCancel()
 			notice, e := town.CheckUpdate(checkCtx, client, buildVersion())
-			if e == nil {
-				if notice != nil {
-					notice.Command = town.UpdateCommand(exe, notice.Latest)
-				}
-				available.Store(notice)
+			if e != nil {
+				return false
 			}
+			if notice != nil {
+				// A release lands in pieces. Until this platform's payload is
+				// fetchable the offer would install nothing, so leave the town
+				// on its current version and take it at the next check.
+				if ready := town.ReleaseReady(checkCtx, client, exe, notice.Latest); ready != nil {
+					fmt.Fprintln(os.Stderr, "bt: holding the", notice.Latest, "offer:", ready)
+					return true
+				}
+				notice.Command = town.UpdateCommand(exe, notice.Latest)
+			}
+			available.Store(notice)
+			return false
 		}
-		check()
-		ticker := time.NewTicker(6 * time.Hour)
-		defer ticker.Stop()
+		delay := updateInterval
+		if check() {
+			delay = releaseSettleInterval
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				check()
+			case <-time.After(delay):
+				if delay = updateInterval; check() {
+					delay = releaseSettleInterval
+				}
 			}
 		}
 	}()
