@@ -25,7 +25,13 @@ restart when eligible intake exists. Pauses, failures, task retry delays, delete
 towns and empty queues are preserved. Focused race tests passed with local
 socket access (the sandbox prevented a fake worker from initializing).
 
-Status: review investigation underway. Live PR #58 still reports the exact base/head
+Milestone 2 Town integration complete: incomplete/stale reviewer output requests
+a fresh inventory, retains per-task backoff and retry limits, and no longer
+delays unrelated reviews after one PR exhausts its budget. Focused race tests
+passed. Review Bot exact-base fetch regression reproduced the failure; its fix
+and typed stale reason are being validated in the review-bot repository.
+
+Status: interrupted-worker recovery underway. Live PR #58 still reports the exact base/head
 Town requested; the stale marker alone does not establish an inventory mismatch.
 
 ## Simplifier Bot reachable on the map (2026-09-18)

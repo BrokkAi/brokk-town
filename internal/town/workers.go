@@ -62,12 +62,16 @@ func (b *BotWorkers) issueRetryConfig(t *Town, issue int) issuebot.Config {
 // ReviewAttemptError means the reviewer did not produce evidence Town can use.
 // It is retryable, but it is not a negative review of the pull request.
 type ReviewAttemptError struct {
+	Status, Detail             string
 	Complete                   bool
 	ExpectedBase, ExpectedHead string
 	ReturnedBase, ReturnedHead string
 }
 
 func (e *ReviewAttemptError) Error() string {
+	if e.Status != "" {
+		return fmt.Sprintf("reviewer returned %s for %s/%s: %s", e.Status, e.ExpectedBase, e.ExpectedHead, e.Detail)
+	}
 	return fmt.Sprintf("reviewer returned unusable evidence: complete=%t expected=%s/%s returned=%s/%s",
 		e.Complete, e.ExpectedBase, e.ExpectedHead, emptyRevision(e.ReturnedBase), emptyRevision(e.ReturnedHead))
 }
@@ -336,7 +340,7 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 		}
 		review := workerResult.Review
 		if !review.Complete || review.ExactBase != d.base || review.ExactHead != d.head || task.Base != d.base || task.Head != d.head {
-			return result, &ReviewAttemptError{Complete: review.Complete, ExpectedBase: task.Base, ExpectedHead: task.Head, ReturnedBase: review.ExactBase, ReturnedHead: review.ExactHead}
+			return result, &ReviewAttemptError{Status: review.Status, Detail: review.Detail, Complete: review.Complete, ExpectedBase: task.Base, ExpectedHead: task.Head, ReturnedBase: review.ExactBase, ReturnedHead: review.ExactHead}
 		}
 		observe(Progress{Phase: "certifying", Task: "Checking all outstanding findings on this revision"})
 		result.Audit, err = b.certify(ctx, t, task, review.Findings, log)

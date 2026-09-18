@@ -463,6 +463,16 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 				current.Error = err.Error()
 			}
 		}
+		if r == Review && err != nil && result.PR > 0 {
+			// The task owns its backoff. One exhausted PR must not prevent
+			// unrelated queued reviews from using the house.
+			w.Next = s.now().Add(time.Duration(current.Config.PollSeconds) * time.Second)
+			var attempt *ReviewAttemptError
+			if errors.As(err, &attempt) {
+				// Older workers omit Status; refresh those incomplete results too.
+				current.Workers[Repo].Next = time.Time{}
+			}
+		}
 		for n, o := range result.Owned {
 			current.Owned[n] = o
 		}

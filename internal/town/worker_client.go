@@ -153,6 +153,8 @@ type workerIssueResult struct {
 }
 
 type workerReviewResult struct {
+	Status    string            `json:"status,omitempty"`
+	Detail    string            `json:"detail,omitempty"`
 	Complete  bool              `json:"complete"`
 	Findings  map[string]string `json:"findings,omitempty"`
 	ExactBase string            `json:"exact_base,omitempty"`
