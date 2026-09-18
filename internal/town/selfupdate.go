@@ -15,12 +15,17 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
-// ReleaseURL is the GitHub releases base that install.sh downloads from.
-var ReleaseURL = "https://github.com/BrokkAi/brokk-town/releases"
+// ReleaseURL is the GitHub releases base that install.sh downloads from, and
+// RegistryURL the npm registry the launcher's packages come from.
+var (
+	ReleaseURL  = "https://github.com/BrokkAi/brokk-town/releases"
+	RegistryURL = "https://registry.npmjs.org"
+)
 
 // npmInstalled reports whether the executable is the native package that the
 // @brokkai/brokk-town launcher spawns. Only that layout upgrades through npm.
@@ -61,7 +66,7 @@ func archiveAsset(tag string) string {
 // so the offer waits until the payload can be fetched.
 func ReleaseReady(ctx context.Context, client *http.Client, executable, latest string) error {
 	version := strings.TrimPrefix(latest, "v")
-	url := "https://registry.npmjs.org/" + strings.Replace(platformPackage(), "/", "%2f", 1) + "/" + version
+	url := RegistryURL + "/" + strings.Replace(platformPackage(), "/", "%2f", 1) + "/" + version
 	if !npmInstalled(executable) {
 		url = ReleaseURL + "/download/v" + version + "/" + archiveAsset("v"+version)
 	}
@@ -75,8 +80,13 @@ func ReleaseReady(ctx context.Context, client *http.Client, executable, latest s
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<10))
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s is not published for %s/%s yet (%s)", version, runtime.GOOS, runtime.GOARCH, resp.Status)
+	// Only an outright absence withholds the offer. A rate limit, a proxy that
+	// dislikes HEAD, or any other refusal says nothing about the release, and
+	// withholding on those would silence upgrades indefinitely; the install
+	// verifies the binary itself, so letting one through costs a clear failure
+	// rather than a broken town.
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("%s is not published for %s/%s yet", version, runtime.GOOS, runtime.GOARCH)
 	}
 	return nil
 }
@@ -91,11 +101,15 @@ func InstallUpdate(ctx context.Context, dir, executable, latest string) error {
 	if _, ok := versionParts(latest); !ok {
 		return fmt.Errorf("invalid release version %q", latest)
 	}
-	if npmInstalled(executable) {
-		if _, err := osrun.Run(ctx, dir, nil, "npm", "install", "--global", "@brokkai/brokk-town@"+latest); err != nil {
-			return err
-		}
-	} else if err := installArchive(ctx, http.DefaultClient, ReleaseURL, executable, latest); err != nil {
+	if !npmInstalled(executable) {
+		// The archive channel checks the staged file and only then renames it
+		// over the executable, so a release that reports the wrong version
+		// leaves the working binary exactly where it was.
+		return installArchive(ctx, http.DefaultClient, ReleaseURL, executable, latest)
+	}
+	// npm has already rewritten its tree by the time it exits, so this channel
+	// can only inspect the result.
+	if _, err := osrun.Run(ctx, dir, nil, "npm", "install", "--global", "@brokkai/brokk-town@"+latest); err != nil {
 		return err
 	}
 	return verifyInstalled(ctx, executable, latest)
@@ -110,6 +124,11 @@ func verifyInstalled(ctx context.Context, executable, latest string) error {
 	if executable == "" {
 		return errors.New("unknown executable path")
 	}
+	// Running a local binary gets its own budget rather than whatever a slow
+	// download left of the caller's: a landed install must not be reported as
+	// unverifiable because the deadline ran out one call earlier.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 	out, err := osrun.Run(ctx, filepath.Dir(executable), nil, executable, "version")
 	if err != nil {
 		return fmt.Errorf("%s did not run after the upgrade: %w", executable, err)
@@ -162,6 +181,13 @@ func installArchive(ctx context.Context, client *http.Client, base, executable, 
 		return err
 	}
 	if err = staged.Close(); err != nil {
+		return err
+	}
+	// The staged file is asked for its version while it is still a temporary
+	// file: a checksummed archive can still hold a binary built with the wrong
+	// version stamp, and finding that out after the rename would leave the town
+	// running a binary this code has already declared unusable.
+	if err = verifyInstalled(ctx, stagedPath, latest); err != nil {
 		return err
 	}
 	return os.Rename(stagedPath, executable)

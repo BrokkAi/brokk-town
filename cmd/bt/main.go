@@ -565,8 +565,11 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	// quiet: inability to check must never prevent a local town from starting.
 	go func() {
 		client := &http.Client{Timeout: 8 * time.Second}
-		// check reports whether a release was seen but withheld, which is a
-		// minutes-long state rather than the ordinary six-hour cadence.
+		// check reports whether a release was seen but withheld, which is
+		// ordinarily a minutes-long state rather than the six-hour cadence.
+		// Only the first sighting of a held version is logged: a release that
+		// never finishes publishing must not fill the log a line at a time.
+		holding := ""
 		check := func() (held bool) {
 			checkCtx, checkCancel := context.WithTimeout(ctx, 10*time.Second)
 			defer checkCancel()
@@ -577,16 +580,23 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 			if notice != nil {
 				// A release lands in pieces. Until this platform's payload is
 				// fetchable the offer would install nothing, so leave the town
-				// on its current version and take it at the next check.
+				// on its current version and take it at a later check.
 				if ready := town.ReleaseReady(checkCtx, client, exe, notice.Latest); ready != nil {
-					fmt.Fprintln(os.Stderr, "bt: holding the", notice.Latest, "offer:", ready)
+					if holding != notice.Latest {
+						holding = notice.Latest
+						fmt.Fprintln(os.Stderr, "bt: holding the", notice.Latest, "offer:", ready)
+					}
 					return true
 				}
 				notice.Command = town.UpdateCommand(exe, notice.Latest)
 			}
+			holding = ""
 			available.Store(notice)
 			return false
 		}
+		// A held release is looked at again soon, then progressively less
+		// often, so a publication that stalls settles back to the ordinary
+		// cadence instead of polling once a minute forever.
 		delay := updateInterval
 		if check() {
 			delay = releaseSettleInterval
@@ -596,8 +606,10 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 			case <-ctx.Done():
 				return
 			case <-time.After(delay):
-				if delay = updateInterval; check() {
-					delay = releaseSettleInterval
+				if !check() {
+					delay = updateInterval
+				} else if delay *= 2; delay > updateInterval {
+					delay = updateInterval
 				}
 			}
 		}

@@ -262,31 +262,37 @@ function receive(next) {
     update.title = state.update.command;
     update.hidden = false;
     update.onclick = async () => {
-      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
+      // The offer is read once, up front: a stream event can replace state
+      // mid-request, and a report of what was installed must name the version
+      // that was actually asked for.
+      const latest = state.update.latest;
+      if (!confirm(`Upgrade Brokk Town to ${latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
       upgradeError = "";
       update.disabled = true;
       update.textContent = "Upgrading Town…";
       try {
         const result = await api("/api/update", {});
         if (result.restarting) {
-          update.textContent = `Town ${state.update.latest} installed · restarting`;
+          update.textContent = `Town ${latest} installed · restarting`;
           update.title = "The service restarts itself; this page reloads when it is back";
         } else {
-          update.textContent = `Town ${state.update.latest} installed · restart service`;
+          update.textContent = `Town ${latest} installed · restart service`;
           update.title = "Restart bt serve to use the installed version";
         }
       } catch (error) {
         // The reason is the whole story of a failed upgrade, and a tooltip is
-        // not a place anyone looks: it goes in the banner, where the next
-        // render keeps it until an attempt succeeds.
-        upgradeError = `Upgrade to ${state.update.latest} failed: ${error.message}`;
+        // not a place anyone looks: it goes in the banner, beside whatever the
+        // town itself reports rather than in place of it.
+        upgradeError = `Upgrade to ${latest} failed: ${error.message}`;
         update.disabled = false;
         update.textContent = `Upgrade failed · try again`;
         update.title = error.message;
-        showError(upgradeError);
+        render();
       }
     };
   } else {
+    // Nothing left to install: a past failure has nothing to say any more.
+    upgradeError = "";
     update.hidden = true;
   }
   const serviceVersion = typeof state.version === "string" ? state.version.trim() : "";
@@ -564,7 +570,7 @@ function render() {
   renderOverview();
   renderBoard();
   renderCompact();
-  showError(upgradeError || t?.error || "");
+  showError([t?.error, upgradeError].filter(Boolean).join(" · "));
   renderHouses();
   renderInspection();
   renderJournal();

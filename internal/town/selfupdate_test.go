@@ -54,7 +54,7 @@ func TestUpdateChannelFollowsInstallLayout(t *testing.T) {
 }
 
 func TestArchiveUpdateVerifiesChecksumAndReplacesBinaryInPlace(t *testing.T) {
-	archive := releaseArchive(t, "#!/bin/sh\necho new\n")
+	archive := releaseArchive(t, "#!/bin/sh\necho v1.1.0\n")
 	sum := sha256.Sum256(archive)
 	asset := fmt.Sprintf("brokk-town-v1.1.0-%s-%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 	checksums := hex.EncodeToString(sum[:]) + "  " + asset + "\n"
@@ -77,7 +77,7 @@ func TestArchiveUpdateVerifiesChecksumAndReplacesBinaryInPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(executable)
-	if err != nil || !strings.Contains(string(data), "echo new") {
+	if err != nil || !strings.Contains(string(data), "echo v1.1.0") {
 		t.Fatalf("binary not replaced: %v %q", err, data)
 	}
 	info, _ := os.Stat(executable)
@@ -93,7 +93,7 @@ func TestArchiveUpdateVerifiesChecksumAndReplacesBinaryInPlace(t *testing.T) {
 	if err := installArchive(context.Background(), server.Client(), server.URL, executable, "1.1.0"); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("bad checksum accepted: %v", err)
 	}
-	if data, _ := os.ReadFile(executable); !strings.Contains(string(data), "echo new") {
+	if data, _ := os.ReadFile(executable); !strings.Contains(string(data), "echo v1.1.0") {
 		t.Fatal("binary was replaced despite checksum failure")
 	}
 	if err := installArchive(context.Background(), server.Client(), server.URL, executable, "9.9.9"); err == nil {
@@ -126,25 +126,75 @@ func TestInstallRefusesAVersionThatNeverReachedTheBinary(t *testing.T) {
 	}
 }
 
-// Releases publish in pieces, so a version npm already names as latest can have
-// no payload for this platform yet. Offering it would install nothing.
-func TestReleaseReadyWaitsForThisPlatformsPayload(t *testing.T) {
+// An archive can carry a binary stamped with the wrong version even when its
+// checksum is right, and the working executable has to survive that.
+func TestArchiveKeepsTheRunningBinaryWhenTheReleaseReportsAnotherVersion(t *testing.T) {
+	archive := releaseArchive(t, "#!/bin/sh\necho v1.0.9\n")
+	sum := sha256.Sum256(archive)
 	asset := archiveAsset("v1.1.0")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/download/v1.1.0/"+asset {
+		switch r.URL.Path {
+		case "/download/v1.1.0/" + asset:
+			_, _ = w.Write(archive)
+		case "/download/v1.1.0/checksums.txt":
+			_, _ = w.Write([]byte(hex.EncodeToString(sum[:]) + "  " + asset + "\n"))
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	base := ReleaseURL
-	ReleaseURL = server.URL
-	defer func() { ReleaseURL = base }()
-	if err := ReleaseReady(context.Background(), server.Client(), "/home/me/.local/bin/bt", "1.1.0"); err != nil {
-		t.Fatalf("a published release was withheld: %v", err)
+	dir := t.TempDir()
+	executable := filepath.Join(dir, "bt")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\necho v1.0.0\n"), 0755); err != nil {
+		t.Fatal(err)
 	}
-	if err := ReleaseReady(context.Background(), server.Client(), "/home/me/.local/bin/bt", "1.2.0"); err == nil {
-		t.Fatal("a release with no archive for this platform was offered")
+	err := installArchive(context.Background(), server.Client(), server.URL, executable, "1.1.0")
+	if err == nil || !strings.Contains(err.Error(), "still 1.0.9") {
+		t.Fatalf("a mismatched release was installed: %v", err)
+	}
+	if data, _ := os.ReadFile(executable); !strings.Contains(string(data), "echo v1.0.0") {
+		t.Fatalf("the running binary was replaced anyway: %q", data)
+	}
+	leftovers, _ := filepath.Glob(filepath.Join(dir, ".brokk-town.*"))
+	if len(leftovers) != 0 {
+		t.Fatalf("staged files left behind: %v", leftovers)
+	}
+}
+
+// Releases publish in pieces, so a version npm already names as latest can have
+// no payload for this platform yet. Offering it would install nothing. Only an
+// outright absence withholds it: any other refusal says nothing about the
+// release, and treating those as absence would silence upgrades for good.
+func TestReleaseReadyWaitsForThisPlatformsPayload(t *testing.T) {
+	npm := "/usr/lib/node_modules/@brokkai/brokk-town/node_modules/@brokkai/brokk-town-darwin-arm64/bin/bt"
+	local := "/home/me/.local/bin/bt"
+	published := map[string]bool{
+		"/download/v1.1.0/" + archiveAsset("v1.1.0"):                       true,
+		"/" + strings.Replace(platformPackage(), "/", "%2f", 1) + "/1.1.0": true,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case published[r.URL.EscapedPath()]:
+			w.WriteHeader(http.StatusOK)
+		case strings.Contains(r.URL.Path, "1.3.0"):
+			w.WriteHeader(http.StatusTooManyRequests)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	release, registry := ReleaseURL, RegistryURL
+	ReleaseURL, RegistryURL = server.URL, server.URL
+	defer func() { ReleaseURL, RegistryURL = release, registry }()
+	for _, exe := range []string{local, npm} {
+		if err := ReleaseReady(context.Background(), server.Client(), exe, "1.1.0"); err != nil {
+			t.Fatalf("a published release was withheld from %s: %v", exe, err)
+		}
+		if err := ReleaseReady(context.Background(), server.Client(), exe, "1.2.0"); err == nil {
+			t.Fatalf("a release with no payload for %s was offered", exe)
+		}
+		if err := ReleaseReady(context.Background(), server.Client(), exe, "1.3.0"); err != nil {
+			t.Fatalf("a refused request withheld the offer from %s: %v", exe, err)
+		}
 	}
 }
