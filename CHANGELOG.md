@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.7 — 2026-09-18
 
 - Recover persisted Simplifier intake delays on restart without clearing failures.
 - Refresh incomplete reviews and keep unrelated PRs moving after a review fails.

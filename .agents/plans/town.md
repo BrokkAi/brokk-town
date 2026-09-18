@@ -1,5 +1,15 @@
 # Brokk Town implementation plan
 
+## Recovery release and rollout (2026-09-18)
+
+- User authorized publishing and installing the completed recovery fixes.
+- Publish Review Bot v0.2.3 and Town v0.4.7 through their tag workflows after
+  required local validation and green CI. Never move an existing release tag.
+- Install Town through its current npm channel and pin Review Bot to 0.2.3.
+- Preserve the current paused state while awaiting the requested worker scope;
+  reconcile GitHub before retrying stale reviews and interrupted issue work.
+- Verify installed versions, worker activity and resulting task transitions.
+
 ## Blocked-town recovery milestones (2026-09-18)
 
 1. **Scheduling recovery:** migrate saved Simplifier discovery delays when eligible
