@@ -92,6 +92,7 @@ func (b *BotWorkers) SyncIssues(t *Town) error {
 				task.Blocked = false
 			}
 		}
+		resolveIssueRecovery(current)
 		return nil
 	})
 }

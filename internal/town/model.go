@@ -218,20 +218,31 @@ type PublicBotAgentConfig struct {
 	Inherited      bool   `json:"inherited"`
 }
 type Worker struct {
-	Agent   *PublicBotAgentConfig `json:"agent,omitempty"`
-	Run     *WorkerRun            `json:"run,omitempty"`
-	Role    Role                  `json:"role"`
-	Enabled bool                  `json:"enabled"`
-	Status  string                `json:"status"`
-	Phase   string                `json:"phase"`
-	Task    string                `json:"task"`
-	Error   string                `json:"error,omitempty"`
-	Updated time.Time             `json:"updated"`
-	Next    time.Time             `json:"next,omitempty"`
-	Logs    []Log                 `json:"logs"`
+	Recovery *WorkerRecovery       `json:"recovery,omitempty"`
+	Agent    *PublicBotAgentConfig `json:"agent,omitempty"`
+	Run      *WorkerRun            `json:"run,omitempty"`
+	Role     Role                  `json:"role"`
+	Enabled  bool                  `json:"enabled"`
+	Status   string                `json:"status"`
+	Phase    string                `json:"phase"`
+	Task     string                `json:"task"`
+	Error    string                `json:"error,omitempty"`
+	Updated  time.Time             `json:"updated"`
+	Next     time.Time             `json:"next,omitempty"`
+	Logs     []Log                 `json:"logs"`
 	// RetryRequested asks the next release dispatch to lift the release bot's
 	// exhausted attempt budget through its worker API before running.
 	RetryRequested bool `json:"retry_requested,omitempty"`
+}
+
+// WorkerRecovery preserves an unresolved dispatch without exposing its private
+// process paths or pretending that an absent process proves no write occurred.
+type WorkerRecovery struct {
+	TaskID  string    `json:"task_id,omitempty"`
+	Base    string    `json:"base,omitempty"`
+	Head    string    `json:"head,omitempty"`
+	Started time.Time `json:"started"`
+	Detail  string    `json:"detail"`
 }
 
 // WorkerRun is the durable handle of one external bot process. It is written

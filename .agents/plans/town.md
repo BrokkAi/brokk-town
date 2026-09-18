@@ -31,7 +31,18 @@ delays unrelated reviews after one PR exhausts its budget. Focused race tests
 passed. Review Bot exact-base fetch regression reproduced the failure; its fix
 and typed stale reason are being validated in the review-bot repository.
 
-Status: interrupted-worker recovery underway. Live PR #58 still reports the exact base/head
+Milestone 2 Review Bot complete in commit 3ddf1f7: the regression failed before
+exact-base fetching and passes after it. Full race tests, vet, 21 Python release
+tests and four npm launcher tests passed.
+
+Milestone 3 complete: unresolved dispatches retain task/revision/start provenance
+and actionable recovery text; restart preserves the hold, live handles prevent
+replacement dispatch, and matching saved issue publication resolves recovery.
+Explicit task retry clears only the matching hold; starting a discovery house
+explicitly authorizes another scan. Legacy uncertainty is migrated from the
+attempt ledger. Focused restart/adoption/stop and migration race tests passed.
+
+Status: full integration validation and operational recovery assessment underway. Live PR #58 still reports the exact base/head
 Town requested; the stale marker alone does not establish an inventory mismatch.
 
 ## Simplifier Bot reachable on the map (2026-09-18)

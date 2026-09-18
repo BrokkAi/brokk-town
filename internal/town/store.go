@@ -88,6 +88,19 @@ func Open(dir string, demo bool) (*Store, error) {
 	// worker returns to its scheduled state, and durable intents are kept.
 	for _, t := range s.state.Towns {
 		for _, w := range t.Workers {
+			// Older versions dropped the handle after an uncertain adoption.
+			// Recover the public target from the most recent matching attempt.
+			if w.Run == nil && w.Recovery == nil && strings.Contains(w.Error, "its outcome is uncertain") {
+				for i := len(t.Outcomes) - 1; i >= 0; i-- {
+					o := t.Outcomes[i]
+					if o.Role == w.Role && o.Kind == "worker_attempt" {
+						if o.Detail == w.Error {
+							w.Recovery = &WorkerRecovery{TaskID: o.TaskID, Head: o.Revision, Started: o.At, Detail: recoveryDetail(w.Role, o.TaskID)}
+						}
+						break
+					}
+				}
+			}
 			// Older releases persisted the discovery scan's thirty-minute delay
 			// for intake too. Only shorten a successful, idle intake schedule;
 			// failures, explicit pauses and per-task retry times remain intact.
@@ -106,6 +119,14 @@ func Open(dir string, demo bool) (*Store, error) {
 				continue
 			}
 			w.Agent = nil
+			if w.Recovery != nil {
+				w.Status = "failed"
+				if !w.Enabled {
+					w.Status = "paused"
+				}
+				w.Task = w.Recovery.Detail
+				continue
+			}
 			if w.Enabled {
 				w.Status = "waiting"
 			} else {
@@ -142,6 +163,11 @@ func validateState(s State, demo bool) error {
 			}
 			if err := t.Workers[r].Run.Validate(r); err != nil {
 				return err
+			}
+			if recovery := t.Workers[r].Recovery; recovery != nil {
+				if recovery.Detail == "" || (recovery.Base != "" && !SHA(recovery.Base)) || (recovery.Head != "" && !SHA(recovery.Head)) {
+					return errors.New("invalid worker recovery record")
+				}
 			}
 		}
 		for key, task := range t.Tasks {
@@ -300,7 +326,7 @@ func (s *Store) dispatchEligibility(id string, role Role, now time.Time) (bool, 
 		return false, s.state.ServiceConfig.MaxWorkers
 	}
 	w := t.Workers[role]
-	return w != nil && w.Enabled && !w.Next.After(now), s.state.ServiceConfig.MaxWorkers
+	return w != nil && w.Enabled && w.Run == nil && w.Recovery == nil && !w.Next.After(now), s.state.ServiceConfig.MaxWorkers
 }
 
 // setActive publishes reservation changes through the same snapshot stream.

@@ -309,6 +309,7 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 		result.Simplification = &Simplification{Mode: assessment.Mode, Decision: assessment.Decision, Summary: assessment.Summary, Detail: assessment.Detail}
 		return result, nil
 	case Issue:
+		result.Issue = d.issue
 		if workerResult.Issue != nil {
 			result.Owned = make(map[int]Ownership, len(workerResult.Issue.Owned))
 			for _, owned := range workerResult.Issue.Owned {

@@ -395,7 +395,8 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 	}()
 	detached := errors.Is(err, errWorkerDetached)
 	var unknown *WorkerOutcomeUnknownError
-	stopUnconfirmed := adopt != nil && stopRequested(ctx) && errors.As(err, &unknown) && unknown.processRunning
+	outcomeUnknown := errors.As(err, &unknown)
+	stopUnconfirmed := adopt != nil && outcomeUnknown && unknown.processRunning
 	if err != nil && !detached && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 		log.Error("worker attempt failed", "error", err)
 	}
@@ -427,6 +428,11 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 			w.Task = "Could not confirm that the persisted worker stopped"
 			w.Updated = s.now()
 			return nil
+		}
+		if outcomeUnknown && adopt != nil {
+			target := workerRunTask(*adopt)
+			detail := recoveryDetail(r, target)
+			w.Recovery = &WorkerRecovery{TaskID: target, Base: adopt.BaseSHA, Head: adopt.HeadSHA, Started: adopt.Started, Detail: detail}
 		}
 		w.Run = nil
 		w.Agent = nil
@@ -552,6 +558,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 			if status == "abandoned" {
 				current.RecordOutcome(OutcomeRecord{ID: "abandoned:" + attemptID, At: finished, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished)})
 			}
+		}
+		if w.Recovery != nil {
+			w.Task = w.Recovery.Detail
 		}
 		if r != Repo {
 			current.Workers[Repo].Next = time.Time{}
@@ -750,7 +759,7 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 func (s *Supervisor) adoptRun(ctx context.Context, t *Town, r Role, run WorkerRun, observe func(Progress), log *slog.Logger) (RunResult, error) {
 	adopter, ok := s.Workers.(Adopter)
 	if !ok {
-		return RunResult{PR: run.PR}, &WorkerOutcomeUnknownError{Bot: run.Bot, Version: run.Version, Reason: "was running when the service restarted and this service cannot reconnect to it"}
+		return RunResult{PR: run.PR, Issue: run.Issue}, &WorkerOutcomeUnknownError{Bot: run.Bot, Version: run.Version, Reason: "was running when the service restarted and this service cannot reconnect to it"}
 	}
 	return adopter.Adopt(ctx, t, r, run, observe, log)
 }
@@ -1142,6 +1151,15 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 				w.Task = manualReleaseTask
 				continue
 			}
+			if action == "start" && w.Recovery != nil {
+				if w.Run != nil {
+					return errors.New("the previous worker may still be running; reconnect or stop it before recovery")
+				}
+				if w.Recovery.TaskID != "" {
+					return fmt.Errorf("recover interrupted %s with retry --task %s after checking GitHub", r, w.Recovery.TaskID)
+				}
+				w.Recovery = nil // Explicit restart authorizes another discovery scan.
+			}
 			w.Enabled = action == "start"
 			if w.Enabled {
 				if w.Task == manualReleaseTask {
@@ -1236,6 +1254,14 @@ func resetTaskForRetry(t *Town, task *Task) {
 	w := t.Workers[task.House]
 	if w == nil {
 		return
+	}
+	if w.Recovery != nil && w.Recovery.TaskID == task.ID && w.Run == nil {
+		w.Recovery = nil
+		w.Error = ""
+		w.Status = "waiting"
+		if !w.Enabled {
+			w.Status = "paused"
+		}
 	}
 	w.Next = time.Time{}
 	if !w.Enabled {
