@@ -4,7 +4,7 @@ import { seededRandom, workerPose, easeDelivery } from "./scenery.js";
 import { routePosition } from "./town.js";
 
 test("reduced motion freezes workers at every phase", () => {
-  for (const role of ["bug", "issue", "review", "release", "repo", "feature"]) {
+  for (const role of ["bug", "issue", "review", "release", "repo", "feature", "simplifier"]) {
     assert.deepEqual(
       workerPose(role, 0, false),
       workerPose(role, 15930, false),
@@ -14,6 +14,14 @@ test("reduced motion freezes workers at every phase", () => {
       workerPose(role, 1513, true),
     );
   }
+  // Every house keeps its own phase offset; a role missing from the list would
+  // silently share the first one's walk.
+  const phases = new Set(
+    ["bug", "issue", "review", "release", "repo", "feature", "simplifier"].map(
+      (role) => workerPose(role, 1000, true).phase,
+    ),
+  );
+  assert.equal(phases.size, 7, "each house walks on its own phase");
 });
 test("eased deliveries keep endpoints and move monotonically on their route", () => {
   assert.equal(easeDelivery(-1), 0);

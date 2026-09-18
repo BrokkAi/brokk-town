@@ -266,6 +266,7 @@ const state = {
         issue: { role: "issue", status: "working", enabled: true, task: "Implementing", logs: [], agent: { harness: "codex-acp", model: "m", effort: "medium" } },
         review: { role: "review", status: "waiting", enabled: true, next: "0001-01-01T00:00:00Z", logs: [] },
         repo: { role: "repo", status: "paused", enabled: true, logs: [] },
+        simplifier: { role: "simplifier", status: "waiting", enabled: true, logs: [] },
       },
       tasks: {
         "pr:1": { id: "pr:1", kind: "pr", number: 1, title: "Review this change", house: "review", stage: "awaiting_author" },
@@ -369,7 +370,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
 
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
   assert.equal(elements["town-state"].hidden, false, "header shows the town's wake state");
-  assert.equal(elements["town-state"].textContent, "Awake · 2 agents");
+  assert.equal(elements["town-state"].textContent, "Awake · 3 agents");
   assert.equal(elements["town-toggle"].textContent, "Ⅱ Pause the town", "toggle offers the action that changes state");
   assert.equal(elements["town-toggle"].classList.contains("primary"), false);
   assert.equal(elements["pause-all"].hidden, true, "no separate pause-all when every agent is awake");
@@ -381,15 +382,22 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.match(houseLabel("issue"), /codex/, "a house inheriting town defaults still shows them");
   assert.match(houseLabel("issue"), /medium/, "a house inheriting town defaults still shows its effort");
   assert.match(houseLabel("repo"), /no agent/, "the watchtower is marked as running without an agent");
+  assert.match(houseLabel("simplifier"), /SIMPLIFIER/, "a house painted from its own sprite still gets a label");
+  assert.match(houseLabel("simplifier"), /codex/, "the clarifier names the harness it inherits");
   assert.ok(
     elements.houses.innerHTML.includes('class="profile own"'),
     "a house with its own profile is distinguished from an inheriting one",
   );
   assert.ok(elements.houses.innerHTML.includes('class="profile inherited'), "inherited profiles are marked as inherited");
+  document.dispatchEvent({ type: "keydown", key: "8", target: new Element("div") });
+  assert.match(elements.inspection.textContent, /THE CLARIFIER/, "the eighth shortcut visits Simplifier Bot");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   assert.match(elements.inspection.textContent, /Authority:.*create pull requests/, "house controls explain their write authority");
   assert.match(elements.inspection.textContent, /Harness.*codex-acp/s, "the inspector spells the harness out in full");
   assert.match(elements.inspection.textContent, /Effort.*medium/s, "the inspector spells the effort out in full");
+  // Arriving from another house, so the clarifier's own label is what opens it.
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "simplifier").onclick();
+  assert.match(elements.inspection.textContent, /Authority:.*file simplification issues/, "the clarifier's label opens the clarifier");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-outcome-days]").find((button) => button.dataset.outcomeDays === "0").onclick();
   await elements.inspection.querySelectorAll("[data-export-outcomes]")[0].onclick();
