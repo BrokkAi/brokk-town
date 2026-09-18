@@ -83,6 +83,10 @@ let state = null,
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
   streamAbort = null,
   servedVersion = "";
+// A failed upgrade is the one error the town itself cannot report: the service
+// that would have carried it is the thing that did not change. It survives the
+// renders that follow until the next attempt clears it.
+let upgradeError = "";
 let liveDetail = null;
 let liveDetailEpoch = 0;
 let outcomeDays = 7;
@@ -137,6 +141,11 @@ const indices = {
   bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5, feature: 6,
 };
 const standaloneBuildings = { feature: featureStudy, simplifier: simplifierClarifier };
+// A house stands on the map whether its art comes from the shared atlas or
+// from its own sprite, so every lookup asks whether the role has a house at
+// all rather than which sheet it was painted on.
+const isHouse = (role) =>
+  indices[role] !== undefined || standaloneBuildings[role] !== undefined;
 async function api(path, body, signal) {
   const response = await fetch(path, {
     method: body ? "POST" : "GET",
@@ -254,25 +263,37 @@ function receive(next) {
     update.title = state.update.command;
     update.hidden = false;
     update.onclick = async () => {
-      if (!confirm(`Upgrade Brokk Town to ${state.update.latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
+      // The offer is read once, up front: a stream event can replace state
+      // mid-request, and a report of what was installed must name the version
+      // that was actually asked for.
+      const latest = state.update.latest;
+      if (!confirm(`Upgrade Brokk Town to ${latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
+      upgradeError = "";
       update.disabled = true;
       update.textContent = "Upgrading Town…";
       try {
         const result = await api("/api/update", {});
         if (result.restarting) {
-          update.textContent = `Town ${state.update.latest} installed · restarting`;
+          update.textContent = `Town ${latest} installed · restarting`;
           update.title = "The service restarts itself; this page reloads when it is back";
         } else {
-          update.textContent = `Town ${state.update.latest} installed · restart service`;
+          update.textContent = `Town ${latest} installed · restart service`;
           update.title = "Restart bt serve to use the installed version";
         }
       } catch (error) {
+        // The reason is the whole story of a failed upgrade, and a tooltip is
+        // not a place anyone looks: it goes in the banner, beside whatever the
+        // town itself reports rather than in place of it.
+        upgradeError = `Upgrade to ${latest} failed: ${error.message}`;
         update.disabled = false;
         update.textContent = `Upgrade failed · try again`;
         update.title = error.message;
+        render();
       }
     };
   } else {
+    // Nothing left to install: a past failure has nothing to say any more.
+    upgradeError = "";
     update.hidden = true;
   }
   const serviceVersion = typeof state.version === "string" ? state.version.trim() : "";
@@ -548,7 +569,7 @@ function render() {
   renderOverview();
   renderBoard();
   renderCompact();
-  showError(t?.error || "");
+  showError([t?.error, upgradeError].filter(Boolean).join(" · "));
   renderHouses();
   renderInspection();
   renderJournal();
@@ -657,7 +678,7 @@ $("#capacity-form").onsubmit = async (event) => {
 function renderHouses() {
   const t = town();
   $("#houses").innerHTML = Object.entries(positions)
-    .filter(([role]) => indices[role] !== undefined)
+    .filter(([role]) => isHouse(role))
     .map(([role, [x, y]]) => {
       const w = t?.workers[role],
         worker = projectWorker(t, role, w),
@@ -900,8 +921,7 @@ function renderJournal() {
     .forEach(
       (b) =>
         (b.onclick = () => {
-          selectedHouse =
-            indices[b.dataset.house] !== undefined ? b.dataset.house : "hall";
+          selectedHouse = isHouse(b.dataset.house) ? b.dataset.house : "hall";
           selectedTask = b.dataset.cargo;
           $("#inspector").classList.add("open");
           renderInspection();
@@ -969,7 +989,7 @@ function openInboxItem(id, house, task) {
   if (!state?.towns[id]) return;
   $("#inbox-dialog").close();
   selectTown(id);
-  inspectOperation(id, indices[house] !== undefined ? house : "hall", task);
+  inspectOperation(id, isHouse(house) ? house : "hall", task);
 }
 async function decideFromInbox(id, task, action) {
   $("#inbox-error").textContent = "";
@@ -1018,7 +1038,7 @@ function draw(now) {
   ctx.drawImage(field, 0, 0);
   const t = town();
   for (const [role, [x, y]] of Object.entries(positions)) {
-    if (indices[role] === undefined && !standaloneBuildings[role]) continue;
+    if (!isHouse(role)) continue;
     if (role === selectedHouse) {
       ctx.fillStyle = "#b0e98115";
       ctx.beginPath();
@@ -1148,7 +1168,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "b") selectView("board");
   if (e.key.toLowerCase() === "c") selectView("compact");
   if (e.key === "Escape") closeInspector();
-  if (/^[1-7]$/.test(e.key)) chooseHouse(houseShortcuts[Number(e.key) - 1]);
+  if (/^[1-9]$/.test(e.key) && houseShortcuts[Number(e.key) - 1])
+    chooseHouse(houseShortcuts[Number(e.key) - 1]);
 });
 canvas.onclick = (e) => {
   const r = canvas.getBoundingClientRect(),
@@ -1162,7 +1183,7 @@ canvas.onclick = (e) => {
     );
     if (Math.hypot(x - p.x, y - p.y) < 50) {
       selectedTask = m.cargo;
-      selectedHouse = indices[m.to] !== undefined ? m.to : "hall";
+      selectedHouse = isHouse(m.to) ? m.to : "hall";
       $("#inspector").classList.add("open");
       renderInspection();
       return;
