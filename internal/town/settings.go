@@ -129,6 +129,14 @@ func agentConfig(ctx context.Context, c Config, root string) (runner.AgentConfig
 	for k, v := range a.Environment {
 		merged[k] = v
 	}
+	// After the merge: the derivation already reads through whatever config
+	// directory the operator pointed at, so the redirect has to outrank it.
+	// BROKK_TOWN_MUSE_PERMISSIONS=keep is the opt-out.
+	if harness.Canonical(c.harness()) == "brokkai/muse-acp" {
+		if home := museConfigHome(root, merged); home != "" {
+			merged["XDG_CONFIG_HOME"] = home
+		}
+	}
 	a.Environment = merged
 	return a, nil
 }
