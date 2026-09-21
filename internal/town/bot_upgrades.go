@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -106,7 +107,7 @@ func (s *State) applyBotUpgrade(t *Town, u *BotUpgrade, by string, now time.Time
 // decideBotUpgrade resolves one upgrade decision: admit applies the pin, decline
 // keeps the current pin until a newer version is published, and delay asks
 // again after BotUpgradeDelay.
-func (s *State) decideBotUpgrade(t *Town, task *Task, action string, now time.Time) error {
+func (s *State) decideBotUpgrade(t *Town, task *Task, action, by string, now time.Time) error {
 	if task.Kind != "upgrade" || task.Upgrade == nil {
 		return errors.New("delay applies to bot upgrade decisions")
 	}
@@ -117,24 +118,32 @@ func (s *State) decideBotUpgrade(t *Town, task *Task, action string, now time.Ti
 	switch action {
 	case "admit":
 		s.applyBotUpgrade(t, u, "mayor", now)
-		s.Event(t.ID, "decision", "hall", string(u.Role), task.ID, "Mayor approved: "+task.Title, now)
+		s.Event(t.ID, "decision", "hall", string(u.Role), task.ID, by+" approved: "+task.Title, now)
 	case "decline":
 		task.MayoralDecision = "declined"
 		task.Stage = "declined"
-		task.Detail = fmt.Sprintf("The Mayor declined %s %s. Town keeps %s until a newer stable release is published.", botDisplayName(u.Role), u.To, u.From)
+		task.Detail = fmt.Sprintf("%s declined %s %s. Town keeps %s until a newer stable release is published.", subject(by), botDisplayName(u.Role), u.To, u.From)
 		task.Updated = now
-		s.Event(t.ID, "decision", "hall", "outside", task.ID, "Mayor declined: "+task.Title, now)
+		s.Event(t.ID, "decision", "hall", "outside", task.ID, by+" declined: "+task.Title, now)
 	case "delay":
 		task.MayoralDecision = ""
 		task.Stage = "delayed"
 		task.RetryAt = now.Add(BotUpgradeDelay)
-		task.Detail = fmt.Sprintf("The Mayor delayed %s %s. Town keeps %s and will ask again after %s.", botDisplayName(u.Role), u.To, u.From, task.RetryAt.Format(time.RFC1123))
+		task.Detail = fmt.Sprintf("%s delayed %s %s. Town keeps %s and will ask again after %s.", subject(by), botDisplayName(u.Role), u.To, u.From, task.RetryAt.Format(time.RFC1123))
 		task.Updated = now
-		s.Event(t.ID, "decision", "hall", "hall", task.ID, "Mayor delayed a day: "+task.Title, now)
+		s.Event(t.ID, "decision", "hall", "hall", task.ID, by+" delayed a day: "+task.Title, now)
 	default:
 		return errors.New("unknown action")
 	}
 	return nil
+}
+
+// subject names a decider at the start of a sentence: "The Mayor", "Auto-Mayor".
+func subject(by string) string {
+	if strings.Contains(by, "-") {
+		return by
+	}
+	return "The " + by
 }
 
 // reviveDelayedBotUpgrades returns delayed offers whose day has passed to Town

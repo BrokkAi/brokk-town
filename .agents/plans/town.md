@@ -1,5 +1,19 @@
 # Brokk Town implementation plan
 
+## Auto-Mayor (2026-09-21)
+
+- One town setting, `auto_mayor`, exposed as a Town Hall button
+  (`POST /api/auto-mayor`) and a Settings checkbox. The supervisor's scheduling
+  pass judges every pending Mayoral decision in towns that opt in, and turning
+  it on judges the arrivals already waiting.
+- Rules never invent a verdict: Simplifier advice is applied; outside arrivals
+  without advice are routed to Simplifier first; the town's own proposals are
+  admitted; bot updates are approved; external PRs Town reviewed and could not
+  clear, or whose review attempts were exhausted (new `Task.Retired`), are
+  declined. The Mayor's clicks and Auto-Mayor share one decision path so state
+  and events match, differing only in the decider's name.
+- Validation: Go race tests and vet, frontend syntax and tests.
+
 ## Scheduling throughput model (2026-09-21)
 
 - `go run ./cmd/townsim` replays the supervisor's default cadence (one worker

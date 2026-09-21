@@ -382,6 +382,13 @@ durable Mayoral decision: **Admit** sends the work to Issue Bot or Review Bot;
 admit routine work and decline low-value complex work itself; a declined issue is
 closed through Repo-bot, while a declined PR is ignored rather than closed.
 Simplifier Bot's own marked proposals do not recursively pass through intake.
+
+**Auto-Mayor** (a Town Hall button, also under Settings → Town Hall) judges
+every arrival without a person: it applies Simplifier Bot's advice, asks
+Simplifier Bot first about outside arrivals that have none, admits the town's
+own proposals, approves bot updates, and declines external PRs that Town
+reviewed and could not clear. Every decision is recorded in the town's events
+under the Auto-Mayor name, and turning it on judges whatever is already waiting.
 Between arrivals, the same worker scans the repository and may file marked
 proposals to remove or replace subsystems that add disproportionate complexity
 for little value.

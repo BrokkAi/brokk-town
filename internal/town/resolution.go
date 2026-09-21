@@ -41,6 +41,7 @@ func retirePull(st *State, t *Town, task *Task, reason string, now time.Time) {
 		task.Stage = "awaiting_mayor"
 		task.House = Hall
 		task.MayoralDecision = "pending"
+		task.Retired = true
 		task.Attempts = 0
 		task.RetryAt = time.Time{}
 		task.Updated = now

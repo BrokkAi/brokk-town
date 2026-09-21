@@ -835,7 +835,9 @@ function renderInspection() {
       const provenance = [record.role, record.task_id || "run-wide", record.revision ? `revision ${record.revision.slice(0, 12)}` : "revision unknown"].filter(Boolean).join(" · ");
       return `<article class="outcome-row"><time>${esc(new Date(record.at).toLocaleString())}</time><strong>${linkedTitle}</strong>${record.detail ? `<p>${esc(record.detail)}</p>` : ""}<p>${esc(record.status)} · ${esc(provenance)} · ${esc(unknown)} · usage ${record.usage == null ? "unknown" : esc(`${record.usage.input_tokens} in / ${record.usage.output_tokens} out`)} · cost ${record.cost_usd == null ? "unknown" : esc(`$${record.cost_usd}`)}</p>${record.kind === "finding_filed" ? `<p>Usefulness: ${esc(judgment)}</p>${judge}` : ""}</article>`;
     }).join("");
-    if (!writeInspection(out, `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">Outside work, proposed features and bot updates wait for your clearance.</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind === "upgrade" ? "bot update" : task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
+    const autoMayor = t.config?.auto_mayor === true;
+    const autoMayorBlock = `<div class="inspector-actions"><button id="auto-mayor-toggle"${autoMayor ? "" : ' class="primary"'}>${autoMayor ? "Turn off Auto-Mayor" : "Turn on Auto-Mayor"}</button></div><p class="muted">${autoMayor ? "Auto-Mayor is judging every arrival: it follows Simplifier Bot's advice, asks Simplifier Bot first about outside arrivals without any, admits the town's own proposals, approves bot updates, and declines external pull requests Town reviewed and could not clear." : "Auto-Mayor judges arrivals for you using the town's own advice. Anything already waiting here is decided as soon as it is turned on."}</p>`;
+    if (!writeInspection(out, `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2><p class="muted">${autoMayor ? "Auto-Mayor clears outside work, proposed features and bot updates as they arrive." : "Outside work, proposed features and bot updates wait for your clearance."}</p>${autoMayorBlock}${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind === "upgrade" ? "bot update" : task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting your decision</small></button>`).join("") || '<p class="muted">No arrivals need your decision.</p>'}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
@@ -847,6 +849,16 @@ function renderInspection() {
       '<p class="muted">The first report will arrive after the repository check.</p>'
     }`))
       return;
+    const autoMayorToggle = [...out.querySelectorAll("button")].find((button) => button.id === "auto-mayor-toggle");
+    if (autoMayorToggle)
+      autoMayorToggle.onclick = async () => {
+        try {
+          await api("/api/auto-mayor", { town: selectedTown, enabled: !autoMayor });
+          showError("");
+        } catch (e) {
+          showError(e.message);
+        }
+      };
     out.querySelectorAll("[data-task]").forEach((button) => {
       button.onclick = () => { selectedTask = button.dataset.task; renderInspection(); };
     });

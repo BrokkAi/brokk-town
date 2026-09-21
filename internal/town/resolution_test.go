@@ -218,11 +218,11 @@ func TestReviewCloseSeverityIsATownSetting(t *testing.T) {
 		return RunResult{}, nil
 	}))
 	bad := "P9"
-	if err := sup.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, nil, &bad); err == nil {
+	if err := sup.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, nil, &bad, nil); err == nil {
 		t.Fatal("accepted an unknown severity")
 	}
 	p1 := "P1"
-	if err := sup.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, nil, &p1); err != nil {
+	if err := sup.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, nil, &p1, nil); err != nil {
 		t.Fatal(err)
 	}
 	cfg := s.Snapshot().Towns[x.ID].Config

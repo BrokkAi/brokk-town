@@ -461,6 +461,15 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.ok(upgradeButtons.find((button) => button.id === "decline-task"), "a bot update can be declined");
   await upgradeButtons.find((button) => button.id === "delay-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"delay"') && request.options.body.includes('"task":"upgrade:feature"')), true);
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  const autoMayor = elements.inspection.querySelectorAll("button").find((button) => button.id === "auto-mayor-toggle");
+  assert.ok(autoMayor, "Town Hall offers the Auto-Mayor button");
+  assert.match(autoMayor.textContent, /Turn on Auto-Mayor/, "the button reflects that Auto-Mayor is off");
+  await autoMayor.onclick();
+  const toggled = requests.find((request) => request.url === "/api/auto-mayor");
+  assert.ok(toggled, "the button saves the town setting");
+  assert.equal(JSON.parse(toggled.options.body).enabled, true);
+  assert.equal(JSON.parse(toggled.options.body).town, "acme/project");
 
   elements["capacity-settings"].onclick();
   assert.equal(elements["capacity-dialog"].open, true);

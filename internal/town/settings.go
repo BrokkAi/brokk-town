@@ -246,14 +246,14 @@ func (s *Supervisor) Settings(id string, settings AgentSettings) error {
 // SettingsForRole changes one independent bot profile, or the town defaults when
 // role is empty. Inherit removes an override so future defaults apply again.
 func (s *Supervisor) SettingsForRole(id string, role Role, settings AgentSettings) error {
-	return s.SettingsForRoleAndPolicy(id, role, settings, nil, nil, nil, nil, nil)
+	return s.SettingsForRoleAndPolicy(id, role, settings, nil, nil, nil, nil, nil, nil)
 }
 
 // SettingsForRoleAndPolicy commits agent and merge-policy edits together so a
 // form submission cannot leave only half of the requested settings applied.
 // Turning on automatic bot updates applies every outstanding upgrade offer at
 // once, and an explicit pin withdraws an offer it has already caught up with.
-func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, simplifierMode *string, botVersion *string, autoUpdateBots *bool, closeSeverity *string) error {
+func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, simplifierMode *string, botVersion *string, autoUpdateBots *bool, closeSeverity *string, autoMayor *bool) error {
 	if err := settings.validateRole(role); err != nil {
 		return err
 	}
@@ -302,6 +302,12 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 			t.Config.AutoUpdateBots = *autoUpdateBots
 			if *autoUpdateBots {
 				st.applyOfferedBotUpgrades(t, s.now())
+			}
+		}
+		if autoMayor != nil {
+			t.Config.AutoMayor = *autoMayor
+			if *autoMayor {
+				st.autoMayor(t, s.now())
 			}
 		}
 		switch {

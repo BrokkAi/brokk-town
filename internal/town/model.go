@@ -117,6 +117,8 @@ type Config struct {
 	Funnels           FunnelConfigs           `json:"funnels,omitempty"`
 	SimplifierMode    string                  `json:"simplifier_mode,omitempty"`
 	AutoUpdateBots    bool                    `json:"auto_update_bots,omitempty"`
+	// AutoMayor judges every Town Hall arrival automatically; see autoMayorAction.
+	AutoMayor bool `json:"auto_mayor,omitempty"`
 	// ReviewCloseSeverity is the least severe finding (P1, P2 or P3) that
 	// still closes a pull request when it survives the second review. Findings
 	// below it are filed as follow-up issues and the pull request merges.
@@ -249,6 +251,7 @@ type PublicConfig struct {
 	Funnels        []PublicFunnelConfig          `json:"funnels,omitempty"`
 	SimplifierMode string                        `json:"simplifier_mode"`
 	AutoUpdateBots bool                          `json:"auto_update_bots"`
+	AutoMayor      bool                          `json:"auto_mayor"`
 	// ReviewCloseSeverity is the least severe finding that closes a pull
 	// request after its second review.
 	ReviewCloseSeverity string `json:"review_close_severity"`
@@ -431,6 +434,9 @@ type Task struct {
 	// Requeue names the pull request Town closed after review. Issue-bot's
 	// next run on this issue starts over and never counts that PR again.
 	Requeue int `json:"requeue,omitempty"`
+	// Retired marks an external pull request whose review attempts on the
+	// current revision were exhausted; the Mayor decides whether to try again.
+	Retired bool `json:"retired,omitempty"`
 }
 
 // BotUpgrade records one published stable bot version that is newer than the
@@ -707,7 +713,7 @@ func (c Config) Public() PublicConfig {
 	for _, role := range AgentRoles {
 		versions[role] = c.BotVersion(role)
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), AutoUpdateBots: c.AutoUpdateBots, ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault()}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), AutoUpdateBots: c.AutoUpdateBots, AutoMayor: c.AutoMayor, ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault()}
 }
 
 func (c Config) BotVersion(role Role) string {

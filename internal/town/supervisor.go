@@ -151,6 +151,19 @@ func (s *Supervisor) schedule(ctx context.Context) {
 	}
 	s.reviveDelayedBotUpgrades()
 	for _, t := range state.Towns {
+		if t.Deleted || !t.Config.AutoMayor || !pendingDecisions(t) {
+			continue
+		}
+		// Arrivals reach Town Hall from inventories, reviews and Simplifier
+		// advice; Auto-Mayor judges them on the next scheduling pass.
+		s.update(func(st *State) error {
+			if current := st.Towns[t.ID]; current != nil && !current.Deleted && current.Config.AutoMayor {
+				st.autoMayor(current, s.now())
+			}
+			return nil
+		})
+	}
+	for _, t := range state.Towns {
 		if t.Deleted {
 			continue
 		}
@@ -1085,41 +1098,7 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 			return errors.New("unknown town")
 		}
 		if decision {
-			task := t.Tasks[taskID]
-			if task == nil || task.MayoralDecision != "pending" || task.Stage != "awaiting_mayor" || task.House != Hall {
-				return errors.New("task is not awaiting a Mayoral decision")
-			}
-			if task.Kind == "upgrade" || action == "delay" {
-				return st.decideBotUpgrade(t, task, action, s.now())
-			}
-			if action == "decline" {
-				task.MayoralDecision = "declined"
-				task.Stage = "declined"
-				// Work the town proposed to itself is retired at its source: a
-				// declined proposal is closed rather than left open for a bot to
-				// pick up again. Outside work is only ignored; Town does not
-				// close other people's issues and pull requests.
-				if task.Kind == "issue" && !task.External {
-					task.Detail = "The Mayor declined this proposal. Town is closing the issue."
-					t.Workers[Repo].Next = time.Time{}
-					st.Event(id, "decision", "hall", string(Repo), task.ID, "Mayor declined: "+task.Title, s.now())
-					return nil
-				}
-				task.Detail = "The Mayor declined this outside work. Town will not act on it."
-				st.Event(id, "decision", "hall", "outside", task.ID, "Mayor declined: "+task.Title, s.now())
-				return nil
-			}
-			task.MayoralDecision = "admitted"
-			task.Stage = "queued"
-			task.Detail = "The Mayor admitted this work to town."
-			target := Review
-			if task.Kind == "issue" {
-				target = Issue
-			}
-			task.House = target
-			t.Workers[target].Next = time.Time{}
-			st.Event(id, "decision", "hall", string(target), task.ID, "Mayor admitted: "+task.Title, s.now())
-			return nil
+			return st.decideTask(t, t.Tasks[taskID], action, "Mayor", s.now())
 		}
 		if action == "retry" {
 			task := t.Tasks[taskID]
