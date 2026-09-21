@@ -36,7 +36,7 @@ type params struct {
 	issueWork     time.Duration
 	reviewWork    time.Duration
 	repairWork    time.Duration
-	pMerge        float64 // overall chance a PR ends merged rather than closed
+	pSecondClean  float64 // chance the second review finds no new P1/P2 after the fix round
 	pFixes        float64 // chance the first review asks for a fix round
 	pFollowUps    float64 // chance a merged PR files two follow-up issues
 	pBugAdmit     float64
@@ -270,10 +270,12 @@ func (s *sim) dispatch(r role) {
 				}
 				return
 			}
-			// Second review: calibrated so the overall merge rate is pMerge
-			// given that a share pFixes of PRs reached this round.
-			pSecond := (p.pMerge - (1 - p.pFixes)) / p.pFixes
-			if s.rng.Float64() < pSecond {
+			// Second review. Town closes the PR on any open or uncertain
+			// finding rated P2 or above; only P3 is deferred. Both reviews and
+			// the certifier inspect the whole merge-base-to-head diff and are
+			// asked to add any new defects they find, so nothing narrows the
+			// second pass to the fix delta.
+			if s.rng.Float64() < p.pSecondClean {
 				pr.stage = "ready"
 			} else {
 				// Closed after review: the issue starts over (finalizeClosedPull).
@@ -359,7 +361,7 @@ func main() {
 	flag.DurationVar(&p.issueWork, "issue-work", 30*time.Minute, "Issue Bot time per issue")
 	flag.DurationVar(&p.reviewWork, "review-work", 15*time.Minute, "Review Bot time per review")
 	flag.DurationVar(&p.repairWork, "repair-work", 30*time.Minute, "Issue Bot time per fix round")
-	flag.Float64Var(&p.pMerge, "p-merge", 0.8, "overall chance a PR is merged")
+	flag.Float64Var(&p.pSecondClean, "p-second-clean", 0.778, "chance the second review finds no new P1/P2 (0.778 gives 80% merged overall with p-fixes 0.9)")
 	flag.Float64Var(&p.pFixes, "p-fixes", 0.9, "chance the first review needs fixes")
 	flag.Float64Var(&p.pFollowUps, "p-followups", 0.1, "chance a merged PR files two follow-up issues")
 	flag.Float64Var(&p.pBugAdmit, "p-bug-admit", 0.9, "Simplifier admits a Bug Bot issue")
@@ -394,12 +396,14 @@ func main() {
 	bugRate := hour / float64(p.bugRun+p.discovery) * float64(p.issuesPerScan) * p.pBugAdmit
 	featRate := hour / float64(p.featureRun+p.discovery) * float64(p.issuesPerScan) * p.pFeatAdmit
 	admitted := bugRate + featRate
-	attemptsPerMerge := 1 / p.pMerge
+	pMerge := (1 - p.pFixes) + p.pFixes*p.pSecondClean
+	attemptsPerMerge := 1 / pMerge
 	followups := 2 * p.pFollowUps * p.pFollowAdmt
 	issueMinutesPerAttempt := (float64(p.issueWork) + p.pFixes*float64(p.repairWork)) / float64(time.Minute)
-	reviewMinutesPerAttempt := ((1+p.pFixes)*float64(p.reviewWork) + p.pMerge*float64(p.mergeTurn+p.poll)) / float64(time.Minute)
+	reviewMinutesPerAttempt := ((1+p.pFixes)*float64(p.reviewWork) + pMerge*float64(p.mergeTurn+p.poll)) / float64(time.Minute)
 	demand := admitted / (1 - followups) * attemptsPerMerge
-	fmt.Printf("\nAdmitted work: %.2f issues/hour from Bug and Feature (follow-ups multiply that by %.2f)\n", admitted, 1/(1-followups))
+	fmt.Printf("\nPer PR: %.0f%% merge, %.0f%% closed after the second review; %.2f PR attempts per issue (no cap on restarts)\n", pMerge*100, (1-pMerge)*100, attemptsPerMerge)
+	fmt.Printf("Admitted work: %.2f issues/hour from Bug and Feature (follow-ups multiply that by %.2f)\n", admitted, 1/(1-followups))
 	fmt.Printf("PR attempts needed: %.2f/hour; each attempt costs the Issue house %.0f min and the Review house %.1f min\n", demand, issueMinutesPerAttempt, reviewMinutesPerAttempt)
 	fmt.Printf("Issue house utilization: %.0f%%   Review house utilization: %.0f%%\n", demand*issueMinutesPerAttempt/60*100, demand*reviewMinutesPerAttempt/60*100)
 	q, w := s.queued()
