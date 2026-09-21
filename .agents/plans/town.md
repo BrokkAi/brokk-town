@@ -1,5 +1,16 @@
 # Brokk Town implementation plan
 
+## Scheduling throughput model (2026-09-21)
+
+- `go run ./cmd/townsim` replays the supervisor's default cadence (one worker
+  per house, MaxWorkers 4, 60 s poll, 30 min discovery gap, Simplifier intake,
+  one repair round, closed PRs restarting their issue) with stochastic outcomes
+  and prints a per-day table of merged PRs, open PRs and open issues.
+- With Bug and Feature each filing one issue per scan, the single Issue house
+  is the serial bottleneck at roughly 250% utilization, so the issue backlog
+  grows without bound under the defaults. Backpressure on discovery is needed
+  before scheduling defaults can be called healthy.
+
 ## Recovery release and rollout (2026-09-18)
 
 - User authorized publishing and installing the completed recovery fixes.
