@@ -4,6 +4,13 @@
 // a shared MaxWorkers capacity, the sixty second poll cadence, thirty minute
 // discovery gaps, Simplifier intake ahead of the Mayor, one repair round per
 // pull request, and a closed pull request starting its issue over.
+//
+// Bot-side schedules that survive Town's one-shot dispatch are folded in: Bug
+// and Feature Bot save NextScan = finish + 30 min (their own Poll default), so
+// a scan lands every run duration plus thirty minutes and files up to
+// MaxIssues (3) issues; merges are Town's own mergeReady pass, which runs at
+// the start of a Review house turn and takes that turn instead of a review;
+// Release Bot only publishes releases and never touches PR or issue counts.
 package main
 
 import (
@@ -11,31 +18,32 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"sort"
 	"text/tabwriter"
 	"time"
 )
 
 type params struct {
-	days        int
-	seed        int64
-	maxWorkers  int
-	poll        time.Duration
-	discovery   time.Duration
-	release     time.Duration
-	mayor       time.Duration
-	bugRun      time.Duration
-	featureRun  time.Duration
-	simplify    time.Duration
-	issueWork   time.Duration
-	reviewWork  time.Duration
-	repairWork  time.Duration
-	pMerge      float64 // overall chance a PR ends merged rather than closed
-	pFixes      float64 // chance the first review asks for a fix round
-	pFollowUps  float64 // chance a merged PR files two follow-up issues
-	pBugAdmit   float64
-	pFeatAdmit  float64
-	pFollowAdmt float64
+	days          int
+	seed          int64
+	maxWorkers    int
+	poll          time.Duration
+	discovery     time.Duration
+	release       time.Duration
+	mayor         time.Duration
+	bugRun        time.Duration
+	featureRun    time.Duration
+	simplify      time.Duration
+	issueWork     time.Duration
+	reviewWork    time.Duration
+	repairWork    time.Duration
+	pMerge        float64 // overall chance a PR ends merged rather than closed
+	pFixes        float64 // chance the first review asks for a fix round
+	pFollowUps    float64 // chance a merged PR files two follow-up issues
+	pBugAdmit     float64
+	pFeatAdmit    float64
+	pFollowAdmt   float64
+	issuesPerScan int           // issues filed per Bug/Feature scan (bot cap: MaxIssues 3)
+	mergeTurn     time.Duration // GitHub round trips for one mergeReady merge
 }
 
 type role int
@@ -181,9 +189,17 @@ func (s *sim) dispatch(r role) {
 	p := s.p
 	switch r {
 	case bug:
-		s.start(r, p.bugRun, func() { s.newIssue(p.pBugAdmit) })
+		s.start(r, p.bugRun, func() {
+			for i := 0; i < p.issuesPerScan; i++ {
+				s.newIssue(p.pBugAdmit)
+			}
+		})
 	case feature:
-		s.start(r, p.featureRun, func() { s.newIssue(p.pFeatAdmit) })
+		s.start(r, p.featureRun, func() {
+			for i := 0; i < p.issuesPerScan; i++ {
+				s.newIssue(p.pFeatAdmit)
+			}
+		})
 	case simplifier:
 		it, pr := s.simplifierTask()
 		if it != nil {
@@ -223,6 +239,22 @@ func (s *sim) dispatch(r role) {
 		}
 		s.workers[r].next = s.now + p.poll
 	case review:
+		// Supervisor.execute runs mergeReady before any review. It merges the
+		// lowest ready PR, reconciles, and returns; the review waits a poll.
+		if ready := s.nextPRIn("ready"); ready != nil {
+			ready.stage = "merging"
+			s.start(r, p.mergeTurn, func() {
+				ready.stage = "merged"
+				ready.issue.stage = "closed"
+				s.merged++
+				s.dayMerged++
+				if s.rng.Float64() < p.pFollowUps {
+					s.newIssue(p.pFollowAdmt)
+					s.newIssue(p.pFollowAdmt)
+				}
+			})
+			return
+		}
 		pr := s.nextPRIn("queued")
 		if pr == nil {
 			s.workers[r].next = s.now + p.poll
@@ -253,23 +285,8 @@ func (s *sim) dispatch(r role) {
 			}
 		})
 	case release:
-		// mergeReady: every ready PR merges in one pass; treated as instant.
-		merged := false
-		for _, pr := range s.prs {
-			if pr.stage != "ready" {
-				continue
-			}
-			merged = true
-			pr.stage = "merged"
-			pr.issue.stage = "closed"
-			s.merged++
-			s.dayMerged++
-			if s.rng.Float64() < p.pFollowUps {
-				s.newIssue(p.pFollowAdmt)
-				s.newIssue(p.pFollowAdmt)
-			}
-		}
-		_ = merged
+		// Release Bot publishes releases on its own daily/quiet-period pacing;
+		// it never merges PRs or files issues, so it only holds a slot briefly.
 		s.workers[r].next = s.now + p.release
 	}
 }
@@ -320,7 +337,7 @@ func (s *sim) queued() (issuesQueued, prsWaiting int) {
 		}
 	}
 	for _, pr := range s.prs {
-		if pr.stage == "queued" || pr.stage == "fixes" || pr.stage == "simplifying" {
+		if pr.stage == "queued" || pr.stage == "fixes" || pr.stage == "simplifying" || pr.stage == "ready" {
 			prsWaiting++
 		}
 	}
@@ -348,6 +365,8 @@ func main() {
 	flag.Float64Var(&p.pBugAdmit, "p-bug-admit", 0.9, "Simplifier admits a Bug Bot issue")
 	flag.Float64Var(&p.pFeatAdmit, "p-feature-admit", 0.25, "Simplifier admits a Feature Bot issue")
 	flag.Float64Var(&p.pFollowAdmt, "p-followup-admit", 0.9, "Simplifier admits a review follow-up (assumed)")
+	flag.IntVar(&p.issuesPerScan, "issues-per-scan", 1, "issues each Bug/Feature scan files (bot cap MaxIssues is 3)")
+	flag.DurationVar(&p.mergeTurn, "merge-turn", time.Minute, "Review house time spent merging one ready PR")
 	flag.Parse()
 	p.simplify += p.mayor
 
@@ -372,18 +391,17 @@ func main() {
 
 	// Steady-state demand on the single Issue house, the serial bottleneck.
 	hour := float64(time.Hour)
-	bugRate := hour / float64(p.bugRun+p.discovery) * p.pBugAdmit
-	featRate := hour / float64(p.featureRun+p.discovery) * p.pFeatAdmit
+	bugRate := hour / float64(p.bugRun+p.discovery) * float64(p.issuesPerScan) * p.pBugAdmit
+	featRate := hour / float64(p.featureRun+p.discovery) * float64(p.issuesPerScan) * p.pFeatAdmit
 	admitted := bugRate + featRate
 	attemptsPerMerge := 1 / p.pMerge
 	followups := 2 * p.pFollowUps * p.pFollowAdmt
 	issueMinutesPerAttempt := (float64(p.issueWork) + p.pFixes*float64(p.repairWork)) / float64(time.Minute)
-	reviewMinutesPerAttempt := (1 + p.pFixes) * float64(p.reviewWork) / float64(time.Minute)
+	reviewMinutesPerAttempt := ((1+p.pFixes)*float64(p.reviewWork) + p.pMerge*float64(p.mergeTurn+p.poll)) / float64(time.Minute)
 	demand := admitted / (1 - followups) * attemptsPerMerge
 	fmt.Printf("\nAdmitted work: %.2f issues/hour from Bug and Feature (follow-ups multiply that by %.2f)\n", admitted, 1/(1-followups))
 	fmt.Printf("PR attempts needed: %.2f/hour; each attempt costs the Issue house %.0f min and the Review house %.1f min\n", demand, issueMinutesPerAttempt, reviewMinutesPerAttempt)
 	fmt.Printf("Issue house utilization: %.0f%%   Review house utilization: %.0f%%\n", demand*issueMinutesPerAttempt/60*100, demand*reviewMinutesPerAttempt/60*100)
 	q, w := s.queued()
 	fmt.Printf("End state: %d issues waiting for Issue Bot, %d PRs waiting for Review/Issue Bot\n", q, w)
-	_ = sort.Ints
 }
