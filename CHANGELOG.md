@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — 2026-09-21
+
+- Give Town Hall its own Mayor Bot to judge arrivals awaiting a Mayoral
+  decision. Start or pause it like the other bot houses; it starts paused.
+- Show Mayor Bot's bulletin of merged work in Town Hall and the TUI, with
+  a configurable bulletin interval (six hours by default).
+- Add `townsim` to model bot scheduling, review churn, and queue throughput
+  without running agents or writing to GitHub.
+
 ## 0.4.9 — 2026-09-18
 
 - Check npm for new stable bot releases every fifteen minutes instead of every

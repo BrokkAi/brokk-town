@@ -1,5 +1,18 @@
 # Brokk Town implementation plan
 
+## v0.5.0 release (2026-09-21)
+
+- User requested a new release. Publish the Mayor Bot integration, Town Hall
+  bulletin feed, and scheduling simulator as v0.5.0.
+- Verify the pinned Mayor Bot 0.1.0 is published, run `make check smoke` and
+  a non-publishing package build, then require green CI for the exact release
+  commit on origin/master before pushing the immutable release tag.
+- Follow the tag-driven Publish packages workflow and verify its result.
+- Local validation passed: Go race tests and vet, 42 frontend tests and
+  syntax checks, four npm launcher tests, 25 packaging tests, license checks,
+  and the isolated demo lifecycle/API/CLI/PTY smoke. Mayor Bot 0.1.0 is
+  available on npm.
+
 ## Mayor Bot and the town bulletin (2026-09-21)
 
 - The user wants a model to judge Town Hall arrivals and a user-facing feed of
