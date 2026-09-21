@@ -528,7 +528,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		return err
 	}
 	gh := town.GitHubClient{}
-	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh}
+	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh, BotCommands: botCommandOverrides()}
 	supervisor := town.NewSupervisor(store, gh, workers)
 	// Bot pins are offered from npm's stable tags on the supervisor's schedule;
 	// each town decides at Town Hall unless it opted into automatic updates.
@@ -752,4 +752,17 @@ func decodeConfigFile(data []byte) ([]townEntry, *int, error) {
 		limit = &value
 	}
 	return towns, limit, nil
+}
+
+// botCommandOverrides lets a development checkout run a bot that npm has not
+// published yet: BROKK_TOWN_<ROLE>_BOT names an executable for that role, such
+// as BROKK_TOWN_HALL_BOT for Mayor Bot. Unset roles use their pinned package.
+func botCommandOverrides() map[town.Role]string {
+	overrides := map[town.Role]string{}
+	for _, role := range town.AgentRoles {
+		if command := strings.TrimSpace(os.Getenv("BROKK_TOWN_" + strings.ToUpper(string(role)) + "_BOT")); command != "" {
+			overrides[role] = command
+		}
+	}
+	return overrides
 }

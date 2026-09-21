@@ -487,6 +487,15 @@ func renderTUI(s town.State, version string, townIndex, roleIndex, width, height
 			add(" REPO-BOT: " + latest.Title)
 			add(" " + latest.Body)
 		}
+		if len(t.Bulletins) > 0 {
+			latest := t.Bulletins[len(t.Bulletins)-1]
+			add("")
+			add(" MAYOR BULLETIN: " + latest.Title)
+			add(" " + latest.Summary)
+			for _, item := range latest.Items {
+				add(fmt.Sprintf("   %s: %s", item.Kind, item.Title))
+			}
+		}
 	}
 	if height < 5 {
 		return strings.Join(lines[:min(len(lines), height)], "\n")

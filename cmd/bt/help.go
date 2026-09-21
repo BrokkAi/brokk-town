@@ -44,7 +44,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
 	fl.demo = fs.Bool("demo", false, "isolated simulated town (serve only)")
 	fl.repo = fs.String("repo", "", "GitHub OWNER/REPO")
-	fl.role = fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release; repo/all for controls (start all wakes all five, except release under manual merge policy); omit for town defaults in settings")
+	fl.role = fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release, simplifier, hall (Mayor Bot); repo/all for controls (start all wakes every house, except release under manual merge policy); omit for town defaults in settings")
 	fl.task = fs.String("task", "", "task ID for retry; omit with --role release to reset the release bot's exhausted attempt budget")
 	fl.config = fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
 	fl.harness = fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")

@@ -27,6 +27,7 @@ export const houseAuthorities = {
   review: "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches.",
   release: "May create and merge release-preparation pull requests and publish releases and packages.",
   repo: "Inventories repository state, and repairs the branch it covers when its checks fail.",
+  hall: "Judges every arrival at Town Hall and writes the bulletin of features gained and bugs fixed; it never edits the repository or GitHub.",
 };
 
 export function houseAuthority(role, mergePolicy = "bot") {
@@ -393,8 +394,8 @@ export function townControls(town) {
   );
   const awake = agents.filter((w) => w.enabled).length;
   const names = manual
-    ? "Bug Bot, Feature Bot, Issue Bot, Review Bot, and Simplifier Bot; Release Bot stays paused while every merge is manual"
-    : "Bug Bot, Feature Bot, Issue Bot, Review Bot, Simplifier Bot, and Release Bot";
+    ? "Bug Bot, Feature Bot, Issue Bot, Review Bot, Simplifier Bot, and Mayor Bot; Release Bot stays paused while every merge is manual"
+    : "Bug Bot, Feature Bot, Issue Bot, Review Bot, Simplifier Bot, Mayor Bot, and Release Bot";
   if (!awake)
     return { status: "Paused", statusClass: "paused", primary: { action: "start", label: `▶ Wake the town (${agents.length})` }, secondary: null, detail: `Starts ${names}. Repo Bot already watches the repository.` };
   if (awake === agents.length)

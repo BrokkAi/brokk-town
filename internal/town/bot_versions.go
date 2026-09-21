@@ -31,7 +31,7 @@ func CheckBotVersions(ctx context.Context, client *http.Client) (map[Role]string
 		resp.Body.Close()
 		// An initial package may not be published yet. An absent package has no
 		// stable offer; other registry failures stay visible.
-		if (role == Simplifier || role == Repo) && status == http.StatusNotFound {
+		if (role == Simplifier || role == Repo || role == Hall) && status == http.StatusNotFound {
 			continue
 		}
 		if status != http.StatusOK || err != nil || !workerVersionPattern.MatchString(body.Version) {

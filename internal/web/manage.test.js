@@ -84,9 +84,8 @@ function fixture(extraAPI) {
     if (url === "/api/harnesses") return catalog;
     if (url === "/api/settings") {
       if (extraAPI) await extraAPI(url, body, signal);
-      const { role, agent, merge_policy, simplifier_mode, auto_update_bots, auto_mayor, bot_version } = body;
+      const { role, agent, merge_policy, simplifier_mode, auto_update_bots, bot_version } = body;
       if (merge_policy) town.config.merge_policy = merge_policy;
-      if (auto_mayor !== undefined) town.config.auto_mayor = auto_mayor;
       if (simplifier_mode) town.config.simplifier_mode = simplifier_mode;
       if (auto_update_bots !== undefined) town.config.auto_update_bots = auto_update_bots;
       if (bot_version) town.config.bot_versions[role] = bot_version;
@@ -145,7 +144,6 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
     simplifier_mode: "suggest",
     review_close_severity: "P2",
     auto_update_bots: false,
-    auto_mayor: false,
     bot_version: "0.2.1",
   });
   assert.equal(elements["settings-dialog"].open, true);
@@ -197,18 +195,6 @@ test("automatic bot updates are off until the Mayor saves the town setting", asy
   assert.equal(app.town.config.auto_update_bots, true);
   await open();
   assert.equal(elements["settings-auto-update-bots"].checked, true, "the saved setting is shown on reopen");
-});
-
-test("Auto-Mayor is off until the Mayor saves the town setting", async () => {
-  const app = fixture();
-  await open();
-  assert.equal(elements["settings-auto-mayor"].checked, false);
-  elements["settings-auto-mayor"].checked = true;
-  await save();
-  assert.equal(app.saves()[0].body.auto_mayor, true);
-  assert.equal(app.town.config.auto_mayor, true);
-  await open();
-  assert.equal(elements["settings-auto-mayor"].checked, true, "the saved setting is shown on reopen");
 });
 
 test("restoring defaults waits for save and follows subsequent town default changes", async () => {

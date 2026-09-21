@@ -15,7 +15,7 @@ export function easeDelivery(progress) {
 }
 export function workerPose(role, time, motion = true) {
   const index = [
-    "bug", "issue", "review", "release", "repo", "feature", "simplifier",
+    "bug", "issue", "review", "release", "repo", "feature", "simplifier", "hall",
   ].indexOf(role);
   const t = motion ? time / 1000 + Math.max(0, index) * 1.73 : 0;
   const cycle = t % 7,

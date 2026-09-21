@@ -1,21 +1,27 @@
 # Brokk Town implementation plan
 
-## Auto-Mayor (2026-09-21)
+## Mayor Bot and the town bulletin (2026-09-21)
 
-- One town setting, `auto_mayor`, exposed as a Town Hall button
-  (`POST /api/auto-mayor`) and a Settings checkbox. The user asked for a model
-  to judge, not rules, and accepted either an in-Town judge or a separate bot.
-  Town launches bots only from published npm versions, so the judge runs in
-  Town like the review certifier: `BotWorkers.Judge` opens a read-only worktree
-  of the branch under `extensions/hall`, hands the agent a JSON context (the
-  arrival, live source text and discussion, Simplifier advice, Town review,
-  bot update) and reads back a `MAYOR_DECISION` receipt.
-- The supervisor's scheduling pass dispatches one judgment per opted-in town
-  under the `town:hall` running key, which counts against MaxWorkers. Verdicts
-  are applied through `decideTask`, the path the Mayor's own clicks use, with
-  the reason appended to the task. Failures back off fifteen minutes and stop
-  after three attempts; an agent that edits the checkout is rejected.
-- Validation: Go race tests and vet, frontend syntax and tests.
+- The user wants a model to judge Town Hall arrivals and a user-facing feed of
+  work completed, sourced from the Mayor, as its own bot repo. mayor-bot lives
+  at ~/code/mayor-bot (module github.com/BrokkAi/mayor-bot, command `bmb`),
+  scaffolded from simplifier-bot: same packaging, CI, release and notices
+  scripts, worker protocol server, checkout and worktree code.
+- Duties: `judge` (arrival JSON from Town plus live GitHub source, detached
+  worktree at the exact revision, `MAYOR_DECISION` receipt) and `bulletin`
+  (merged pull requests in a window, classified user-facing items citing their
+  pull requests, `MAYOR_BULLETIN` receipt). No GitHub writes; tracked edits and
+  moved revisions fail the run. Committed as 2203155 in that repo; not
+  published.
+- Town: Hall joined Roles and AgentRoles and is backed by `@brokkai/mayor-bot`
+  (paused by default, started like any house; the earlier in-Town Auto-Mayor
+  judge and its toggle were removed). `hall.go` holds the judgment queue,
+  arrival context, bulletin window, result application and the shared
+  `decideTask`. `Town.Bulletins` is the feed, shown in Town Hall ("What
+  changed") and the TUI. `bulletin_seconds` (default 21600) paces bulletins.
+  `BROKK_TOWN_<ROLE>_BOT` lets the service run an unpublished bot binary.
+- Validation: Go race tests and vet, frontend syntax and tests, mayor-bot's
+  own Go, npm and Python checks.
 
 ## Scheduling throughput model (2026-09-21)
 

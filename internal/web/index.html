@@ -234,14 +234,6 @@
           </select>
           <p class="muted">Every pull request gets one fix round. If the second review still finds work at or above this severity, Town closes the pull request and starts the issue over from the current branch. Anything below it is filed as a follow-up issue and the pull request merges.</p>
         </section>
-        <section class="settings-section" aria-labelledby="auto-mayor-heading">
-          <div class="eyebrow" id="auto-mayor-heading">TOWN HALL</div>
-          <label class="check-row" for="settings-auto-mayor">
-            <input id="settings-auto-mayor" type="checkbox" />
-            Auto-Mayor: judge every arrival at Town Hall automatically
-          </label>
-          <p class="muted">Off by default. When on, the town's agent judges each arrival in a read-only checkout of the branch: it reads the issue or pull request, any Simplifier Bot advice or Town review, and the code, then admits, declines, or delays a bot update, with a reason you can audit on the task. Each judgment holds one agent slot. A judgment that fails is retried twice and then left for you. The Town Hall button toggles the same setting.</p>
-        </section>
         <section class="settings-section" aria-labelledby="bot-updates-heading">
           <div class="eyebrow" id="bot-updates-heading">BOT UPDATES</div>
           <label class="check-row" for="settings-auto-update-bots">
@@ -261,6 +253,7 @@
             <option value="review">Review Bot</option>
             <option value="release">Release Bot</option>
             <option value="repo">Repo Bot</option>
+            <option value="hall">Mayor Bot</option>
           </select>
           <div class="profile-actions">
             <p id="agent-profile-status" class="muted" role="status"></p>

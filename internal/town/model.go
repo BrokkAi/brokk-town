@@ -26,12 +26,12 @@ const (
 	Hall       Role = "hall"
 )
 
-var Roles = []Role{Bug, Simplifier, Issue, Review, Release, Repo, Feature}
+var Roles = []Role{Bug, Simplifier, Issue, Review, Release, Repo, Feature, Hall}
 
 // AgentRoles excludes the reporter, which never starts an agent. Repo Bot is
 // one of them: observing the repository needs no agent, but repairing the
 // branch it covers does.
-var AgentRoles = []Role{Bug, Feature, Issue, Review, Release, Simplifier, Repo}
+var AgentRoles = []Role{Bug, Feature, Issue, Review, Release, Simplifier, Repo, Hall}
 
 // WorkerAuthority is the concise operator-facing description shared by the
 // terminal clients. Browser code mirrors these strings near the same controls.
@@ -117,8 +117,9 @@ type Config struct {
 	Funnels           FunnelConfigs           `json:"funnels,omitempty"`
 	SimplifierMode    string                  `json:"simplifier_mode,omitempty"`
 	AutoUpdateBots    bool                    `json:"auto_update_bots,omitempty"`
-	// AutoMayor lets the town's agent judge every Town Hall arrival; see MayorJudge.
-	AutoMayor bool `json:"auto_mayor,omitempty"`
+	// BulletinSeconds is how often Mayor Bot writes the town bulletin when
+	// something merged since the last one. Zero uses DefaultBulletinSeconds.
+	BulletinSeconds int `json:"bulletin_seconds,omitempty"`
 	// ReviewCloseSeverity is the least severe finding (P1, P2 or P3) that
 	// still closes a pull request when it survives the second review. Findings
 	// below it are filed as follow-up issues and the pull request merges.
@@ -154,6 +155,12 @@ func (c Config) ForRole(role Role) Config {
 
 func DefaultConfig(repo string) Config {
 	return Config{Repo: repo, MergePolicy: "bot", PollSeconds: 60, ReportSeconds: 1800, MaxCycles: 5, SimplifierMode: "suggest"}
+}
+func (c Config) BulletinSecondsOrDefault() int {
+	if c.BulletinSeconds == 0 {
+		return DefaultBulletinSeconds
+	}
+	return c.BulletinSeconds
 }
 func (c Config) SimplifierModeOrDefault() string {
 	if c.SimplifierMode == "" {
@@ -218,6 +225,9 @@ func (c Config) Validate() error {
 	if c.MergePolicy != "bot" && c.MergePolicy != "manual" && c.MergePolicy != "all" {
 		return fmt.Errorf("merge policy must be bot, manual, or all")
 	}
+	if c.BulletinSeconds != 0 && c.BulletinSeconds < 600 {
+		return errors.New("bulletin_seconds must be at least 600")
+	}
 	if c.PollSeconds < 10 || c.ReportSeconds < 60 || c.MaxCycles < 1 || c.MaxCycles > 20 {
 		return fmt.Errorf("poll must be at least 10 seconds, reports at least 60 seconds, and cycles between 1 and 20")
 	}
@@ -238,20 +248,20 @@ func (c Config) Validate() error {
 
 // PublicConfig deliberately excludes agent environment values and command arguments.
 type PublicConfig struct {
-	Repo           string                        `json:"repo"`
-	Branch         string                        `json:"branch"`
-	MergePolicy    string                        `json:"merge_policy"`
-	MaxCycles      int                           `json:"max_cycles"`
-	Harness        string                        `json:"harness"`
-	Model          string                        `json:"model"`
-	Effort         string                        `json:"effort"`
-	HarnessVersion string                        `json:"harness_version,omitempty"`
-	BotAgents      map[Role]PublicBotAgentConfig `json:"bot_agents"`
-	BotVersions    map[Role]string               `json:"bot_versions"`
-	Funnels        []PublicFunnelConfig          `json:"funnels,omitempty"`
-	SimplifierMode string                        `json:"simplifier_mode"`
-	AutoUpdateBots bool                          `json:"auto_update_bots"`
-	AutoMayor      bool                          `json:"auto_mayor"`
+	Repo            string                        `json:"repo"`
+	Branch          string                        `json:"branch"`
+	MergePolicy     string                        `json:"merge_policy"`
+	MaxCycles       int                           `json:"max_cycles"`
+	Harness         string                        `json:"harness"`
+	Model           string                        `json:"model"`
+	Effort          string                        `json:"effort"`
+	HarnessVersion  string                        `json:"harness_version,omitempty"`
+	BotAgents       map[Role]PublicBotAgentConfig `json:"bot_agents"`
+	BotVersions     map[Role]string               `json:"bot_versions"`
+	Funnels         []PublicFunnelConfig          `json:"funnels,omitempty"`
+	SimplifierMode  string                        `json:"simplifier_mode"`
+	AutoUpdateBots  bool                          `json:"auto_update_bots"`
+	BulletinSeconds int                           `json:"bulletin_seconds"`
 	// ReviewCloseSeverity is the least severe finding that closes a pull
 	// request after its second review.
 	ReviewCloseSeverity string `json:"review_close_severity"`
@@ -341,6 +351,19 @@ func (r *WorkerRun) Validate(role Role) error {
 		}
 		if r.Issue > 0 || r.PR > 0 || r.BaseSHA != "" || r.HeadSHA != "" {
 			return errors.New("a repository inventory names no issue, pull request or revision")
+		}
+	} else if role == Hall {
+		switch r.Mode {
+		case "judge":
+			if (r.Issue > 0 && r.PR > 0) || (r.HeadSHA != "" && r.PR == 0) || (r.BaseSHA != "" && r.PR == 0) {
+				return errors.New("invalid mayor judgment target")
+			}
+		case "bulletin":
+			if r.Issue > 0 || r.PR > 0 || r.BaseSHA != "" || r.HeadSHA != "" {
+				return errors.New("a bulletin names no issue, pull request or revision")
+			}
+		default:
+			return errors.New("invalid mayor run mode")
 		}
 	} else if r.Mode != "" {
 		return errors.New("invalid worker run mode")
@@ -517,8 +540,10 @@ type Town struct {
 	FunnelSyncs   map[FunnelID]*FunnelSync `json:"funnel_syncs,omitempty"`
 	Requests      map[string]*IssueRequest `json:"requests,omitempty"`
 	Reports       []Report                 `json:"reports"`
-	Outcomes      []OutcomeRecord          `json:"outcomes"`
-	Head          string                   `json:"head"`
+	// Bulletins is the work-completed feed Mayor Bot writes, oldest first.
+	Bulletins []Bulletin      `json:"bulletins"`
+	Outcomes  []OutcomeRecord `json:"outcomes"`
+	Head      string          `json:"head"`
 	// DefaultBranch is the repository default GitHub reported at the last
 	// inventory. It is an observation, never configuration: Config.Branch stays
 	// whatever the operator chose, or empty to follow this default.
@@ -617,7 +642,7 @@ func (s *State) Add(c Config) (*Town, error) {
 		t.Workers[Repo].Next = time.Time{}
 		return t, nil
 	}
-	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, FunnelIntents: map[string]*WriteIntent{}, FunnelSyncs: map[FunnelID]*FunnelSync{}, Reports: []Report{}, Outcomes: []OutcomeRecord{}}
+	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, FunnelIntents: map[string]*WriteIntent{}, FunnelSyncs: map[FunnelID]*FunnelSync{}, Reports: []Report{}, Bulletins: []Bulletin{}, Outcomes: []OutcomeRecord{}}
 	for _, r := range Roles {
 		t.Workers[r] = &Worker{Role: r, Enabled: r == Repo, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
 	}
@@ -713,7 +738,7 @@ func (c Config) Public() PublicConfig {
 	for _, role := range AgentRoles {
 		versions[role] = c.BotVersion(role)
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), AutoUpdateBots: c.AutoUpdateBots, AutoMayor: c.AutoMayor, ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault()}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), AutoUpdateBots: c.AutoUpdateBots, BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault()}
 }
 
 func (c Config) BotVersion(role Role) string {

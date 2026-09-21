@@ -62,6 +62,9 @@ func Open(dir string, demo bool) (*Store, error) {
 					if _, present := t.Workers[Simplifier]; !present {
 						t.Workers[Simplifier] = &Worker{Role: Simplifier, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
 					}
+					if _, present := t.Workers[Hall]; !present {
+						t.Workers[Hall] = &Worker{Role: Hall, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
+					}
 				}
 				if t != nil {
 					if t.FunnelIntents == nil {
@@ -72,6 +75,9 @@ func Open(dir string, demo bool) (*Store, error) {
 					}
 					if t.Outcomes == nil {
 						t.Outcomes = []OutcomeRecord{}
+					}
+					if t.Bulletins == nil {
+						t.Bulletins = []Bulletin{}
 					}
 					enforceManualReleasePolicy(t)
 				}
@@ -153,6 +159,14 @@ func validateState(s State, demo bool) error {
 	for id, t := range s.Towns {
 		if t == nil || t.ID != id || id != strings.ToLower(t.Config.Repo) || t.Config.Validate() != nil || t.Tasks == nil || t.Workers == nil || t.Owned == nil || t.Intents == nil {
 			return errors.New("invalid town state")
+		}
+		if len(t.Bulletins) > maxBulletins {
+			return errors.New("too many bulletins")
+		}
+		for i, b := range t.Bulletins {
+			if !validBulletin(b) || (i > 0 && !t.Bulletins[i-1].Until.Equal(b.Since)) {
+				return errors.New("invalid bulletin feed")
+			}
 		}
 		if t.DefaultBranch != "" && !ValidBranch(t.DefaultBranch) {
 			return errors.New("invalid observed default branch")

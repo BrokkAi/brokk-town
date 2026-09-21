@@ -36,13 +36,13 @@ const workerDetachCapability = "detach"
 const workerRequeueCapability = "requeue"
 
 var workerPackageNames = map[Role]string{
-	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot", Simplifier: "@brokkai/simplifier-bot", Repo: "@brokkai/repo-bot",
+	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot", Simplifier: "@brokkai/simplifier-bot", Repo: "@brokkai/repo-bot", Hall: "@brokkai/mayor-bot",
 }
 var workerDefaultVersions = map[Role]string{
-	Bug: "0.3.5", Feature: "0.1.2", Issue: "0.5.4", Review: "0.2.4", Release: "0.6.1", Simplifier: "0.1.1", Repo: "0.1.0",
+	Bug: "0.3.5", Feature: "0.1.2", Issue: "0.5.4", Review: "0.2.4", Release: "0.6.1", Simplifier: "0.1.1", Repo: "0.1.0", Hall: "0.1.0",
 }
 var workerBotNames = map[Role]string{
-	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot", Repo: "repo-bot",
+	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot", Repo: "repo-bot", Hall: "mayor-bot",
 }
 var workerCapabilities = map[Role][]string{
 	Bug:        {"run", "progress", "bug-scan"},
@@ -52,6 +52,7 @@ var workerCapabilities = map[Role][]string{
 	Release:    {"run", "progress", "release"},
 	Simplifier: {"run", "progress", "simplifier-review"},
 	Repo:       {"run", "progress", "repo-inventory", "branch-health"},
+	Hall:       {"run", "progress", "mayor-judgment", "mayor-bulletin"},
 }
 var workerVersionPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 
@@ -142,6 +143,11 @@ type workerRequest struct {
 	// SupersededPR asks the issue worker to start the issue over because Town
 	// closed this pull request after review. Requires the "requeue" capability.
 	SupersededPR int `json:"superseded_pr,omitempty"`
+	// Arrival is the town's description of the item a Mayor judgment decides;
+	// Since and Until bound the window a Mayor bulletin summarizes.
+	Arrival json.RawMessage `json:"arrival,omitempty"`
+	Since   *time.Time      `json:"since,omitempty"`
+	Until   *time.Time      `json:"until,omitempty"`
 }
 
 type workerProgress struct {
@@ -173,6 +179,8 @@ type workerResult struct {
 	Issue          *workerIssueResult    `json:"issue,omitempty"`
 	Review         *workerReviewResult   `json:"review,omitempty"`
 	Simplification *workerSimplification `json:"simplification,omitempty"`
+	Judgment       *Judgment             `json:"judgment,omitempty"`
+	Bulletin       *Bulletin             `json:"bulletin,omitempty"`
 	Inventory      *workerInventory      `json:"inventory,omitempty"`
 	Health         *BranchHealth         `json:"health,omitempty"`
 	Usage          *OutcomeUsage         `json:"usage,omitempty"`

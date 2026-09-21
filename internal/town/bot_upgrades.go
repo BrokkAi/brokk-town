@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -18,7 +17,7 @@ const (
 	DefaultBotVersionInterval = 15 * time.Minute
 )
 
-var botDisplayNames = map[Role]string{Bug: "Bug Bot", Feature: "Feature Bot", Issue: "Issue Bot", Review: "Review Bot", Release: "Release Bot", Simplifier: "Simplifier Bot"}
+var botDisplayNames = map[Role]string{Bug: "Bug Bot", Feature: "Feature Bot", Issue: "Issue Bot", Review: "Review Bot", Release: "Release Bot", Simplifier: "Simplifier Bot", Hall: "Mayor Bot"}
 
 func botDisplayName(role Role) string {
 	if name, ok := botDisplayNames[role]; ok {
@@ -138,12 +137,12 @@ func (s *State) decideBotUpgrade(t *Town, task *Task, action, by string, now tim
 	return nil
 }
 
-// subject names a decider at the start of a sentence: "The Mayor", "Auto-Mayor".
+// subject names a decider at the start of a sentence: "The Mayor", "Mayor Bot".
 func subject(by string) string {
-	if strings.Contains(by, "-") {
-		return by
+	if by == "Mayor" {
+		return "The Mayor"
 	}
-	return "The " + by
+	return by
 }
 
 // reviveDelayedBotUpgrades returns delayed offers whose day has passed to Town

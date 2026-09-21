@@ -267,7 +267,11 @@ const state = {
         review: { role: "review", status: "waiting", enabled: true, next: "0001-01-01T00:00:00Z", logs: [] },
         repo: { role: "repo", status: "paused", enabled: true, logs: [] },
         simplifier: { role: "simplifier", status: "waiting", enabled: true, logs: [] },
+        hall: { role: "hall", status: "waiting", enabled: true, task: "Ready when you are", logs: [] },
       },
+      bulletins: [
+        { at: "2026-09-21T12:00:00Z", since: "2026-09-21T06:00:00Z", until: "2026-09-21T12:00:00Z", title: "Exports you can trust", summary: "Exports keep your filters and can be downloaded as CSV.", pulls: [12, 14], items: [{ kind: "fix", title: "Exports keep the active filter", detail: "An export no longer drops the filter you were viewing.", pulls: [12], issues: [9] }, { kind: "feature", title: "Download reports as CSV", pulls: [14] }] },
+      ],
       tasks: {
         "pr:1": { id: "pr:1", kind: "pr", number: 1, title: "Review this change", house: "review", stage: "awaiting_author" },
         "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Queue this change", house: "issue", stage: "queued" },
@@ -378,7 +382,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
 
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
   assert.equal(elements["town-state"].hidden, false, "header shows the town's wake state");
-  assert.equal(elements["town-state"].textContent, "Awake · 3 agents");
+  assert.equal(elements["town-state"].textContent, "Awake · 4 agents");
   assert.equal(elements["town-toggle"].textContent, "Ⅱ Pause the town", "toggle offers the action that changes state");
   assert.equal(elements["town-toggle"].classList.contains("primary"), false);
   assert.equal(elements["pause-all"].hidden, true, "no separate pause-all when every agent is awake");
@@ -462,14 +466,15 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   await upgradeButtons.find((button) => button.id === "delay-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"delay"') && request.options.body.includes('"task":"upgrade:feature"')), true);
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
-  const autoMayor = elements.inspection.querySelectorAll("button").find((button) => button.id === "auto-mayor-toggle");
-  assert.ok(autoMayor, "Town Hall offers the Auto-Mayor button");
-  assert.match(autoMayor.textContent, /Turn on Auto-Mayor/, "the button reflects that Auto-Mayor is off");
-  await autoMayor.onclick();
-  const toggled = requests.find((request) => request.url === "/api/auto-mayor");
-  assert.ok(toggled, "the button saves the town setting");
-  assert.equal(JSON.parse(toggled.options.body).enabled, true);
-  assert.equal(JSON.parse(toggled.options.body).town, "acme/project");
+  assert.match(elements.inspection.textContent, /Mayor Bot waiting/, "Town Hall shows Mayor Bot's status");
+  assert.match(elements.inspection.textContent, /What changed/, "Town Hall carries the bulletin feed");
+  assert.match(elements.inspection.textContent, /Exports you can trust/, "the latest bulletin title is shown");
+  assert.match(elements.inspection.textContent, /Download reports as CSV/, "bulletin items are listed");
+  assert.match(elements.inspection.textContent, /PR #14/, "bulletin items cite their pull requests");
+  const pauseMayor = elements.inspection.querySelectorAll("button").find((button) => button.dataset.action === "pause");
+  assert.ok(pauseMayor, "Town Hall offers to pause Mayor Bot");
+  await pauseMayor.onclick();
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"hall"')), true, "pausing Mayor Bot is a house control");
 
   elements["capacity-settings"].onclick();
   assert.equal(elements["capacity-dialog"].open, true);

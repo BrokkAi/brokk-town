@@ -153,9 +153,11 @@ for tag rules, pipeline steps, and recovery.
 Install and authenticate `git`, GitHub CLI (`gh`), Node.js/npm, and your chosen
 coding agent. Town does not require a separate bot installation: each dispatch
 uses `npx --yes` with an exact compatible release of bug-bot, feature-bot,
-issue-bot, review-bot, release-bot, or simplifier-bot, then communicates with it over a private
+issue-bot, review-bot, release-bot, simplifier-bot, or mayor-bot, then communicates with it over a private
 Unix socket. Town never selects an ambient or floating bot version.
-Each bot's Settings panel shows its current pin. **Check for bot update** reads
+For a bot npm has not published yet, `BROKK_TOWN_<ROLE>_BOT` names a local
+executable for that role when the service starts, such as `BROKK_TOWN_HALL_BOT`
+for a mayor-bot checkout. Each bot's Settings panel shows its current pin. **Check for bot update** reads
 npm's stable tag, and **Use VERSION** stages that exact version for the Mayor to
 save. The pin changes only for that town and takes effect on the bot's next run;
 capability and reported-version checks still run before any repository work.
@@ -362,6 +364,7 @@ finish before restoring a town.
 | Bug greenhouse | Runs bug-bot's investigation and verification; observed filed issues travel to issue-bot. |
 | Feature study | Runs feature-bot to discover useful new capabilities, independently review their value and feasibility, and compare existing requests; confirmed feature issues travel to issue-bot. |
 | Simplifier clarifier | Reviews every incoming issue/PR for disproportionate complexity or low value, advises the Mayor, and discovers removal/replacement proposals. |
+| Town Hall (Mayor Bot) | Runs mayor-bot to judge every arrival awaiting a Mayoral decision and to write the town bulletin: the feed of features gained and bugs fixed, written for users. Paused by default; decisions wait for you until it is started. |
 | Issue workshop | Runs issue-bot on eligible issues, opens implementation-ready PRs, and repairs Town-owned PR branches from review feedback. |
 | Review observatory | Runs review-bot, independently checks the full change and every retained finding, then returns fixes or waits for merge requirements. |
 | Release depot | Runs release-bot's batching and publishing policy. Confirmed merged/direct commits accumulate here; a published stable release ships only commits proven to be its ancestors. |
@@ -383,21 +386,18 @@ admit routine work and decline low-value complex work itself; a declined issue i
 closed through Repo-bot, while a declined PR is ignored rather than closed.
 Simplifier Bot's own marked proposals do not recursively pass through intake.
 
-**Auto-Mayor** (a Town Hall button, also under Settings → Town Hall) has the
-town's agent judge every arrival. Each judgment is one agent session in a
-read-only checkout of the branch: the agent reads the issue or PR, any
-Simplifier Bot advice or Town review, and the repository, then returns admit,
-decline, or, for a bot update, delay, with a reason that is kept on the task.
-Decisions go through the same path as the Mayor's own clicks and are recorded
-in the town's events under the Auto-Mayor name. A judgment holds one agent slot;
-one that fails is retried twice, fifteen minutes apart, then left for a person.
-Between arrivals, the same worker scans the repository and may file marked
-proposals to remove or replace subsystems that add disproportionate complexity
-for little value.
-The browser provides the primary decision UX; scripts may use
-`bt admit --repo OWNER/REPO --task issue:123` or `bt decline ...`. Offered bot
-upgrades use the same commands with `--task upgrade:feature` (or another bot
-role), plus `bt delay ...` to be asked again in a day.
+**Mayor Bot** lives in Town Hall. Start it like any other house and it judges
+every arrival that waits for a Mayoral decision: one worker run per arrival,
+in a detached worktree at the exact revision, from the town's description of
+the item (with Simplifier Bot advice or the Town review attached) and the live
+GitHub source. It answers admit, decline, or, for a bot update, delay, with a
+reason kept on the task; decisions go through the same path as your own clicks
+and are recorded under the Mayor Bot name. A judgment that fails is retried
+twice, fifteen minutes apart, then left for you. The same house writes the
+**town bulletin**, shown in Town Hall under "What changed": after work merges,
+at most every `bulletin_seconds` (default 21600), it summarizes the merged pull
+requests for the people who use the software as features, fixes and
+improvements, each citing its pull requests.
 
 A review is bound to the exact base, head, PR description, and discussion snapshot. A suppressed
 duplicate comment is still a finding to check. Complete coverage, explicit
@@ -467,7 +467,8 @@ authenticating each harness. Verification and scheduling settings remain shared
 at town level.
 
 Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet reports
-use `report_seconds` (1800). Bug-bot, feature-bot, and simplifier-bot run at most every 30 minutes; release-bot
+use `report_seconds` (1800). Bug-bot, feature-bot, and simplifier-bot run at most every 30 minutes; mayor-bot
+writes a bulletin at most every `bulletin_seconds` (21600) and only after something merged; release-bot
 checks every five minutes and retains its own quiet window, minimum gap, and
 batching decisions. Each worker attempt has a two-hour deadline. A pull request
 gets one fix round and two attempts per revision at any step; `max_cycles` is

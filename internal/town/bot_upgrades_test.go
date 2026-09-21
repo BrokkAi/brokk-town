@@ -144,7 +144,7 @@ func TestAutoUpdateAppliesNewBotVersionsWithoutADecision(t *testing.T) {
 	supervisor := NewSupervisor(store, nil, nil)
 	supervisor.now = func() time.Time { return now }
 	on := true
-	if err := supervisor.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, &on, nil, nil); err != nil {
+	if err := supervisor.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, &on, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !store.Snapshot().Towns[x.ID].Config.Public().AutoUpdateBots {
@@ -180,7 +180,7 @@ func TestEnablingAutoUpdateAppliesOffersAlreadyWaiting(t *testing.T) {
 		t.Fatal(err)
 	}
 	on := true
-	if err := supervisor.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, &on, nil, nil); err != nil {
+	if err := supervisor.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, &on, nil); err != nil {
 		t.Fatal(err)
 	}
 	state := store.Snapshot()
@@ -200,7 +200,7 @@ func TestExplicitPinWithdrawsAnOfferItCaughtUpWith(t *testing.T) {
 	supervisor := NewSupervisor(store, nil, nil)
 	supervisor.now = func() time.Time { return now }
 	pin := "9.0.0"
-	if err := supervisor.SettingsForRoleAndPolicy(x.ID, Feature, AgentSettings{}, nil, nil, &pin, nil, nil, nil); err != nil {
+	if err := supervisor.SettingsForRoleAndPolicy(x.ID, Feature, AgentSettings{}, nil, nil, &pin, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if upgradeTask(t, store, Feature) != nil {

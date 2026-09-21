@@ -2,6 +2,7 @@ package town
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -98,6 +99,12 @@ type dispatch struct {
 	// sinceHead and commits are the repo worker's inventory inputs.
 	sinceHead string
 	commits   []string
+	// judged names the Town Hall task a Mayor judgment decides; arrival is
+	// the town's description of it. since and until bound a Mayor bulletin.
+	judged  string
+	arrival json.RawMessage
+	since   time.Time
+	until   time.Time
 }
 
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
@@ -151,6 +158,22 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			return result, nil
 		}
 		d = dispatch{pr: task.Number, base: task.Base, head: task.Head}
+	case Hall:
+		now := time.Now()
+		if task := nextJudgment(t, now); task != nil {
+			d = dispatch{mode: "judge", judged: task.ID, arrival: arrivalContext(task)}
+			if task.Kind == "pr" {
+				d.pr, d.base, d.head = task.Number, task.Base, task.Head
+			} else if task.Kind == "issue" {
+				d.issue = task.Number
+			}
+			break
+		}
+		since, until, due := bulletinWindow(t, now)
+		if !due {
+			return result, nil
+		}
+		d = dispatch{mode: "bulletin", since: since, until: until}
 	case Simplifier:
 		task := nextTask(t, Simplifier, "simplifying")
 		if task == nil {
@@ -263,8 +286,20 @@ func (b *BotWorkers) Adopt(ctx context.Context, t *Town, r Role, run WorkerRun, 
 	}
 	t = clone(t)
 	d := dispatch{issue: run.Issue, pr: run.PR, base: run.BaseSHA, head: run.HeadSHA}
-	if r == Simplifier {
+	if r == Simplifier || r == Hall {
 		d.mode = run.Mode
+	}
+	if r == Hall && run.Mode == "judge" {
+		d.judged = workerRunTask(run)
+		if d.judged == "" {
+			// A bot update judgment names no issue or pull request; the
+			// pending upgrade offer is the only arrival it can concern.
+			for _, task := range t.Tasks {
+				if task.Kind == "upgrade" && task.MayoralDecision == "pending" {
+					d.judged = task.ID
+				}
+			}
+		}
 	}
 	workerResult, err := adoptWorker(ctx, r, run, observe)
 	return b.complete(ctx, t, r, d, workerResult, err, observe, log)
@@ -310,6 +345,33 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 			return result, errors.New("simplifier worker returned an assessment for the wrong mode or target")
 		}
 		result.Simplification = &Simplification{Mode: assessment.Mode, Decision: assessment.Decision, Summary: assessment.Summary, Detail: assessment.Detail}
+		return result, nil
+	case Hall:
+		result.JudgedTask = d.judged
+		if err != nil {
+			return result, err
+		}
+		if err = validateWorkerResult(workerResult, r); err != nil {
+			return result, err
+		}
+		switch d.mode {
+		case "judge":
+			if workerResult.Judgment == nil || workerResult.Bulletin != nil {
+				return result, errors.New("mayor judgment returned no decision")
+			}
+			result.Judgment = &Judgment{Decision: workerResult.Judgment.Decision, Reason: strings.TrimSpace(workerResult.Judgment.Reason)}
+		case "bulletin":
+			if workerResult.Bulletin == nil || workerResult.Judgment != nil {
+				return result, errors.New("mayor bulletin returned no bulletin")
+			}
+			b := *workerResult.Bulletin
+			if !b.Since.Equal(d.since) || !b.Until.Equal(d.until) {
+				return result, errors.New("mayor bulletin covered a different window than requested")
+			}
+			result.Bulletin = &b
+		default:
+			return result, fmt.Errorf("unsupported mayor duty %q", d.mode)
+		}
 		return result, nil
 	case Issue:
 		result.Issue = d.issue
@@ -382,6 +444,14 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		request.SinceHead = d.sinceHead
 		request.Commits = d.commits
 	}
+	if role == Hall {
+		request.Mode = d.mode
+		request.Arrival = d.arrival
+		if d.mode == "bulletin" {
+			since, until := d.since, d.until
+			request.Since, request.Until = &since, &until
+		}
+	}
 	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
 	// The handle is committed before the run request so a service that stops
 	// at any later point can find the process again.
@@ -437,8 +507,24 @@ func validateWorkerResult(result workerResult, role Role) error {
 		if len(s.Detail) > 16<<10 || len(s.Summary) > 1024 {
 			return errors.New("simplifier worker returned an oversized assessment")
 		}
-	default:
+	case Hall:
 		if result.Issue != nil || result.Review != nil || result.Simplification != nil {
+			return errors.New("mayor worker returned unexpected typed result")
+		}
+		if j := result.Judgment; j != nil {
+			if (j.Decision != "admit" && j.Decision != "decline" && j.Decision != "delay") || strings.TrimSpace(j.Reason) == "" || len(j.Reason) > 2000 {
+				return errors.New("mayor worker returned an invalid judgment")
+			}
+		}
+		if b := result.Bulletin; b != nil {
+			probe := *b
+			probe.At = time.Now()
+			if !validBulletin(probe) {
+				return errors.New("mayor worker returned an invalid bulletin")
+			}
+		}
+	default:
+		if result.Issue != nil || result.Review != nil || result.Simplification != nil || result.Judgment != nil || result.Bulletin != nil {
 			return errors.New("worker returned an unexpected typed result")
 		}
 	}

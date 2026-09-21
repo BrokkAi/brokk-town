@@ -34,8 +34,13 @@ type RunResult struct {
 	PR             int
 	Issue          int
 	Simplification *Simplification
-	Usage          *OutcomeUsage
-	CostUSD        *float64
+	// Judgment and JudgedTask are Mayor Bot's decision and the arrival it
+	// concerns; Bulletin is the bulletin it wrote.
+	Judgment   *Judgment
+	JudgedTask string
+	Bulletin   *Bulletin
+	Usage      *OutcomeUsage
+	CostUSD    *float64
 	// Retried reports that the release worker accepted the requested attempt
 	// budget reset before this run, so the request is consumed.
 	Retried bool
@@ -150,7 +155,6 @@ func (s *Supervisor) schedule(ctx context.Context) {
 		return
 	}
 	s.reviveDelayedBotUpgrades()
-	s.scheduleJudgments(ctx, state)
 	for _, t := range state.Towns {
 		if t.Deleted {
 			continue
@@ -236,8 +240,7 @@ func (s *Supervisor) activeWorkers() int {
 	active := 0
 	for key := range s.running {
 		id, role, ok := strings.Cut(key, ":")
-		// Town Hall holds a slot while Auto-Mayor's agent judges an arrival.
-		if !ok || (!ValidAgentRole(Role(role)) && Role(role) != Hall) {
+		if !ok || !ValidAgentRole(Role(role)) {
 			continue
 		}
 		if Role(role) == Repo && !s.repairing[id] {
@@ -462,7 +465,8 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		}
 		// A failure on one pull request belongs to that pull request. The
 		// house stays available for the rest of its queue.
-		taskOwned := err != nil && result.PR > 0 && (r == Review || r == Issue)
+		// A Mayor judgment's failure belongs to the arrival it concerned.
+		taskOwned := err != nil && ((result.PR > 0 && (r == Review || r == Issue)) || (r == Hall && result.JudgedTask != ""))
 		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil && !taskOwned {
 			w.Status = "failed"
 			w.Error = err.Error()
@@ -485,6 +489,25 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role, adopt *Worker
 		}
 		for n, o := range result.Owned {
 			current.Owned[n] = o
+		}
+		if r == Hall && (result.JudgedTask != "" || result.Bulletin != nil) {
+			runErr := err
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				runErr = nil
+			}
+			if result.JudgedTask != "" && (runErr != nil || result.Judgment != nil) {
+				applyJudgment(st, current, result.JudgedTask, result.Judgment, runErr, s.now())
+				if runErr != nil {
+					// The failure belongs to that arrival; the house keeps
+					// judging the rest of the queue.
+					err = nil
+				}
+			}
+			if result.Bulletin != nil && runErr == nil {
+				if e := applyBulletin(st, current, *result.Bulletin, s.now()); e != nil {
+					w.Error = e.Error()
+				}
+			}
 		}
 		if r == Simplifier {
 			var simplifierTask *Task
@@ -660,6 +683,12 @@ func latestProgress(ch chan Progress, p Progress) {
 }
 
 func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
+	if role == Hall {
+		if task := t.Tasks[result.JudgedTask]; task != nil {
+			return task.ID, task.Head
+		}
+		return result.JudgedTask, ""
+	}
 	if role == Simplifier && result.Issue > 0 {
 		id := fmt.Sprintf("issue:%d", result.Issue)
 		if task := t.Tasks[id]; task != nil {

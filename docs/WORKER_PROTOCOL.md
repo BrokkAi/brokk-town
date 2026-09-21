@@ -122,7 +122,14 @@ graph never crosses the protocol. A failed run still carries whatever inventory
 the worker completed, because Town's view of the repository must not depend on
 the health duty that follows it.
 
-Issue workers return submitted PR ownership in `result.issue`. Simplifier item
+Mayor workers take `mode: "judge"` with the arrival's `issue` or `pr` (neither
+for a bot update), `head_sha` for a pull request, and `arrival`, Town's JSON
+description of the item; they return `result.judgment` with `decision`
+(`admit`, `decline`, or `delay` for a bot update) and `reason`. With
+`mode: "bulletin"` they take `since` and `until` and return `result.bulletin`:
+`title`, `summary`, classified `items` (`feature`, `fix`, `improvement`,
+`other`, each citing `pulls`), and the `pulls` covered. The window echoed back
+must match the request. Issue workers return submitted PR ownership in `result.issue`. Simplifier item
 workers return the bounded admission/decline advice in
 `result.simplification`; repository simplification scans create marked GitHub
 issues and return no typed result. Review workers

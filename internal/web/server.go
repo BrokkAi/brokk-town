@@ -70,7 +70,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/towns", s.add)
 	mux.HandleFunc("POST /api/settings", s.settings)
-	mux.HandleFunc("POST /api/auto-mayor", s.autoMayor)
 	mux.HandleFunc("GET /api/bot-versions", s.botVersions)
 	mux.HandleFunc("POST /api/capacity", s.capacity)
 	mux.HandleFunc("POST /api/choices", s.choices)
@@ -364,25 +363,6 @@ type settingsInput struct {
 	// ReviewCloseSeverity is the least severe finding that closes a pull
 	// request after its second review: P1, P2 or P3.
 	ReviewCloseSeverity *string `json:"review_close_severity,omitempty"`
-	// AutoMayor judges every Town Hall arrival automatically.
-	AutoMayor *bool `json:"auto_mayor,omitempty"`
-}
-
-// autoMayor flips Auto-Mayor for one town from the Town Hall button.
-func (s *Server) autoMayor(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Town    string `json:"town"`
-		Enabled bool   `json:"enabled"`
-	}
-	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
-		return
-	}
-	if err := s.Supervisor.SetAutoMayor(input.Town, input.Enabled); err != nil {
-		problem(w, err.Error(), 400)
-		return
-	}
-	respond(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -391,7 +371,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.SimplifierMode, input.BotVersion, input.AutoUpdateBots, input.ReviewCloseSeverity, input.AutoMayor); err != nil {
+	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.SimplifierMode, input.BotVersion, input.AutoUpdateBots, input.ReviewCloseSeverity); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

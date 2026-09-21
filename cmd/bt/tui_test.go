@@ -102,7 +102,7 @@ func TestBlockedIssueAttentionAndRecovery(t *testing.T) {
 	if !strings.Contains(overview, "6 queued") || !strings.Contains(overview, "1 need attention") {
 		t.Fatalf("blocked issue was missing from overview: %s", overview)
 	}
-	house := renderTUI(s, "", 0, 2, 100, 24, "")
+	house := renderTUI(s, "", 0, 2, 100, 26, "")
 	for _, detail := range []string{
 		blocked.Title,
 		blocked.Detail,

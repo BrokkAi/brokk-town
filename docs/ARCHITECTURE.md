@@ -258,6 +258,28 @@ repeated inventories do not replay arrivals. Existing saved towns gain an absent
 feature worker paused, preserving every other worker's settings. The closed demo
 simulates feature research and its confirmed delivery without an agent or GitHub.
 
+## Town Hall and Mayor Bot
+
+Mayor-bot is a separate Go/ACP worker modeled on simplifier-bot; Town Hall is
+its house and it is paused by default. Each run is one duty. A `judge` run names
+the next arrival awaiting a Mayoral decision (lowest task ID first, skipping
+arrivals backing off a failed attempt) and carries `arrival`, Town's JSON
+description of it: kind, title, Simplifier advice, the Town review, or the bot
+update on offer. The bot reads the live GitHub source itself, judges in a
+detached worktree at the exact revision, and returns `result.judgment`. Town
+applies it through `decideTask`, the path the Mayor's own clicks use, with the
+reason appended to the task; a failed run increments the arrival's attempts,
+backs it off fifteen minutes, and after three attempts leaves it for a person.
+One arrival's failure never stops the house.
+
+A `bulletin` run is dispatched when nothing waits to be judged, at least
+`bulletin_seconds` passed since the last bulletin, and a confirmed merge
+outcome landed after it. It carries `since` and `until`; the bot summarizes the
+pull requests merged in that window for users and returns `result.bulletin`
+with classified items and the pull requests covered. Town appends it to
+`Town.Bulletins`, refusing a window that does not start where the last one
+ended, and shows the feed in Town Hall and the TUI.
+
 ## Simplifier intake and discovery
 
 Simplifier-bot is a separate Go/ACP worker modeled on bug-bot. Town starts it
