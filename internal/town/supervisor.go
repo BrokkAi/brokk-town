@@ -150,19 +150,7 @@ func (s *Supervisor) schedule(ctx context.Context) {
 		return
 	}
 	s.reviveDelayedBotUpgrades()
-	for _, t := range state.Towns {
-		if t.Deleted || !t.Config.AutoMayor || !pendingDecisions(t) {
-			continue
-		}
-		// Arrivals reach Town Hall from inventories, reviews and Simplifier
-		// advice; Auto-Mayor judges them on the next scheduling pass.
-		s.update(func(st *State) error {
-			if current := st.Towns[t.ID]; current != nil && !current.Deleted && current.Config.AutoMayor {
-				st.autoMayor(current, s.now())
-			}
-			return nil
-		})
-	}
+	s.scheduleJudgments(ctx, state)
 	for _, t := range state.Towns {
 		if t.Deleted {
 			continue
@@ -248,7 +236,8 @@ func (s *Supervisor) activeWorkers() int {
 	active := 0
 	for key := range s.running {
 		id, role, ok := strings.Cut(key, ":")
-		if !ok || !ValidAgentRole(Role(role)) {
+		// Town Hall holds a slot while Auto-Mayor's agent judges an arrival.
+		if !ok || (!ValidAgentRole(Role(role)) && Role(role) != Hall) {
 			continue
 		}
 		if Role(role) == Repo && !s.repairing[id] {

@@ -306,9 +306,6 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 		}
 		if autoMayor != nil {
 			t.Config.AutoMayor = *autoMayor
-			if *autoMayor {
-				st.autoMayor(t, s.now())
-			}
 		}
 		switch {
 		case role == "":

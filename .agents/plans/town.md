@@ -3,15 +3,18 @@
 ## Auto-Mayor (2026-09-21)
 
 - One town setting, `auto_mayor`, exposed as a Town Hall button
-  (`POST /api/auto-mayor`) and a Settings checkbox. The supervisor's scheduling
-  pass judges every pending Mayoral decision in towns that opt in, and turning
-  it on judges the arrivals already waiting.
-- Rules never invent a verdict: Simplifier advice is applied; outside arrivals
-  without advice are routed to Simplifier first; the town's own proposals are
-  admitted; bot updates are approved; external PRs Town reviewed and could not
-  clear, or whose review attempts were exhausted (new `Task.Retired`), are
-  declined. The Mayor's clicks and Auto-Mayor share one decision path so state
-  and events match, differing only in the decider's name.
+  (`POST /api/auto-mayor`) and a Settings checkbox. The user asked for a model
+  to judge, not rules, and accepted either an in-Town judge or a separate bot.
+  Town launches bots only from published npm versions, so the judge runs in
+  Town like the review certifier: `BotWorkers.Judge` opens a read-only worktree
+  of the branch under `extensions/hall`, hands the agent a JSON context (the
+  arrival, live source text and discussion, Simplifier advice, Town review,
+  bot update) and reads back a `MAYOR_DECISION` receipt.
+- The supervisor's scheduling pass dispatches one judgment per opted-in town
+  under the `town:hall` running key, which counts against MaxWorkers. Verdicts
+  are applied through `decideTask`, the path the Mayor's own clicks use, with
+  the reason appended to the task. Failures back off fifteen minutes and stop
+  after three attempts; an agent that edits the checkout is rejected.
 - Validation: Go race tests and vet, frontend syntax and tests.
 
 ## Scheduling throughput model (2026-09-21)

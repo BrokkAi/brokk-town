@@ -117,7 +117,7 @@ type Config struct {
 	Funnels           FunnelConfigs           `json:"funnels,omitempty"`
 	SimplifierMode    string                  `json:"simplifier_mode,omitempty"`
 	AutoUpdateBots    bool                    `json:"auto_update_bots,omitempty"`
-	// AutoMayor judges every Town Hall arrival automatically; see autoMayorAction.
+	// AutoMayor lets the town's agent judge every Town Hall arrival; see MayorJudge.
 	AutoMayor bool `json:"auto_mayor,omitempty"`
 	// ReviewCloseSeverity is the least severe finding (P1, P2 or P3) that
 	// still closes a pull request when it survives the second review. Findings

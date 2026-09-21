@@ -240,7 +240,7 @@
             <input id="settings-auto-mayor" type="checkbox" />
             Auto-Mayor: judge every arrival at Town Hall automatically
           </label>
-          <p class="muted">Off by default. When on, Auto-Mayor follows Simplifier Bot's advice on issues and pull requests, asks Simplifier Bot first about outside arrivals that have none, admits the town's own proposals, approves bot updates, and declines external pull requests that Town reviewed and could not clear. The Town Hall button toggles the same setting.</p>
+          <p class="muted">Off by default. When on, the town's agent judges each arrival in a read-only checkout of the branch: it reads the issue or pull request, any Simplifier Bot advice or Town review, and the code, then admits, declines, or delays a bot update, with a reason you can audit on the task. Each judgment holds one agent slot. A judgment that fails is retried twice and then left for you. The Town Hall button toggles the same setting.</p>
         </section>
         <section class="settings-section" aria-labelledby="bot-updates-heading">
           <div class="eyebrow" id="bot-updates-heading">BOT UPDATES</div>

@@ -383,12 +383,14 @@ admit routine work and decline low-value complex work itself; a declined issue i
 closed through Repo-bot, while a declined PR is ignored rather than closed.
 Simplifier Bot's own marked proposals do not recursively pass through intake.
 
-**Auto-Mayor** (a Town Hall button, also under Settings → Town Hall) judges
-every arrival without a person: it applies Simplifier Bot's advice, asks
-Simplifier Bot first about outside arrivals that have none, admits the town's
-own proposals, approves bot updates, and declines external PRs that Town
-reviewed and could not clear. Every decision is recorded in the town's events
-under the Auto-Mayor name, and turning it on judges whatever is already waiting.
+**Auto-Mayor** (a Town Hall button, also under Settings → Town Hall) has the
+town's agent judge every arrival. Each judgment is one agent session in a
+read-only checkout of the branch: the agent reads the issue or PR, any
+Simplifier Bot advice or Town review, and the repository, then returns admit,
+decline, or, for a bot update, delay, with a reason that is kept on the task.
+Decisions go through the same path as the Mayor's own clicks and are recorded
+in the town's events under the Auto-Mayor name. A judgment holds one agent slot;
+one that fails is retried twice, fifteen minutes apart, then left for a person.
 Between arrivals, the same worker scans the repository and may file marked
 proposals to remove or replace subsystems that add disproportionate complexity
 for little value.

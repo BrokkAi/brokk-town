@@ -2,10 +2,37 @@ package town
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// judging answers Run from the test's worker and Judge from a script keyed by
+// task ID, so a test can drive Auto-Mayor without an agent.
+type judging struct {
+	workerFunc
+	verdicts map[string]Judgment
+	failures map[string]error
+	seen     []string
+}
+
+func (j *judging) Judge(_ context.Context, _ *Town, task *Task, _ *slog.Logger) (Judgment, error) {
+	j.seen = append(j.seen, task.ID)
+	if err := j.failures[task.ID]; err != nil {
+		return Judgment{}, err
+	}
+	return j.verdicts[task.ID], nil
+}
+
+func idleWorker(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
+	return RunResult{}, nil
+}
 
 // pendingAt places a task at Town Hall awaiting the Mayor.
 func pendingAt(t *Town, task *Task) *Task {
@@ -15,124 +42,242 @@ func pendingAt(t *Town, task *Task) *Task {
 	return task
 }
 
-func TestAutoMayorFollowsTownAdviceForEveryKindOfArrival(t *testing.T) {
-	store := testStore(t, false)
+func autoMayorTown(t *testing.T, store *Store, on bool) *Town {
+	t.Helper()
 	x := addTown(t, store)
 	update(t, store, func(st *State) {
 		current := st.Towns[x.ID]
+		current.Initialized = true
+		current.Config.AutoMayor = on
 		pendingAt(current, &Task{ID: "issue:1", Kind: "issue", Number: 1, Title: "Bug Bot finding", Simplification: &Simplification{Mode: "suggest", Decision: "admit", Detail: "Focused work."}})
-		pendingAt(current, &Task{ID: "issue:2", Kind: "issue", Number: 2, Title: "Complex proposal", Simplification: &Simplification{Mode: "suggest", Decision: "decline", Detail: "Adds a second registry for one caller."}})
-		pendingAt(current, &Task{ID: "issue:3", Kind: "issue", Number: 3, Title: "Simplifier's own proposal"})
-		pendingAt(current, &Task{ID: "pr:4", Kind: "pr", Number: 4, Title: "Outside PR without advice", External: true, Head: fixSHA, Base: baseSHA})
-		pendingAt(current, &Task{ID: "pr:5", Kind: "pr", Number: 5, Title: "Outside PR needing changes", External: true, Head: fixSHA, Base: baseSHA, Audit: &Audit{Base: baseSHA, Head: fixSHA, Verdict: "changes_needed", Complete: true, Summary: "One open defect.", Checks: []string{"go test ./... passed"}, Findings: []Finding{{ID: "new:a", State: "open", Severity: "P2", Detail: "Nil map write on first use."}}}})
-		pendingAt(current, &Task{ID: "pr:6", Kind: "pr", Number: 6, Title: "Outside PR with exhausted reviews", External: true, Head: fixSHA, Base: baseSHA, Retired: true})
+		pendingAt(current, &Task{ID: "pr:4", Kind: "pr", Number: 4, Title: "Outside PR", External: true, Head: fixSHA, Base: baseSHA})
 		pendingAt(current, &Task{ID: upgradeTaskID(Feature), Kind: "upgrade", Title: "Feature Bot 0.1.2 is available", Upgrade: &BotUpgrade{Role: Feature, From: "0.1.1", To: "0.1.2"}})
 	})
-	supervisor := NewSupervisor(store, nil, nil)
-	if err := supervisor.SetAutoMayor(x.ID, true); err != nil {
-		t.Fatal(err)
+	return store.Snapshot().Towns[x.ID]
+}
+
+// judgeAll runs scheduling passes until nothing waits, or until the deadline.
+func judgeAll(t *testing.T, sup *Supervisor, id string) {
+	t.Helper()
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		sup.schedule(context.Background())
+		sup.wg.Wait()
+		current := sup.Store.Snapshot().Towns[id]
+		if nextJudgment(current, sup.now()) == nil {
+			return
+		}
 	}
+	t.Fatal("Auto-Mayor did not finish judging")
+}
+
+func TestAutoMayorAppliesTheAgentsVerdictThroughTheMayorsPath(t *testing.T) {
+	store := testStore(t, false)
+	x := autoMayorTown(t, store, true)
+	workers := &judging{workerFunc: idleWorker, verdicts: map[string]Judgment{
+		"issue:1":              {Decision: "admit", Reason: "A real defect with a bounded fix."},
+		"pr:4":                 {Decision: "decline", Reason: "Rewrites the scheduler for one flag."},
+		upgradeTaskID(Feature): {Decision: "delay", Reason: "Let the release settle for a day."},
+	}}
+	sup := NewSupervisor(store, nil, workers)
+	judgeAll(t, sup, x.ID)
 	state := store.Snapshot()
 	town := state.Towns[x.ID]
-	if !town.Config.AutoMayor || !town.Config.Public().AutoMayor {
-		t.Fatal("Auto-Mayor setting was not saved or published")
+	issue, pr, upgrade := town.Tasks["issue:1"], town.Tasks["pr:4"], town.Tasks[upgradeTaskID(Feature)]
+	if issue.Stage != "queued" || issue.House != Issue || issue.MayoralDecision != "admitted" || !strings.Contains(issue.Detail, "bounded fix") {
+		t.Fatalf("issue was not admitted with the agent's reason: %+v", issue)
 	}
-	want := map[string]struct {
-		stage    string
-		house    Role
-		decision string
-	}{
-		"issue:1": {"queued", Issue, "admitted"},
-		"issue:2": {"declined", Hall, "declined"},
-		"issue:3": {"queued", Issue, "admitted"},
-		"pr:4":    {"simplifying", Simplifier, ""},
-		"pr:5":    {"declined", Hall, "declined"},
-		"pr:6":    {"declined", Hall, "declined"},
+	if pr.Stage != "declined" || pr.MayoralDecision != "declined" || !strings.Contains(pr.Detail, "for one flag") {
+		t.Fatalf("PR was not declined with the agent's reason: %+v", pr)
 	}
-	for id, w := range want {
-		task := town.Tasks[id]
-		if task.Stage != w.stage || task.House != w.house || task.MayoralDecision != w.decision {
-			t.Fatalf("%s: got stage %s house %s decision %q, want %+v", id, task.Stage, task.House, task.MayoralDecision, w)
-		}
+	if upgrade.Stage != "delayed" || upgrade.RetryAt.IsZero() || town.Config.BotVersions[Feature] == "0.1.2" {
+		t.Fatalf("bot update was not delayed: %+v", upgrade)
 	}
-	if town.Config.BotVersion(Feature) != "0.1.2" {
-		t.Fatalf("bot update was not approved: %+v", town.Config.BotVersions)
+	if town.Workers[Issue].Next != (time.Time{}) {
+		t.Fatal("the Issue house was not woken for the admitted work")
 	}
-	if town.Workers[Simplifier].Next != (time.Time{}) || town.Workers[Issue].Next != (time.Time{}) {
-		t.Fatal("houses receiving Auto-Mayor's decisions were not woken")
-	}
-	decisions, referrals := 0, 0
+	named := 0
 	for _, e := range state.Events {
-		if !strings.HasPrefix(e.Title, "Auto-Mayor ") {
-			continue
-		}
-		if e.Kind == "decision" {
-			decisions++
-		} else if strings.HasPrefix(e.Title, "Auto-Mayor asked Simplifier Bot") {
-			referrals++
+		if e.Kind == "decision" && strings.HasPrefix(e.Title, "Auto-Mayor ") {
+			named++
 		}
 	}
-	if decisions != 6 || referrals != 1 {
-		t.Fatalf("expected six decisions and one referral attributed to Auto-Mayor, got %d and %d", decisions, referrals)
+	if named != 3 || len(workers.seen) != 3 {
+		t.Fatalf("expected three judgments attributed to Auto-Mayor, got %d events over %v", named, workers.seen)
+	}
+	if state.Capacity != nil && state.Capacity.Active != 0 {
+		t.Fatalf("judgment slots were not released: %+v", state.Capacity)
 	}
 }
 
-func TestAutoMayorAppliesSimplifierAdviceReturnedLater(t *testing.T) {
+func TestAutoMayorRetriesAFailedJudgmentThenLeavesItForThePerson(t *testing.T) {
 	store := testStore(t, false)
-	x := addTown(t, store)
-	supervisor := NewSupervisor(store, nil, nil)
-	if err := supervisor.SetAutoMayor(x.ID, true); err != nil {
+	x := autoMayorTown(t, store, true)
+	workers := &judging{workerFunc: idleWorker, verdicts: map[string]Judgment{
+		"pr:4":                 {Decision: "admit", Reason: "Small and correct."},
+		upgradeTaskID(Feature): {Decision: "admit", Reason: "Stable release."},
+	}, failures: map[string]error{"issue:1": errors.New("agent did not finish with a receipt")}}
+	sup := NewSupervisor(store, nil, workers)
+	clock := time.Now()
+	sup.now = func() time.Time { return clock }
+	judgeAll(t, sup, x.ID)
+	issue := store.Snapshot().Towns[x.ID].Tasks["issue:1"]
+	if issue.MayoralDecision != "pending" || issue.Attempts != 1 || !issue.RetryAt.After(clock) || !strings.Contains(issue.Detail, "attempt 1 of 3") {
+		t.Fatalf("failed judgment did not back off: %+v", issue)
+	}
+	if pr := store.Snapshot().Towns[x.ID].Tasks["pr:4"]; pr.MayoralDecision != "admitted" {
+		t.Fatalf("one failure held up unrelated arrivals: %+v", pr)
+	}
+	for i := 0; i < 2; i++ {
+		clock = clock.Add(mayorRetryDelay + time.Second)
+		judgeAll(t, sup, x.ID)
+	}
+	issue = store.Snapshot().Towns[x.ID].Tasks["issue:1"]
+	if issue.MayoralDecision != "pending" || issue.Attempts != mayorAttempts || !strings.Contains(issue.Detail, "left for the Mayor") {
+		t.Fatalf("exhausted judgment was not left for the person: %+v", issue)
+	}
+	clock = clock.Add(mayorRetryDelay + time.Second)
+	sup.schedule(context.Background())
+	sup.wg.Wait()
+	if count := strings.Count(strings.Join(workers.seen, " "), "issue:1"); count != mayorAttempts {
+		t.Fatalf("expected exactly %d attempts, got %d", mayorAttempts, count)
+	}
+	if err := sup.Control(x.ID, Hall, "admit", "issue:1"); err != nil {
 		t.Fatal(err)
 	}
-	update(t, store, func(st *State) {
-		current := st.Towns[x.ID]
-		Reconcile(st, current, inventory(pull(8)), time.Now())
-	})
-	supervisor.schedule(context.Background())
-	pr := store.Snapshot().Towns[x.ID].Tasks["pr:8"]
-	if pr.Stage != "simplifying" || pr.House != Simplifier || pr.MayoralDecision != "" {
-		t.Fatalf("outside PR was not sent for Simplifier advice: %+v", pr)
-	}
-	update(t, store, func(st *State) {
-		current := st.Towns[x.ID]
-		applySimplification(st, current, current.Tasks["pr:8"], &Simplification{Mode: "suggest", Decision: "admit", Detail: "Focused change."}, nil, time.Now())
-	})
-	if pr = store.Snapshot().Towns[x.ID].Tasks["pr:8"]; pr.Stage != "awaiting_mayor" {
-		t.Fatalf("suggest mode should return the advice to Town Hall: %+v", pr)
-	}
-	supervisor.schedule(context.Background())
-	pr = store.Snapshot().Towns[x.ID].Tasks["pr:8"]
-	if pr.Stage != "queued" || pr.House != Review || pr.MayoralDecision != "admitted" {
-		t.Fatalf("Auto-Mayor did not apply the returned advice: %+v", pr)
+	if issue = store.Snapshot().Towns[x.ID].Tasks["issue:1"]; issue.Attempts != 0 || issue.MayoralDecision != "admitted" {
+		t.Fatalf("the Mayor's own decision did not clear the attempts: %+v", issue)
 	}
 }
 
-func TestAutoMayorOffLeavesDecisionsToThePerson(t *testing.T) {
+func TestAutoMayorStaysOutOfTownsThatDidNotOptIn(t *testing.T) {
 	store := testStore(t, false)
-	x := addTown(t, store)
-	update(t, store, func(st *State) {
-		pendingAt(st.Towns[x.ID], &Task{ID: "issue:1", Kind: "issue", Number: 1, Title: "Proposal", Simplification: &Simplification{Mode: "suggest", Decision: "admit", Detail: "Focused work."}})
-	})
-	supervisor := NewSupervisor(store, nil, nil)
-	supervisor.schedule(context.Background())
-	if task := store.Snapshot().Towns[x.ID].Tasks["issue:1"]; task.MayoralDecision != "pending" {
-		t.Fatalf("a town without Auto-Mayor decided on its own: %+v", task)
+	x := autoMayorTown(t, store, false)
+	workers := &judging{workerFunc: idleWorker, verdicts: map[string]Judgment{"issue:1": {Decision: "admit", Reason: "ok"}}}
+	sup := NewSupervisor(store, nil, workers)
+	sup.schedule(context.Background())
+	sup.wg.Wait()
+	if len(workers.seen) != 0 {
+		t.Fatalf("a town without Auto-Mayor was judged: %v", workers.seen)
 	}
-	if err := supervisor.SetAutoMayor(x.ID, true); err != nil {
+	if err := sup.SetAutoMayor(x.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.SetAutoMayor(x.ID, false); err != nil {
+	if !store.Snapshot().Towns[x.ID].Config.Public().AutoMayor {
+		t.Fatal("Auto-Mayor setting was not published")
+	}
+	sup.schedule(context.Background())
+	sup.wg.Wait()
+	if len(workers.seen) != 1 {
+		t.Fatalf("turning Auto-Mayor on did not judge the waiting arrival: %v", workers.seen)
+	}
+	plain := NewSupervisor(store, nil, workerFunc(idleWorker))
+	plain.schedule(context.Background())
+	plain.wg.Wait()
+}
+
+func TestAutoMayorHoldsAnAgentSlot(t *testing.T) {
+	store := testStore(t, false)
+	x := autoMayorTown(t, store, true)
+	if err := store.Update(func(st *State) error { st.ServiceConfig.MaxWorkers = 1; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	update(t, store, func(st *State) {
-		pendingAt(st.Towns[x.ID], &Task{ID: "issue:2", Kind: "issue", Number: 2, Title: "Later proposal"})
-	})
-	supervisor.schedule(context.Background())
-	state := store.Snapshot()
-	if state.Towns[x.ID].Config.AutoMayor || state.Towns[x.ID].Tasks["issue:2"].MayoralDecision != "pending" {
-		t.Fatalf("turning Auto-Mayor off did not stop it: %+v", state.Towns[x.ID].Tasks["issue:2"])
+	workers := &judging{workerFunc: idleWorker, verdicts: map[string]Judgment{"issue:1": {Decision: "admit", Reason: "ok"}}}
+	sup := NewSupervisor(store, nil, workers)
+	sup.mu.Lock()
+	sup.running[x.ID+":issue"] = func() {}
+	sup.mu.Unlock()
+	sup.schedule(context.Background())
+	sup.wg.Wait()
+	if len(workers.seen) != 0 {
+		t.Fatalf("Auto-Mayor judged beyond the agent capacity: %v", workers.seen)
 	}
-	if state.Towns[x.ID].Tasks["issue:1"].MayoralDecision != "admitted" {
-		t.Fatal("turning Auto-Mayor on did not judge the waiting arrival")
+	sup.mu.Lock()
+	delete(sup.running, x.ID+":issue")
+	sup.mu.Unlock()
+	sup.schedule(context.Background())
+	sup.wg.Wait()
+	if len(workers.seen) != 1 {
+		t.Fatalf("Auto-Mayor did not use the freed slot: %v", workers.seen)
+	}
+}
+
+func TestMayorAgentJudgesInAReadOnlyCheckoutWithFullContext(t *testing.T) {
+	b, x, task, _ := fixtureWorkers(t)
+	update(t, b.Store, func(st *State) {
+		current := st.Towns[x.ID]
+		pending := current.Tasks[task.ID]
+		pending.Stage, pending.House, pending.MayoralDecision = "awaiting_mayor", Hall, "pending"
+		pending.Simplification = &Simplification{Mode: "suggest", Decision: "decline", Detail: "Adds a registry for one caller."}
+	})
+	task = b.Store.Snapshot().Towns[x.ID].Tasks[task.ID]
+	var prompted string
+	b.executeAgent = func(ctx context.Context, _ *Town, tree sessionTree, role string, _ *slog.Logger, prompt string) (string, error) {
+		if role != string(Hall) {
+			t.Fatalf("Mayor ran as %q", role)
+		}
+		if _, err := os.Stat(filepath.Join(tree.dir, "code.txt")); err != nil {
+			t.Fatalf("the Mayor has no checkout of the branch: %v", err)
+		}
+		path := strings.TrimSuffix(strings.TrimSpace(strings.SplitN(strings.SplitN(prompt, "JSON context at ", 2)[1], "\n", 2)[0]), ".")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prompted = string(raw)
+		return "Weighed the advice.\nMAYOR_DECISION " + judgmentJSON(Judgment{Decision: "decline", Reason: "The registry is not worth its complexity."}), nil
+	}
+	verdict, err := b.Judge(context.Background(), x, task, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Decision != "decline" || !strings.Contains(verdict.Reason, "complexity") {
+		t.Fatalf("wrong verdict %+v", verdict)
+	}
+	var supplied struct {
+		Arrival map[string]json.RawMessage `json:"arrival"`
+	}
+	if err := json.Unmarshal([]byte(prompted), &supplied); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"simplifier_advice", "source", "discussion", "title"} {
+		if _, ok := supplied.Arrival[key]; !ok {
+			t.Fatalf("Mayor context lacks %s: %s", key, prompted)
+		}
+	}
+	extensions, err := os.ReadDir(filepath.Join(b.Root, "towns", Key(x.ID), "extensions", string(Hall)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range extensions {
+		if strings.HasPrefix(entry.Name(), "work-") {
+			t.Fatal("the Mayor's worktree was not removed")
+		}
+	}
+	b.executeAgent = func(ctx context.Context, _ *Town, tree sessionTree, _ string, _ *slog.Logger, _ string) (string, error) {
+		if err := os.WriteFile(filepath.Join(tree.dir, "code.txt"), []byte("edited\n"), 0600); err != nil {
+			return "", err
+		}
+		return `MAYOR_DECISION {"decision":"admit","reason":"Edited it."}`, nil
+	}
+	if _, err := b.Judge(context.Background(), x, task, slog.New(slog.NewTextHandler(io.Discard, nil))); err == nil || !strings.Contains(err.Error(), "changed tracked source") {
+		t.Fatalf("an agent that edits the checkout was accepted: %v", err)
+	}
+	b.executeAgent = func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error) {
+		return `MAYOR_DECISION {"decision":"merge","reason":"Ship it."}`, nil
+	}
+	if verdict, err = b.Judge(context.Background(), x, task, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatal(err)
+	}
+	store := testStore(t, false)
+	y := autoMayorTown(t, store, true)
+	sup := NewSupervisor(store, nil, &judging{workerFunc: idleWorker, verdicts: map[string]Judgment{"issue:1": verdict, "pr:4": {Decision: "delay", Reason: "later"}, upgradeTaskID(Feature): {Decision: "admit", Reason: "fine"}}})
+	judgeAll(t, sup, y.ID)
+	town := store.Snapshot().Towns[y.ID]
+	if town.Tasks["issue:1"].MayoralDecision != "pending" || !strings.Contains(town.Tasks["issue:1"].Detail, `invalid decision "merge"`) {
+		t.Fatalf("an invalid decision was applied: %+v", town.Tasks["issue:1"])
+	}
+	if town.Tasks["pr:4"].MayoralDecision != "pending" || !strings.Contains(town.Tasks["pr:4"].Detail, "bot update decisions only") {
+		t.Fatalf("delay was accepted for a pull request: %+v", town.Tasks["pr:4"])
 	}
 }
