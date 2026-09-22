@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.2 — 2026-09-22
+
+- Give each bot house its own work policy: label filters, one selected issue or
+  pull request, a discovery focus, per-run and attempt limits, its own
+  verification command, and release cadence, preflight, required workflows and
+  assets. A house refuses a setting its bot cannot honour instead of ignoring
+  it, and filtered work stays visible and marked rather than disappearing.
+- Bound agent spend per town with a budget of attempts and agent minutes per
+  day, week or month. An exhausted budget holds new agent dispatch for that
+  town while running work finishes and the repository inventory keeps going.
+  Town does not cap tokens or cost: no bundled agent harness reports usage, so
+  missing telemetry reads as "not reported" and is never shown as zero.
+- Move issue-bot to acp-go 0.8.1, which keeps separate agent messages apart. A
+  valid final receipt that followed a commentary message without a trailing
+  newline was rejected before, consuming an issue attempt.
+
+## 0.6.1 — 2026-09-22
+
+- Make attention failures actionable from the inbox, with the reason, the next
+  step, and a link to the affected bot's settings or the failed workflow.
+- Find existing draft releases when resuming publication, so a draft GitHub
+  omits from its by-tag lookup no longer produces a duplicate.
+
+## 0.6.0 — 2026-09-22
+
+- Unify the eight standalone bot projects into this repository as independent
+  modules, bundled with Town and released from one checkout. Town no longer
+  links any bot as a Go dependency; every bot is reached over the local worker
+  protocol.
+- Simplify the Town lifecycle and fix a worker shutdown race.
+- Remove the terminal UI. `bt` is now a command-line client alongside the
+  browser; `bt status` reports the same state the browser shows.
+
 ## 0.5.0 — 2026-09-21
 
 - Give Town Hall its own Mayor Bot to judge arrivals awaiting a Mayoral
