@@ -636,7 +636,18 @@ func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
 	return "", ""
 }
 
+// applySimplification binds one assessment to the intake it answers. Repo Bot
+// can observe a closure while Simplifier is still running, and the Mayor can
+// decide the same arrival in that window; either way the task has left intake
+// and the returning assessment describes work Town no longer holds. Applying it
+// regardless overwrote a confirmed closure and sent the pull request to Review.
 func applySimplification(st *State, t *Town, task *Task, assessment *Simplification, runErr error, now time.Time) {
+	if task.House != Simplifier || task.Stage != "simplifying" {
+		if runErr == nil && assessment != nil {
+			st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Simplifier result discarded; "+task.Title+" left intake while it ran", now)
+		}
+		return
+	}
 	if task.Kind == "issue" {
 		task.Attempts++
 	}
