@@ -80,10 +80,25 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		}
 	}
 	for _, p := range remote.Pulls {
+		id := fmt.Sprintf("pr:%d", p.Number)
 		if p.Base.Ref != remote.Branch {
+			// A pull request can be retargeted without touching its head or
+			// base commit, so a task Town already reviewed keeps a clean audit
+			// that now describes a merge into a branch this town does not
+			// cover. Skipping quietly left that audit usable; the task is
+			// retired from this town's work instead.
+			if task := t.Tasks[id]; task != nil && task.Stage != "merged" && task.Stage != "closed" {
+				if !task.Offbranch {
+					s.Event(t.ID, "delivery", string(task.House), "hall", id, fmt.Sprintf("PR retargeted to %s; outside this town", p.Base.Ref), now)
+				}
+				task.Audit = nil
+				task.Offbranch = true
+				task.Blocked = true
+				task.Detail = fmt.Sprintf("Targets %s, but this town covers %s. Town stops work on it until it targets %s again.", p.Base.Ref, remote.Branch, remote.Branch)
+				task.Updated = now
+			}
 			continue
 		}
-		id := fmt.Sprintf("pr:%d", p.Number)
 		task := t.Tasks[id]
 		// A repair may finish while the remote inventory is in flight. Do not
 		// overwrite its confirmed head with the older observation; poll again.
@@ -115,6 +130,17 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		if isOwned {
 			related := fmt.Sprintf("issue:%d", owned.Issue)
 			t.RecordOutcome(OutcomeRecord{ID: "implementation-pr:" + id, At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", Role: Issue, TaskID: id, RelatedTaskID: related, Revision: p.Head.SHA, URL: p.URL, Detail: p.Title})
+		}
+		if task.Offbranch {
+			// Town blocked this itself when the pull request left the branch.
+			// It is back, so the block is released and a fresh review decides
+			// it; nothing about the earlier audit is reused.
+			task.Offbranch = false
+			task.Blocked = false
+			task.Attempts = 0
+			task.RetryAt = time.Time{}
+			task.Audit = nil
+			s.Move(t, task, "queued", Review, "PR targets this town's branch again: back for review", now)
 		}
 		wasExternal := task.External
 		task.External = !isOwned

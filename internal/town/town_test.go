@@ -259,7 +259,7 @@ type fakeGH struct {
 }
 
 func newGH(n int) *fakeGH {
-	return &fakeGH{p: pull(n), discussion: []Discussion{}, gate: MergeGate{Base: baseSHA, Head: headSHA, State: "OPEN", Mergeable: "MERGEABLE", MergeState: "CLEAN"}, snapshot: inventory(pull(n))}
+	return &fakeGH{p: pull(n), discussion: []Discussion{}, gate: MergeGate{Base: baseSHA, BaseRef: "main", Head: headSHA, State: "OPEN", Mergeable: "MERGEABLE", MergeState: "CLEAN"}, snapshot: inventory(pull(n))}
 }
 
 // Observe answers the repo worker's inventory from this fixture, which is what

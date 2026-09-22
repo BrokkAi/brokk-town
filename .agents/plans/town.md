@@ -171,3 +171,19 @@
   untouched on v0.1.0. The worker smoke test initializes all eight.
 - Remaining: a Town release publishes this to users. RELEASING.md requires an
   explicit request for that.
+
+## Retargeted pull requests (#9)
+
+- A pull request retargeted to another branch keeps its head and base commits,
+  so a clean audit stayed valid and the merge gate, which compared SHAs only,
+  still allowed it. Town could squash-merge into a branch it was never
+  configured for.
+- `MergeGate` now carries `baseRefName`, and `Allows` takes the town's branch
+  and rejects unless the pull request and the gate both report it. Each
+  observation is checked on its own so one lagging behind the other cannot let
+  a merge through.
+- `Reconcile` no longer skips a retargeted pull request silently: an existing
+  task loses its audit and is blocked with `Offbranch`, which is the record
+  that lets Town release its own block when the pull request comes back. On
+  return the task is queued for a fresh review rather than resuming from the
+  discarded audit. Merged and closed tasks are left alone.

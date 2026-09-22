@@ -469,6 +469,10 @@ type Task struct {
 	// Retired marks an external pull request whose review attempts on the
 	// current revision were exhausted; the Mayor decides whether to try again.
 	Retired bool `json:"retired,omitempty"`
+	// Offbranch marks a pull request that now targets a branch this town does
+	// not cover. It blocks the task, and is the record that lets Town release
+	// its own block if the pull request is retargeted back.
+	Offbranch bool `json:"offbranch,omitempty"`
 }
 
 // IssueJob is the public scheduling outcome from issue-bot durable state.

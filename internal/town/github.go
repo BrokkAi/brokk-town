@@ -106,8 +106,12 @@ type Discussion struct {
 	State string `json:"state,omitempty"`
 }
 type MergeGate struct {
-	Head       string `json:"headRefOid"`
-	Base       string `json:"baseRefOid"`
+	Head string `json:"headRefOid"`
+	Base string `json:"baseRefOid"`
+	// BaseRef is the branch the pull request currently targets. Retargeting a
+	// pull request leaves its head and base commits untouched, so the SHAs
+	// alone cannot tell Town the merge would land somewhere it does not cover.
+	BaseRef    string `json:"baseRefName"`
 	Draft      bool   `json:"isDraft"`
 	State      string `json:"state"`
 	Mergeable  string `json:"mergeable"`
@@ -115,7 +119,14 @@ type MergeGate struct {
 	Review     string `json:"reviewDecision"`
 }
 
-func (g MergeGate) Allows(p Pull, a *Audit) bool {
+// Allows reports whether this pull request may be merged by the town covering
+// branch. The branch is checked against both observations Town holds, because a
+// merge that lands outside the configured branch is a write the operator never
+// authorized.
+func (g MergeGate) Allows(p Pull, a *Audit, branch string) bool {
+	if branch == "" || p.Base.Ref != branch || g.BaseRef != branch {
+		return false
+	}
 	return a.Clean(g.Base, g.Head) && p.Head.SHA == g.Head && p.Base.SHA == g.Base && p.State == "open" && !p.Draft && !p.Locked && !g.Draft && g.State == "OPEN" && g.Mergeable == "MERGEABLE" && g.MergeState == "CLEAN" && (g.Review == "" || g.Review == "APPROVED")
 }
 
@@ -220,7 +231,7 @@ func (g GitHubClient) Discussion(ctx context.Context, repo string, n int) ([]Dis
 }
 func (g GitHubClient) Gate(ctx context.Context, repo string, n int) (MergeGate, error) {
 	var gate MergeGate
-	raw, err := osrun.Run(ctx, "", nil, "gh", "pr", "view", fmt.Sprint(n), "--repo", repo, "--json", "headRefOid,baseRefOid,isDraft,state,mergeable,mergeStateStatus,reviewDecision")
+	raw, err := osrun.Run(ctx, "", nil, "gh", "pr", "view", fmt.Sprint(n), "--repo", repo, "--json", "headRefOid,baseRefOid,baseRefName,isDraft,state,mergeable,mergeStateStatus,reviewDecision")
 	if err != nil {
 		return gate, err
 	}

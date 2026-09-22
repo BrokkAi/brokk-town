@@ -1294,9 +1294,13 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 		if err != nil {
 			return true, err
 		}
-		if !gate.Allows(p, task.Audit) {
+		if !gate.Allows(p, task.Audit, t.Branch()) {
 			if err := s.Store.Update(func(st *State) error {
-				st.Towns[t.ID].Tasks[task.ID].Detail = "Waiting for current review, required checks, approvals, and mergeability."
+				detail := "Waiting for current review, required checks, approvals, and mergeability."
+				if p.Base.Ref != t.Branch() || gate.BaseRef != t.Branch() {
+					detail = fmt.Sprintf("Targets %s, but this town covers %s. Town does not merge outside the branch it was configured for.", p.Base.Ref, t.Branch())
+				}
+				st.Towns[t.ID].Tasks[task.ID].Detail = detail
 				return nil
 			}); err != nil {
 				return true, err
