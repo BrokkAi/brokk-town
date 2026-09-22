@@ -87,3 +87,19 @@
 - Go race tests/vet and frontend syntax checks pass; 40 browser tests cover
   settings navigation, workflow links, canceled/accepted/rejected retry, policy
   restrictions, and uncertain-outcome guidance. No live actions used for tests.
+
+## Town 0.6.1 release (complete)
+
+- Released immutable tag v0.6.1-town at a733129 through GitHub Actions run
+  35710266271. All 19 checks and the publishing job passed.
+- Recovered an npm Linux ARM64 404 after verifying its correct publisher trust,
+  then a duplicate draft caused by GitHub omitting drafts from by-tag lookup.
+  Backed up and checksum-verified unpublished assets before recreating drafts;
+  the release tag and source commit were unchanged.
+- Fixed future draft lookup in Town and all eight standalone bot publishers,
+  with mocked pagination, missing-draft, duplicate-draft, and existing-release
+  tests. Root packaging tests (30) and all eight bot publisher test suites pass.
+- Installed the checksum-verified native 0.6.1 bundle locally. Verified startup
+  with a paused copy of current saved state, HTTP state and new inbox assets,
+  and clean shutdown without dispatching repository jobs or requests.
+  bt reports v0.6.1; the actual Town service is stopped and ready for the user.

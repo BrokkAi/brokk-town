@@ -66,6 +66,25 @@ def api(path, method="GET", body=None, missing=False):
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
+def find_release(tag):
+    record = api("releases/tags/" + tag, missing=True)
+    if record is not None:
+        return record
+    # GitHub's by-tag endpoint can omit drafts. Listing releases includes them;
+    # otherwise a rerun creates a second draft and collides with the first assets.
+    matches = []
+    page = 1
+    while True:
+        records = api(f"releases?per_page=100&page={page}")
+        matches.extend(record for record in records if record["tag_name"] == tag)
+        if len(records) < 100:
+            break
+        page += 1
+    if len(matches) > 1:
+        raise ValueError("multiple releases use this tag; resolve duplicate drafts before retrying")
+    return matches[0] if matches else None
+
+
 def missing_assets(native, existing):
     expected = {path.name for path in native.iterdir()}
     if not set(existing) <= expected:
@@ -83,7 +102,7 @@ def publish(directory, tag, sha, check_only=False):
     if check_only:
         log("check-only: built everything; nothing uploaded")
         return
-    record = api("releases/tags/" + tag, missing=True)
+    record = find_release(tag)
     if record is not None and not record["draft"]:
         log(f"{tag} is already released; nothing to do")
         return
