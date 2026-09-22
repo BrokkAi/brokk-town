@@ -15,8 +15,8 @@
     "issue": {
       "project": "issue-bot",
       "command": "bib",
-      "version": "0.5.6",
-      "source_commit": "03fea25c14b28a7e3b86488c5f99b90ea6bb28a4"
+      "version": "0.5.7",
+      "source_commit": "eec77420df17579ed02c8db6f27acce69c7fa0bc"
     },
     "review": {
       "project": "review-bot",

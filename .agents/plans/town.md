@@ -163,5 +163,11 @@
   model. Nothing else in the suite exercised the runner, so a wire regression
   would have gone unnoticed. Confirmed the #106 case fails on v0.1.0 with
   "agent did not finish with an ISSUE_RESULT receipt" and passes on v0.8.1.
-- Not done: `bundle.json` still pins issue-bot 0.5.6, so Town ships this only
-  after an issue-bot release.
+- `bundle.json` moves issue-bot to 0.5.7 at the upgrade commit. Town builds each
+  bot from this checkout and stamps the version from that manifest, so the pin
+  was the only stale part; leaving it at 0.5.6 would have shipped a binary
+  labelled 0.5.6 that already contained acp-go 0.8.1. Verified the rebuilt
+  bundle reports v0.5.7, links acp-go v0.8.1, and that the other seven bots are
+  untouched on v0.1.0. The worker smoke test initializes all eight.
+- Remaining: a Town release publishes this to users. RELEASING.md requires an
+  explicit request for that.
