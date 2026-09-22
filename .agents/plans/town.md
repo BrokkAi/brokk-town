@@ -1,6 +1,6 @@
 # Brokk Town implementation plan
 
-## Standalone projects and explicit lifecycle (in progress)
+## Standalone projects and explicit lifecycle (complete)
 
 - Import eight standalone bot projects under bots/, preserving independent modules,
   CLIs, tests, packaging and source provenance. No shared bot module or cross imports.
@@ -35,5 +35,6 @@
   and its worker tests rerun). Browser: 39 tests and syntax pass. Demo foreground/
   daemon smoke and all eight real worker initialization/parent-loss checks pass;
   no real jobs, agents or GitHub automation were used for development tests.
-- Remaining delivery check: build all four native bundles and five npm packages
-  from the committed tree without publishing; then record results and final commit.
+- Built and validated all four native bundles and five npm packages from commit
+  67e7262 using check-only mode; nothing uploaded. Workflow lint and final root/
+  Issue Bot race tests and vet passed. Implementation committed on master.
