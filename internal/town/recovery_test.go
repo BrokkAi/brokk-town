@@ -27,18 +27,17 @@ func TestUnknownDispatchSurvivesRestartAndRequiresTargetedRecovery(t *testing.T)
 		t.Fatal("uncertain work was rerun")
 		return RunResult{}, nil
 	})
-	sup := NewSupervisor(s, nil, workers)
-	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Issue, &handle)
-	w := s.Snapshot().Towns[x.ID].Workers[Issue]
-	if w.Recovery == nil || w.Recovery.TaskID != "issue:7" || !strings.Contains(w.Task, "retry --task issue:7") {
-		t.Fatalf("missing recovery: %+v", w)
-	}
 	s.Close()
 	s, err = Open(dir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	w := s.Snapshot().Towns[x.ID].Workers[Issue]
+	if w.Recovery == nil || w.Recovery.TaskID != "issue:7" || !strings.Contains(w.Task, "retry --task issue:7") {
+		t.Fatalf("missing recovery: %+v", w)
+	}
+	var sup *Supervisor
 	if eligible, _ := s.dispatchEligibility(x.ID, Issue, time.Now().Add(time.Hour)); eligible {
 		t.Fatal("restart forgot unresolved outcome")
 	}
@@ -87,31 +86,5 @@ func TestPersistedLiveHandleNeverAllowsReplacementDispatch(t *testing.T) {
 	})
 	if eligible, _ := s.dispatchEligibility(x.ID, Bug, time.Now()); eligible {
 		t.Fatal("live handle allowed a duplicate scan")
-	}
-}
-
-func TestLegacyUnknownOutcomeRecoversTaskFromAttemptLedger(t *testing.T) {
-	dir := t.TempDir()
-	s, err := Open(dir, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	x := addTown(t, s)
-	detail := (&WorkerOutcomeUnknownError{Bot: "issue-bot", Version: "0.5.3", Reason: "already exited"}).Error()
-	update(t, s, func(st *State) {
-		town := st.Towns[x.ID]
-		w := town.Workers[Issue]
-		w.Enabled, w.Error = true, detail
-		town.RecordOutcome(OutcomeRecord{ID: "attempt:issue:1:issue:63", At: time.Now(), Class: "attempt", Kind: "worker_attempt", Status: "blocked", Role: Issue, TaskID: "issue:63", Detail: detail})
-	})
-	s.Close()
-	s, err = Open(dir, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	w := s.Snapshot().Towns[x.ID].Workers[Issue]
-	if w.Recovery == nil || w.Recovery.TaskID != "issue:63" || w.Status != "failed" {
-		t.Fatalf("legacy outcome forgotten: %+v", w)
 	}
 }

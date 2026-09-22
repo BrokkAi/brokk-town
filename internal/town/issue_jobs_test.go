@@ -6,30 +6,43 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	issuebot "github.com/BrokkAi/issue-bot"
 )
 
-func writeIssueBotState(t *testing.T, root string, town *Town, jobs map[int]*issuebot.Job) {
+func writeIssueBotState(t *testing.T, root string, town *Town, jobs map[int]*issueJobSummary) {
 	t.Helper()
-	dir, stateDir := Workspace(root, town.ID, Issue)
-	if err := os.MkdirAll(stateDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	saved := issuebot.State{
-		Format: 1, Remote: "https://github.com/" + town.Config.Repo + ".git",
-		Branch: town.Config.Branch, Directory: dir, Repo: town.Config.Repo,
-		Host: "github.com", Jobs: jobs,
-	}
-	data, err := json.MarshalIndent(saved, "", "  ")
+	data, err := json.Marshal(jobs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stateDir, "state.json"), append(data, '\n'), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(root, "jobs.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 }
-
+func fixtureIssueQuery(root string) func(*Town, string, int) (map[int]*issueJobSummary, error) {
+	return func(_ *Town, mode string, issue int) (map[int]*issueJobSummary, error) {
+		jobs := map[int]*issueJobSummary{}
+		data, err := os.ReadFile(filepath.Join(root, "jobs.json"))
+		if os.IsNotExist(err) {
+			return jobs, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err = json.Unmarshal(data, &jobs); err != nil {
+			return nil, err
+		}
+		if mode == "retry-issue" {
+			if j := jobs[issue]; j != nil {
+				j.Tries = 0
+				j.RetryAt = time.Time{}
+				j.Status = "pending"
+			}
+			data, _ = json.Marshal(jobs)
+			err = os.WriteFile(filepath.Join(root, "jobs.json"), data, 0600)
+		}
+		return jobs, err
+	}
+}
 func TestBlockedIssueJobSurvivesInventoryAndRestartThenRetries(t *testing.T) {
 	root := t.TempDir()
 	storeDir := t.TempDir()
@@ -45,13 +58,13 @@ func TestBlockedIssueJobSurvivesInventoryAndRestartThenRetries(t *testing.T) {
 		current.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Clarify API", House: Issue, Stage: "queued"}
 	})
 	town = store.Snapshot().Towns[town.ID]
-	job := &issuebot.Job{
-		Issue: issuebot.Issue{Number: 7}, Branch: "issue-bot/7", Status: "blocked", Tries: 2,
-		Failure: "Agent returned blocked.", Result: &issuebot.Result{Status: "blocked", Detail: "The API contract is missing."},
+	job := &issueJobSummary{
+		Branch: "issue-bot/7", Status: "blocked", Tries: 2,
+		Failure: "Agent returned blocked.", Result: &issueJobResult{Status: "blocked", Detail: "The API contract is missing."},
 		RetryAt: time.Now().Add(10 * time.Minute),
 	}
-	writeIssueBotState(t, root, town, map[int]*issuebot.Job{7: job})
-	workers := &BotWorkers{Root: root, Store: store}
+	writeIssueBotState(t, root, town, map[int]*issueJobSummary{7: job})
+	workers := &BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)}
 	if err := workers.SyncIssues(town); err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +103,8 @@ func TestBlockedIssueJobSurvivesInventoryAndRestartThenRetries(t *testing.T) {
 	if task.Blocked || task.Stage != "queued" || task.Attempts != 0 || task.IssueJob.Status != "pending" || task.IssueJob.RetryEligible {
 		t.Fatalf("retry did not recover the task: %+v", task)
 	}
-	saved, err := issuebot.ReadState(workers.issueConfig(store.Snapshot().Towns[town.ID]))
-	if err != nil || saved.Jobs[7].Status != "pending" || saved.Jobs[7].Tries != 0 || !saved.Jobs[7].RetryAt.IsZero() {
+	saved, err := workers.queryIssueJobs(store.Snapshot().Towns[town.ID], "jobs", 0)
+	if err != nil || saved[7].Status != "pending" || saved[7].Tries != 0 || !saved[7].RetryAt.IsZero() {
 		t.Fatalf("issue-bot retry was not durable: state=%+v err=%v", saved, err)
 	}
 }
@@ -104,9 +117,9 @@ func TestSubmittedIssueJobImportsOwnershipWithoutDuplicateDelivery(t *testing.T)
 		st.Towns[town.ID].Tasks["issue:8"] = &Task{ID: "issue:8", Kind: "issue", Number: 8, Title: "Done", House: Issue, Stage: "queued"}
 	})
 	town = store.Snapshot().Towns[town.ID]
-	job := &issuebot.Job{Issue: issuebot.Issue{Number: 8}, Branch: "issue-bot/8", Status: "submitted", Tries: 1, URL: "https://github.com/acme/orchard/pull/18", Result: &issuebot.Result{Status: "solved", Detail: "Implemented."}}
-	writeIssueBotState(t, root, town, map[int]*issuebot.Job{8: job})
-	workers := &BotWorkers{Root: root, Store: store}
+	job := &issueJobSummary{Branch: "issue-bot/8", Status: "submitted", Tries: 1, URL: "https://github.com/acme/orchard/pull/18", Result: &issueJobResult{Status: "solved", Detail: "Implemented."}}
+	writeIssueBotState(t, root, town, map[int]*issueJobSummary{8: job})
+	workers := &BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)}
 	if err := workers.SyncIssues(town); err != nil {
 		t.Fatal(err)
 	}

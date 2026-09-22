@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	issuebot "github.com/BrokkAi/issue-bot"
 )
 
 // secondReview returns a certified audit of the fixture revision that still
@@ -24,7 +22,7 @@ func settle(t *testing.T, s *Store, id string, audit *Audit, severities map[stri
 	sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
 		return RunResult{PR: 1, Audit: audit, Severities: severities}, nil
 	}))
-	sup.execute(context.Background(), s.Snapshot().Towns[id], Review, nil)
+	sup.execute(context.Background(), s.Snapshot().Towns[id], Review)
 	return s.Snapshot().Towns[id]
 }
 
@@ -188,9 +186,9 @@ func TestRequeuedIssueStaysQueuedUntilIssueBotStartsOver(t *testing.T) {
 		st.Towns[town.ID].Tasks["issue:8"] = &Task{ID: "issue:8", Kind: "issue", Number: 8, Title: "Redo", House: Issue, Stage: "queued", Requeue: 18}
 	})
 	town = store.Snapshot().Towns[town.ID]
-	job := &issuebot.Job{Issue: issuebot.Issue{Number: 8}, Branch: "issue-bot/8", Status: "submitted", Tries: 1, URL: "https://github.com/acme/orchard/pull/18"}
-	writeIssueBotState(t, root, town, map[int]*issuebot.Job{8: job})
-	workers := &BotWorkers{Root: root, Store: store}
+	job := &issueJobSummary{Branch: "issue-bot/8", Status: "submitted", Tries: 1, URL: "https://github.com/acme/orchard/pull/18"}
+	writeIssueBotState(t, root, town, map[int]*issueJobSummary{8: job})
+	workers := &BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)}
 	if err := workers.SyncIssues(town); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +200,7 @@ func TestRequeuedIssueStaysQueuedUntilIssueBotStartsOver(t *testing.T) {
 	}
 	// Once issue-bot has started over, the requeue marker is spent.
 	job.Status, job.URL, job.Tries = "pending", "", 0
-	writeIssueBotState(t, root, town, map[int]*issuebot.Job{8: job})
+	writeIssueBotState(t, root, town, map[int]*issueJobSummary{8: job})
 	if err := workers.SyncIssues(store.Snapshot().Towns[town.ID]); err != nil {
 		t.Fatal(err)
 	}
@@ -218,11 +216,11 @@ func TestReviewCloseSeverityIsATownSetting(t *testing.T) {
 		return RunResult{}, nil
 	}))
 	bad := "P9"
-	if err := sup.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, nil, &bad); err == nil {
+	if err := sup.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, &bad); err == nil {
 		t.Fatal("accepted an unknown severity")
 	}
 	p1 := "P1"
-	if err := sup.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, nil, nil, &p1); err != nil {
+	if err := sup.SettingsForRoleAndPolicy(x.ID, "", AgentSettings{}, nil, nil, &p1); err != nil {
 		t.Fatal(err)
 	}
 	cfg := s.Snapshot().Towns[x.ID].Config

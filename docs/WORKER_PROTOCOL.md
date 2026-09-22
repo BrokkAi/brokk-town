@@ -166,29 +166,23 @@ operator asks (`bt retry --role release` or the control API with an empty task)
 and only to a worker advertising the `retry` capability. Unknown fields and
 protocol mismatches are rejected exactly as for `/v1/runs`.
 
-## Surviving a Town restart
+## Process ownership and job summaries
 
-Town commits the worker's handle (PID, socket path, output file, version, and the
-exact task) before `POST /v1/runs`. A Town service that stops for an upgrade
-leaves the worker running; the next service reconnects.
+Town starts every worker at service startup, even for paused houses. A worker
+handles sequential runs until Town stops. Concurrent jobs receive HTTP 409.
+Each process receives `BROKK_TOWN_PARENT_PIPE=1` and a read-only pipe at descriptor
+3. EOF means the parent died; cancel the server and all active work. Request
+cancellation also cancels work. There is no detach/attach or adoption protocol.
 
-Workers that advertise the optional `detach` capability must:
+Before dispatch, Town records the exact target and revision. An interrupted stream
+preserves that provenance as an uncertain outcome for reconciliation.
 
-- continue the run when the `/v1/runs` client disconnects, treating the
-  disconnect as neither cancellation nor failure;
-- buffer every event of the run, including the terminal event, until shutdown;
-- serve `GET /v1/attach?after=N` with `Accept: application/x-ndjson`, replaying
-  every buffered event whose `seq` is greater than `N` and then streaming live
-  events until the terminal event, using the same event schema and contiguous
-  sequence numbers;
-- answer `GET /v1/attach` with HTTP 404 when no run has been submitted, so Town
-  can end an idle worker and reschedule the house without recording a failure.
-
-Town resumes from the last progress sequence it durably observed; a replayed
-`result` event is required before a replayed terminal event. Workers without
-`detach` receive a shutdown request when a new service adopts them and may finish
-their current run first; Town records that attempt as uncertain because it could
-not observe the outcome. In both cases GitHub receipts remain the source of truth.
+Issue Bot accepts `mode: "jobs"` on `POST /v1/runs` without taking the job slot.
+It returns `result.jobs`, keyed by issue number, with status, failure, claim_pending,
+tries, retry_at, URL, branch and optional result status/detail. This is a public
+summary, not access to private state. `mode: "retry-issue"` requires a positive
+issue number, takes the job slot, applies Issue Bot's own retry validation and
+returns the updated summaries. Neither mode invokes an agent or writes to GitHub.
 
 ## Shutdown
 

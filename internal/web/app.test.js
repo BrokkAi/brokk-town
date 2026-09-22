@@ -257,11 +257,10 @@ const state = {
   version: "v0.1.2",
   capacity: { active: 1, limit: 4 },
   service_config: { max_workers: 4 },
-  update: { current: "1.0.0", latest: "1.1.0", command: "npm install -g @brokkai/brokk-town@1.1.0" },
   towns: {
     "acme/project": {
       id: "acme/project",
-      config: { repo: "acme/project", branch: "main", bot_agents: { review: { harness: "claude-acp", model: "claude-opus-5", effort: "high", inherited: false }, repo: { harness: "codex-acp", model: "repo-repair-model", effort: "low", inherited: false } }, bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1", repo: "0.1.0" }, harness: "codex-acp", model: "m", effort: "medium" },
+      config: { repo: "acme/project", branch: "main", bot_agents: { review: { harness: "claude-acp", model: "claude-opus-5", effort: "high", inherited: false }, repo: { harness: "codex-acp", model: "repo-repair-model", effort: "low", inherited: false } }, harness: "codex-acp", model: "m", effort: "medium" },
       workers: {
         issue: { role: "issue", status: "working", enabled: true, task: "Implementing", logs: [], agent: { harness: "codex-acp", model: "m", effort: "medium" } },
         review: { role: "review", status: "waiting", enabled: true, next: "0001-01-01T00:00:00Z", logs: [] },
@@ -277,7 +276,6 @@ const state = {
         "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Queue this change", house: "issue", stage: "queued" },
         "source:done": { id: "source:done", kind: "source", title: "Checked off in Slack", house: "issue", stage: "complete", source: { eligible: false } },
         "issue:3": { id: "issue:3", kind: "issue", number: 3, title: "Outside request", house: "hall", stage: "awaiting_mayor", external: true, mayoral_decision: "pending", simplification: { mode: "suggest", decision: "decline", summary: "Low value", detail: "The request adds a second registry for one caller." } },
-        "upgrade:feature": { id: "upgrade:feature", kind: "upgrade", title: "Feature Bot 0.1.2 is available (pinned 0.1.1)", house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", upgrade: { role: "feature", from: "0.1.1", to: "0.1.2" } },
       },
       intents: {}, reports: [], events: [],
     },
@@ -328,10 +326,6 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements["capacity-summary"].textContent, "1/4 workers");
   assert.equal(elements["town-version"].textContent, "v0.1.2");
   assert.equal(elements["help-version"].textContent, "Brokk Town v0.1.2");
-  assert.equal(elements["update-notice"].textContent, "Upgrade Town to 1.1.0");
-  await elements["update-notice"].onclick();
-  assert.equal(requests.some((request) => request.url === "/api/update"), true);
-  assert.match(elements["update-notice"].textContent, /installed/);
 
   const views = document.querySelectorAll("#view-switcher [data-view]");
   views.find((button) => button.dataset.view === "board").onclick();
@@ -407,7 +401,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements.houses.innerHTML.includes("workload-counts"), false, "houses use the compact count line");
   assert.match(houseLabel("simplifier"), /0 \/ 1 \/ 1/);
   assert.match(elements.houses.innerHTML, /class="house-counts" title="0 active · 1 waiting · 1 blocked"/);
-  assert.match(houseLabel("hall"), /2 to decide/);
+  assert.match(houseLabel("hall"), /1 to decide/);
   assert.match(elements.board.textContent, /simplifier · waiting.*0 active.*1 waiting.*1 blocked/s);
   assert.match(elements.inspection.textContent, /1 issue · 1 pull request · 1 blocked/);
   const intakeScroll = elements.inspection.querySelector(".house-task-queue");
@@ -456,15 +450,6 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"')), true);
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
-  const upgrade = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "upgrade:feature");
-  assert.ok(upgrade, "Town Hall shows a bot update awaiting the Mayor");
-  assert.match(upgrade.innerHTML || upgrade.textContent || "", /bot update/);
-  upgrade.onclick();
-  const upgradeButtons = elements.inspection.querySelectorAll("button");
-  assert.ok(upgradeButtons.find((button) => button.id === "admit-task"), "a bot update can be approved");
-  assert.ok(upgradeButtons.find((button) => button.id === "decline-task"), "a bot update can be declined");
-  await upgradeButtons.find((button) => button.id === "delay-task").onclick();
-  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"delay"') && request.options.body.includes('"task":"upgrade:feature"')), true);
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   assert.match(elements.inspection.textContent, /Mayor Bot waiting/, "Town Hall shows Mayor Bot's status");
   assert.match(elements.inspection.textContent, /What changed/, "Town Hall carries the bulletin feed");
@@ -603,7 +588,7 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   const requests = [];
   const other = {
     id: "beta/tools",
-    config: { repo: "beta/tools", branch: "main", bot_agents: {}, bot_versions: {}, harness: "codex-acp", model: "", effort: "" },
+    config: { repo: "beta/tools", branch: "main", bot_agents: {}, harness: "codex-acp", model: "", effort: "" },
     workers: {
       review: { role: "review", status: "failed", enabled: true, error: "gh exploded", logs: [], updated: "2026-09-15T08:00:00Z" },
       repo: { role: "repo", status: "paused", enabled: true, logs: [] },
@@ -627,10 +612,10 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   await import(`./app.js?inbox-test=${Date.now()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(elements["inbox-count"].textContent, "4", "header badge counts decisions and stuck work across towns");
+  assert.equal(elements["inbox-count"].textContent, "3", "header badge counts decisions and stuck work across towns");
   assert.equal(elements["inbox-count"].hidden, false);
   assert.ok(elements["inbox-count"].classList.contains("decisions"), "badge highlights pending Mayoral decisions");
-  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /3 awaiting your decision · 1 need attention/);
+  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /2 awaiting your decision · 1 need attention/);
   const betaLink = elements.towns.querySelectorAll("[data-town]").find((button) => button.dataset.town === "beta/tools");
   assert.match(betaLink.textContent, /1 to decide/, "sidebar shows each town's pending decisions");
   assert.match(betaLink.textContent, /1 attention/, "sidebar shows each town's stuck work");
@@ -641,14 +626,14 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   const opens = elements["inbox-list"].querySelectorAll("[data-inbox-open]");
   assert.deepEqual(
     opens.map((button) => [button.dataset.inboxTown, button.dataset.inboxHouse, button.dataset.inboxTask]),
-    [["acme/project", "hall", "upgrade:feature"], ["acme/project", "hall", "issue:3"], ["beta/tools", "hall", "pr:12"], ["beta/tools", "review", ""]],
+    [["acme/project", "hall", "issue:3"], ["beta/tools", "hall", "pr:12"], ["beta/tools", "review", ""]],
     "decisions from every town lead (an unknown age counts as the longest wait), then stuck work names the house to inspect",
   );
   assert.match(elements["inbox-list"].textContent, /outside arrival/);
   assert.match(elements["inbox-list"].textContent, /Review Bot/);
   assert.match(elements["inbox-list"].textContent, /gh exploded/, "failed workers carry their error");
 
-  opens[2].onclick();
+  opens[1].onclick();
   assert.equal(elements["inbox-dialog"].open, false, "opening an item closes the inbox");
   assert.equal(elements.inspector.classList.contains("open"), true);
   assert.equal(elements.overview.hidden, true, "opening an item leaves the all-towns overview");
@@ -687,33 +672,6 @@ test("reopening a Mayoral card refreshes live details and retries failures", asy
   assert.match(elements.inspection.textContent, /5 comments/);
 });
 
-test("the page follows a restarted service: managed upgrades report restarting and a new version reloads the assets", async () => {
-  const elements = installFixture();
-  let reloads = 0;
-  globalThis.location.reload = () => { reloads++; };
-  let releaseSecond;
-  const messages = [
-    `data: ${JSON.stringify({ ...state, version: "1.0.0" })}\n\n`,
-    new Promise((resolve) => { releaseSecond = () => resolve(`data: ${JSON.stringify({ ...state, seq: 2, version: "1.1.0" })}\n\n`); }),
-  ];
-  globalThis.fetch = async (url) => {
-    if (url === "/api/events") {
-      let index = 0;
-      return { ok: true, body: { getReader: () => ({ read: async () => index < messages.length ? { value: new TextEncoder().encode(await messages[index++]), done: false } : { done: true } }) } };
-    }
-    if (url === "/api/update") return { ok: true, json: async () => ({ ok: true, restarting: true }) };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: true, agents: [] }) };
-    return { ok: true, json: async () => ({}) };
-  };
-  await import(`./app.js?reload-test=${Date.now()}`);
-  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
-  await elements["update-notice"].onclick();
-  assert.match(elements["update-notice"].textContent, /restarting/);
-  assert.equal(reloads, 0, "the same version never reloads");
-  releaseSecond();
-  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(reloads, 1, "a different service version reloads the page once");
-});
 
 test("responsive and reduced-motion contracts remain shipped in the stylesheet", () => {
   const css = readFileSync(new URL("./style.css", import.meta.url), "utf8");

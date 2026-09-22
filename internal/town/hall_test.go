@@ -32,13 +32,12 @@ func hallTown(t *testing.T, store *Store) *Town {
 		current.Workers[Hall].Enabled = true
 		pendingAt(current, &Task{ID: "issue:1", Kind: "issue", Number: 1, Title: "Bug Bot finding", Simplification: &Simplification{Mode: "suggest", Decision: "admit", Detail: "Focused work."}})
 		pendingAt(current, &Task{ID: "pr:4", Kind: "pr", Number: 4, Title: "Outside PR", External: true, Head: fixSHA, Base: baseSHA})
-		pendingAt(current, &Task{ID: upgradeTaskID(Feature), Kind: "upgrade", Title: "Feature Bot 0.1.2 is available", Upgrade: &BotUpgrade{Role: Feature, From: "0.1.1", To: "0.1.2"}})
 	})
 	return store.Snapshot().Towns[x.ID]
 }
 
 func TestMayorHouseIsAnAgentHouseAtTownHall(t *testing.T) {
-	if !ValidAgentRole(Hall) || !ValidRole(Hall) || workerPackageNames[Hall] != "@brokkai/mayor-bot" || botDisplayName(Hall) != "Mayor Bot" {
+	if !ValidAgentRole(Hall) || !ValidRole(Hall) || workerBotNames[Hall] != "mayor-bot" {
 		t.Fatal("Town Hall is not wired to mayor-bot")
 	}
 	store := testStore(t, false)
@@ -78,7 +77,7 @@ func TestNextJudgmentOrderBackoffAndArrivalContext(t *testing.T) {
 	}
 	x.Tasks["issue:1"].Attempts = mayorAttempts
 	x.Tasks["pr:4"].Attempts = mayorAttempts
-	if task := nextJudgment(x, now.Add(time.Hour)); task == nil || task.ID != upgradeTaskID(Feature) {
+	if task := nextJudgment(x, now.Add(time.Hour)); task != nil {
 		t.Fatalf("exhausted arrivals were judged again: %+v", task)
 	}
 	var arrival map[string]any
@@ -87,12 +86,6 @@ func TestNextJudgmentOrderBackoffAndArrivalContext(t *testing.T) {
 	}
 	if arrival["kind"] != "issue" || arrival["title"] != "Bug Bot finding" || arrival["simplifier_advice"] == nil {
 		t.Fatalf("issue arrival lacks its advice: %v", arrival)
-	}
-	if err := json.Unmarshal(arrivalContext(x.Tasks[upgradeTaskID(Feature)]), &arrival); err != nil {
-		t.Fatal(err)
-	}
-	if arrival["kind"] != "upgrade" || arrival["bot_update"].(map[string]any)["to"] != "0.1.2" {
-		t.Fatalf("upgrade arrival lacks its versions: %v", arrival)
 	}
 }
 
@@ -127,9 +120,8 @@ func TestMayorBotResultsApplyThroughTheMayorsPath(t *testing.T) {
 	store := testStore(t, false)
 	x := hallTown(t, store)
 	results := map[string]RunResult{
-		"issue:1":              {JudgedTask: "issue:1", Judgment: &Judgment{Decision: "admit", Reason: "A real defect with a bounded fix."}},
-		"pr:4":                 {JudgedTask: "pr:4", Judgment: &Judgment{Decision: "decline", Reason: "Rewrites the scheduler for one flag."}},
-		upgradeTaskID(Feature): {JudgedTask: upgradeTaskID(Feature), Judgment: &Judgment{Decision: "delay", Reason: "Let the release settle."}},
+		"issue:1": {JudgedTask: "issue:1", Judgment: &Judgment{Decision: "admit", Reason: "A real defect with a bounded fix."}},
+		"pr:4":    {JudgedTask: "pr:4", Judgment: &Judgment{Decision: "decline", Reason: "Rewrites the scheduler for one flag."}},
 	}
 	var seen []string
 	workers := workerFunc(func(_ context.Context, t *Town, r Role, _ func(Progress), _ *slog.Logger) (RunResult, error) {
@@ -144,20 +136,17 @@ func TestMayorBotResultsApplyThroughTheMayorsPath(t *testing.T) {
 		return results[task.ID], nil
 	})
 	sup := NewSupervisor(store, nil, workers)
-	for i := 0; i < 3; i++ {
-		sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall, nil)
+	for i := 0; i < 2; i++ {
+		sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall)
 	}
 	state := store.Snapshot()
 	town := state.Towns[x.ID]
-	issue, pr, upgrade := town.Tasks["issue:1"], town.Tasks["pr:4"], town.Tasks[upgradeTaskID(Feature)]
+	issue, pr := town.Tasks["issue:1"], town.Tasks["pr:4"]
 	if issue.Stage != "queued" || issue.House != Issue || issue.MayoralDecision != "admitted" || !strings.Contains(issue.Detail, "bounded fix") {
 		t.Fatalf("issue was not admitted with the bot's reason: %+v", issue)
 	}
 	if pr.Stage != "declined" || !strings.Contains(pr.Detail, "for one flag") {
 		t.Fatalf("PR was not declined with the bot's reason: %+v", pr)
-	}
-	if upgrade.Stage != "delayed" || upgrade.RetryAt.IsZero() {
-		t.Fatalf("bot update was not delayed: %+v", upgrade)
 	}
 	named := 0
 	for _, e := range state.Events {
@@ -165,8 +154,8 @@ func TestMayorBotResultsApplyThroughTheMayorsPath(t *testing.T) {
 			named++
 		}
 	}
-	if named != 3 || len(seen) != 3 {
-		t.Fatalf("expected three decisions attributed to Mayor Bot, got %d over %v", named, seen)
+	if named != 2 || len(seen) != 2 {
+		t.Fatalf("expected two decisions attributed to Mayor Bot, got %d over %v", named, seen)
 	}
 	if w := town.Workers[Hall]; w.Status != "waiting" || w.Error != "" {
 		t.Fatalf("the house did not return to waiting: %+v", w)
@@ -178,7 +167,6 @@ func TestMayorBotFailuresBackOffThenLeaveTheArrivalForThePerson(t *testing.T) {
 	x := hallTown(t, store)
 	update(t, store, func(st *State) {
 		delete(st.Towns[x.ID].Tasks, "pr:4")
-		delete(st.Towns[x.ID].Tasks, upgradeTaskID(Feature))
 	})
 	calls := 0
 	clock := time.Now()
@@ -191,7 +179,7 @@ func TestMayorBotFailuresBackOffThenLeaveTheArrivalForThePerson(t *testing.T) {
 	})
 	sup := NewSupervisor(store, nil, workers)
 	sup.now = func() time.Time { return clock }
-	sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall, nil)
+	sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall)
 	town := store.Snapshot().Towns[x.ID]
 	issue := town.Tasks["issue:1"]
 	if issue.MayoralDecision != "pending" || issue.Attempts != 1 || !issue.RetryAt.After(clock) || !strings.Contains(issue.Detail, "attempt 1 of 3") {
@@ -200,9 +188,9 @@ func TestMayorBotFailuresBackOffThenLeaveTheArrivalForThePerson(t *testing.T) {
 	if w := town.Workers[Hall]; w.Status != "waiting" || w.Error != "" {
 		t.Fatalf("one arrival's failure stopped the house: %+v", w)
 	}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 2; i++ {
 		clock = clock.Add(mayorRetryDelay + time.Second)
-		sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall, nil)
+		sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall)
 	}
 	issue = store.Snapshot().Towns[x.ID].Tasks["issue:1"]
 	if calls != mayorAttempts || issue.Attempts != mayorAttempts || !strings.Contains(issue.Detail, "left for the Mayor") {
@@ -238,7 +226,7 @@ func TestMayorBotBulletinsBuildAContiguousFeed(t *testing.T) {
 	})
 	sup := NewSupervisor(store, nil, workers)
 	sup.now = func() time.Time { return now }
-	sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall, nil)
+	sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall)
 	town := store.Snapshot().Towns[x.ID]
 	if len(town.Bulletins) != 1 || town.Bulletins[0].Title != "Exports you can trust" || !town.Bulletins[0].At.Equal(now) || town.Bulletins[0].Items[0].Kind != "fix" {
 		t.Fatalf("bulletin was not recorded: %+v", town.Bulletins)
@@ -255,7 +243,7 @@ func TestMayorBotBulletinsBuildAContiguousFeed(t *testing.T) {
 	if !found {
 		t.Fatal("the bulletin was not announced")
 	}
-	sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall, nil)
+	sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall)
 	if len(store.Snapshot().Towns[x.ID].Bulletins) != 1 || len(windows) != 1 {
 		t.Fatal("a second bulletin was written with nothing new merged")
 	}
@@ -264,7 +252,7 @@ func TestMayorBotBulletinsBuildAContiguousFeed(t *testing.T) {
 		return RunResult{Bulletin: &gap}, nil
 	}))
 	broken.now = func() time.Time { return now.Add(2 * time.Hour) }
-	broken.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall, nil)
+	broken.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall)
 	town = store.Snapshot().Towns[x.ID]
 	if len(town.Bulletins) != 1 || !strings.Contains(town.Workers[Hall].Error, "continue the feed") {
 		t.Fatalf("a bulletin with a gap was accepted: %d bulletins, error %q", len(town.Bulletins), town.Workers[Hall].Error)
@@ -284,7 +272,7 @@ func TestMayorWorkerProtocolCarriesTheArrivalAndDuty(t *testing.T) {
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	pendingAt(x, &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Complex request", Simplification: &Simplification{Mode: "suggest", Decision: "decline", Detail: "Adds a registry."}})
-	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Hall: fake}}
+	workers := &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Hall: fake}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result, err := workers.Run(context.Background(), x, Hall, func(Progress) {}, logger)
 	if err != nil {

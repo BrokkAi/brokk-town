@@ -1,0 +1,8 @@
+{
+  "remote": "https://github.com/OWNER/REPO.git",
+  "branch": "main",
+  "labels": ["bug"],
+  "draft": true,
+  "claim_timeout": "15m",
+  "agent": {"command": ["codex-acp"]}
+}

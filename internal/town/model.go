@@ -108,7 +108,6 @@ type Config struct {
 	HarnessDefinition *harness.Entry          `json:"harness_definition,omitempty"`
 	Agent             runner.AgentConfig      `json:"agent"`
 	BotAgents         map[Role]BotAgentConfig `json:"bot_agents,omitempty"`
-	BotVersions       map[Role]string         `json:"bot_versions,omitempty"`
 	Verify            []string                `json:"verify,omitempty"`
 	MergePolicy       string                  `json:"merge_policy"`
 	PollSeconds       int                     `json:"poll_seconds"`
@@ -116,7 +115,6 @@ type Config struct {
 	MaxCycles         int                     `json:"max_cycles"`
 	Funnels           FunnelConfigs           `json:"funnels,omitempty"`
 	SimplifierMode    string                  `json:"simplifier_mode,omitempty"`
-	AutoUpdateBots    bool                    `json:"auto_update_bots,omitempty"`
 	// BulletinSeconds is how often Mayor Bot writes the town bulletin when
 	// something merged since the last one. Zero uses DefaultBulletinSeconds.
 	BulletinSeconds int `json:"bulletin_seconds,omitempty"`
@@ -214,11 +212,6 @@ func (c Config) Validate() error {
 			return fmt.Errorf("%s agent: %w", role, err)
 		}
 	}
-	for role, version := range c.BotVersions {
-		if !ValidAgentRole(role) || !workerVersionPattern.MatchString(version) {
-			return fmt.Errorf("invalid pinned bot version")
-		}
-	}
 	if !ValidRepo(c.Repo) {
 		return fmt.Errorf("repository must be OWNER/REPO")
 	}
@@ -257,10 +250,8 @@ type PublicConfig struct {
 	Effort          string                        `json:"effort"`
 	HarnessVersion  string                        `json:"harness_version,omitempty"`
 	BotAgents       map[Role]PublicBotAgentConfig `json:"bot_agents"`
-	BotVersions     map[Role]string               `json:"bot_versions"`
 	Funnels         []PublicFunnelConfig          `json:"funnels,omitempty"`
 	SimplifierMode  string                        `json:"simplifier_mode"`
-	AutoUpdateBots  bool                          `json:"auto_update_bots"`
 	BulletinSeconds int                           `json:"bulletin_seconds"`
 	// ReviewCloseSeverity is the least severe finding that closes a pull
 	// request after its second review.
@@ -302,27 +293,22 @@ type WorkerRecovery struct {
 	Detail  string    `json:"detail"`
 }
 
-// WorkerRun is the durable handle of one external bot process. It is written
-// before the run request is sent and cleared when Town has consumed the outcome,
-// so a service that restarts can find the process again instead of losing it.
+// WorkerRun records dispatch identity before sending work. An interrupted
+// dispatch becomes a recovery hold; it is never used to adopt a process.
 type WorkerRun struct {
-	Bot        string    `json:"bot"`
-	Version    string    `json:"version"`
-	Command    string    `json:"command"`
-	Args       []string  `json:"args,omitempty"`
-	Hash       string    `json:"hash"`
-	PID        int       `json:"pid"`
-	Socket     string    `json:"socket"`
-	Output     string    `json:"output"`
-	Detachable bool      `json:"detachable"`
-	Seq        uint64    `json:"seq"`
-	Started    time.Time `json:"started"`
-	Deadline   time.Time `json:"deadline"`
-	Issue      int       `json:"issue,omitempty"`
-	PR         int       `json:"pr,omitempty"`
-	BaseSHA    string    `json:"base_sha,omitempty"`
-	HeadSHA    string    `json:"head_sha,omitempty"`
-	Mode       string    `json:"mode,omitempty"`
+	Bot      string    `json:"bot"`
+	Version  string    `json:"version"`
+	Command  string    `json:"command"`
+	Hash     string    `json:"hash"`
+	PID      int       `json:"pid"`
+	Socket   string    `json:"socket"`
+	Started  time.Time `json:"started"`
+	Deadline time.Time `json:"deadline"`
+	Issue    int       `json:"issue,omitempty"`
+	PR       int       `json:"pr,omitempty"`
+	BaseSHA  string    `json:"base_sha,omitempty"`
+	HeadSHA  string    `json:"head_sha,omitempty"`
+	Mode     string    `json:"mode,omitempty"`
 }
 
 func (r *WorkerRun) Validate(role Role) error {
@@ -447,7 +433,6 @@ type Task struct {
 	RetryAt         time.Time         `json:"retry_at,omitempty"`
 	IssueJob        *IssueJob         `json:"issue_job,omitempty"`
 	Source          *WorkItem         `json:"source,omitempty"`
-	Upgrade         *BotUpgrade       `json:"upgrade,omitempty"`
 	Simplification  *Simplification   `json:"simplification,omitempty"`
 	// Severities maps evidence IDs to the reviewer's P1, P2 or P3 rating.
 	Severities map[string]string `json:"severities,omitempty"`
@@ -460,15 +445,6 @@ type Task struct {
 	// Retired marks an external pull request whose review attempts on the
 	// current revision were exhausted; the Mayor decides whether to try again.
 	Retired bool `json:"retired,omitempty"`
-}
-
-// BotUpgrade records one published stable bot version that is newer than the
-// town's pin. Town applies it only after the Mayor approves it, or immediately
-// when the town has opted into automatic bot updates.
-type BotUpgrade struct {
-	Role Role   `json:"role"`
-	From string `json:"from"`
-	To   string `json:"to"`
 }
 
 // IssueJob is the public scheduling outcome from issue-bot durable state.
@@ -619,7 +595,6 @@ type State struct {
 	Demo          bool             `json:"demo"`
 	Towns         map[string]*Town `json:"towns"`
 	Events        []Event          `json:"events"`
-	Update        *UpdateNotice    `json:"update,omitempty"`
 }
 
 func NewState(demo bool) State {
@@ -734,16 +709,5 @@ func (c Config) Public() PublicConfig {
 	for _, funnel := range c.Funnels {
 		funnels = append(funnels, funnel.Public())
 	}
-	versions := make(map[Role]string, len(AgentRoles))
-	for _, role := range AgentRoles {
-		versions[role] = c.BotVersion(role)
-	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, BotVersions: versions, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), AutoUpdateBots: c.AutoUpdateBots, BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault()}
-}
-
-func (c Config) BotVersion(role Role) string {
-	if version := c.BotVersions[role]; version != "" {
-		return version
-	}
-	return workerDefaultVersions[role]
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault()}
 }

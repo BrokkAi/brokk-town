@@ -1,10 +1,11 @@
 # Brokk Town
 
-Brokk Town is a local Go service with browser, TUI and CLI clients. Keep work and
-network I/O off input/render loops. Both interfaces consume the same state and
+Brokk Town is a local Go service with browser and CLI clients. Keep work and
+network I/O off input/render loops. Both clients consume the same state and
 commands. Animation follows committed events; it never triggers GitHub writes.
 
-Use the released Brokk bot libraries and acp-go. Keep private worktrees, bounded
+Keep each bot an independent project. Communicate with bot executables over the
+worker protocol; never import bot Go packages. Use released acp-go dependencies. Keep private worktrees, bounded
 subprocess output, cancellation, exact revision checks, and durable write intents.
 Never infer a clean review from zero new comments. Preserve uncertain outcomes.
 Do not modify contributor branches or bypass GitHub checks and approvals.

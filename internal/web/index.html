@@ -23,7 +23,6 @@
       </div>
       <span id="mode" class="badge" hidden>DEMO</span>
       <span id="town-version" class="town-version" role="status"></span>
-      <button id="update-notice" class="update-notice" type="button" hidden></button>
       <div id="view-switcher" class="view-switcher" role="tablist" aria-label="View">
         <button type="button" data-view="town" role="tab" aria-selected="true">Town</button>
         <button type="button" data-view="board" role="tab" aria-selected="false" title="&quot;No Fun Dave&quot; mode — Board">Board</button>
@@ -234,14 +233,6 @@
           </select>
           <p class="muted">Every pull request gets one fix round. If the second review still finds work at or above this severity, Town closes the pull request and starts the issue over from the current branch. Anything below it is filed as a follow-up issue and the pull request merges.</p>
         </section>
-        <section class="settings-section" aria-labelledby="bot-updates-heading">
-          <div class="eyebrow" id="bot-updates-heading">BOT UPDATES</div>
-          <label class="check-row" for="settings-auto-update-bots">
-            <input id="settings-auto-update-bots" type="checkbox" />
-            Update bots automatically when npm publishes a stable release
-          </label>
-          <p class="muted">Off by default. Town checks npm every few hours; a newer stable bot version waits at Town Hall where you can approve it, delay it a day, or decline it. Turning this on pins new releases as they appear, including any offer already waiting.</p>
-        </section>
         <div class="agent-profile">
           <label for="agent-role">Configure agent for</label>
           <select id="agent-role">
@@ -262,15 +253,6 @@
             </button>
           </div>
         </div>
-        <section id="bot-version-panel" class="settings-section" hidden>
-          <div class="eyebrow">BOT SOFTWARE</div>
-          <p id="bot-version-status" class="muted" role="status"></p>
-          <div class="choice-actions">
-            <button id="check-bot-version" type="button">Check for bot update</button>
-            <button id="use-bot-version" type="button" class="primary" hidden></button>
-          </div>
-          <p class="muted">Bot versions stay pinned. A saved change takes effect on this bot's next run.</p>
-        </section>
         <label for="harness-input">Coding harness</label>
         <select id="harness-input">
           <option value="custom">Custom ACP command</option>

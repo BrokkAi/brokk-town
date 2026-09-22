@@ -13,34 +13,22 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+	bundle "github.com/BrokkAi/brokk-town"
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
 const workerProtocolVersion = 1
 
-// workerDetachCapability marks a worker that keeps running when its run stream
-// loses the Town client, buffers every event, and serves GET /v1/attach so a
-// restarted service can resume where the previous one stopped reading.
-const workerDetachCapability = "detach"
-
 // workerRequeueCapability marks an issue worker that can start an issue over
 // after Town closed its pull request.
 const workerRequeueCapability = "requeue"
 
-var workerPackageNames = map[Role]string{
-	Bug: "@brokkai/bug-bot", Feature: "@brokkai/feature-bot", Issue: "@brokkai/issue-bot", Review: "@brokkai/review-bot", Release: "@brokkai/release-bot", Simplifier: "@brokkai/simplifier-bot", Repo: "@brokkai/repo-bot", Hall: "@brokkai/mayor-bot",
-}
-var workerDefaultVersions = map[Role]string{
-	Bug: "0.3.5", Feature: "0.1.2", Issue: "0.5.4", Review: "0.2.4", Release: "0.6.1", Simplifier: "0.1.1", Repo: "0.1.0", Hall: "0.1.0",
-}
 var workerBotNames = map[Role]string{
 	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot", Repo: "repo-bot", Hall: "mayor-bot",
 }
@@ -56,44 +44,9 @@ var workerCapabilities = map[Role][]string{
 }
 var workerVersionPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 
-// errStopWorker is the cancellation cause for an operator stop, retry, or town
-// deletion. Only that cause ends the bot process; a plain cancellation means the
-// service itself is stopping and the process must be left for the next service.
 var errStopWorker = errors.New("worker stop requested")
 
-// errWorkerDetached reports that the bot process was left running with its
-// durable handle intact because the service is shutting down.
-var errWorkerDetached = errors.New("worker left running for the next town service")
-
-// errWorkerNeverStarted means an adopted worker was still idle: the previous
-// service stopped between recording the handle and submitting the run. Nothing
-// happened, so it wraps context.Canceled and the house is simply rescheduled.
-var errWorkerNeverStarted = fmt.Errorf("%w: the worker never received its run request", context.Canceled)
-
-// WorkerOutcomeUnknownError means a bot ran across a service restart without a
-// way to report its result. The work may or may not have landed on GitHub.
-type WorkerOutcomeUnknownError struct {
-	Bot, Version, Reason string
-	processRunning       bool
-}
-
-func (e *WorkerOutcomeUnknownError) Error() string {
-	return fmt.Sprintf("%s %s %s; its outcome is uncertain. Repo-bot reconciles GitHub state; retry if the work did not land.", e.Bot, e.Version, e.Reason)
-}
-
-func stopRequested(ctx context.Context) bool {
-	return errors.Is(context.Cause(ctx), errStopWorker)
-}
-
-// detachRequested is true only for a plain cancellation of a live dispatch,
-// which is how service shutdown reaches workers. Stops and deadlines kill.
-func detachRequested(ctx context.Context) bool {
-	if ctx.Err() == nil {
-		return false
-	}
-	cause := context.Cause(ctx)
-	return errors.Is(cause, context.Canceled) && !errors.Is(cause, errStopWorker)
-}
+func stopRequested(ctx context.Context) bool { return errors.Is(context.Cause(ctx), errStopWorker) }
 
 type externalBot struct {
 	role    Role
@@ -176,15 +129,17 @@ type workerReviewResult struct {
 }
 
 type workerResult struct {
-	Issue          *workerIssueResult    `json:"issue,omitempty"`
-	Review         *workerReviewResult   `json:"review,omitempty"`
-	Simplification *workerSimplification `json:"simplification,omitempty"`
-	Judgment       *Judgment             `json:"judgment,omitempty"`
-	Bulletin       *Bulletin             `json:"bulletin,omitempty"`
-	Inventory      *workerInventory      `json:"inventory,omitempty"`
-	Health         *BranchHealth         `json:"health,omitempty"`
-	Usage          *OutcomeUsage         `json:"usage,omitempty"`
-	CostUSD        *float64              `json:"cost_usd,omitempty"`
+	terminal       bool
+	Jobs           map[int]*issueJobSummary `json:"jobs,omitempty"`
+	Issue          *workerIssueResult       `json:"issue,omitempty"`
+	Review         *workerReviewResult      `json:"review,omitempty"`
+	Simplification *workerSimplification    `json:"simplification,omitempty"`
+	Judgment       *Judgment                `json:"judgment,omitempty"`
+	Bulletin       *Bulletin                `json:"bulletin,omitempty"`
+	Inventory      *workerInventory         `json:"inventory,omitempty"`
+	Health         *BranchHealth            `json:"health,omitempty"`
+	Usage          *OutcomeUsage            `json:"usage,omitempty"`
+	CostUSD        *float64                 `json:"cost_usd,omitempty"`
 	// retried records an accepted POST /v1/retry before this run.
 	retried bool
 }
@@ -226,23 +181,23 @@ type workerEvent struct {
 }
 
 func (b *BotWorkers) externalBot(ctx context.Context, cfg Config, role Role) (externalBot, error) {
-	packageName, ok := workerPackageNames[role]
+	spec, ok := bundle.Bots()[string(role)]
 	if !ok {
 		return externalBot{}, fmt.Errorf("unsupported worker %s", role)
 	}
-	packageSpec := packageName + "@" + cfg.BotVersion(role)
-	name := "npx"
-	args := []string{"--yes", packageSpec}
-	if b.BotCommands != nil {
-		if override, ok := b.BotCommands[role]; ok && strings.TrimSpace(override) != "" {
-			name = strings.TrimSpace(override)
-			args = nil
-		}
-	}
-	path, err := exec.LookPath(name)
+	exe, err := os.Executable()
 	if err != nil {
-		return externalBot{}, fmt.Errorf("start %s bot: %q is not installed on the service PATH", role, name)
+		return externalBot{}, err
 	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		return externalBot{}, err
+	}
+	path := filepath.Join(filepath.Dir(exe), spec.Command)
+	if b.botCommands[role] != "" {
+		path = b.botCommands[role]
+	}
+	var args []string
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return externalBot{}, fmt.Errorf("resolve %s bot: %w", role, err)
@@ -262,6 +217,9 @@ func (b *BotWorkers) externalBot(ctx context.Context, cfg Config, role Role) (ex
 	if !workerVersionPattern.MatchString(version) {
 		return externalBot{}, fmt.Errorf("%s bot returned an invalid version %q", role, truncate(version, 128))
 	}
+	if b.botCommands[role] == "" && strings.TrimPrefix(version, "v") != spec.Version {
+		return externalBot{}, fmt.Errorf("%s bundle version mismatch: got %s, expected %s", role, version, spec.Version)
+	}
 	bot.version = version
 	return bot, bot.unchanged()
 }
@@ -279,20 +237,6 @@ func (b externalBot) unchanged() error {
 		return fmt.Errorf("%s bot executable changed during dispatch", b.role)
 	}
 	return nil
-}
-
-func (b externalBot) verify(ctx context.Context) error {
-	if err := b.unchanged(); err != nil {
-		return err
-	}
-	version, err := osrun.Run(ctx, "", nil, append([]string{b.command}, append(b.args, "version")...)...)
-	if err != nil {
-		return fmt.Errorf("recheck %s bot version: %w", b.role, err)
-	}
-	if version != b.version {
-		return fmt.Errorf("%s bot version changed during dispatch: started %s, finished %s", b.role, b.version, version)
-	}
-	return b.unchanged()
 }
 
 func fileHash(path string) (string, error) {
@@ -319,233 +263,6 @@ func workerClient(socketPath string) *http.Client {
 		},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
-}
-
-// exitWait reports whether the worker process ended within timeout.
-type exitWait func(timeout time.Duration) (exited bool, err error)
-
-func childExit(waitDone <-chan error) exitWait {
-	return func(timeout time.Duration) (bool, error) {
-		select {
-		case err := <-waitDone:
-			return true, err
-		case <-time.After(timeout):
-			return false, nil
-		}
-	}
-}
-
-// orphanExit polls a process this service did not start. The socket handshake
-// has already proven the process identity, so the PID is only a liveness signal.
-func orphanExit(pid int) exitWait {
-	return func(timeout time.Duration) (bool, error) {
-		deadline := time.Now().Add(timeout)
-		for osrun.Alive(pid) {
-			if !time.Now().Before(deadline) {
-				return false, nil
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		return true, nil
-	}
-}
-
-// runWorker starts one detached bot process, records its durable handle through
-// started before any work is requested, and streams the run. Service shutdown
-// leaves the process running and returns errWorkerDetached; an operator stop or
-// the dispatch deadline kills it.
-func runWorker(ctx context.Context, bot externalBot, request workerRequest, retry bool, deadline time.Time, observe func(Progress), started func(WorkerRun) error) (workerResult, error) {
-	socketDir, err := os.MkdirTemp("", "bt-worker-")
-	if err != nil {
-		return workerResult{}, err
-	}
-	cleanup := func() { _ = os.RemoveAll(socketDir) }
-	socketPath := filepath.Join(socketDir, "worker.sock")
-	outputPath := filepath.Join(socketDir, "worker.log")
-	output, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		cleanup()
-		return workerResult{}, err
-	}
-	command := append([]string{bot.command}, bot.args...)
-	command = append(command, "worker", "--socket", socketPath)
-	cmd := osrun.StartDetached("", command, nil, output)
-	if err = cmd.Start(); err != nil {
-		output.Close()
-		cleanup()
-		return workerResult{}, fmt.Errorf("start %s bot worker: %w", bot.role, err)
-	}
-	output.Close()
-	pid := cmd.Process.Pid
-	waitDone := make(chan error, 1)
-	go func() { waitDone <- cmd.Wait() }()
-	exit := childExit(waitDone)
-	abort := func() {
-		_ = osrun.KillGroup(pid)
-		_, _ = exit(5 * time.Second)
-		cleanup()
-	}
-	client := workerClient(socketPath)
-	info, err := getWorkerInitialize(ctx, client, 10*time.Second)
-	if err != nil {
-		abort()
-		return workerResult{}, errors.Join(err, workerDiagnostics(bot, outputPath))
-	}
-	if err = validateWorkerInitialize(bot, info); err != nil {
-		abort()
-		return workerResult{}, err
-	}
-	if request.SupersededPR > 0 && !info.has(workerRequeueCapability) {
-		abort()
-		return workerResult{}, fmt.Errorf("issue-bot %s cannot start issue #%d over after PR #%d was closed; it does not advertise %q, upgrade the bot", bot.version, request.Issue, request.SupersededPR, workerRequeueCapability)
-	}
-	run := WorkerRun{
-		Bot: info.Bot, Version: bot.version, Command: bot.command, Args: bot.args, Hash: bot.hash,
-		PID: pid, Socket: socketPath, Output: outputPath, Detachable: info.has(workerDetachCapability),
-		Started: time.Now(), Deadline: deadline,
-		Issue: request.Issue, PR: request.PR, BaseSHA: request.BaseSHA, HeadSHA: request.HeadSHA,
-		Mode: request.Mode,
-	}
-	if started != nil {
-		if err = started(run); err != nil {
-			abort()
-			return workerResult{}, fmt.Errorf("record %s worker run: %w", bot.role, err)
-		}
-	}
-	// Nothing has been asked of the bot yet, so a cancellation here has nothing
-	// to preserve: end the process rather than leaving an idle one behind.
-	if ctx.Err() != nil {
-		abort()
-		return workerResult{}, ctx.Err()
-	}
-	retried := false
-	if retry {
-		if !info.has("retry") {
-			abort()
-			return workerResult{}, fmt.Errorf("%s worker %s does not advertise %q; pin a release that supports retry", bot.role, info.Version, "retry")
-		}
-		observe(Progress{Phase: "starting", Task: "Resetting the " + string(bot.role) + " bot's attempt budget"})
-		if err = postWorkerRetry(ctx, client, request); err != nil {
-			abort()
-			return workerResult{}, err
-		}
-		retried = true
-	}
-	result, runErr := postWorkerRun(ctx, client, request, observe)
-	result.retried = retried
-	if runErr != nil && ctx.Err() != nil {
-		if detachRequested(ctx) {
-			return workerResult{retried: retried}, errWorkerDetached
-		}
-		abort()
-		return result, runErr
-	}
-	return finishWorker(bot, client, pid, exit, cleanup, outputPath, result, runErr)
-}
-
-// adoptWorker reconnects to a bot process recorded by an earlier service. A
-// detach-capable worker replays its buffered events; any other worker is asked
-// to shut down when it can, and its outcome is reported as uncertain because
-// nothing observed it. Identity is proven over the socket before any kill.
-func adoptWorker(ctx context.Context, role Role, run WorkerRun, observe func(Progress)) (workerResult, error) {
-	bot := externalBot{role: role, command: run.Command, args: run.Args, version: run.Version, hash: run.Hash}
-	cleanup := func() { _ = os.RemoveAll(filepath.Dir(run.Socket)) }
-	client := workerClient(run.Socket)
-	exit := orphanExit(run.PID)
-	kill := func() {
-		_ = osrun.KillGroup(run.PID)
-		_, _ = exit(5 * time.Second)
-		cleanup()
-	}
-	if !run.Deadline.IsZero() {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, run.Deadline)
-		defer cancel()
-	}
-	// Adoption must authenticate the recorded socket before it can safely kill
-	// the process. Give only that initialization probe its own bounded lifetime
-	// so a stop arriving while the request is in flight cannot interrupt proof
-	// of identity. All later work continues to observe the original stop cause.
-	probe, cancelProbe := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	info, err := getWorkerInitialize(probe, client, 2*time.Second)
-	cancelProbe()
-	if err != nil {
-		// A live PID may still own this socket. Keep its endpoint available for
-		// a later adoption attempt rather than unlinking the only safe way to
-		// authenticate it before a kill.
-		reason := "was running when the service restarted and could not be authenticated when it came back"
-		alive := osrun.Alive(run.PID)
-		if !alive {
-			cleanup()
-			reason = "was running when the service restarted and had already exited when it came back"
-		}
-		return workerResult{}, &WorkerOutcomeUnknownError{Bot: run.Bot, Version: run.Version, Reason: reason, processRunning: alive}
-	}
-	if err = validateWorkerInitialize(bot, info); err != nil {
-		if stopRequested(ctx) && osrun.Alive(run.PID) {
-			return workerResult{}, &WorkerOutcomeUnknownError{
-				Bot: run.Bot, Version: run.Version, processRunning: true,
-				Reason: fmt.Sprintf("was still running when Town tried to stop it but its identity could not be authenticated: %v", err),
-			}
-		}
-		cleanup()
-		return workerResult{}, fmt.Errorf("adopt %s worker: %w", role, err)
-	}
-	if stopRequested(ctx) {
-		kill()
-		return workerResult{}, context.Canceled
-	}
-	if !run.Detachable {
-		observe(Progress{Phase: "waiting", Task: fmt.Sprintf("%s %s cannot report across a service restart; letting it finish", run.Bot, run.Version)})
-		shutdownCtx, cancelShutdown := context.WithTimeout(ctx, 15*time.Second)
-		_ = shutdownWorker(shutdownCtx, client)
-		cancelShutdown()
-		for osrun.Alive(run.PID) {
-			select {
-			case <-ctx.Done():
-				if detachRequested(ctx) {
-					return workerResult{}, errWorkerDetached
-				}
-				kill()
-				return workerResult{}, ctx.Err()
-			case <-time.After(time.Second):
-			}
-		}
-		cleanup()
-		return workerResult{}, &WorkerOutcomeUnknownError{Bot: run.Bot, Version: run.Version, Reason: "finished a run that started before the service restarted"}
-	}
-	result, runErr := attachWorker(ctx, client, run.Seq, observe)
-	if runErr != nil && ctx.Err() != nil {
-		if detachRequested(ctx) {
-			return workerResult{}, errWorkerDetached
-		}
-		kill()
-		return result, runErr
-	}
-	return finishWorker(bot, client, run.PID, exit, cleanup, run.Output, result, runErr)
-}
-
-// finishWorker runs the graceful end of a completed dispatch on its own bounded
-// context: shutdown request, process exit, executable recheck, and cleanup.
-func finishWorker(bot externalBot, client *http.Client, pid int, exit exitWait, cleanup func(), outputPath string, result workerResult, runErr error) (workerResult, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := shutdownWorker(ctx, client); err != nil {
-		runErr = errors.Join(runErr, fmt.Errorf("stop worker service: %w", err))
-	}
-	exited, processErr := exit(5 * time.Second)
-	if !exited {
-		_ = osrun.KillGroup(pid)
-		_, processErr = exit(5 * time.Second)
-		runErr = errors.Join(runErr, fmt.Errorf("worker service did not stop cleanly: %w", processErr), workerDiagnostics(bot, outputPath))
-	} else if processErr != nil {
-		runErr = errors.Join(runErr, fmt.Errorf("worker service exited: %w", processErr), workerDiagnostics(bot, outputPath))
-	}
-	if err := bot.verify(ctx); err != nil {
-		runErr = errors.Join(runErr, err)
-	}
-	cleanup()
-	return result, runErr
 }
 
 func postWorkerRetry(ctx context.Context, client *http.Client, request workerRequest) error {
@@ -660,30 +377,6 @@ func postWorkerRun(ctx context.Context, client *http.Client, request workerReque
 	return consumeWorkerEvents(response.Body, 0, observe)
 }
 
-// attachWorker resumes a detach-capable worker's event stream after the last
-// sequence number Town durably observed. The worker replays later events and
-// keeps streaming until its terminal event.
-func attachWorker(ctx context.Context, client *http.Client, after uint64, observe func(Progress)) (workerResult, error) {
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://worker/v1/attach?after="+strconv.FormatUint(after, 10), nil)
-	if err != nil {
-		return workerResult{}, err
-	}
-	httpRequest.Header.Set("Accept", "application/x-ndjson")
-	response, err := client.Do(httpRequest)
-	if err != nil {
-		return workerResult{}, fmt.Errorf("attach to worker run: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusNotFound {
-		return workerResult{}, errWorkerNeverStarted
-	}
-	if response.StatusCode != http.StatusOK {
-		detail, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
-		return workerResult{}, fmt.Errorf("worker attach returned HTTP %d: %s", response.StatusCode, truncate(string(detail), 4096))
-	}
-	return consumeWorkerEvents(response.Body, after, observe)
-}
-
 func consumeWorkerEvents(body io.Reader, after uint64, observe func(Progress)) (workerResult, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64<<10), 32<<20)
@@ -736,15 +429,8 @@ func consumeWorkerEvents(body io.Reader, after uint64, observe func(Progress)) (
 	if !seenFinal {
 		return result, errors.New("worker event stream ended without a final event")
 	}
+	result.terminal = seenFinal && !errors.Is(runErr, context.Canceled)
 	return result, runErr
-}
-
-func workerDiagnostics(bot externalBot, outputPath string) error {
-	out, _ := osrun.TailFile(outputPath, 64<<10)
-	if strings.TrimSpace(out) == "" {
-		return nil
-	}
-	return fmt.Errorf("%s bot %s diagnostics:\n%s", bot.role, bot.version, truncate(out, 8192))
 }
 
 func truncate(value string, limit int) string {

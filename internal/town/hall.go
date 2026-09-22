@@ -114,9 +114,6 @@ func arrivalContext(task *Task) json.RawMessage {
 	if task.Audit != nil {
 		arrival["town_review"] = map[string]any{"verdict": task.Audit.Verdict, "summary": task.Audit.Summary, "findings": task.Audit.Findings}
 	}
-	if task.Upgrade != nil {
-		arrival["bot_update"] = map[string]any{"bot": botDisplayName(task.Upgrade.Role), "from": task.Upgrade.From, "to": task.Upgrade.To}
-	}
 	raw, _ := json.Marshal(arrival)
 	return raw
 }
@@ -154,9 +151,6 @@ func applyJudgment(st *State, t *Town, taskID string, verdict *Judgment, runErr 
 	}
 	if runErr == nil && verdict == nil {
 		runErr = errors.New("Mayor Bot returned no decision")
-	}
-	if runErr == nil && verdict.Decision == "delay" && task.Kind != "upgrade" {
-		runErr = errors.New("delay applies to bot update decisions only")
 	}
 	if runErr != nil {
 		task.Attempts++
@@ -205,10 +199,10 @@ func (s *State) decideTask(t *Town, task *Task, action, by string, now time.Time
 	}
 	task.Attempts = 0
 	task.RetryAt = time.Time{}
-	if task.Kind == "upgrade" || action == "delay" {
-		return s.decideBotUpgrade(t, task, action, by, now)
+	subject := by
+	if subject == "you" {
+		subject = "You"
 	}
-	subject := subject(by)
 	switch action {
 	case "decline":
 		task.MayoralDecision = "declined"

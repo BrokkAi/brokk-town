@@ -38,12 +38,12 @@ func TestReleaseRetryControlIsConsumedByTheNextRun(t *testing.T) {
 		t.Fatalf("retry request did not schedule the release house: %+v", w)
 	}
 	// A run that could not reach the worker API keeps the request pending.
-	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Release, nil)
+	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Release)
 	if w = s.Snapshot().Towns[x.ID].Workers[Release]; !w.RetryRequested || worker.runs != 1 {
 		t.Fatalf("request consumed without the worker accepting it: %+v runs=%d", w, worker.runs)
 	}
 	worker.retried = true
-	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Release, nil)
+	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Release)
 	if w = s.Snapshot().Towns[x.ID].Workers[Release]; w.RetryRequested || worker.runs != 2 {
 		t.Fatalf("accepted retry was not consumed: %+v runs=%d", w, worker.runs)
 	}

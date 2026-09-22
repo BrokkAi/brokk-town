@@ -65,7 +65,6 @@ function fixture(extraAPI) {
     config: {
       repo: "acme/project", harness: "codex-acp", model: "default-model",
       effort: "medium", harness_version: "1.0", bot_agents: {}, merge_policy: "bot", simplifier_mode: "suggest",
-      bot_versions: { bug: "0.3.1", feature: "0.1.1", issue: "0.5.2", review: "0.2.1", release: "0.5.1", simplifier: "0.1.0", repo: "0.1.0" },
     },
   };
   const overrides = {
@@ -84,11 +83,9 @@ function fixture(extraAPI) {
     if (url === "/api/harnesses") return catalog;
     if (url === "/api/settings") {
       if (extraAPI) await extraAPI(url, body, signal);
-      const { role, agent, merge_policy, simplifier_mode, auto_update_bots, bot_version } = body;
+      const { role, agent, merge_policy, simplifier_mode } = body;
       if (merge_policy) town.config.merge_policy = merge_policy;
       if (simplifier_mode) town.config.simplifier_mode = simplifier_mode;
-      if (auto_update_bots !== undefined) town.config.auto_update_bots = auto_update_bots;
-      if (bot_version) town.config.bot_versions[role] = bot_version;
       if (agent.inherit) delete overrides[role];
       else {
         const target = role ? (overrides[role] ||= {}) : town.config;
@@ -143,8 +140,6 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
     merge_policy: "bot",
     simplifier_mode: "suggest",
     review_close_severity: "P2",
-    auto_update_bots: false,
-    bot_version: "0.2.1",
   });
   assert.equal(elements["settings-dialog"].open, true);
   assert.match(elements["settings-success"].textContent, /Review Bot saved/);
@@ -157,20 +152,6 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
   assert.equal(app.saves()[1].body.agent.version, "1.0");
 });
 
-test("bot updates are explicit and save a new exact pin", async () => {
-  const app = fixture((url) => {
-    if (url === "/api/bot-versions") return { issue: "0.6.0" };
-  });
-  await open("issue");
-  assert.match(elements["bot-version-status"].textContent, /0\.5\.2/);
-  await elements["check-bot-version"].onclick();
-  assert.match(elements["bot-version-status"].textContent, /latest stable is 0\.6\.0/);
-  elements["use-bot-version"].onclick();
-  assert.match(elements["bot-version-status"].textContent, /will be pinned to 0\.6\.0/);
-  await save();
-  assert.equal(app.saves()[0].body.bot_version, "0.6.0");
-  assert.equal(app.town.config.bot_versions.issue, "0.6.0");
-});
 
 test("Repo Bot exposes and saves its repair agent profile", async () => {
   const app = fixture();
@@ -185,17 +166,6 @@ test("Repo Bot exposes and saves its repair agent profile", async () => {
   assert.equal(app.saves()[0].body.agent.effort, "high");
 });
 
-test("automatic bot updates are off until the Mayor saves the town setting", async () => {
-  const app = fixture();
-  await open();
-  assert.equal(elements["settings-auto-update-bots"].checked, false);
-  elements["settings-auto-update-bots"].checked = true;
-  await save();
-  assert.equal(app.saves()[0].body.auto_update_bots, true);
-  assert.equal(app.town.config.auto_update_bots, true);
-  await open();
-  assert.equal(elements["settings-auto-update-bots"].checked, true, "the saved setting is shown on reopen");
-});
 
 test("restoring defaults waits for save and follows subsequent town default changes", async () => {
   const app = fixture();

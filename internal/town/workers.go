@@ -12,14 +12,17 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	issuebot "github.com/BrokkAi/issue-bot"
 )
 
 type BotWorkers struct {
 	Root         string
 	Store        *Store
 	GitHub       GitHub
-	BotCommands  map[Role]string
+	botCommands  map[Role]string
+	poolMu       sync.Mutex
+	pool         map[string]*workerProcess
+	poolContext  context.Context
+	jobsQuery    func(*Town, string, int) (map[int]*issueJobSummary, error)
 	remoteURL    func(string) string
 	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
 	// confirmWait and confirmInterval bound how long a repair publish waits
@@ -28,36 +31,6 @@ type BotWorkers struct {
 	confirmWait     time.Duration
 	confirmInterval time.Duration
 	issueMu         sync.Mutex // Serialize durable issue-job reads and imports.
-}
-
-func (b *BotWorkers) CanRetryIssue(t *Town, issue int) (bool, error) {
-	cfg := b.issueRetryConfig(t, issue)
-	state, err := issuebot.ReadState(cfg)
-	if err != nil {
-		return false, err
-	}
-	if state == nil {
-		return false, nil
-	}
-	job := state.Jobs[issue]
-	return job != nil && (job.Status == "blocked" || job.Status == "pending"), nil
-}
-
-func (b *BotWorkers) RetryIssue(t *Town, issue int) error {
-	return issuebot.Retry(b.issueRetryConfig(t, issue))
-}
-
-func (b *BotWorkers) issueRetryConfig(t *Town, issue int) issuebot.Config {
-	dir, state := Workspace(b.Root, t.ID, Issue)
-	cfg := issuebot.DefaultConfig()
-	cfg.Remote = b.remote(t.Config.Repo)
-	cfg.Branch = t.Branch()
-	cfg.Directory = dir
-	cfg.StateDirectory = state
-	cfg.GitHub.Repo = t.Config.Repo
-	cfg.GitHub.Host = "github.com"
-	cfg.Issue = issue
-	return cfg
 }
 
 // ReviewAttemptError means the reviewer did not produce evidence Town can use.
@@ -84,12 +57,10 @@ func emptyRevision(value string) string {
 	return value
 }
 
-// workerDeadline bounds one external bot dispatch, including time spent
-// reconnecting to it after a service restart.
+// workerDeadline bounds one external bot job.
 const workerDeadline = 2 * time.Hour
 
-// dispatch identifies what one bot run was asked to do. Adoption rebuilds it
-// from the durable run handle so results are applied to the same task.
+// dispatch identifies the exact work requested of one bot.
 type dispatch struct {
 	issue, pr  int
 	base, head string
@@ -278,35 +249,8 @@ func enforceManualReleasePolicy(t *Town) bool {
 	return wasActive
 }
 
-// Adopt resumes a bot process that an earlier service left running. The run
-// handle names the process, its socket, and the exact task it was given.
-func (b *BotWorkers) Adopt(ctx context.Context, t *Town, r Role, run WorkerRun, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
-	if r == Issue {
-		defer func() { err = errors.Join(err, b.SyncIssues(t)) }()
-	}
-	t = clone(t)
-	d := dispatch{issue: run.Issue, pr: run.PR, base: run.BaseSHA, head: run.HeadSHA}
-	if r == Simplifier || r == Hall {
-		d.mode = run.Mode
-	}
-	if r == Hall && run.Mode == "judge" {
-		d.judged = workerRunTask(run)
-		if d.judged == "" {
-			// A bot update judgment names no issue or pull request; the
-			// pending upgrade offer is the only arrival it can concern.
-			for _, task := range t.Tasks {
-				if task.Kind == "upgrade" && task.MayoralDecision == "pending" {
-					d.judged = task.ID
-				}
-			}
-		}
-	}
-	workerResult, err := adoptWorker(ctx, r, run, observe)
-	return b.complete(ctx, t, r, d, workerResult, err, observe, log)
-}
-
 // complete turns a raw worker outcome into Town's result for one dispatch. It
-// is shared by fresh runs and adopted runs so both apply identical rules.
+// applies results only to the dispatched task.
 func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, workerResult workerResult, err error, observe func(Progress), log *slog.Logger) (RunResult, error) {
 	result := RunResult{Usage: workerResult.Usage, CostUSD: workerResult.CostUSD}
 	if r == Release {
@@ -387,11 +331,6 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 			return result, err
 		}
 		return result, validateWorkerResult(workerResult, r)
-	case Repo:
-		// Adoption reports only that the run ended. An inventory observed by a
-		// service that is gone is not applied behind the scheduler's back; the
-		// next scheduled observation is.
-		return result, err
 	case Review:
 		result.PR = d.pr
 		if err != nil {
@@ -453,8 +392,8 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		}
 	}
 	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
-	// The handle is committed before the run request so a service that stops
-	// at any later point can find the process again.
+	// Record dispatch provenance before sending work so an interrupted write
+	// remains uncertain until it is reconciled.
 	started := func(run WorkerRun) error {
 		if b.Store == nil {
 			return nil
@@ -468,7 +407,7 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 			return nil
 		})
 	}
-	return runWorker(ctx, bot, request, retry, deadline, observe, started)
+	return b.runPersistent(ctx, t.ID, bot, request, retry, deadline, observe, started)
 }
 
 func validateWorkerResult(result workerResult, role Role) error {

@@ -102,7 +102,7 @@ func TestSupervisorAppliesSimplifierResult(t *testing.T) {
 		return RunResult{Issue: 31, Simplification: &Simplification{Mode: "auto", Decision: "admit", Detail: "Focused and useful."}}, nil
 	})
 	supervisor := NewSupervisor(store, nil, workers)
-	supervisor.execute(context.Background(), store.Snapshot().Towns[town.ID], Simplifier, nil)
+	supervisor.execute(context.Background(), store.Snapshot().Towns[town.ID], Simplifier)
 	current := store.Snapshot().Towns[town.ID]
 	worker := current.Workers[Simplifier]
 	if delay := worker.Next.Sub(worker.Updated); delay < 0 || delay > time.Duration(current.Config.PollSeconds+1)*time.Second {
@@ -139,7 +139,7 @@ func TestSimplifierWorkerProtocolCarriesModeAndTypedAssessment(t *testing.T) {
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Complex request", Stage: "simplifying", House: Simplifier, Updated: time.Now()}
-	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Simplifier: fake}}
+	workers := &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Simplifier: fake}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result, err := workers.Run(context.Background(), x, Simplifier, func(Progress) {}, logger)
 	if err != nil {

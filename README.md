@@ -1,245 +1,98 @@
 # Brokk Town
 
-One repository, one little town. Brokk Town runs several repository towns from a
-local Go service, with an animated browser village and a compact terminal control
-panel. Each town owns its houses, queues, review loops, releases, and history.
-Branches and private worktrees belong to their repository's town. Your machine
-hosts the towns and shares a configurable pool of agent worker slots between
-them (four by default, from one to 64).
+Brokk Town is a local service that coordinates independent repository bots through
+private worker processes. Use the browser to watch and control work, or the CLI
+for scripts. Everything runs on your machine.
 
-The browser shows worker houses, wheelbarrows carrying completed handoffs, trucks
-bringing external issues and PRs, and shipments leaving the release depot. Every
-house label names the harness, model and effort that house runs, so a bot on a
-different harness or a higher effort is visible without opening it; the terminal
-panel carries the same profile in its house table. Visit a house to inspect its
-queue, activity, errors, and controls. Town hall holds
-repo-bot's reports. The all-towns overview shows activity and attention counts
-without visiting each repository.
-
-[![CI](https://github.com/BrokkAi/brokk-town/actions/workflows/ci.yml/badge.svg)](https://github.com/BrokkAi/brokk-town/actions/workflows/ci.yml)
-
-This is the first local implementation. The browser UI is embedded in the Go
-binary; Node.js is only needed for UI development checks and agents that use it.
-Linux and macOS are supported. No hosted service is required.
-
-## Try the town
-
-Build with the Go version in `go.mod`:
+## Build and run
 
 ```sh
 make build
-./bin/bt tui --demo
-```
-
-Any `bt` command starts the town service in the background when it is not
-running. Press `q` to leave the terminal panel; the town keeps going. Print the
-browser address with:
-
-```sh
+./bin/bt --demo
+# In another terminal:
 ./bin/bt web --demo
 ```
 
-Demo mode uses an isolated state directory and simulated activity in two towns.
-It never calls GitHub or launches agents. Orchard cycles through bug and feature discovery,
-implementation, review, repair, merge, release, and external arrivals. The initial
-board includes blocked, inconclusive, uncertain-write, queued, ready, and shipped
-fixtures, with active worker profiles available to inspect. Paper-trail illustrates
-a neighboring repository with a failed watchtower. Pause a house to hold its next step.
+Bare `bt` runs in the foreground and prints its browser URL. Ctrl+C, SIGTERM or
+SIGHUP stops Town, its bots and their agent processes. Closing the browser does
+not stop the service. Demo mode is isolated and never invokes bots, agents or GitHub.
 
-The browser and TUI attach to the same service. Closing either leaves workers
-running. `bt` without a command opens the TUI. Use `bt web` to print the browser
-address again; the local access key is persistent, so bookmarks and open tabs
-survive restarts.
+```sh
+bt -d                     # explicitly start in the background
+bt service status
+bt web                    # print the running service's browser URL
+bt service stop           # stop Town and its bots
+```
 
-### The service keeps itself running
+Client commands require a running service. There is no login registration,
+automatic service replacement, terminal UI, version polling or in-app installer.
+`bt serve` is an explicit alias for foreground operation. Use `--state-dir` for
+an independent installation and `--listen` for a loopback address.
 
-There is nothing to install or remember. The first `bt` command that starts a
-real town also registers the service with your login session: a launchd agent
-on macOS (`~/Library/LaunchAgents/ai.brokk.town.plist`) or a systemd user unit
-on Linux (`~/.config/systemd/user/brokk-town.service`). From then on the town
-restarts after a crash and returns after a reboot without any command, and the
-browser page reloads itself when a new version comes up. The demo town is never
-registered; it starts on demand and stays until stopped.
+## Independent bot projects
 
-- `bt service status` shows the service, its registration, and log locations
-  (`logs/serve.log` and `logs/serve.err.log` under the state directory).
-- `bt service stop` stops it until the next `bt` command. `bt service restart`
-  restarts it in place.
-- `bt service off` keeps the service out of your login session; `bt` still
-  starts it on demand, but it will not return by itself after logout or reboot.
-  `bt service on` registers it again.
-- `bt serve` still runs the service in the foreground for development. It
-  refuses to start while another service holds the state directory and names
-  that process.
+The `bots/` directories are standalone projects with their own Go modules, CLI
+commands, tests, documentation and packaging:
 
-The registration captures the `PATH` of the shell that created it, so `gh`,
-`git`, `npx`, and your chosen agent are found without a login shell. A
-`--listen` address given to any command is remembered for that town, so a later
-command's default never moves a registered service to another port. On Linux,
-`bt` enables lingering for your user so the town survives logout; if that needs
-administrator approval, it says so. Over SSH on a Mac without a logged-in
-session there is no launchd user domain, so the service runs unregistered.
+| Project | Command |
+|---|---|
+| bug-bot | bbb |
+| feature-bot | bfb |
+| issue-bot | bib |
+| review-bot | brv |
+| release-bot | brb |
+| repo-bot | brp |
+| simplifier-bot | bsb |
+| mayor-bot | bmb |
 
-When you rebuild or upgrade `bt`, the next `bt` command notices that the running
-service is older and restarts it on the new binary. An older `bt` never
-downgrades a running service.
+Build any bot by running `go build ./cmd/<command>` inside its directory.
+Town never imports bot Go packages. Each module chooses its own released acp-go
+dependency. The only integration boundary is the local worker protocol.
 
-The browser header switches among **Town**, **Board**, and **Compact** without
-restarting. Town keeps the animated houses first-class; Board groups durable work
-into fixed workflow columns with bounded, independently scrollable task lists;
-Compact lists worker activity, profiles, scheduling
-eligibility and tasks. Select **All towns** or a repository in the sidebar to
-change scope. View and scope survive reloads. Cards and rows open the shared
-inspector and controls, retaining repository context across SSE updates. Board
-column headings stay visible while scrolling; live updates preserve each column’s
-scroll position.
-
-Use **T**, **B**, or **C** to switch views, **0** for all towns, and **1–7** for
-houses. The view tabs also support arrow keys, Home and End. Tab/Enter open cards
-and controls; Escape closes the inspector. Narrow screens stack operations
-content and reduced-motion preferences keep the animated Town usable.
-
-Blocked, failed, inconclusive, uncertain-write and GitHub-waiting states retain
-separate labels. Active worker cards do not imply every task at that house is
-running. Merged PRs and implemented/closed tasks remain distinct from shipped
-commits; only release ancestry confirmed by repository reconciliation can mark
-a commit shipped. Columns, prompts and transitions are not programmable.
+`bundle.json` records the exact bot versions supported by this Town build and
+original source commits. `make build` builds all nine executables into `bin/`.
+Town resolves its bots beside its own executable and verifies their versions.
+A standalone `go install` of only `bt` is not a complete Town installation.
 
 ## Installation and releases
 
-Source is published at [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town).
-The stable release is available from [GitHub](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.1)
-and npm:
-
 ```sh
 npm install -g @brokkai/brokk-town
+# Or install a published complete native bundle:
+sh install.sh vX.Y.Z-town
 ```
 
-While the service is running, Town checks npm outside its input and render loops.
-When a newer stable release is available, the browser offers an **Upgrade Town**
-button and the TUI offers `u`. After confirmation, the service installs that exact
-version through the channel it was installed from (npm for the npm package,
-otherwise the checksum-verified release archive over the current binary) and
-restarts itself in place; the browser page reloads when the new version is up.
-Bots that were mid-run keep working through the restart and are reconnected.
-A failed or offline check never interrupts local operation.
+Both installation paths include Town and all eight supported bots. To install a
+new version, stop Town, install the complete package, and start Town again.
+The shell installer requires Python 3 and keeps each complete installation in
+its own directory under `INSTALL_DIR/.brokk-town`, with `bt` pointing to it.
 
-You can also build from source as above or install the current branch:
+Projects have independent versions and suffix release tags: `vX.Y.Z-town`,
+`vX.Y.Z-issue-bot`, and equivalent tags for the other bots. A Town release bundles
+the versions in its manifest without publishing unchanged standalone bots.
+See [RELEASING.md](RELEASING.md) for workflows and publishing configuration.
 
-```sh
-go install github.com/BrokkAi/brokk-town/cmd/bt@master
-```
+## Connect repositories
 
-The release pipeline builds checksum-verified Linux/macOS archives for amd64 and
-arm64, plus `@brokkai/brokk-town` and four native npm packages. All packages carry
-the project license, attribution, and complete third-party notices. The supported
-installer commands are:
+Authenticate `gh` and your chosen agent first. Start Town, then add a repository:
 
 ```sh
-sh install.sh                       # From a checkout; defaults to ~/.local/bin
-npm install -g @brokkai/brokk-town   # Installs the bt launcher and native package
-```
-
-Pushing a `v*` tag publishes the release: the `Publish packages` workflow runs
-CI, builds the archives and npm packages, publishes with provenance, and
-finalizes the GitHub release. The `packages-publish` environment and npm
-trusted publishers are bound to this repository and `publish-packages.yml`;
-keep both names stable. Visibility is public and
-collaborator/developers-team access matches mjolnir. See [RELEASING.md](RELEASING.md)
-for tag rules, pipeline steps, and recovery.
-
-## Connect real repositories
-
-Install and authenticate `git`, GitHub CLI (`gh`), Node.js/npm, and your chosen
-coding agent. Town does not require a separate bot installation: each dispatch
-uses `npx --yes` with an exact compatible release of bug-bot, feature-bot,
-issue-bot, review-bot, release-bot, simplifier-bot, or mayor-bot, then communicates with it over a private
-Unix socket. Town never selects an ambient or floating bot version.
-For a bot npm has not published yet, `BROKK_TOWN_<ROLE>_BOT` names a local
-executable for that role when the service starts, such as `BROKK_TOWN_HALL_BOT`
-for a mayor-bot checkout. Each bot's Settings panel shows its current pin. **Check for bot update** reads
-npm's stable tag, and **Use VERSION** stages that exact version for the Mayor to
-save. The pin changes only for that town and takes effect on the bot's next run;
-capability and reported-version checks still run before any repository work.
-
-Town also checks npm's stable tags on its own, at start and every fifteen minutes.
-When a bot has a newer stable release than a town's pin, the town receives a
-Mayoral decision at Town Hall: **Upgrade now** pins the new version for the
-bot's next run, **Delay a day** asks again after 24 hours, and **Decline** keeps
-the current pin until an even newer release is published. The **Update bots
-automatically** town setting (off by default) pins new stable releases as they
-appear instead, including any offer already waiting. A registry outage never
-changes a pin or stops a town.
-
-The worker uses
-standard-library HTTP/JSON, negotiates protocol and capabilities before work,
-streams contiguous progress events, and returns explicit typed results. It never
-requires Town to parse bot-private state. Until the worker protocol carries job
-outcomes, Town uses the same pinned issue-bot release's validated public state
-API to import blocked/submitted scheduling metadata and perform explicit retries.
-See
-[docs/WORKER_PROTOCOL.md](docs/WORKER_PROTOCOL.md) for the contract.
-
-Town defaults to the official ACP registry’s `codex-acp` npm distribution, which
-requires Node.js and `npx`. Choose another harness in Settings as described below.
-Git must already be able to clone and push your GitHub repositories; Town uses
-the current Git/gh credentials.
-
-Town resolves and hashes the `npx` executable for every dispatch and rechecks it
-and the pinned bot's reported version afterward. A mid-dispatch executable or
-version change fails uncertainly and is resolved through durable bot state and
-GitHub reconciliation.
-
-```sh
-./bin/bt serve --repo BrokkAi/my-project
+bt
 # In another terminal:
-./bin/bt add --repo BrokkAi/another-project
-./bin/bt tui
+bt add --repo OWNER/REPO
+bt start --repo OWNER/REPO --role issue
+bt capacity --max-workers 4
 ```
 
-Town starts and manages the bot libraries internally; the standalone bot CLIs are
-not companion processes. New towns start with Bug Bot, Feature Bot, Issue Bot,
-Review Bot, Release Bot, and Simplifier Bot **paused**. Repo Bot starts its inventory;
-its configured agent is used only when branch checks require a repair.
-The town header shows whether the town is paused, awake,
-or partly awake, and its button offers the action that changes that state.
-Inspect the town, then start individual workers or choose **Wake the town**, which
-enables all six automation workers (except Release Bot under manual merge policy).
-Starting workers authorizes their real work: filing issues,
-creating and repairing PRs, posting reviews, merging under the configured policy,
-and publishing releases. Agents and verification commands run with your local
-permissions. Use an isolated account or machine for repositories you don't trust.
+Each configured town starts all eight bot processes immediately, including paused
+houses. Pausing controls work; it does not remove the process. Agents start only
+when jobs are dispatched. Repo Bot begins with read-only inventory; automation
+houses start paused. Existing concurrency limits and GitHub authority checks apply.
 
-```sh
-./bin/bt start --repo BrokkAi/my-project --role bug
-./bin/bt start --repo BrokkAi/my-project --role feature
-./bin/bt pause --repo BrokkAi/my-project --role all
-./bin/bt stop --repo BrokkAi/my-project --role issue
-./bin/bt status
-# Change the global pool; status also reports active and limit capacity.
-./bin/bt capacity --max-workers 2
-```
-
-Pause finishes active work and stops scheduling more. Stop also cancels active
-work. Enabled/paused settings survive restarts. A restart resumes enabled workers;
-uncertain external writes retain their saved intent and are reconciled first.
-
-Stopping or restarting the service (Ctrl+C, SIGTERM, SIGHUP from a closed
-terminal or dropped SSH session, `bt service restart`, or
-an in-app upgrade) does not stop the external bots. Each bot process runs detached, and Town commits its handle (PID,
-socket, and exact task) before requesting work. The next `bt serve` reconnects to
-those processes before scheduling anything new. Bots that advertise the `detach`
-capability replay the events Town missed and their results are applied normally.
-Older bots finish on their own, and Town records that attempt as uncertain rather
-than guessing; repo-bot then reconciles whatever landed on GitHub. Only an explicit
-Stop, a town deletion, or the two-hour dispatch deadline ends a bot process.
-
-Capacity is a persisted service setting shared by every town. It reserves
-non-reporter bot runs; repo-bot inventory, issue publishing, and prompt-free model
-choice discovery stay outside the pool, while a Repo Bot repair uses one slot.
-Lowering the limit lets current work finish and
-holds new dispatches until a slot is free. `bt capacity` requires `--max-workers N`,
-where `N` is an integer from 1 through 64.
+Deleting a town stops its workers. Ending Town stops every worker. A lost parent
+pipe also stops workers after an unexpected Town exit. An interrupted write remains
+uncertain until repository reconciliation or an explicit retry establishes what
+happened; a restart never blindly repeats it.
 
 ## Town settings, requests, and deletion
 
@@ -480,7 +333,7 @@ It proposes scoped features with user value, repository evidence and acceptance
 criteria. A separate review rejects duplicate, already implemented, rejected or
 uncertain proposals before filing. Its verifier receives `FEATURE_COMMIT` and
 `FEATURE_FINDING`; shared verification commands must support the selected bot's
-environment. New and upgraded towns keep feature discovery paused until started.
+environment. New towns keep feature discovery paused until started.
 
 Town Hall's **Automation outcomes** report separates worker attempts, filed
 findings, submitted implementation PRs, repository-confirmed merges, repair
@@ -589,31 +442,13 @@ origin, and bearer key checks protect the local API. A browser supporting WebMCP
 can list towns and navigate to a house through optional page tools. Unsupported
 browsers use the ordinary interface.
 
-## Keyboard and development
 
-Browser: `0` overview, `1` Bug, `2` Issue, `3` Review, `4` Release, `5` Repo, `6` Town Hall, `7` Feature, `8` Simplifier, `?` help, Escape closes
-the inspector. Motion follows reduced-motion preferences and can be switched off.
-Terminal: `0` overview, Tab next town, `1`–`7` or `j`/`k` select a house, `s` start,
-`p` pause, `x` stop, `a` wake the selected town, `d` delete with `y`/`n` confirmation,
-`q` detach. Use `bt settings` and `bt request` for agent settings and new work, or
-the forms in the browser. Bracketed paste is
-ignored as commands. Network and agent work stay off the input/render loops.
+## Development
 
-```sh
-make check
-make smoke
-```
+`make check` runs independent Go race tests and vet in all nine modules, browser
+syntax/tests, launcher tests, packaging tests and license checks. `make smoke`
+builds the complete suite and runs isolated demo integration checks. Use fake
+GitHub and agents for write tests; never use live repository automation as a test.
 
-Tests use fake GitHub and agents, temporary local Git remotes, authenticated HTTP
-fixtures, and the isolated simulation. Do not use live repository automation as a
-development test. See [CONTRIBUTING.md](CONTRIBUTING.md),
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and
-[licenses/README.md](licenses/README.md).
-
-Licensed under [Apache-2.0](LICENSE). Attribution is in [NOTICE](NOTICE) and
-[third-party notices](licenses/THIRD_PARTY_NOTICES.txt). Artwork provenance is in
-[docs/ARTWORK.md](docs/ARTWORK.md). Native and npm packaging is configured, and the npm bootstrap and trusted
-publishers are established. Stable GitHub release publication remains separate.
-
-For scheduling stalls, stale reviews, and interrupted workers, see
-[blocked-town recovery](docs/blocked-town-recovery.md).
+[Imported open bot issues](docs/imported-bot-issues.md) retain their source links
+and attributed discussion history.

@@ -30,11 +30,6 @@ type Server struct {
 	// narrow slice of town.GitHub so tests fake two methods, not the whole
 	// interface. A nil handle means live details are unavailable.
 	TaskGitHub taskGitHub
-	Update     func() *town.UpdateNotice
-	Upgrade    func(context.Context) error
-	// Restart asks the service to replace itself with the binary at its own
-	// path. Clients call it after an upgrade or when they are newer.
-	Restart func()
 }
 
 // taskGitHub fetches a single live issue or pull request on demand. Bodies
@@ -55,11 +50,6 @@ func (s *Server) decorate(snapshot town.State) map[string]any {
 	if s.Version != "" {
 		state["version"] = s.Version
 	}
-	if s.Update != nil {
-		if update := s.Update(); update != nil {
-			state["update"] = update
-		}
-	}
 	return state
 }
 
@@ -70,7 +60,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/towns", s.add)
 	mux.HandleFunc("POST /api/settings", s.settings)
-	mux.HandleFunc("GET /api/bot-versions", s.botVersions)
 	mux.HandleFunc("POST /api/capacity", s.capacity)
 	mux.HandleFunc("POST /api/choices", s.choices)
 	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
@@ -80,8 +69,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/task-detail", s.taskDetail)
 	mux.HandleFunc("GET /api/outcomes", s.outcomes)
 	mux.HandleFunc("POST /api/outcomes/judgment", s.outcomeJudgment)
-	mux.HandleFunc("POST /api/update", s.upgrade)
-	mux.HandleFunc("POST /api/restart", s.restart)
 	mux.Handle("/", http.FileServerFS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Embedded assets change with every service binary; a reload after a
@@ -200,40 +187,6 @@ func (s *Server) outcomeJudgment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, map[string]bool{"ok": true})
-}
-func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
-	var input struct{}
-	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if s.Upgrade == nil {
-		problem(w, "no Town update is available", http.StatusConflict)
-		return
-	}
-	if err := s.Upgrade(r.Context()); err != nil {
-		problem(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	if s.Restart == nil {
-		respond(w, map[string]any{"ok": true, "restart_required": true})
-		return
-	}
-	respond(w, map[string]any{"ok": true, "restarting": true})
-	s.Restart()
-}
-func (s *Server) restart(w http.ResponseWriter, r *http.Request) {
-	var input struct{}
-	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if s.Restart == nil {
-		problem(w, "this service cannot restart itself", http.StatusConflict)
-		return
-	}
-	respond(w, map[string]any{"ok": true, "restarting": true})
-	s.Restart()
 }
 func respond(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -358,8 +311,6 @@ type settingsInput struct {
 	Agent          town.AgentSettings `json:"agent"`
 	MergePolicy    *string            `json:"merge_policy,omitempty"`
 	SimplifierMode *string            `json:"simplifier_mode,omitempty"`
-	BotVersion     *string            `json:"bot_version,omitempty"`
-	AutoUpdateBots *bool              `json:"auto_update_bots,omitempty"`
 	// ReviewCloseSeverity is the least severe finding that closes a pull
 	// request after its second review: P1, P2 or P3.
 	ReviewCloseSeverity *string `json:"review_close_severity,omitempty"`
@@ -371,22 +322,11 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.SimplifierMode, input.BotVersion, input.AutoUpdateBots, input.ReviewCloseSeverity); err != nil {
+	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.SimplifierMode, input.ReviewCloseSeverity); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}
 	respond(w, map[string]bool{"ok": true})
-}
-
-func (s *Server) botVersions(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	versions, err := town.CheckBotVersions(ctx, http.DefaultClient)
-	if err != nil {
-		problem(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	respond(w, versions)
 }
 
 // maxTaskDetailBody caps one live body so a pasted log cannot bloat the

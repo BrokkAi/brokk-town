@@ -14,15 +14,15 @@ class PublishTagTest(unittest.TestCase):
     def setUp(self):
         self.sha = publish_tag.release.commit()
         self.env = mock.patch.dict(os.environ, {
-            "RELEASE_TAG": "v9.9.9",
+            "RELEASE_TAG": "v9.9.9-town",
             "RELEASE_COMMIT": self.sha,
-            "GITHUB_REF": "refs/tags/v9.9.9",
+            "GITHUB_REF": "refs/tags/v9.9.9-town",
         })
         self.env.start()
         self.addCleanup(self.env.stop)
 
     def test_context_accepts_matching_tag_and_commit(self):
-        self.assertEqual(publish_tag.context(), ("v9.9.9", self.sha))
+        self.assertEqual(publish_tag.context(), ("v9.9.9-town", self.sha))
 
     def test_context_refuses_wrong_ref(self):
         with mock.patch.dict(os.environ, {"GITHUB_REF": "refs/heads/master"}):
@@ -35,8 +35,8 @@ class PublishTagTest(unittest.TestCase):
                 publish_tag.context()
 
     def test_make_latest(self):
-        self.assertEqual(publish_tag.make_latest("v9.9.9"), "true")
-        self.assertEqual(publish_tag.make_latest("v9.9.9-rc.1"), "false")
+        self.assertEqual(publish_tag.make_latest("v9.9.9-town"), "true")
+        self.assertEqual(publish_tag.make_latest("v9.9.9-rc.1-town"), "false")
 
     def test_missing_assets(self):
         with tempfile.TemporaryDirectory() as temp:

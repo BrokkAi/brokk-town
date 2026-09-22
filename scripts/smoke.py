@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Exercise the actual demo daemon and a PTY client, without GitHub or agents."""
-import fcntl
+"""Exercise the demo service, browser API and CLI, without GitHub or agents."""
 import json
 import os
 from pathlib import Path
-import pty
 import signal
-import struct
 import subprocess
 import sys
 import tempfile
-import termios
 import time
 import urllib.error
 import urllib.request
@@ -42,8 +38,6 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
     conn_path = root / 'demo' / 'connection.json'
     service = subprocess.Popen([binary, 'serve', '--demo', '--state-dir', directory,
                                 '--listen', '127.0.0.1:0'], stdout=subprocess.DEVNULL)
-    terminal = None
-    master = slave = None
     try:
         wait_for(conn_path.exists)
         conn = json.loads(conn_path.read_text())
@@ -154,63 +148,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         assert receipt['body'] == issue_body.read_text().strip()
         assert managed['tasks'][f"issue:{receipt['number']}"]['title'] == 'Demo operator bug'
 
-        master, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 32, 100, 0, 0))
-        original = termios.tcgetattr(slave)
-        terminal = subprocess.Popen([binary, 'tui', '--state-dir', str(root / 'demo')],
-                                    stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
-        os.set_blocking(master, False)
-        output = bytearray()
-
-        def drain():
-            try:
-                while True:
-                    chunk = os.read(master, 65536)
-                    if not chunk:
-                        return
-                    output.extend(chunk)
-            except (BlockingIOError, OSError):
-                pass
-
-        wait_for(lambda: (drain(), b'ALL TOWNS' in output)[1])
-        os.write(master, b'1p')
-        wait_for(lambda: (drain(), not snapshot()['towns']['brokkai/orchard']['workers']['bug']['enabled'])[1])
-        assert snapshot()['towns']['brokkai/paper-trail']['workers']['bug']['enabled']
-        os.write(master, b'\x1b[200~asq\x1b[201~')
-        time.sleep(.3)
-        drain()
-        assert terminal.poll() is None
-        assert not snapshot()['towns']['brokkai/orchard']['workers']['bug']['enabled']
-        os.write(master, b'd')
-        wait_for(lambda: (drain(), b'Delete brokkai/orchard?' in output)[1])
-        os.write(master, b'n')
-        wait_for(lambda: (drain(), b'Deletion canceled' in output)[1])
-        assert len(snapshot()['towns']) == 2
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 30, 0, 0))
-        os.write(master, b's')
-        wait_for(lambda: (drain(), snapshot()['towns']['brokkai/orchard']['workers']['bug']['enabled'])[1])
-        os.write(master, b'\td')
-        wait_for(lambda: (drain(), b'Delete brokkai/paper-trail?' in output)[1])
-        os.write(master, b'y')
-        wait_for(lambda: (drain(), 'brokkai/paper-trail' not in snapshot()['towns'])[1])
-        os.write(master, b'q')
-        # Keep consuming output while the TUI restores the screen. macOS PTYs
-        # can fill their output buffer before process exit if the test stops
-        # reading here; a real terminal continues draining it.
-        wait_for(lambda: (drain(), terminal.poll() is not None)[1], timeout=3)
-        drain()
-        assert terminal.returncode == 0
-        assert b'\x1b[?1049l' in output and b'\x1b[?25h' in output
-        restored = termios.tcgetattr(slave)
-        expected_settings, actual_settings = list(original), list(restored)
-        if sys.platform == 'darwin':
-            # XNU sets PENDIN when ICANON is restored, to reprocess typeahead.
-            # It is transient kernel state, not a changed terminal setting:
-            # https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/tty.c
-            expected_settings[3] &= ~termios.PENDIN
-            actual_settings[3] &= ~termios.PENDIN
-        assert actual_settings == expected_settings, f'Terminal settings were not restored: before={original!r}, after={restored!r}'
-        assert service.poll() is None, 'Detaching stopped the service'
+        subprocess.run([binary, "delete", "--demo", "--state-dir", directory, "--repo", "BrokkAi/paper-trail"], check=True)
         service.send_signal(signal.SIGTERM)
         service.wait(timeout=6)
         assert service.returncode == 0 and not conn_path.exists()
@@ -247,47 +185,17 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         service.wait(timeout=10)
         assert service.returncode == 0 and not conn_path.exists()
 
-        # Any client command starts the town on demand, detached from the
-        # terminal, and the access key survives restarts.
-        on_demand = subprocess.run([binary, 'status', '--demo', '--state-dir', directory,
-                                    '--listen', '127.0.0.1:0'], text=True, check=True,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=40)
-        assert 'starting the town service' in on_demand.stderr, on_demand.stderr
-        assert json.loads(on_demand.stdout)['demo'] is True
+        # Background startup is explicit, and its token survives restart.
+        subprocess.run([binary, '-d', '--demo', '--state-dir', directory,
+                        '--listen', '127.0.0.1:0'], check=True, stdout=subprocess.DEVNULL, timeout=40)
         detached = json.loads(conn_path.read_text())
-        assert detached['pid'] != conn['pid'] and detached['token'] == conn['token']
-        assert detached['version'] and detached['executable'] and not detached.get('managed')
-        assert (root / 'demo' / 'logs' / 'serve.err.log').stat().st_mode & 0o777 == 0o600
-        status_out = subprocess.check_output([binary, 'service', 'status', '--demo',
-            '--state-dir', directory], text=True, stderr=subprocess.DEVNULL, timeout=20)
-        assert 'never (demo)' in status_out and 'started on demand' in status_out, status_out
-        # A crash heals on the next command with the same browser address.
-        os.kill(detached['pid'], signal.SIGKILL)
-        wait_for(lambda: not pid_alive(detached['pid']))
-        web = subprocess.run([binary, 'web', '--demo', '--state-dir', directory,
-                              '--listen', '127.0.0.1:0'], text=True, check=True,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=40)
-        healed = json.loads(conn_path.read_text())
-        assert healed['pid'] != detached['pid'] and pid_alive(healed['pid'])
-        assert web.stdout.strip() == healed['url'] + '/#token=' + conn['token'], web.stdout
-        # An explicit restart re-executes in place, keeping the PID.
-        restart = subprocess.check_output([binary, 'service', 'restart', '--demo',
-            '--state-dir', directory], text=True, stderr=subprocess.DEVNULL, timeout=40)
-        restarted = json.loads(conn_path.read_text())
-        assert f'pid {healed["pid"]}' in restart and restarted['pid'] == healed['pid']
-        assert restarted['started'] > healed['started'], (restarted, healed)
-        stop = subprocess.check_output([binary, 'service', 'stop', '--demo',
-            '--state-dir', directory], text=True, stderr=subprocess.DEVNULL, timeout=40)
-        assert 'Stopped' in stop and not conn_path.exists()
-        wait_for(lambda: not pid_alive(healed['pid']))
-        print('Demo smoke passed: assets, auth, SSE, registry, supplemental harnesses, per-bot profiles/defaults/reset, pinned settings, issue submission/retry, PTY controls, delete/cancel, paste, resize, detach, hangup shutdown, restart recovery, on-demand start, crash recovery, stable access key, in-place restart.')
+        assert detached['token'] == conn['token']
+        status_out = subprocess.check_output([binary, 'service', 'status', '--demo', '--state-dir', directory], text=True)
+        assert 'running' in status_out
+        subprocess.run([binary, 'service', 'stop', '--demo', '--state-dir', directory], check=True, timeout=40)
+        assert not conn_path.exists()
+        print('Demo smoke passed: browser assets, auth, SSE, registry, profiles, requests, foreground shutdown, explicit daemon lifecycle.')
     finally:
-        if terminal is not None and terminal.poll() is None:
-            terminal.kill()
-            terminal.wait()
-        for fd in [master, slave]:
-            if fd is not None:
-                os.close(fd)
         if service.poll() is None:
             service.send_signal(signal.SIGTERM)
             service.wait(timeout=10)

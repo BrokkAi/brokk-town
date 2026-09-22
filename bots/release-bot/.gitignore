@@ -1,0 +1,14 @@
+/var/
+/bin/
+/release-bot.json
+/release-bot
+/coverage.out
+/dist/
+__pycache__/
+/brb
+
+.worktrees/
+.claude/
+.codex/
+.mjolnir/
+.belgr/

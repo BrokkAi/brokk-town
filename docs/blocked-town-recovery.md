@@ -30,10 +30,9 @@ Review Bot. No registry release is created by building these repositories locall
 
 ## Interrupted workers
 
-A detachable worker that remains alive can replay its result when Town reconnects.
-If the process is gone and its result cannot be recovered, Town records the exact
-unresolved dispatch and holds automatic replacement work. A live but unauthenticated
-process keeps its handle; it must not be replaced merely because the socket failed.
+Town stops its workers when it exits. Interrupted dispatches retain their target
+and revision as an uncertain outcome. Reconcile saved results and GitHub before
+authorizing a retry.
 
 For Issue Bot, a matching saved `submitted` or `has_pr` outcome resolves the hold.
 Otherwise inspect the issue, its expected branch, open/closed PRs, and saved bot

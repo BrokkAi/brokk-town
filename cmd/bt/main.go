@@ -17,8 +17,6 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -29,9 +27,7 @@ import (
 
 var version = "dev"
 
-// connection is the service's advertisement to local clients. Version,
-// executable, and start time let a newer client roll the service forward;
-// managed records whether a login-session supervisor owns the process.
+// connection advertises the running local service and its identity.
 type connection struct {
 	URL        string    `json:"url"`
 	Token      string    `json:"token"`
@@ -39,12 +35,7 @@ type connection struct {
 	Version    string    `json:"version,omitempty"`
 	Executable string    `json:"executable,omitempty"`
 	Started    time.Time `json:"started,omitempty"`
-	Managed    bool      `json:"managed,omitempty"`
 }
-
-// errRestart asks main to replace this process with the binary at its own
-// path, keeping the PID so a login-session supervisor sees one continuous job.
-var errRestart = errors.New("restart requested")
 
 // executablePath resolves the real binary behind any launcher symlink, such as
 // the npm shim, so registrations and restarts never depend on PATH.
@@ -60,7 +51,7 @@ var executablePath = func() (string, error) {
 }
 
 // serviceToken persists the local access key so browser bookmarks, open tabs,
-// and a polling TUI survive service restarts. Delete the file to rotate it.
+// survive service restarts. Delete the file to rotate it.
 func serviceToken(dir string) (string, error) {
 	path := filepath.Join(dir, "token")
 	if b, err := os.ReadFile(path); err == nil {
@@ -113,13 +104,6 @@ func buildVersion() string {
 	return v
 }
 
-// updateInterval is the ordinary release-check cadence; releaseSettleInterval
-// is how soon a release that is only half published is looked at again.
-const (
-	updateInterval        = 6 * time.Hour
-	releaseSettleInterval = time.Minute
-)
-
 // shutdownSignals end the process through the ordinary shutdown sequence.
 // SIGHUP belongs here: closing a terminal or dropping an SSH connection would
 // otherwise kill the service outright, leaving its workers running in their own
@@ -131,22 +115,13 @@ func main() {
 	defer cancel()
 	err := run(ctx, os.Args[1:])
 	cancel()
-	if errors.Is(err, errRestart) {
-		// The store lock, listener, and connection file are already released.
-		// Exec keeps the PID, so supervisors and the npm launcher see one job.
-		exe, e := executablePath()
-		if e == nil {
-			e = syscall.Exec(exe, os.Args, os.Environ())
-		}
-		err = fmt.Errorf("restart failed: %w", e)
-	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "bt:", err)
 		os.Exit(1)
 	}
 }
 func run(ctx context.Context, args []string) error {
-	command := "tui"
+	command := "serve"
 	explicit := false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command = args[0]
@@ -224,18 +199,20 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	abs := runtimeDir(base, *demo)
-	if command == "serve" {
-		return serve(ctx, abs, *listen, *demo, *config, *repo)
+	if *fl.daemon && command != "serve" {
+		return errors.New("-d is only valid when starting Town")
 	}
-	address, err := resolveListen(base, *demo, *listen, flagSet(fs, "listen"))
-	if err != nil {
-		return err
+	if command == "serve" {
+		if *fl.daemon {
+			return startBackground(ctx, base, *demo, *listen, *config, *repo)
+		}
+		return serve(ctx, abs, *listen, *demo, *config, *repo)
 	}
 	if command == "capacity" {
 		if *maxWorkers < 1 || *maxWorkers > town.MaximumMaxWorkers {
 			return fmt.Errorf("--max-workers is required and must be between 1 and %d", town.MaximumMaxWorkers)
 		}
-		conn, err := ensureService(ctx, base, *demo, address)
+		conn, err := ensureService(ctx, base, *demo)
 		if err != nil {
 			return err
 		}
@@ -275,7 +252,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		agent["inherit"] = true
 	}
-	conn, err := ensureService(ctx, base, *demo, address)
+	conn, err := ensureService(ctx, base, *demo)
 	if err != nil {
 		return err
 	}
@@ -305,8 +282,6 @@ func run(ctx context.Context, args []string) error {
 		}
 		fmt.Println("custom — supply an ACP command with --agent-command")
 		return nil
-	case "tui":
-		return tui(ctx, conn)
 	case "web":
 		fmt.Printf("%s/#token=%s\n", conn.URL, conn.Token)
 		return nil
@@ -383,11 +358,11 @@ func run(ctx context.Context, args []string) error {
 		}
 		var result any
 		return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
-	case "start", "pause", "stop", "retry", "delete", "admit", "decline", "delay":
+	case "start", "pause", "stop", "retry", "delete", "admit", "decline":
 		if *repo == "" {
 			return errors.New("--repo OWNER/REPO is required")
 		}
-		decision := command == "admit" || command == "decline" || command == "delay"
+		decision := command == "admit" || command == "decline"
 		if decision && *task == "" {
 			return errors.New("--task is required for a Mayoral decision")
 		}
@@ -424,9 +399,6 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 		req.Header.Set("Content-Type", "application/json")
 	}
 	timeout := 35 * time.Second
-	if path == "/api/update" {
-		timeout = 130 * time.Second
-	}
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -513,13 +485,24 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		return err
 	}
 	defer listener.Close()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	gh := town.GitHubClient{}
+	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh}
+	supervisor := town.NewSupervisor(store, gh, workers)
+	defer workers.Close()
+	if !demo {
+		if err := workers.SyncProcesses(ctx, store.Snapshot()); err != nil {
+			return err
+		}
+	}
 	token, err := serviceToken(dir)
 	if err != nil {
 		return err
 	}
 	exe, _ := executablePath()
-	managed := os.Getenv("BROKK_TOWN_MANAGED") == "1"
-	conn := connection{URL: "http://" + listener.Addr().String(), Token: token, PID: os.Getpid(), Version: buildVersion(), Executable: exe, Started: time.Now(), Managed: managed}
+	conn := connection{URL: "http://" + listener.Addr().String(), Token: token, PID: os.Getpid(), Version: buildVersion(), Executable: exe, Started: time.Now()}
 	data, _ := json.Marshal(conn)
 	if err = os.WriteFile(filepath.Join(dir, "connection.json"), data, 0600); err != nil {
 		return err
@@ -527,100 +510,9 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	if err = os.Chmod(filepath.Join(dir, "connection.json"), 0600); err != nil {
 		return err
 	}
-	gh := town.GitHubClient{}
-	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh, BotCommands: botCommandOverrides()}
-	supervisor := town.NewSupervisor(store, gh, workers)
-	// Bot pins are offered from npm's stable tags on the supervisor's schedule;
-	// each town decides at Town Hall unless it opted into automatic updates.
-	botRegistry := &http.Client{Timeout: 8 * time.Second}
-	supervisor.BotVersions = func(checkCtx context.Context) (map[town.Role]string, error) {
-		return town.CheckBotVersions(checkCtx, botRegistry)
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var available atomic.Pointer[town.UpdateNotice]
-	var upgradeMu sync.Mutex
-	var restarting atomic.Bool
-	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh, Update: available.Load}
-	server.Upgrade = func(upgradeCtx context.Context) error {
-		upgradeMu.Lock()
-		defer upgradeMu.Unlock()
-		notice := available.Load()
-		if notice == nil {
-			return errors.New("no Town update is available")
-		}
-		installCtx, installCancel := context.WithTimeout(upgradeCtx, 2*time.Minute)
-		defer installCancel()
-		if e := town.InstallUpdate(installCtx, dir, exe, notice.Latest); e != nil {
-			// The browser reduces this to one line and the TUI to none, so the
-			// whole installer output belongs in the service log; without it a
-			// failed upgrade leaves nothing behind to diagnose.
-			fmt.Fprintf(os.Stderr, "bt: upgrade to %s failed: %v\n", notice.Latest, e)
-			return fmt.Errorf("upgrade failed: %w", e)
-		}
-		available.Store(nil)
-		return nil
-	}
-	// Restart replaces this process with whatever binary now sits at its own
-	// path. The delay lets the HTTP response reach the client first.
-	server.Restart = func() {
-		if restarting.CompareAndSwap(false, true) {
-			time.AfterFunc(time.Second, cancel)
-		}
-	}
-	// Registry I/O stays off HTTP, TUI, and render loops. Failure is deliberately
-	// quiet: inability to check must never prevent a local town from starting.
-	go func() {
-		client := &http.Client{Timeout: 8 * time.Second}
-		// check reports whether a release was seen but withheld, which is
-		// ordinarily a minutes-long state rather than the six-hour cadence.
-		// Only the first sighting of a held version is logged: a release that
-		// never finishes publishing must not fill the log a line at a time.
-		holding := ""
-		check := func() (held bool) {
-			checkCtx, checkCancel := context.WithTimeout(ctx, 10*time.Second)
-			defer checkCancel()
-			notice, e := town.CheckUpdate(checkCtx, client, buildVersion())
-			if e != nil {
-				return false
-			}
-			if notice != nil {
-				// A release lands in pieces. Until this platform's payload is
-				// fetchable the offer would install nothing, so leave the town
-				// on its current version and take it at a later check.
-				if ready := town.ReleaseReady(checkCtx, client, exe, notice.Latest); ready != nil {
-					if holding != notice.Latest {
-						holding = notice.Latest
-						fmt.Fprintln(os.Stderr, "bt: holding the", notice.Latest, "offer:", ready)
-					}
-					return true
-				}
-				notice.Command = town.UpdateCommand(exe, notice.Latest)
-			}
-			holding = ""
-			available.Store(notice)
-			return false
-		}
-		// A held release is looked at again soon, then progressively less
-		// often, so a publication that stalls settles back to the ordinary
-		// cadence instead of polling once a minute forever.
-		delay := updateInterval
-		if check() {
-			delay = releaseSettleInterval
-		}
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(delay):
-				if !check() {
-					delay = updateInterval
-				} else if delay *= 2; delay > updateInterval {
-					delay = updateInterval
-				}
-			}
-		}
-	}()
+	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
 	results := make(chan error, 2)
 	remaining := 2
@@ -630,7 +522,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	} else {
 		go func() { results <- supervisor.Run(ctx) }()
 	}
-	fmt.Printf("Brokk Town %s\nBrowser: %s/#token=%s\nTerminal: bt tui --state-dir %s\n", buildVersion(), conn.URL, conn.Token, dir)
+	fmt.Printf("Brokk Town %s\nBrowser: %s/#token=%s\n", buildVersion(), conn.URL, conn.Token)
 	if demo {
 		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
 	}
@@ -652,9 +544,6 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		<-results
 	}
 	_ = os.Remove(filepath.Join(dir, "connection.json"))
-	if restarting.Load() && (errors.Is(err, context.Canceled) || errors.Is(err, http.ErrServerClosed)) {
-		return errRestart
-	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
@@ -752,17 +641,4 @@ func decodeConfigFile(data []byte) ([]townEntry, *int, error) {
 		limit = &value
 	}
 	return towns, limit, nil
-}
-
-// botCommandOverrides lets a development checkout run a bot that npm has not
-// published yet: BROKK_TOWN_<ROLE>_BOT names an executable for that role, such
-// as BROKK_TOWN_HALL_BOT for Mayor Bot. Unset roles use their pinned package.
-func botCommandOverrides() map[town.Role]string {
-	overrides := map[town.Role]string{}
-	for _, role := range town.AgentRoles {
-		if command := strings.TrimSpace(os.Getenv("BROKK_TOWN_" + strings.ToUpper(string(role)) + "_BOT")); command != "" {
-			overrides[role] = command
-		}
-	}
-	return overrides
 }

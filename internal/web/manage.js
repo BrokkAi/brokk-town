@@ -45,9 +45,7 @@ export function management({ api, getTown, getState, refresh }) {
     choicesVersion = 0,
     choicesAbort = null,
     choicesLoading = false,
-    loaded = false,
-    selectedBotVersion = "",
-    availableBotVersion = "";
+    loaded = false;
   let catalog = null,
     catalogVersion = 0,
     catalogAbort = null,
@@ -80,11 +78,6 @@ export function management({ api, getTown, getState, refresh }) {
           ? `${profileNames[settingsRole]} uses this profile only when repairing a failing branch. Editing an inherited profile creates a custom profile for this bot.`
           : `${profileNames[settingsRole]} uses this profile on its next run. Editing an inherited profile creates a custom profile for this bot.`
         : "Town defaults apply on the next run to bots that use them. Custom bot profiles keep their own settings. Repo Bot uses its profile only when repairing a failing branch.";
-    $("#bot-version-panel").hidden = !settingsRole;
-    if (settingsRole) {
-      selectedBotVersion ||= settingsConfig.bot_versions?.[settingsRole] || "unknown";
-      $("#bot-version-status").textContent = `${profileNames[settingsRole]} is pinned to ${selectedBotVersion}.`;
-    }
     syncProfileControls();
   }
   function rememberDraft() {
@@ -270,9 +263,6 @@ export function management({ api, getTown, getState, refresh }) {
 
   function showProfile(role) {
     settingsRole = role;
-    selectedBotVersion = role ? settingsConfig.bot_versions?.[role] || "" : "";
-    availableBotVersion = "";
-    $("#use-bot-version").hidden = true;
     const draft = drafts[role];
     savedHarness = draft.harness;
     savedVersion = draft.version;
@@ -312,7 +302,6 @@ export function management({ api, getTown, getState, refresh }) {
     $("#settings-merge-policy").value = t.config.merge_policy || "bot";
     $("#settings-simplifier-mode").value = t.config.simplifier_mode || "suggest";
     $("#settings-review-close-severity").value = t.config.review_close_severity || "P2";
-    $("#settings-auto-update-bots").checked = t.config.auto_update_bots === true;
     $("#settings-success").textContent = "";
     showProfile(Object.hasOwn(profileNames, role) ? role : "");
     $("#settings-dialog").showModal();
@@ -326,32 +315,6 @@ export function management({ api, getTown, getState, refresh }) {
     rememberDraft();
     $("#settings-success").textContent = "";
     showProfile($("#agent-role").value);
-  };
-  $("#check-bot-version").onclick = async () => {
-    const role = settingsRole;
-    $("#check-bot-version").disabled = true;
-    $("#bot-version-status").textContent = `Checking ${profileNames[role]}…`;
-    try {
-      const versions = await api("/api/bot-versions");
-      if (role !== settingsRole) return;
-      availableBotVersion = versions[role] || "";
-      const current = selectedBotVersion || settingsConfig.bot_versions?.[role] || "unknown";
-      $("#bot-version-status").textContent = availableBotVersion === current
-        ? `${profileNames[role]} is pinned to ${current}, the latest stable version.`
-        : `${profileNames[role]} is pinned to ${current}; latest stable is ${availableBotVersion}.`;
-      $("#use-bot-version").textContent = `Use ${availableBotVersion}`;
-      $("#use-bot-version").hidden = !availableBotVersion || availableBotVersion === current;
-    } catch (e) {
-      $("#bot-version-status").textContent = e.message;
-    } finally {
-      if (role === settingsRole) $("#check-bot-version").disabled = false;
-    }
-  };
-  $("#use-bot-version").onclick = () => {
-    if (!availableBotVersion) return;
-    selectedBotVersion = availableBotVersion;
-    $("#bot-version-status").textContent = `${profileNames[settingsRole]} will be pinned to ${selectedBotVersion} when you save.`;
-    $("#use-bot-version").hidden = true;
   };
   $("#inherit-agent").onclick = () => {
     drafts[settingsRole] = {
@@ -463,8 +426,6 @@ export function management({ api, getTown, getState, refresh }) {
           merge_policy: $("#settings-merge-policy").value,
           simplifier_mode: $("#settings-simplifier-mode").value,
           review_close_severity: $("#settings-review-close-severity").value,
-          auto_update_bots: $("#settings-auto-update-bots").checked,
-          ...(role ? { bot_version: selectedBotVersion } : {}),
         });
         if (version === settingsVersion)
           $("#settings-success").textContent = `${profileNames[role]} saved.`;

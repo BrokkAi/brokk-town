@@ -35,7 +35,7 @@ func TestSettingsApplyAtDispatchAndDoNotChangeActiveRun(t *testing.T) {
 	})
 	sup := NewSupervisor(s, nil, workers)
 	done := make(chan struct{})
-	go func() { sup.execute(context.Background(), stale, Bug, nil); close(done) }()
+	go func() { sup.execute(context.Background(), stale, Bug); close(done) }()
 	if <-seen != "old" {
 		t.Fatal("wrong starting model")
 	}
@@ -47,7 +47,7 @@ func TestSettingsApplyAtDispatchAndDoNotChangeActiveRun(t *testing.T) {
 		t.Fatal("active config mutated")
 	}
 	<-done
-	sup.execute(context.Background(), stale, Bug, nil)
+	sup.execute(context.Background(), stale, Bug)
 	if <-seen != "new" || <-seen != "new" {
 		t.Fatal("stale scheduled config used")
 	}
@@ -108,7 +108,7 @@ func TestManualMergePolicyPreventsReleaseWorkerCombinations(t *testing.T) {
 	})
 	manual := "manual"
 	supervisor := NewSupervisor(store, nil, nil)
-	if err := supervisor.SettingsForRoleAndPolicy(town.ID, "", AgentSettings{}, &manual, nil, nil, nil, nil); err != nil {
+	if err := supervisor.SettingsForRoleAndPolicy(town.ID, "", AgentSettings{}, &manual, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if worker := store.Snapshot().Towns[town.ID].Workers[Release]; worker.Enabled || worker.Status != "paused" {
@@ -136,7 +136,7 @@ func TestManualMergePolicyPreventsReleaseWorkerCombinations(t *testing.T) {
 		t.Fatalf("release retry was accepted: %v", err)
 	}
 	bot := "bot"
-	if err := supervisor.SettingsForRoleAndPolicy(town.ID, "", AgentSettings{}, &bot, nil, nil, nil, nil); err != nil {
+	if err := supervisor.SettingsForRoleAndPolicy(town.ID, "", AgentSettings{}, &bot, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := supervisor.Control(town.ID, Release, "start", ""); err != nil {

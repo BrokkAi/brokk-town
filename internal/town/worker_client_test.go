@@ -32,8 +32,6 @@ import socketserver
 #   default  finish the run immediately (protocol v1 fixture).
 #   hang     protocol v1 without detach: block the run until the release file
 #            exists, then finish; honor shutdown only after the run ends.
-#   detach   advertise detach: keep working when the client disconnects,
-#            buffer events, and replay them through GET /v1/attach?after=N.
 MODE = os.environ.get('TOWN_WORKER_TEST_MODE', '')
 RELEASE = os.environ.get('TOWN_WORKER_TEST_RELEASE', '')
 INIT_BLOCK = RELEASE + '.initialize-block' if RELEASE else ''
@@ -96,27 +94,6 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, OSError):
             return False
     def do_GET(self):
-        if self.path.startswith('/v1/attach?after=') and MODE == 'detach':
-            after = int(self.path.split('=', 1)[1])
-            if not RUN_STARTED.is_set():
-                self.send_json(404, {'error': 'no run has been submitted'})
-                return
-            self.start_stream()
-            index = 0
-            while True:
-                with COND:
-                    while index >= len(EVENTS) and not RUN_DONE.is_set():
-                        COND.wait(0.05)
-                    if index >= len(EVENTS):
-                        return
-                    event = EVENTS[index]
-                index += 1
-                if event['seq'] <= after:
-                    continue
-                if not self.emit(event):
-                    return
-                if event['type'] in ('complete', 'error', 'canceled'):
-                    return
         if self.path != '/v1/initialize':
             self.send_error(404)
             return
@@ -125,8 +102,6 @@ class Handler(BaseHTTPRequestHandler):
             while not os.path.exists(INIT_BLOCK + '.release'):
                 time.sleep(0.02)
         capabilities = ['run', 'progress', 'issue-result', 'exact-issue']
-        if MODE == 'detach':
-            capabilities.append('detach')
         self.send_json(200, {
             'protocol': 1,
             'minimum_protocol': 1,
@@ -157,14 +132,14 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', '0'))
         request = json.loads(self.rfile.read(length))
         capture = os.environ.get('TOWN_WORKER_TEST_CAPTURE')
-        if capture:
+        if capture and request.get('mode') not in ('jobs','retry-issue'):
             with open(capture, 'w') as f: json.dump(request, f)
         journal = os.environ.get('TOWN_WORKER_TEST_JOURNAL')
         if journal:
             with open(journal, 'a') as f: f.write('run ' + request['state_directory'] + '\n')
         RUN_STARTED.set()
         progress = {'type': 'progress', 'seq': 1, 'progress': {'phase': 'investigating', 'task': 'external protocol fixture'}}
-        if MODE in ('hang', 'detach'):
+        if MODE == 'hang':
             # A run that has been accepted always completes its bookkeeping,
             # however early the Town client disconnects: a detach-capable bot
             # keeps working and buffering, and every bot must still exit after
@@ -223,7 +198,7 @@ func TestIssueWorkerUsesVersionedUnixSocketProtocol(t *testing.T) {
 	x.Config.Verify = []string{"go", "test", "./..."}
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent", "--mode=issue"}, Environment: map[string]string{"PRIVATE": "value"}}
 	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
-	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
+	workers := &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Issue: fake}}
 	progress := []Progress{}
 	result, err := workers.Run(context.Background(), x, Issue, func(p Progress) { progress = append(progress, p) }, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
@@ -266,45 +241,6 @@ func TestIssueWorkerUsesVersionedUnixSocketProtocol(t *testing.T) {
 	}
 }
 
-func TestDefaultWorkersUseExactPinnedNpxPackages(t *testing.T) {
-	dir := t.TempDir()
-	npx := filepath.Join(dir, "npx")
-	capture := filepath.Join(dir, "args")
-	writeFakeWorker(t, npx, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TOWN_NPX_CAPTURE\"\nprintf '1.2.3\\n'\n")
-	resolvedNpx, err := filepath.EvalSymlinks(npx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("TOWN_NPX_CAPTURE", capture)
-	workers := &BotWorkers{}
-	for role, packageName := range workerPackageNames {
-		packageSpec := packageName + "@" + workerDefaultVersions[role]
-		bot, err := workers.externalBot(context.Background(), Config{}, role)
-		if err != nil {
-			t.Fatalf("resolve %s: %v", role, err)
-		}
-		if bot.command != resolvedNpx || !reflect.DeepEqual(bot.args, []string{"--yes", packageSpec}) {
-			t.Fatalf("%s did not use exact pinned npx package: %+v", role, bot)
-		}
-	}
-	data, err := os.ReadFile(capture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for role, packageName := range workerPackageNames {
-		packageSpec := packageName + "@" + workerDefaultVersions[role]
-		if !strings.Contains(string(data), "--yes "+packageSpec+" version\n") {
-			t.Fatalf("missing pinned invocation for %s: %s", packageSpec, data)
-		}
-	}
-	custom := Config{BotVersions: map[Role]string{Issue: "9.8.7"}}
-	bot, err := workers.externalBot(context.Background(), custom, Issue)
-	if err != nil || !reflect.DeepEqual(bot.args, []string{"--yes", "@brokkai/issue-bot@9.8.7"}) {
-		t.Fatalf("saved bot pin was not used: %+v %v", bot, err)
-	}
-}
-
 func TestWorkerVersionAndCapabilitiesAreChecked(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "fake-worker")
@@ -314,7 +250,7 @@ func TestWorkerVersionAndCapabilitiesAreChecked(t *testing.T) {
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
-	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
+	workers := &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Issue: fake}}
 	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), `does not advertise "progress"`) {
 		t.Fatalf("missing capability was accepted: %v", err)
@@ -331,7 +267,7 @@ func TestWorkerEventSequenceMustBeContiguous(t *testing.T) {
 	x.Config.Branch = "main"
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
-	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Issue: fake}}
+	workers := &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Issue: fake}}
 	_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), "event sequence gap") {
 		t.Fatalf("event sequence gap was accepted: %v", err)
@@ -351,7 +287,7 @@ func TestReleaseRetryUsesWorkerAPIBeforeRun(t *testing.T) {
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	x.Workers[Release].RetryRequested = true
-	workers := &BotWorkers{Root: dir, Store: store, BotCommands: map[Role]string{Release: fake}}
+	workers := &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Release: fake}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result, err := workers.Run(context.Background(), x, Release, func(Progress) {}, logger)
 	if err != nil {
@@ -376,7 +312,7 @@ func TestReleaseRetryUsesWorkerAPIBeforeRun(t *testing.T) {
 	// running as if the budget had been lifted.
 	writeFakeWorker(t, fake, strings.Replace(body, `'release', 'retry'`, `'release'`, 1))
 	x.Workers[Release].RetryRequested = true
-	if _, err = workers.Run(context.Background(), x, Release, func(Progress) {}, logger); err == nil || !strings.Contains(err.Error(), `does not advertise "retry"`) {
+	if _, err = workers.Run(context.Background(), x, Release, func(Progress) {}, logger); err == nil || !strings.Contains(err.Error(), `does not support retry`) {
 		t.Fatalf("missing retry capability was accepted: %v", err)
 	}
 }
@@ -390,7 +326,7 @@ func TestManualMergePolicyDoesNotStartFakeReleaseWorker(t *testing.T) {
 	town.Config.MergePolicy = "manual"
 	workers := &BotWorkers{
 		Root: dir, Store: store,
-		BotCommands: map[Role]string{Release: filepath.Join(dir, "worker-that-must-not-start")},
+		botCommands: map[Role]string{Release: filepath.Join(dir, "worker-that-must-not-start")},
 	}
 	_, err := workers.Run(context.Background(), town, Release, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), "release-preparation") {

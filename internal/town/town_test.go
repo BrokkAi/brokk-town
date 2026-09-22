@@ -14,8 +14,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	issuebot "github.com/BrokkAi/issue-bot"
 )
 
 var baseSHA = strings.Repeat("a", 40)
@@ -430,11 +428,11 @@ func (w *issueRetryWorker) RetryIssue(t *Town, issue int) error {
 	if active {
 		return errors.New("retry overlapped the active issue worker")
 	}
-	return (&BotWorkers{Root: w.root}).RetryIssue(t, issue)
+	return (&BotWorkers{Root: w.root, jobsQuery: fixtureIssueQuery(w.root)}).RetryIssue(t, issue)
 }
 
 func (w *issueRetryWorker) CanRetryIssue(t *Town, issue int) (bool, error) {
-	return (&BotWorkers{Root: w.root}).CanRetryIssue(t, issue)
+	return (&BotWorkers{Root: w.root, jobsQuery: fixtureIssueQuery(w.root)}).CanRetryIssue(t, issue)
 }
 
 type failingIssueRetrier struct {
@@ -554,26 +552,10 @@ func TestIssueRetryResetsSelectedDurableJobAfterActiveWorkerStops(t *testing.T) 
 	})
 
 	root := t.TempDir()
-	dir, stateDir := Workspace(root, x.ID, Issue)
-	if err := os.MkdirAll(stateDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	claim := &issuebot.Claim{Token: strings.Repeat("a", 32), Repo: x.ID, Issue: 1, Status: "released", Detail: "publication outcome uncertain"}
-	saved := &issuebot.State{
-		Format: 1, Remote: "https://github.com/acme/orchard.git", Branch: "main", Directory: dir, Repo: x.ID, Host: "github.com",
-		Jobs: map[int]*issuebot.Job{
-			1: {ClaimPending: true, Claim: claim, Issue: issuebot.Issue{Number: 1}, Branch: "issue-bot/1", Base: baseSHA, Tries: 3, RetryAt: now.Add(time.Hour), Failure: "budget exhausted", Status: "blocked", Result: &issuebot.Result{Status: "blocked", Detail: "saved diagnostics"}},
-			2: {Issue: issuebot.Issue{Number: 2}, Branch: "issue-bot/2", Tries: 3, RetryAt: now.Add(2 * time.Hour), Failure: "other failure", Status: "blocked"},
-		},
-	}
-	data, err := json.MarshalIndent(saved, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(filepath.Join(stateDir, "state.json"), append(data, '\n'), 0600); err != nil {
-		t.Fatal(err)
-	}
-
+	writeIssueBotState(t, root, x, map[int]*issueJobSummary{
+		1: {Tries: 3, RetryAt: now.Add(time.Hour), Status: "blocked", ClaimPending: true, Result: &issueJobResult{Status: "blocked", Detail: "saved diagnostics"}},
+		2: {Tries: 3, RetryAt: now.Add(2 * time.Hour), Status: "blocked"},
+	})
 	workers := &issueRetryWorker{root: root, entered: make(chan int, 2)}
 	sup := NewSupervisor(s, newGH(1), workers)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -582,31 +564,13 @@ func TestIssueRetryResetsSelectedDurableJobAfterActiveWorkerStops(t *testing.T) 
 	if run := <-workers.entered; run != 1 {
 		t.Fatalf("first run = %d", run)
 	}
-	if err = sup.Control(x.ID, Issue, "retry", "issue:1"); err != nil {
+	if err := sup.Control(x.ID, Issue, "retry", "issue:1"); err != nil {
 		t.Fatal(err)
 	}
 	if run := <-workers.entered; run != 2 {
 		t.Fatalf("retry did not resume issue worker; run = %d", run)
 	}
 
-	cfg := issuebot.DefaultConfig()
-	cfg.Remote, cfg.Branch, cfg.Directory, cfg.StateDirectory = saved.Remote, saved.Branch, saved.Directory, stateDir
-	cfg.GitHub.Repo, cfg.GitHub.Host = saved.Repo, saved.Host
-	got, err := issuebot.ReadState(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	job := got.Jobs[1]
-	if job.Tries != 0 || !job.RetryAt.IsZero() || job.Status != "pending" {
-		t.Fatalf("selected durable job was not reset: %+v", job)
-	}
-	if !job.ClaimPending || job.Claim == nil || job.Claim.Detail != claim.Detail || job.Base != baseSHA || job.Result == nil || job.Result.Detail != "saved diagnostics" {
-		t.Fatalf("retry discarded uncertain claim or saved work: %+v", job)
-	}
-	other := got.Jobs[2]
-	if other.Tries != 3 || other.Status != "blocked" || !other.RetryAt.Equal(saved.Jobs[2].RetryAt) {
-		t.Fatalf("unrelated durable job changed: %+v", other)
-	}
 	town := s.Snapshot().Towns[x.ID]
 	if town.Tasks["issue:1"].Blocked || town.Tasks["issue:1"].Attempts != 0 || !town.Tasks["issue:1"].RetryAt.IsZero() {
 		t.Fatalf("Town retry state was not reset: %+v", town.Tasks["issue:1"])
@@ -728,7 +692,7 @@ func TestReviewFailuresGetOneMoreAttemptThenCloseAndRequeue(t *testing.T) {
 	sup := NewSupervisor(s, gh, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
 		return RunResult{PR: 1}, failure
 	}))
-	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
+	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review)
 	task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
 	if task.Attempts != 1 || task.Blocked || task.Stage != "queued" || task.RetryAt.IsZero() || !strings.Contains(task.Detail, "one more attempt") {
 		t.Fatalf("first failure did not schedule exactly one more attempt: %+v", task)
@@ -737,7 +701,7 @@ func TestReviewFailuresGetOneMoreAttemptThenCloseAndRequeue(t *testing.T) {
 		t.Fatalf("reviewer error hidden from the task: %q", task.Detail)
 	}
 	update(t, s, func(st *State) { st.Towns[x.ID].Tasks["pr:1"].RetryAt = time.Time{} })
-	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
+	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review)
 	town := s.Snapshot().Towns[x.ID]
 	task = town.Tasks["pr:1"]
 	if task.Stage != "closing" || task.House != Hall || task.Blocked || !strings.Contains(task.Detail, "Two Review attempts") {
@@ -799,7 +763,7 @@ func TestCompletedNegativeReviewRoutesByOwnership(t *testing.T) {
 			sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
 				return RunResult{PR: 1, Audit: negative}, nil
 			}))
-			sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
+			sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review)
 			task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
 			if external {
 				if task.House != Hall || task.Stage != "awaiting_mayor" || task.MayoralDecision != "pending" {
@@ -904,7 +868,7 @@ func TestFailedInitialPersistenceNeverRunsWorker(t *testing.T) {
 		called = true
 		return RunResult{}, nil
 	}))
-	sup.execute(context.Background(), x, Bug, nil)
+	sup.execute(context.Background(), x, Bug)
 	if called {
 		t.Fatal("ran agent without durable state")
 	}
@@ -1427,7 +1391,7 @@ func TestWorkerChatterIsCoalescedIntoFewTransactions(t *testing.T) {
 	})
 	sup := NewSupervisor(s, newGH(1), workers)
 	commits := countCommits(t, s, func() {
-		sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Bug, nil)
+		sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Bug)
 	})
 	if commits > 12 {
 		t.Fatalf("%d durable transactions for one worker run of %d log lines", commits, lines)

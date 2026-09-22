@@ -76,24 +76,6 @@ func KillGroup(pid int) error {
 	return err
 }
 
-// StartDetached prepares a long-lived worker that must outlive this process.
-// The child leads a new session, so terminal hangups and the parent's exit never
-// reach it, and its output goes to a file instead of a pipe that would break when
-// the parent disappears. Nothing cancels it implicitly: callers end it with
-// KillGroup or the worker's own shutdown request.
-func StartDetached(dir string, args []string, env map[string]string, output *os.File) *exec.Cmd {
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Dir = dir
-	cmd.Env = os.Environ()
-	for key, value := range env {
-		cmd.Env = append(cmd.Env, key+"="+value)
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Stdin = nil
-	cmd.Stdout, cmd.Stderr = output, output
-	return cmd
-}
-
 // Alive reports whether pid still exists. Permission errors count as alive.
 func Alive(pid int) bool {
 	if pid <= 0 {

@@ -23,7 +23,7 @@ main() {
             ;;
     esac
 
-    for tool in curl tar awk mktemp uname; do
+    for tool in curl tar awk mktemp uname python3; do
         command -v "$tool" >/dev/null 2>&1 || fail "required command not found: $tool"
     done
     if command -v sha256sum >/dev/null 2>&1; then
@@ -48,18 +48,15 @@ main() {
     releases=https://github.com/BrokkAi/brokk-town/releases
     version=${1:-latest}
     if [ "$version" = latest ]; then
-        latest_url=$(download --output /dev/null --write-out '%{url_effective}' "$releases/latest") ||
-            fail 'could not find the latest stable release; check that a release has been published'
-        case "$latest_url" in
-            "$releases/tag/"*) version=${latest_url##*/} ;;
-            *) fail 'latest release did not resolve to a release tag' ;;
-        esac
+        registry=$(download "https://registry.npmjs.org/@brokkai/brokk-town/latest") || fail 'could not resolve Town version'
+        version=$(printf '%s' "$registry" | python3 -c 'import json,sys; print("v"+json.load(sys.stdin)["version"]+"-town")') || fail 'invalid Town version'
     fi
     printf '%s\n' "$version" | awk '
         /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$/ { valid++ }
         END { exit !(NR == 1 && valid == 1) }
     ' || fail 'version must be a tag such as v0.1.0 or v0.1.0-rc.1'
 
+    case "$version" in *-town) ;; *) version=$version-town ;; esac
     install_dir=${INSTALL_DIR:-${HOME:?set HOME or INSTALL_DIR}/.local/bin}
     case "$install_dir" in
         /*) ;;
@@ -68,7 +65,7 @@ main() {
     [ ! -d "$install_dir/bt" ] || fail 'installation target is a directory'
     temporary=$(mktemp -d)
     staged=
-    trap 'rm -rf "$temporary"; if [ -n "$staged" ]; then rm -f "$staged"; fi' 0
+    trap 'rm -rf "$temporary"; if [ -n "$staged" ]; then rm -rf "$staged"; fi' 0
     trap 'exit 1' HUP INT TERM
 
     asset=brokk-town-$version-$os-$arch.tar.gz
@@ -87,12 +84,30 @@ main() {
     [ "$actual" = "$expected" ] || fail "checksum mismatch for $asset"
 
     mkdir -p "$install_dir"
-    staged=$(mktemp "$install_dir/.brokk-town.XXXXXX")
-    # Extract only the binary to a fresh file; never follow archive paths or links.
-    tar -xzOf "$temporary/$asset" bt > "$staged" || fail 'could not extract bt'
-    [ -s "$staged" ] || fail 'archive contains an empty binary'
-    chmod 755 "$staged"
-    mv -f "$staged" "$install_dir/bt"
+    mkdir -p "$install_dir/.brokk-town"
+    staged=$(mktemp -d "$install_dir/.brokk-town/$version.XXXXXX")
+    python3 - "$temporary/$asset" "$staged" <<'EXTRACT'
+import json, pathlib, sys, tarfile
+with tarfile.open(sys.argv[1], 'r:gz') as archive:
+    manifest = json.load(archive.extractfile('bundle.json'))
+    commands = {'bt', *(bot['command'] for bot in manifest['bots'].values())}
+    if len(commands) != 9 or any('/' in name or name in ('.','..') for name in commands):
+        raise ValueError('invalid executable manifest')
+    members = archive.getmembers()
+    names = {m.name for m in members}
+    if len(names) != len(members) or not commands <= names:
+        raise ValueError('incomplete bundle')
+    for member in members:
+        name = pathlib.PurePosixPath(member.name)
+        if not member.isfile() or name.is_absolute() or '..' in name.parts:
+            raise ValueError('unsafe bundle entry')
+        target = pathlib.Path(sys.argv[2]) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(archive.extractfile(member).read())
+        target.chmod(0o755 if member.name in commands else 0o644)
+EXTRACT
+    ln -s "$staged/bt" "$staged/entrypoint"
+    mv -f "$staged/entrypoint" "$install_dir/bt"
     staged=
     printf 'Installed brokk-town %s to %s/bt\n' "$version" "$install_dir"
     case ":${PATH:-}:" in

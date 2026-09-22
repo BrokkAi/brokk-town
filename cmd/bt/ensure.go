@@ -2,127 +2,24 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/BrokkAi/brokk-town/internal/daemon"
-	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-// The service owns its own lifecycle: every client command brings it up when
-// it is down, registers it with the login session so it survives crashes and
-// reboots, and rolls it forward when this binary is newer. Nothing here is a
-// step the operator has to remember.
-
 const (
-	startTimeout = 20 * time.Second
+	startTimeout = 60 * time.Second
 	stopTimeout  = 30 * time.Second
 	pollInterval = 100 * time.Millisecond
 )
 
-// newManager builds the platform supervisor. Tests replace it.
-var newManager = func(warn func(string)) (daemon.Manager, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-	return daemon.New(daemon.Options{GOOS: runtime.GOOS, Home: home, ConfigHome: os.Getenv("XDG_CONFIG_HOME"), UID: os.Getuid(), Warn: warn})
-}
-
-// spawnService starts a detached service. Tests replace it.
-var spawnService = spawnDetached
-
-var warn = func(message string) { fmt.Fprintln(os.Stderr, "bt:", message) }
-
 // defaultListen is the service address when nothing else was ever chosen.
 const defaultListen = "127.0.0.1:8099"
-
-// launchPreference holds the durable lifecycle settings: whether the tool may
-// register the service with the login session (absent means yes) and the
-// listen address the service was last started with, so a later command's
-// default never rewrites a registration onto a different port.
-type launchPreference struct {
-	Registration string `json:"registration,omitempty"`
-	Listen       string `json:"listen,omitempty"`
-	DemoListen   string `json:"demo_listen,omitempty"`
-}
-
-func preferencePath(base string) string { return filepath.Join(base, "launch.json") }
-
-func readPreference(base string) launchPreference {
-	var p launchPreference
-	if b, err := os.ReadFile(preferencePath(base)); err == nil {
-		_ = json.Unmarshal(b, &p)
-	}
-	return p
-}
-
-func writePreference(base string, p launchPreference) error {
-	if err := os.MkdirAll(base, 0700); err != nil {
-		return err
-	}
-	data, _ := json.Marshal(p)
-	return os.WriteFile(preferencePath(base), data, 0600)
-}
-
-func registrationEnabled(base string) bool {
-	return readPreference(base).Registration != "off"
-}
-
-func setRegistration(base string, on bool) error {
-	p := readPreference(base)
-	p.Registration = "off"
-	if on {
-		p.Registration = "on"
-	}
-	return writePreference(base, p)
-}
-
-// resolveListen picks the address a started service binds: an explicit flag,
-// which is remembered, else the remembered one, else the default.
-func resolveListen(base string, demo bool, explicit string, set bool) (string, error) {
-	p := readPreference(base)
-	saved := &p.Listen
-	if demo {
-		saved = &p.DemoListen
-	}
-	if set {
-		if err := loopbackAddress(explicit); err != nil {
-			return "", err
-		}
-		if *saved != explicit {
-			*saved = explicit
-			if err := writePreference(base, p); err != nil {
-				return "", err
-			}
-		}
-		return explicit, nil
-	}
-	if *saved != "" {
-		return *saved, nil
-	}
-	return defaultListen, nil
-}
-
-// flagSet reports whether the named flag was given on the command line.
-func flagSet(fs *flag.FlagSet, name string) bool {
-	set := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			set = true
-		}
-	})
-	return set
-}
 
 // runtimeDir is where the service keeps connection.json and logs.
 func runtimeDir(base string, demo bool) string {
@@ -200,71 +97,37 @@ func temporaryBinary(exe string) bool {
 	return false
 }
 
-func buildSpec(base, listen string) (daemon.Spec, error) {
+func spawnDetached(base string, demo bool, listen, config, repo string) (*exec.Cmd, error) {
 	exe, err := executablePath()
 	if err != nil {
-		return daemon.Spec{}, err
+		return nil, err
 	}
 	if temporaryBinary(exe) {
-		return daemon.Spec{}, fmt.Errorf("%s is a temporary build; install bt to register it", exe)
-	}
-	dir := runtimeDir(base, false)
-	out, errFile, err := openLogs(dir)
-	if err != nil {
-		return daemon.Spec{}, err
-	}
-	out.Close()
-	errFile.Close()
-	stdout, stderr := logPaths(dir)
-	home, _ := os.UserHomeDir()
-	env := []daemon.EnvVar{{Key: "PATH", Value: os.Getenv("PATH")}, {Key: "HOME", Value: home}, {Key: "BROKK_TOWN_MANAGED", Value: "1"}}
-	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
-		env = append(env, daemon.EnvVar{Key: "XDG_STATE_HOME", Value: xdg})
-	}
-	return daemon.Spec{Command: append([]string{exe}, serviceArgs(base, false, listen)...), WorkingDir: dir, Env: env, StdoutPath: stdout, StderrPath: stderr}, nil
-}
-
-func spawnDetached(base string, demo bool, listen string) error {
-	exe, err := executablePath()
-	if err != nil {
-		return err
-	}
-	if temporaryBinary(exe) {
-		return fmt.Errorf("%s is a temporary build that cannot run the town in the background; build bt or run bt serve in this terminal", exe)
+		return nil, fmt.Errorf("%s is a temporary build that cannot run the town in the background; build bt or run bt serve in this terminal", exe)
 	}
 	dir := runtimeDir(base, demo)
 	out, errFile, err := openLogs(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer out.Close()
 	defer errFile.Close()
-	cmd := exec.Command(exe, serviceArgs(base, demo, listen)...)
+	args := serviceArgs(base, demo, listen)
+	if config != "" {
+		args = append(args, "--config", config)
+	}
+	if repo != "" {
+		args = append(args, "--repo", repo)
+	}
+	cmd := exec.Command(exe, args...)
 	cmd.Dir = dir
 	cmd.Stdout = out
 	cmd.Stderr = errFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		return err
+		return nil, err
 	}
-	return cmd.Process.Release()
-}
-
-// startService brings up a service that is not running: through the login
-// supervisor when allowed, otherwise detached from this terminal.
-func startService(ctx context.Context, base string, demo bool, listen string) error {
-	if !demo && registrationEnabled(base) {
-		if m, err := newManager(warn); err == nil {
-			spec, err := buildSpec(base, listen)
-			if err == nil {
-				if err = m.Ensure(ctx, spec); err == nil {
-					return nil
-				}
-			}
-			warn("running the town without login registration: " + err.Error())
-		}
-	}
-	return spawnService(base, demo, listen)
+	return cmd, nil
 }
 
 // waitReady polls for a service newer than `after` that answers requests.
@@ -300,7 +163,7 @@ func logTail(dir string) string {
 }
 
 // stopProcess terminates a service and waits for it to release the state
-// lock. Its bot processes keep running and are adopted by the next service.
+// lock after it has stopped its bot processes.
 func stopProcess(ctx context.Context, dir string, conn connection) error {
 	if !processAlive(conn.PID) {
 		return nil
@@ -322,80 +185,42 @@ func stopProcess(ctx context.Context, dir string, conn connection) error {
 	return nil
 }
 
-// driftReason explains why this binary should replace the running service:
-// a newer release, or the same binary rebuilt since the service started. An
-// older client never downgrades a service.
-func driftReason(conn connection) (reason string, roll bool) {
-	client := buildVersion()
-	if town.NewerVersion(conn.Version, client) {
-		return fmt.Sprintf("%s → %s", conn.Version, client), true
-	}
-	if town.NewerVersion(client, conn.Version) {
-		return fmt.Sprintf("the running town service is %s; this bt is %s", conn.Version, client), false
-	}
-	exe, err := executablePath()
-	if err != nil || exe == "" || exe != conn.Executable || conn.Started.IsZero() {
-		return "", false
-	}
-	if info, err := os.Stat(exe); err == nil && info.ModTime().After(conn.Started) {
-		return "rebuilt " + exe, true
-	}
-	return "", false
-}
-
-// rollService replaces a running service with this binary. The same path
-// restarts in place; a different path re-registers or respawns.
-func rollService(ctx context.Context, base string, demo bool, listen string, conn connection) (connection, error) {
-	dir := runtimeDir(base, demo)
-	exe, _ := executablePath()
-	if exe == conn.Executable {
-		var result struct{}
-		if err := request(ctx, conn, "POST", "/api/restart", map[string]any{}, &result); err == nil {
-			return waitReady(ctx, dir, conn.Started)
-		}
-	}
-	if conn.Managed && !demo && registrationEnabled(base) {
-		if m, err := newManager(warn); err == nil {
-			spec, err := buildSpec(base, listen)
-			if err == nil {
-				if err = m.Ensure(ctx, spec); err == nil {
-					if err = m.Restart(ctx); err == nil {
-						return waitReady(ctx, dir, conn.Started)
-					}
-				}
-			}
-			warn("supervisor restart failed: " + err.Error())
-		}
-	}
-	if err := stopProcess(ctx, dir, conn); err != nil {
-		return conn, err
-	}
-	if err := startService(ctx, base, demo, listen); err != nil {
-		return conn, err
-	}
-	return waitReady(ctx, dir, conn.Started)
-}
-
-// ensureService returns a connection to a running, current service, starting
-// or replacing one as needed.
-func ensureService(ctx context.Context, base string, demo bool, listen string) (connection, error) {
-	dir := runtimeDir(base, demo)
-	conn, alive := serviceAlive(ctx, dir)
+// requireService never starts or replaces a service.
+func ensureService(ctx context.Context, base string, demo bool) (connection, error) {
+	conn, alive := serviceAlive(ctx, runtimeDir(base, demo))
 	if !alive {
-		warn("starting the town service (logs in " + filepath.Join(dir, "logs") + ")")
-		if err := startService(ctx, base, demo, listen); err != nil {
-			return conn, err
+		return conn, errors.New("Town is not running; start bt or bt -d")
+	}
+	return conn, nil
+}
+
+func startBackground(ctx context.Context, base string, demo bool, listen, config, repo string) error {
+	if conn, alive := serviceAlive(ctx, runtimeDir(base, demo)); alive {
+		return fmt.Errorf("Town is already running (pid %d at %s)", conn.PID, conn.URL)
+	}
+	if config != "" {
+		var err error
+		config, err = filepath.Abs(config)
+		if err != nil {
+			return err
 		}
-		return waitReady(ctx, dir, time.Time{})
 	}
-	reason, roll := driftReason(conn)
-	if reason == "" {
-		return conn, nil
+	cmd, err := spawnDetached(base, demo, listen, config, repo)
+	if err != nil {
+		return err
 	}
-	if !roll {
-		warn(reason)
-		return conn, nil
+	conn, err := waitReady(ctx, runtimeDir(base, demo), time.Time{})
+	if err != nil {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = cmd.Wait()
+		return err
 	}
-	warn("restarting the town service (" + reason + ")")
-	return rollService(ctx, base, demo, listen, conn)
+	if conn.PID != cmd.Process.Pid {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = cmd.Wait()
+		return fmt.Errorf("Town is already running (pid %d)", conn.PID)
+	}
+	_ = cmd.Process.Release()
+	fmt.Printf("Town running (pid %d)\nBrowser: %s/#token=%s\nLogs: %s\n", conn.PID, conn.URL, conn.Token, filepath.Join(runtimeDir(base, demo), "logs"))
+	return nil
 }

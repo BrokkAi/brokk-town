@@ -1,0 +1,352 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	bot "github.com/BrokkAi/release-bot"
+)
+
+func cliRepository(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	source := filepath.Join(root, "source")
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.invalid")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git: %v %s", err, out)
+		}
+	}
+	git(root, "init", "--bare", remote)
+	git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	git(root, "init", "-b", "main", source)
+	git(source, "commit", "--allow-empty", "-m", "initial")
+	git(source, "remote", "add", "origin", remote)
+	git(source, "push", "origin", "main")
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "codex-acp"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(root, "state"))
+	return source
+}
+func TestNoArgumentsStartsWorkWithoutConfiguration(t *testing.T) {
+	source := cliRepository(t)
+	t.Chdir(source)
+	called := false
+	err := executeWithRun(context.Background(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)), func(ctx context.Context, cfg bot.Config, log *slog.Logger, once, force bool) error {
+		called = true
+		if cfg.Branch != "main" || once || force {
+			t.Fatalf("unexpected default startup: %+v once=%v force=%v", cfg, once, force)
+		}
+		if _, err := os.Stat("release-bot.json"); !os.IsNotExist(err) {
+			t.Fatal("startup required or created a config file")
+		}
+		return nil
+	})
+	if err != nil || !called {
+		t.Fatalf("did not start work: %v", err)
+	}
+}
+func TestRepositoryAndFlagsInEitherOrder(t *testing.T) {
+	source := cliRepository(t)
+	for _, args := range [][]string{{source, "--once", "--force"}, {"--once", source, "--force"}, {"once", "--force", source}, {"run", source, "--once", "--force"}} {
+		called := false
+		err := executeWithRun(context.Background(), args, slog.New(slog.NewTextHandler(io.Discard, nil)), func(ctx context.Context, cfg bot.Config, log *slog.Logger, once, force bool) error {
+			called = true
+			if !once || !force {
+				t.Fatal("flags lost")
+			}
+			return nil
+		})
+		if err != nil || !called {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+}
+func TestHelpDoesNotNeedRepositoryAndConsoleIsReadable(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := execute(context.Background(), []string{"--help"}, slog.Default()); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	slog.New(newConsole(&output)).Info("Watching repository", "branch", "main")
+	if !strings.Contains(output.String(), "Watching repository · branch: main") || strings.Contains(output.String(), "msg=") {
+		t.Fatalf("unexpected console output: %s", output.String())
+	}
+}
+
+func TestVersionCommand(t *testing.T) {
+	original := version
+	version = "v1.2.3"
+	t.Cleanup(func() { version = original })
+
+	var output strings.Builder
+	if err := versionCommand(nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := output.String(), "v1.2.3\n"; got != want {
+		t.Fatalf("version output = %q, want %q", got, want)
+	}
+	if err := versionCommand([]string{"extra"}, &output); err == nil {
+		t.Fatal("version accepted an argument")
+	}
+}
+
+func TestModelFlagAndConfiguration(t *testing.T) {
+	source := cliRepository(t)
+	cfg, err := bot.Discover(context.Background(), source, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Agent.Model = "configured-model"
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{source}, ""},
+		{[]string{source, "--model", "chosen-model"}, "chosen-model"},
+		{[]string{"--model=chosen-model", source}, "chosen-model"},
+		{[]string{"--config", file}, "configured-model"},
+		{[]string{"--config", file, "--model", "override-model"}, "override-model"},
+	} {
+		called := false
+		err := executeWithRun(context.Background(), tc.args, slog.New(slog.NewTextHandler(io.Discard, nil)), func(ctx context.Context, cfg bot.Config, log *slog.Logger, once, force bool) error {
+			called = true
+			if cfg.Agent.Model != tc.want {
+				t.Fatalf("model = %q, want %q", cfg.Agent.Model, tc.want)
+			}
+			return nil
+		})
+		if err != nil || !called {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+	}
+	if err := executeWithRun(context.Background(), []string{source, "--model="}, slog.Default(), func(context.Context, bot.Config, *slog.Logger, bool, bool) error {
+		t.Fatal("empty model started work")
+		return nil
+	}); err == nil || !strings.Contains(err.Error(), "requires a model ID") {
+		t.Fatalf("empty model accepted: %v", err)
+	}
+}
+
+func TestConsoleJoinsLiveTranscriptFragments(t *testing.T) {
+	var output strings.Builder
+	log := slog.New(newConsole(&output))
+	log.Info("agent transcript", "source", "Agent", "stream_id", "session", "text", "Checking ")
+	if !strings.Contains(output.String(), "Agent │ Checking ") {
+		t.Fatal("fragment was buffered instead of displayed immediately")
+	}
+	log.Info("agent transcript", "source", "Agent", "stream_id", "session", "text", "the build.\nNext")
+	log.Info("Tool", "title", "go test ./...")
+	log.Info("agent transcript", "source", "Tool output", "stream_id", "a", "text", "first")
+	log.Info("agent transcript", "source", "Tool output", "stream_id", "b", "text", "second\n")
+	text := output.String()
+	for _, expected := range []string{"Agent │ Checking the build.\n", "Agent │ Next\n", "Tool output │ first\n", "Tool output │ second\n"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("missing %q in %q", expected, text)
+		}
+	}
+	if strings.Contains(text, "agent transcript") || strings.Contains(text, "text:") {
+		t.Fatal("console exposed stream implementation fields")
+	}
+}
+
+func TestEffortFlagAndConfiguration(t *testing.T) {
+	source := cliRepository(t)
+	cfg, err := bot.Discover(context.Background(), source, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Agent.Effort = "high"
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{source}, ""},
+		{[]string{source, "--effort", "low"}, "low"},
+		{[]string{"--effort=medium", source}, "medium"},
+		{[]string{"--config", file}, "high"},
+		{[]string{"--config", file, "--effort", "low"}, "low"},
+		{[]string{source, "--model", "fixture-model", "--effort", "future-agent-value"}, "future-agent-value"},
+	} {
+		called := false
+		err := executeWithRun(context.Background(), tc.args, slog.New(slog.NewTextHandler(io.Discard, nil)), func(ctx context.Context, cfg bot.Config, log *slog.Logger, once, force bool) error {
+			called = true
+			if cfg.Agent.Effort != tc.want {
+				t.Fatalf("effort=%q want=%q", cfg.Agent.Effort, tc.want)
+			}
+			return nil
+		})
+		if err != nil || !called {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+	}
+	for _, value := range []string{"", "  "} {
+		err := executeWithRun(context.Background(), []string{source, "--effort=" + value}, slog.Default(), func(context.Context, bot.Config, *slog.Logger, bool, bool) error {
+			t.Fatal("empty effort started work")
+			return nil
+		})
+		if err == nil || !strings.Contains(err.Error(), "requires a reasoning effort value") {
+			t.Fatalf("empty effort accepted: %v", err)
+		}
+	}
+}
+
+func TestBurstFlagAndConfiguration(t *testing.T) {
+	source := cliRepository(t)
+	cfg, err := bot.Discover(context.Background(), source, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Burst = 8
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want int
+	}{
+		{[]string{source}, 5},
+		{[]string{source, "--burst", "3"}, 3},
+		{[]string{"--burst=2", source}, 2},
+		{[]string{"--config", file}, 8},
+		{[]string{"--config", file, "--burst", "5"}, 5},
+		{[]string{"--config", file, "--burst", "0"}, 0},
+	} {
+		called := false
+		err := executeWithRun(context.Background(), tc.args, slog.New(slog.NewTextHandler(io.Discard, nil)), func(ctx context.Context, cfg bot.Config, log *slog.Logger, once, force bool) error {
+			called = true
+			if cfg.Burst != tc.want {
+				t.Fatalf("burst=%d want=%d", cfg.Burst, tc.want)
+			}
+			return nil
+		})
+		if err != nil || !called {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+	}
+	for _, value := range []string{"-1", "invalid"} {
+		err := executeWithRun(context.Background(), []string{source, "--burst=" + value}, slog.Default(), func(context.Context, bot.Config, *slog.Logger, bool, bool) error {
+			t.Fatal("invalid burst started work")
+			return nil
+		})
+		if err == nil {
+			t.Fatalf("invalid burst accepted: %s", value)
+		}
+	}
+}
+
+func TestEarlyReleaseDurationFlags(t *testing.T) {
+	source := cliRepository(t)
+	cfg, err := bot.Discover(context.Background(), source, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.MinimumGap, cfg.Quiet = bot.Duration(time.Hour), bot.Duration(3*time.Minute)
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args       []string
+		gap, quiet time.Duration
+	}{
+		{[]string{source}, 2 * time.Hour, 15 * time.Minute},
+		{[]string{source, "--minimum-gap", "10m", "--quiet", "30s"}, 10 * time.Minute, 30 * time.Second},
+		{[]string{"--quiet=0", source, "--minimum-gap=0"}, 0, 0},
+		{[]string{"--config", file}, time.Hour, 3 * time.Minute},
+		{[]string{"--config", file, "--quiet=1m"}, time.Hour, time.Minute},
+		{[]string{"--config", file, "--minimum-gap=5m"}, 5 * time.Minute, 3 * time.Minute},
+		{[]string{"--config", file, "--minimum-gap=0", "--quiet=0"}, 0, 0},
+	} {
+		called := false
+		err := executeWithRun(context.Background(), tc.args, slog.New(slog.NewTextHandler(io.Discard, nil)), func(ctx context.Context, cfg bot.Config, log *slog.Logger, once, force bool) error {
+			called = true
+			if time.Duration(cfg.MinimumGap) != tc.gap || time.Duration(cfg.Quiet) != tc.quiet {
+				t.Fatalf("%v: gap=%s quiet=%s", tc.args, time.Duration(cfg.MinimumGap), time.Duration(cfg.Quiet))
+			}
+			return nil
+		})
+		if err != nil || !called {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+	}
+	cfg.Triage = false
+	if data, err = json.Marshal(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want bool
+	}{
+		{[]string{source}, true},
+		{[]string{source, "--triage=false"}, false},
+		{[]string{"--config", file}, false},
+		{[]string{"--config", file, "--triage"}, true},
+	} {
+		called := false
+		err := executeWithRun(context.Background(), tc.args, slog.New(slog.NewTextHandler(io.Discard, nil)), func(ctx context.Context, cfg bot.Config, log *slog.Logger, once, force bool) error {
+			called = true
+			if cfg.Triage != tc.want {
+				t.Fatalf("%v: triage=%v", tc.args, cfg.Triage)
+			}
+			return nil
+		})
+		if err != nil || !called {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+	}
+	for _, arg := range []string{"--minimum-gap=-1s", "--quiet=-1m", "--quiet=bad", "--minimum-gap=25h"} {
+		if err := executeWithRun(context.Background(), []string{source, arg}, slog.Default(), func(context.Context, bot.Config, *slog.Logger, bool, bool) error {
+			t.Fatal("invalid duration started work")
+			return nil
+		}); err == nil {
+			t.Fatalf("accepted %s", arg)
+		}
+	}
+}

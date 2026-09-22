@@ -1,0 +1,41 @@
+name: Release issue-bot
+on:
+  push:
+    tags: ['v*-issue-bot']
+permissions:
+  contents: read
+concurrency:
+  group: release-issue-bot-${{ github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: packages-publish
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: bots/issue-bot
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: bots/issue-bot/go.mod
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: python3 scripts/publish_tag.py

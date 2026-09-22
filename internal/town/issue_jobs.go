@@ -7,21 +7,8 @@ import (
 	"strings"
 	"time"
 
-	issuebot "github.com/BrokkAi/issue-bot"
+	"context"
 )
-
-func (b *BotWorkers) issueConfig(t *Town) issuebot.Config {
-	dir, state := Workspace(b.Root, t.ID, Issue)
-	c := issuebot.DefaultConfig()
-	c.Remote = b.remote(t.Config.Repo)
-	c.Branch = t.Branch()
-	c.Directory = dir
-	c.StateDirectory = state
-	c.GitHub.Repo = t.Config.Repo
-	c.Draft = false
-	c.Verify = t.Config.Verify
-	return c
-}
 
 // SyncIssues imports only the public scheduling outcome from issue-bot's
 // durable state. Worktree paths, issue bodies, claims and agent settings remain
@@ -29,8 +16,8 @@ func (b *BotWorkers) issueConfig(t *Town) issuebot.Config {
 func (b *BotWorkers) SyncIssues(t *Town) error {
 	b.issueMu.Lock()
 	defer b.issueMu.Unlock()
-	saved, err := issuebot.ReadState(b.issueConfig(t))
-	if err != nil || saved == nil {
+	jobs, err := b.queryIssueJobs(t, "jobs", 0)
+	if err != nil || jobs == nil {
 		return err
 	}
 	return b.Store.Update(func(st *State) error {
@@ -38,7 +25,7 @@ func (b *BotWorkers) SyncIssues(t *Town) error {
 		if current == nil || current.Deleted {
 			return nil
 		}
-		for number, job := range saved.Jobs {
+		for number, job := range jobs {
 			task := current.Tasks[fmt.Sprintf("issue:%d", number)]
 			if task == nil {
 				continue
@@ -112,7 +99,7 @@ func (b *BotWorkers) SyncIssues(t *Town) error {
 	})
 }
 
-func issueJobDetail(job *issuebot.Job) string {
+func issueJobDetail(job *issueJobSummary) string {
 	if job.Result != nil && strings.TrimSpace(job.Result.Detail) != "" {
 		return job.Result.Detail
 	}
@@ -133,4 +120,47 @@ func submittedPR(repo, raw string) int {
 	}
 	n, _ := strconv.Atoi(parts[3])
 	return n
+}
+
+// issueJobSummary is Issue Bot's public protocol result, not its state schema.
+type issueJobSummary struct {
+	Status       string          `json:"status"`
+	Failure      string          `json:"failure"`
+	ClaimPending bool            `json:"claim_pending"`
+	Tries        int             `json:"tries"`
+	RetryAt      time.Time       `json:"retry_at"`
+	URL          string          `json:"url"`
+	Branch       string          `json:"branch"`
+	Result       *issueJobResult `json:"result,omitempty"`
+}
+type issueJobResult struct {
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+}
+
+func (b *BotWorkers) queryIssueJobs(t *Town, mode string, issue int) (map[int]*issueJobSummary, error) {
+	if b.jobsQuery != nil {
+		return b.jobsQuery(t, mode, issue)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	bot, err := b.externalBot(ctx, t.Config, Issue)
+	if err != nil {
+		return nil, err
+	}
+	dir, state := Workspace(b.Root, t.ID, Issue)
+	result, err := b.runPersistent(ctx, t.ID, bot, workerRequest{Protocol: workerProtocolVersion, Remote: b.remote(t.Config.Repo), Branch: t.Branch(), Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com", Mode: mode, Issue: issue}, false, time.Now().Add(15*time.Second), func(Progress) {}, nil)
+	return result.Jobs, err
+}
+func (b *BotWorkers) CanRetryIssue(t *Town, issue int) (bool, error) {
+	jobs, err := b.queryIssueJobs(t, "jobs", 0)
+	if err != nil {
+		return false, err
+	}
+	job := jobs[issue]
+	return job != nil && (job.Status == "blocked" || job.Status == "pending"), nil
+}
+func (b *BotWorkers) RetryIssue(t *Town, issue int) error {
+	_, err := b.queryIssueJobs(t, "retry-issue", issue)
+	return err
 }

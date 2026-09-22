@@ -84,10 +84,6 @@ let state = null,
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
   streamAbort = null,
   servedVersion = "";
-// A failed upgrade is the one error the town itself cannot report: the service
-// that would have carried it is the thing that did not change. It survives the
-// renders that follow until the next attempt clears it.
-let upgradeError = "";
 let liveDetail = null;
 let liveDetailEpoch = 0;
 let outcomeDays = 7;
@@ -257,45 +253,6 @@ function receive(next) {
       return;
     }
     servedVersion = next.version;
-  }
-  const update = $("#update-notice");
-  if (state.update) {
-    update.textContent = `Upgrade Town to ${state.update.latest}`;
-    update.title = state.update.command;
-    update.hidden = false;
-    update.onclick = async () => {
-      // The offer is read once, up front: a stream event can replace state
-      // mid-request, and a report of what was installed must name the version
-      // that was actually asked for.
-      const latest = state.update.latest;
-      if (!confirm(`Upgrade Brokk Town to ${latest}?\n\nTown installs that exact version and restarts itself; this page reloads when it is back.`)) return;
-      upgradeError = "";
-      update.disabled = true;
-      update.textContent = "Upgrading Town…";
-      try {
-        const result = await api("/api/update", {});
-        if (result.restarting) {
-          update.textContent = `Town ${latest} installed · restarting`;
-          update.title = "The service restarts itself; this page reloads when it is back";
-        } else {
-          update.textContent = `Town ${latest} installed · restart service`;
-          update.title = "Restart bt serve to use the installed version";
-        }
-      } catch (error) {
-        // The reason is the whole story of a failed upgrade, and a tooltip is
-        // not a place anyone looks: it goes in the banner, beside whatever the
-        // town itself reports rather than in place of it.
-        upgradeError = `Upgrade to ${latest} failed: ${error.message}`;
-        update.disabled = false;
-        update.textContent = `Upgrade failed · try again`;
-        update.title = error.message;
-        render();
-      }
-    };
-  } else {
-    // Nothing left to install: a past failure has nothing to say any more.
-    upgradeError = "";
-    update.hidden = true;
   }
   const serviceVersion = typeof state.version === "string" ? state.version.trim() : "";
   $("#town-version").textContent = serviceVersion;
@@ -577,7 +534,7 @@ function render() {
   renderOverview();
   renderBoard();
   renderCompact();
-  showError([t?.error, upgradeError].filter(Boolean).join(" · "));
+  showError(t?.error || "");
   renderHouses();
   renderInspection();
   renderJournal();
@@ -766,11 +723,8 @@ function renderInspection() {
     const source = task.source,
       provenance = source?.provenance,
       sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
-    const isUpgrade = task.kind === "upgrade";
     const mayorActions = task.mayoral_decision !== "pending"
       ? ""
-      : isUpgrade
-        ? `<div class="inspector-actions"><button id="admit-task" class="primary">Upgrade now</button><button id="delay-task">Delay a day</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">The bot keeps ${esc(task.upgrade?.from || "its current pin")} until you decide. Upgrading pins ${esc(task.upgrade?.to || "the new version")} for its next run; delaying asks again in a day; declining skips this version.</p>`
         : `<div class="inspector-actions"><button id="admit-task" class="primary">${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`;
     const isMayor = task.mayoral_decision === "pending";
     const liveCapable = isMayor && (task.kind === "issue" || task.kind === "pr") && task.number > 0;
@@ -815,11 +769,9 @@ function renderInspection() {
         command("retry", selectedHouse, selectedTask);
     const decisionButtons = [...out.querySelectorAll("button")];
     const admit = decisionButtons.find((button) => button.id === "admit-task"),
-      decline = decisionButtons.find((button) => button.id === "decline-task"),
-      delay = decisionButtons.find((button) => button.id === "delay-task");
+      decline = decisionButtons.find((button) => button.id === "decline-task");
     if (admit) admit.onclick = () => command("admit", "hall", selectedTask);
     if (decline) decline.onclick = () => command("decline", "hall", selectedTask);
-    if (delay) delay.onclick = () => command("delay", "hall", selectedTask);
     return;
   }
   if (selectedHouse === "hall") {
@@ -840,7 +792,7 @@ function renderInspection() {
       mayorControls = workerControls(mayor);
     const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : projectedMayor.status === "failed" ? "blocked" : "waiting"}"></i>Mayor Bot ${esc(projectedMayor.status)}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${mayorControls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${mayorControls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${mayorControls.stop ? "" : " disabled"}>■ Stop</button></div><p class="muted">${mayor?.enabled ? "Mayor Bot judges each arrival below as it comes in, with its reason kept on the task, and writes the bulletin when work merges." : "Start Mayor Bot to have it judge arrivals for you and write the bulletin. Until then, decisions wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
     const bulletinRows = (t.bulletins || []).slice().reverse().slice(0, 20).map((b) => `<article class="bulletin"><h4>${esc(b.title)}</h4><p class="muted">${esc(new Date(b.since).toLocaleString())} – ${esc(new Date(b.until).toLocaleString())} · ${(b.pulls || []).length} merged</p><p>${esc(b.summary)}</p>${(b.items || []).map((item) => `<div class="bulletin-item"><span class="status-chip status-${esc(item.kind)}">${esc(item.kind)}</span> <strong>${esc(item.title)}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${(item.pulls || []).map((n) => `PR #${n}`).join(", ")}${(item.issues || []).length ? ` · ${item.issues.map((n) => `issue #${n}`).join(", ")}` : ""}</small></div>`).join("")}</article>`).join("");
-    if (!writeInspection(out, `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work, proposed features and bot updates are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work, proposed features and bot updates wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind === "upgrade" ? "bot update" : task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
+    if (!writeInspection(out, `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()

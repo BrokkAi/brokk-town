@@ -1,4 +1,6 @@
 import hashlib
+import json
+import build_bundle
 import io
 import os
 from pathlib import Path
@@ -18,12 +20,15 @@ class InstallerTests(unittest.TestCase):
             directory = Path(temporary)
             system = {"Linux": "linux", "Darwin": "darwin"}[platform.system()]
             arch = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}[platform.machine()]
-            asset = directory / f"brokk-town-v0.1.0-{system}-{arch}.tar.gz"
+            asset = directory / f"brokk-town-v0.1.0-town-{system}-{arch}.tar.gz"
             payload = b"#!/bin/sh\nprintf 'fixture bt\\n'\n"
             with tarfile.open(asset, "w:gz") as archive:
-                info = tarfile.TarInfo("bt")
-                info.mode, info.size = 0o755, len(payload)
-                archive.addfile(info, io.BytesIO(payload))
+                files = {name: payload for name in build_bundle.executables()}
+                files["bundle.json"] = (ROOT / "bundle.json").read_bytes()
+                for name, data in files.items():
+                    info = tarfile.TarInfo(name)
+                    info.mode, info.size = 0o755, len(data)
+                    archive.addfile(info, io.BytesIO(data))
             (directory / "checksums.txt").write_text(f"{hashlib.sha256(asset.read_bytes()).hexdigest()}  {asset.name}\n")
             tools = directory / "tools"
             tools.mkdir()
@@ -36,6 +41,9 @@ class InstallerTests(unittest.TestCase):
             result = subprocess.run(command, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((destination / "bt").read_bytes(), payload)
+            self.assertTrue((destination / "bt").is_symlink())
+            for name in build_bundle.executables():
+                self.assertEqual(((destination / "bt").resolve().parent / name).read_bytes(), payload)
             asset.write_bytes(b"damaged")
             result = subprocess.run(command, env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)

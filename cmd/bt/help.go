@@ -13,6 +13,7 @@ import (
 // help, and a help command. Flag parsing stays on the standard library.
 
 type cliFlags struct {
+	daemon         *bool
 	closeSeverity  *string
 	dir            *string
 	listen         *string
@@ -40,8 +41,9 @@ type cliFlags struct {
 // flags relevant to each command.
 func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl := &cliFlags{}
+	fl.daemon = fs.Bool("d", false, "run Town in the background")
 	fl.dir = fs.String("state-dir", stateHome(), "private state directory")
-	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
+	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for service startup")
 	fl.demo = fs.Bool("demo", false, "isolated simulated town (serve only)")
 	fl.repo = fs.String("repo", "", "GitHub OWNER/REPO")
 	fl.role = fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release, simplifier, hall (Mayor Bot); repo/all for controls (start all wakes every house, except release under manual merge policy); omit for town defaults in settings")
@@ -72,7 +74,7 @@ type serviceFlags struct {
 func addServiceFlags(fs *flag.FlagSet) *serviceFlags {
 	fl := &serviceFlags{}
 	fl.dir = fs.String("state-dir", stateHome(), "private state directory")
-	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for the service; remembered for later starts")
+	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for service startup")
 	fl.demo = fs.Bool("demo", false, "the isolated simulated town")
 	return fl
 }
@@ -89,10 +91,9 @@ type commandInfo struct {
 var globalFlagNames = []string{"demo", "listen", "state-dir"}
 
 var cliCommands = []commandInfo{
-	{name: "tui", short: "Open the terminal control panel (default)", long: "Open the terminal control panel. Starts the town service when it is down and keeps it registered with your login session.", args: "[flags]", flags: nil},
-	{name: "web", short: "Print the browser address for the town", long: "Print the browser address for the town. Starts the town service when it is down.", args: "[flags]", flags: nil},
+	{name: "web", short: "Print the browser address for the town", long: "Print the browser address for the running town.", args: "[flags]", flags: nil},
 	{name: "status", short: "Show town state as JSON", long: "Show the town state as JSON.", args: "[flags]", flags: nil},
-	{name: "service", short: "Manage the town service", long: "Inspect, stop, or unregister the town service. See bt service --help for the available actions.", args: "[command] [flags]", flags: nil},
+	{name: "service", short: "Manage the town service", long: "Inspect or stop the town service. See bt service --help for the available actions.", args: "[command] [flags]", flags: nil},
 	{name: "capacity", short: "Set the maximum active bot workers", long: "Set the maximum active bot workers across all towns.", args: "--max-workers N [flags]", flags: []string{"max-workers"}},
 	{name: "add", short: "Add a town", long: "Add a town for a GitHub repository.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "model", "repo"}},
 	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
@@ -106,17 +107,13 @@ var cliCommands = []commandInfo{
 	{name: "retry", short: "Retry a task", long: "Retry a task. Omit --task with --role release to reset the release bot's exhausted attempt budget.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role", "task"}},
 	{name: "admit", short: "Admit a Mayoral decision", long: "Admit a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "decline", short: "Decline a Mayoral decision", long: "Decline a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
-	{name: "delay", short: "Delay a Mayoral decision", long: "Delay a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "serve", short: "Run the town service in the foreground", long: "Run the town service in the foreground.", args: "[flags]", flags: []string{"config", "repo"}},
 	{name: "version", short: "Print the version", long: "Print the bt version.", args: "", flags: nil},
 }
 
 var serviceCommands = []commandInfo{
-	{name: "status", short: "Show the service, its registration, and log locations", long: "Show the service, its registration, and log locations.", args: "[flags]"},
-	{name: "on", short: "Register the service with the login session (the default)", long: "Register the service with launchd or systemd --user so it survives crashes and reboots.", args: "[flags]"},
-	{name: "off", short: "Keep the service out of the login session", long: "Keep the service out of your login session; bt still starts it on demand.", args: "[flags]"},
-	{name: "stop", short: "Stop the service until the next bt command", long: "Stop the service until the next bt command.", args: "[flags]"},
-	{name: "restart", short: "Restart the service in place", long: "Restart the service in place.", args: "[flags]"},
+	{name: "status", short: "Show service status and logs", long: "Show service status and log locations.", args: "[flags]"},
+	{name: "stop", short: "Stop Town and its bots", long: "Stop Town and all its bot processes.", args: "[flags]"},
 }
 
 func findCommand(name string) *commandInfo {
@@ -232,12 +229,9 @@ func writeCommands(out io.Writer, cmds []commandInfo) {
 // printRootHelp renders the top-level help: description, usage, commands,
 // flags, and the --help pointer.
 func printRootHelp(out io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintln(out, "Brokk Town — one local service, a browser town, and a terminal control panel.")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Run bt for the terminal panel or bt web for the browser address; either starts")
-	fmt.Fprintln(out, "the town service when it is down and keeps it registered with your login session.")
-	fmt.Fprintln(out, "Add --demo for a simulated town. Use bt service to inspect, stop, or unregister")
-	fmt.Fprintln(out, "the service, and bt serve to run it in the foreground.")
+	fmt.Fprintln(out, "Brokk Town — a local service with a browser and CLI.")
+	fmt.Fprintln(out, "Run bt in the foreground, or bt -d in the background. Ctrl+C stops Town and its bots.")
+	fmt.Fprintln(out, "Use bt web for the browser address. Client commands require a running service.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
 	fmt.Fprintln(out, "  bt [command] [flags]")
@@ -247,7 +241,7 @@ func printRootHelp(out io.Writer, fs *flag.FlagSet) {
 	withHelp := append(append([]commandInfo(nil), cliCommands...), commandInfo{name: "help", short: "Show help for a command"})
 	writeCommands(out, withHelp)
 	fmt.Fprintln(out)
-	writeFlagSection(out, fs, globalFlagNames, "Flags", "bt")
+	writeFlagSection(out, fs, append([]string{"d", "config", "repo"}, globalFlagNames...), "Flags", "bt")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, `Use "bt [command] --help" for more information about a command.`)
 }
@@ -284,8 +278,7 @@ func printCommandHelp(out io.Writer, fs *flag.FlagSet, name string) {
 }
 
 func printServiceHelp(out io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintln(out, "Manage the town service. Every bt command starts the town service when it is")
-	fmt.Fprintln(out, "down and registers it with your login session.")
+	fmt.Fprintln(out, "Inspect or stop the running Town service. Start it with bt or bt -d.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
 	fmt.Fprintln(out, "  bt service [command] [flags]")

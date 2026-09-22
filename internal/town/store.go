@@ -41,47 +41,6 @@ func Open(dir string, demo bool) (*Store, error) {
 	if err == nil {
 		err = json.Unmarshal(b, &s.state)
 		if err == nil {
-			// Only an absent setting migrates to the default. A present empty,
-			// null, or invalid configuration must fail validation.
-			var fields map[string]json.RawMessage
-			err = json.Unmarshal(b, &fields)
-			if raw, present := fields["service_config"]; present && err == nil {
-				s.state.ServiceConfig = ServiceConfig{}
-				err = json.Unmarshal(raw, &s.state.ServiceConfig)
-			}
-			s.state.Capacity = nil
-		}
-		if err == nil {
-			// Older towns predate feature discovery. Add only the absent role,
-			// paused, without enabling new automation or repairing corrupt workers.
-			for _, t := range s.state.Towns {
-				if t != nil && t.Workers != nil {
-					if _, present := t.Workers[Feature]; !present {
-						t.Workers[Feature] = &Worker{Role: Feature, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
-					}
-					if _, present := t.Workers[Simplifier]; !present {
-						t.Workers[Simplifier] = &Worker{Role: Simplifier, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
-					}
-					if _, present := t.Workers[Hall]; !present {
-						t.Workers[Hall] = &Worker{Role: Hall, Status: "paused", Task: "Ready when you are", Logs: []Log{}}
-					}
-				}
-				if t != nil {
-					if t.FunnelIntents == nil {
-						t.FunnelIntents = map[string]*WriteIntent{}
-					}
-					if t.FunnelSyncs == nil {
-						t.FunnelSyncs = map[FunnelID]*FunnelSync{}
-					}
-					if t.Outcomes == nil {
-						t.Outcomes = []OutcomeRecord{}
-					}
-					if t.Bulletins == nil {
-						t.Bulletins = []Bulletin{}
-					}
-					enforceManualReleasePolicy(t)
-				}
-			}
 			err = validateState(s.state, demo)
 		}
 	}
@@ -94,35 +53,11 @@ func Open(dir string, demo bool) (*Store, error) {
 	// worker returns to its scheduled state, and durable intents are kept.
 	for _, t := range s.state.Towns {
 		for _, w := range t.Workers {
-			// Older versions dropped the handle after an uncertain adoption.
-			// Recover the public target from the most recent matching attempt.
-			if w.Run == nil && w.Recovery == nil && strings.Contains(w.Error, "its outcome is uncertain") {
-				for i := len(t.Outcomes) - 1; i >= 0; i-- {
-					o := t.Outcomes[i]
-					if o.Role == w.Role && o.Kind == "worker_attempt" {
-						if o.Detail == w.Error {
-							w.Recovery = &WorkerRecovery{TaskID: o.TaskID, Head: o.Revision, Started: o.At, Detail: recoveryDetail(w.Role, o.TaskID)}
-						}
-						break
-					}
-				}
-			}
-			// Older releases persisted the discovery scan's thirty-minute delay
-			// for intake too. Only shorten a successful, idle intake schedule;
-			// failures, explicit pauses and per-task retry times remain intact.
-			if w.Role == Simplifier && w.Enabled && w.Run == nil && w.Error == "" && w.Status == "waiting" && !t.Deleted {
-				if nextTask(t, Simplifier, "simplifying") != nil {
-					due := w.Updated.Add(time.Duration(t.Config.PollSeconds) * time.Second)
-					if w.Next.After(due) {
-						w.Next = due
-					}
-				}
-			}
-			if w.Run != nil && !t.Deleted {
-				w.Status = "working"
-				w.Phase = "reconnecting"
-				w.Task = "Reconnecting to " + w.Run.Bot + " " + w.Run.Version + " started before the service restarted"
-				continue
+			if w.Run != nil {
+				run := w.Run
+				target := workerRunTask(*run)
+				w.Recovery = &WorkerRecovery{TaskID: target, Base: run.BaseSHA, Head: run.HeadSHA, Started: run.Started, Detail: recoveryDetail(w.Role, target)}
+				w.Run = nil
 			}
 			w.Agent = nil
 			if w.Recovery != nil {
@@ -206,17 +141,6 @@ func validateState(s State, demo bool) error {
 				}
 			}
 			switch task.Kind {
-			case "upgrade":
-				u := task.Upgrade
-				if u == nil || !ValidAgentRole(u.Role) || key != "upgrade:"+string(u.Role) || task.House != Hall || !workerVersionPattern.MatchString(u.From) || !workerVersionPattern.MatchString(u.To) {
-					return errors.New("invalid bot upgrade identity")
-				}
-				if task.Stage == "delayed" && (task.MayoralDecision != "" || task.RetryAt.IsZero()) {
-					return errors.New("delayed bot upgrade needs a due time")
-				}
-				if task.Stage != "awaiting_mayor" && task.Stage != "declined" && task.Stage != "delayed" {
-					return errors.New("invalid bot upgrade stage")
-				}
 			case "issue", "pr":
 				if task.Number < 1 || key != fmt.Sprintf("%s:%d", task.Kind, task.Number) {
 					return errors.New("invalid task number")

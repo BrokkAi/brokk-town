@@ -1,106 +1,26 @@
 # Local service and repository towns
 
-`cmd/bt` owns the service lifecycle, local connection file, CLI, and TUI. Every
-client command starts the service when it is down and rolls it forward when the
-client binary is newer; `internal/daemon` registers it with the login session
-(launchd agent or systemd user unit) so it survives crashes and reboots.
-`internal/town` owns persistent facts, routing, GitHub reads/writes, and worker
-scheduling. `internal/web` embeds the browser application and exposes the same
-state/commands to both clients. The service outlives client connections.
+`cmd/bt` owns the foreground service, optional explicit background launch, local
+connection file and CLI. Browser and CLI consume the same committed state.
+Clients never auto-start or replace a service. There is no terminal UI.
 
-A town ID is the lowercase GitHub repository slug. State is keyed by town, then
-issue/PR number or commit SHA. Branches and worktrees remain within the town.
+Each `bots/<project>` is an independent Go module and executable. The root
+`bundle.json` selects their supported versions; installation bundles all binaries.
+Town does not import any bot's Go packages or resolve bots through npm at runtime.
 
-Input funnels split discovery from scheduling and provider feedback. An adapter
-discovers or refreshes source items and returns a normalized `WorkItem` whose
-identity is `(funnel, provider, source item ID)`. The durable record retains
-source URL, revision, cursor, external state, eligibility, capabilities, explicit
-priority policy, and a typed outcome. Funnel order has no scheduling meaning;
-overlap behavior is an explicit independent/deduplicate/reject policy.
+Town starts eight persistent workers per configured town on private Unix sockets.
+Idle and paused workers remain alive; only dispatched jobs start agent processes.
+The supervisor applies capacity, scheduling, pause and authority controls to jobs.
+Each worker serializes jobs and may handle many sequential runs during its lifetime.
+Issue Bot also serves read-only job summaries while a job is running; its retry
+operation owns its state changes.
 
-Adapters receive only a `SecretRef`, resolve its value locally at call time, and
-never copy credential values into normalized records. The model-facing action
-surface is limited to `claim`, `report_blocked`, `request_human`, and
-`report_complete`; adapters translate configured actions into source vocabulary.
-Every consequential write is preceded by a durable `WriteIntent`. Confirmed
-receipts close the intent; timeouts and lost responses remain uncertain and must
-be reconciled by a source read before any retry. An absent receipt does not prove
-failure or authorize a duplicate write.
-
-The GitHub adapter covers queries, selected issue identities, label filters, and
-working/blocked label transitions. Existing mature GitHub PR review, merge, and
-release reconciliation remains authoritative while issue intake migrates through
-the funnel boundary. The Slack adapter proves a different provider vocabulary
-with paginated channel reads, reactions, and bounded thread replies over an
-injected HTTP client. Provider capabilities explicitly distinguish supported,
-read-only, unmapped, and unsupported transitions. Typed incomplete, partial,
-authentication, rate-limit, unsupported, revision-conflict, and uncertain states
-remain visible; zero items under incomplete coverage is never a clean queue.
-The service persists one global `service_config.max_workers` setting (default 4,
-validated from 1 through 64). It reserves simultaneous non-reporter workers
-across repositories; repo reporters, durable issue publishing, and prompt-free
-model discovery run separately. `state.capacity.active` is the live reservation
-count and `state.capacity.limit` is the configured limit. A demo derives active
-capacity from its simulated `working` and `pausing` workers; a live service
-reports scheduler reservations, so stale worker status cannot create a slot.
-Capacity edits are serialized with reservations. Lowering the limit cancels no
-runs and blocks new bot dispatch until usage is below the limit. Raising it and
-releasing a slot wake the scheduler immediately; every town/role remains
-exclusive. Reservations include startup and cancellation cleanup, including a
-deleted town until its worker exits. Runtime counts reset to zero on restart;
-only the configured limit is durable. Legacy state with no setting inherits 4;
-present invalid settings fail validation.
-
-Each role has its own managed checkout and bot
-state so independent houses do not share a working directory.
-
-The released bot executables remain responsible for their primary operations.
-Each primary dispatch starts the corresponding `bbb`, `bfb`, `bib`,
-`brv`, or `brb` worker service on a private Unix socket, negotiates protocol
-version and capabilities, streams ordered progress, and consumes only explicit
-public results. Issue-bot v0.5.1 is also pinned as a library solely for its
-validated public durable-state and retry APIs; Town projects job outcomes into
-task state without exposing issue bodies, claims, agent settings, or paths.
-Issue-bot receives implementation-ready PR settings, and Town
-adds an explicit repair path for its owned PRs. Review-bot's exact-revision
-result is an input to a separate full-change certification. Town never treats a
-successful exit or zero new review comments as merge permission. The complete
-contract is specified in [WORKER_PROTOCOL.md](WORKER_PROTOCOL.md).
-
-## Facts and concurrency
-
-All state transactions clone, validate, serialize, fsync, rename, and sync the
-parent directory before reporting success. Only one daemon can hold the state
-lock. Read snapshots are owned copies. Event sequence numbers survive restarts;
-the server streams the complete public snapshot and cursor on every update.
-Clients animate only newly observed delivery events. Recent event, log, and report
-rings are bounded; task identities and external-write intents remain durable.
-
-Worker progress and log callbacks use bounded channels and never wait for disk.
-Their consumer persists observations; final results use a separate transaction.
-A persistence error stops the supervisor. An initial state/intent write must
-succeed before starting work or issuing a push/merge.
-
-External bot processes are detached from the service: each runs in its own
-session with output in a file, and its durable run handle (executable, hash,
-version, PID, socket, output, last observed event, deadline, and the exact
-issue/PR revision it was given) is committed to the worker before the run request
-is sent. Cancellation carries a cause. Operator stop, retry, and town deletion
-cancel with a stop cause and kill the process group after its identity is proven
-over the socket; the dispatch deadline kills as well. A plain cancellation is
-service shutdown: the worker returns detached, keeps its handle, and the service
-waits for that bookkeeping before releasing the store lock. On startup the
-supervisor adopts every handle before its first scheduling pass, so a house is
-never dispatched twice. Detach-capable workers replay buffered events from the
-recorded sequence number and complete normally; other workers are asked to shut
-down when they can and their attempt is recorded as uncertain. A handle for a
-deleted town is ended. The in-place restart in `cmd/bt` re-executes the service
-binary with the same PID; the new image opens the store and adopts the handles.
-
-Pause disables scheduling while allowing active work to finish. Stop disables
-scheduling and cancels the worker context. The scheduler rechecks enabled state
-before entering a worker, preventing a stale scheduling snapshot from restarting
-an already-stopped house. Each worker has a deadline and a per-role next-run time.
+Worker processes have bounded output, private sockets and a parent-liveness pipe.
+Shutdown cancels work, closes parent pipes, terminates workers with bounded
+escalation, and reaps children before releasing the state lock. Workers cancel
+active work when Town dies unexpectedly. Restart preserves interrupted dispatch
+provenance and uncertain write intents; it never adopts an old process or blindly
+replays its work.
 
 ## Operator projections
 
@@ -278,7 +198,7 @@ outcome landed after it. It carries `since` and `until`; the bot summarizes the
 pull requests merged in that window for users and returns `result.bulletin`
 with classified items and the pull requests covered. Town appends it to
 `Town.Bulletins`, refusing a window that does not start where the last one
-ended, and shows the feed in Town Hall and the TUI.
+ended, and shows the feed in Town Hall.
 
 ## Simplifier intake and discovery
 

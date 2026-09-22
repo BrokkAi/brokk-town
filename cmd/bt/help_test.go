@@ -30,7 +30,7 @@ func TestRootHelpHasCobraSections(t *testing.T) {
 			t.Fatalf("root help missing %q:\n%s", section, help)
 		}
 	}
-	for _, cmd := range []string{"tui", "service", "add", "request", "serve", "help"} {
+	for _, cmd := range []string{"service", "add", "request", "serve", "help"} {
 		if !strings.Contains(help, cmd) {
 			t.Fatalf("root help omits command %q:\n%s", cmd, help)
 		}
@@ -75,7 +75,7 @@ func TestServiceHelpListsVerbs(t *testing.T) {
 			t.Fatalf("service help missing %q:\n%s", section, help)
 		}
 	}
-	for _, verb := range []string{"status", "on", "off", "stop", "restart"} {
+	for _, verb := range []string{"status", "stop"} {
 		if !strings.Contains(help, verb) {
 			t.Fatalf("service help omits verb %q:\n%s", verb, help)
 		}

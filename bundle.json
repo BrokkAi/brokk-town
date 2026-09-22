@@ -1,0 +1,52 @@
+{
+  "bots": {
+    "bug": {
+      "project": "bug-bot",
+      "command": "bbb",
+      "version": "0.3.6",
+      "source_commit": "ecac6efcee71e64b5ef3a6ad3ac8faf60aaca36a"
+    },
+    "feature": {
+      "project": "feature-bot",
+      "command": "bfb",
+      "version": "0.1.3",
+      "source_commit": "7f0967dc8e43d7cfa07c18e7e98cf49a88917fa2"
+    },
+    "issue": {
+      "project": "issue-bot",
+      "command": "bib",
+      "version": "0.5.5",
+      "source_commit": "03fea25c14b28a7e3b86488c5f99b90ea6bb28a4"
+    },
+    "review": {
+      "project": "review-bot",
+      "command": "brv",
+      "version": "0.2.5",
+      "source_commit": "87ddecf9b1a567795c7624c16cc16ea6243f2779"
+    },
+    "release": {
+      "project": "release-bot",
+      "command": "brb",
+      "version": "0.6.2",
+      "source_commit": "d7222a04471383ab228bda3c4b585ad73f61631d"
+    },
+    "repo": {
+      "project": "repo-bot",
+      "command": "brp",
+      "version": "0.1.1",
+      "source_commit": "fda59e4a7ad495ead61c52b1e17e90c182f2156b"
+    },
+    "simplifier": {
+      "project": "simplifier-bot",
+      "command": "bsb",
+      "version": "0.1.2",
+      "source_commit": "2af0b7c04f7f7ec8f55bfa33a1a9a51f403c928f"
+    },
+    "hall": {
+      "project": "mayor-bot",
+      "command": "bmb",
+      "version": "0.1.1",
+      "source_commit": "22031552092451ea66aeaa77a04091bb83d1776f"
+    }
+  }
+}

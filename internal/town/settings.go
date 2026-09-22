@@ -246,22 +246,17 @@ func (s *Supervisor) Settings(id string, settings AgentSettings) error {
 // SettingsForRole changes one independent bot profile, or the town defaults when
 // role is empty. Inherit removes an override so future defaults apply again.
 func (s *Supervisor) SettingsForRole(id string, role Role, settings AgentSettings) error {
-	return s.SettingsForRoleAndPolicy(id, role, settings, nil, nil, nil, nil, nil)
+	return s.SettingsForRoleAndPolicy(id, role, settings, nil, nil, nil)
 }
 
 // SettingsForRoleAndPolicy commits agent and merge-policy edits together so a
 // form submission cannot leave only half of the requested settings applied.
-// Turning on automatic bot updates applies every outstanding upgrade offer at
-// once, and an explicit pin withdraws an offer it has already caught up with.
-func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, simplifierMode *string, botVersion *string, autoUpdateBots *bool, closeSeverity *string) error {
+func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, simplifierMode *string, closeSeverity *string) error {
 	if err := settings.validateRole(role); err != nil {
 		return err
 	}
 	if mergePolicy != nil && *mergePolicy != "bot" && *mergePolicy != "manual" && *mergePolicy != "all" {
 		return errors.New("merge policy must be bot, manual, or all")
-	}
-	if botVersion != nil && (role == "" || !workerVersionPattern.MatchString(*botVersion)) {
-		return errors.New("a bot role and semantic bot version are required")
 	}
 	if simplifierMode != nil && *simplifierMode != "suggest" && *simplifierMode != "auto" {
 		return errors.New("simplifier mode must be suggest or auto")
@@ -288,21 +283,6 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 		}
 		if closeSeverity != nil {
 			t.Config.ReviewCloseSeverity = *closeSeverity
-		}
-		if botVersion != nil {
-			if t.Config.BotVersions == nil {
-				t.Config.BotVersions = map[Role]string{}
-			}
-			t.Config.BotVersions[role] = strings.TrimPrefix(*botVersion, "v")
-			if offer := t.Tasks[upgradeTaskID(role)]; offer != nil && offer.Upgrade != nil && !NewerVersion(t.Config.BotVersions[role], offer.Upgrade.To) {
-				delete(t.Tasks, offer.ID)
-			}
-		}
-		if autoUpdateBots != nil {
-			t.Config.AutoUpdateBots = *autoUpdateBots
-			if *autoUpdateBots {
-				st.applyOfferedBotUpgrades(t, s.now())
-			}
 		}
 		switch {
 		case role == "":

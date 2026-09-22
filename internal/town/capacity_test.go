@@ -2,10 +2,7 @@ package town
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -340,84 +337,6 @@ func TestCapacityExcludesRequestPublishingAndModelDiscovery(t *testing.T) {
 	sup.mu.Unlock()
 	sup.wg.Wait()
 	waitCapacity(t, s, 0)
-}
-
-func TestCapacityPersistenceMigrationValidationAndRestart(t *testing.T) {
-	dir := t.TempDir()
-	s, err := Open(dir, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = (&Supervisor{Store: s, running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}).SetCapacity(9); err != nil {
-		t.Fatal(err)
-	}
-	if got := s.Snapshot().ServiceConfig.MaxWorkers; got != 9 {
-		t.Fatalf("capacity was not committed: %d", got)
-	}
-	for _, invalid := range []int{0, -1, MaximumMaxWorkers + 1} {
-		if err := (&Supervisor{Store: s, running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}).SetCapacity(invalid); err == nil {
-			t.Fatalf("accepted invalid capacity %d", invalid)
-		}
-		if got := s.Snapshot().ServiceConfig.MaxWorkers; got != 9 {
-			t.Fatalf("invalid capacity changed saved value: %d", got)
-		}
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := (&Supervisor{Store: s, running: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}).SetCapacity(8); err == nil {
-		t.Fatal("closed store accepted capacity update")
-	}
-	s, err = Open(dir, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := s.Snapshot().ServiceConfig.MaxWorkers; got != 9 || s.Snapshot().Capacity.Active != 0 {
-		t.Fatalf("restart did not preserve limit or reset runtime count: %+v", s.Snapshot())
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	base := NewState(false)
-	for _, tc := range []struct {
-		name string
-		edit func(map[string]any)
-	}{
-		{name: "absent", edit: func(fields map[string]any) { delete(fields, "service_config") }},
-		{name: "null", edit: func(fields map[string]any) { fields["service_config"] = nil }},
-		{name: "empty", edit: func(fields map[string]any) { fields["service_config"] = map[string]any{} }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			b, err := json.Marshal(base)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var fields map[string]any
-			if err = json.Unmarshal(b, &fields); err != nil {
-				t.Fatal(err)
-			}
-			tc.edit(fields)
-			path := filepath.Join(t.TempDir(), "state.json")
-			b, _ = json.Marshal(fields)
-			if err = os.WriteFile(path, b, 0600); err != nil {
-				t.Fatal(err)
-			}
-			dir := filepath.Dir(path)
-			got, err := Open(dir, false)
-			if tc.name == "absent" {
-				if err != nil || got.Snapshot().ServiceConfig.MaxWorkers != DefaultMaxWorkers {
-					t.Fatalf("absent service config did not migrate: %v", err)
-				}
-				got.Close()
-				return
-			}
-			if err == nil {
-				got.Close()
-				t.Fatal("present invalid service config was accepted")
-			}
-		})
-	}
 }
 
 func TestDemoCapacityDerivesActiveFromWorkerStatus(t *testing.T) {

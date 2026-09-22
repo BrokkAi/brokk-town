@@ -23,7 +23,7 @@ func TestExhaustedReviewRefreshesInventoryWithoutStallingOtherPRs(t *testing.T) 
 		return RunResult{PR: 1}, &ReviewAttemptError{Status: "stale", Detail: "revision changed", ExpectedBase: baseSHA, ExpectedHead: headSHA}
 	}))
 	sup.now = func() time.Time { return at }
-	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review, nil)
+	sup.execute(context.Background(), s.Snapshot().Towns[x.ID], Review)
 	got := s.Snapshot().Towns[x.ID]
 	// The second failed attempt on a revision retires the pull request: Town
 	// closes it and starts the issue over instead of parking it as blocked.

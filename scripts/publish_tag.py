@@ -32,7 +32,7 @@ def log(message):
 
 
 def make_latest(tag):
-    return "false" if "-" in tag else "true"
+    return "false" if "-" in release.version_tag(tag) else "true"
 
 
 def context(tag_arg=None, sha_arg=None):
@@ -47,6 +47,9 @@ def context(tag_arg=None, sha_arg=None):
     actual_ref = os.environ.get("GITHUB_REF", "")
     if actual_ref and actual_ref != expected_ref:
         raise ValueError(f"refusing to publish {tag} from {actual_ref}")
+    if not tag.endswith("-town"):
+        raise ValueError("release tag must end in -town")
+    release.version_tag(tag)
     return tag, sha
 
 
@@ -86,9 +89,9 @@ def publish(directory, tag, sha, check_only=False):
         return
     if record is None:
         record = api("releases", "POST", {
-            "tag_name": tag, "target_commitish": sha, "name": f"Brokk Town {tag}",
+            "tag_name": tag, "target_commitish": sha, "name": f"town {tag}",
             "body": f"Release {tag} from commit {sha}.",
-            "draft": True, "prerelease": "-" in tag,
+            "draft": True, "prerelease": "-" in release.version_tag(tag),
         })
     if record["target_commitish"] != sha:
         raise ValueError("existing draft targets another commit; investigate before retrying")
