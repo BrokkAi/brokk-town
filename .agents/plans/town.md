@@ -63,3 +63,14 @@
   processed its packages, and removed the superseded npm 0.5.0 installation.
   bt reports v0.6.0; all eight installed bots initialized at manifest versions
   and exited on parent loss with no jobs dispatched. Town remains stopped.
+
+## Local startup repair after 0.6.0
+
+- Plain installed bt failed with "read town state: invalid task kind": six obsolete
+  upgrade tasks remained in three deleted local towns. Installation verification
+  had missed loading the existing state.
+- Backed up the local state with private permissions and removed only those six
+  entries under the service lock. No product migration or upgrade code was added.
+- Verified the installed binary starts using a temporary copy of the repaired
+  state with all workers paused, serves authenticated HTTP 200, and shuts down
+  cleanly. Actual worker settings and other saved work remain unchanged.
