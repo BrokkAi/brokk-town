@@ -201,3 +201,23 @@
   already left intake.
 - A discarded assessment records an event, so the operator sees the result was
   dropped rather than silently lost.
+
+## Frontline theme (browser, presentation only)
+
+- Added `internal/web/skins.js` as the single surface both themes answer
+  (landscape, structure, occupants, strike, impact, labels, faction, noun
+  rewrite) and `internal/web/frontline.js` for the war art: three armies, a
+  per-army name and tagline for all eight installations, terrain seeded by the
+  repository, a structure per role, patrolling garrisons, strike craft carrying
+  the real issue or pull request number, and impact bursts. No new image assets.
+- Every themed string is wired through `data-skin-text`, so a theme is added by
+  supplying strings and art, not by threading conditionals through render code.
+  `index.html` carries the theme button, the faction picker and a note that the
+  theme is a look rather than a lever.
+- A base's faction derives from its repository name and can be pinned per base
+  in `localStorage`; `?skin=frontline` opens the theme from a link. Nothing on
+  this path touches town state, commands, the worker protocol or GitHub, and
+  the delivered animation still follows committed events and reduced motion.
+- 8 new module tests plus 2 app tests drive the real handlers (43 → 53 browser
+  tests); `npm run check` covers both new files. Both themes were rendered in a
+  headless browser against a stubbed snapshot to check the art and labels.

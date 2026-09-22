@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Add a Frontline theme to the browser. Each repository becomes a base flying
+  one of three armies — humans, humanoid aliens or a swarm — with its own
+  installation names, and each committed delivery is drawn as a strike run with
+  a target marker and an impact instead of a cart. The theme and a base's
+  faction are remembered per browser, `?skin=frontline` opens the theme from a
+  link, and every label a theme renames is declared in one place.
+- Treat both themes as presentation only: they read the same snapshot, follow
+  the same committed events and reduced-motion setting, and never send a
+  command or write to GitHub.
+
 ## 0.6.2 — 2026-09-22
 
 - Give each bot house its own work policy: label filters, one selected issue or

@@ -40,3 +40,24 @@ style direction. `internal/web/assets/atlas.json` records their source dimension
 and bounds. The seven-house layout and its delivery paths share the geometry in
 `internal/web/town.js`; the feature reader appears only for committed working or
 pausing state and respects reduced motion.
+
+## Frontline skin (2026-09-22)
+
+The browser ships a second theme beside the town. Frontline draws the same
+state as a base assault: each repository is a base flying one of three armies
+— humans (Vanguard), humanoid aliens (Ascendancy) and a swarm (Hive) — and
+every committed delivery is drawn as a strike run between installations.
+
+`internal/web/frontline.js` paints it with the canvas primitives, in the same
+style as the field in `scenery.js`: ashen ground, craters, armored trackways
+over the shared road geometry, hazard-striped base plates, a structure per
+role, patrolling garrisons, strike craft carrying the real issue or pull
+request number, and an impact burst where the work arrived. No new image assets
+are used, so the atlases and `docs/artwork-prompts.json` are unchanged.
+`internal/web/skins.js` is the one surface both themes answer.
+
+The theme is presentation only. A base's faction comes from the repository name
+and can be pinned per base in the browser; `?skin=frontline` opens the theme for
+whoever the link is sent to. Strikes still follow committed events, the motion
+toggle and the operating system's reduced-motion setting, and the theme never
+writes to GitHub or changes what a delivery means.

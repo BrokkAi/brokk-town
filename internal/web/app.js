@@ -33,7 +33,8 @@ import {
   profileSummary,
 } from "./town.js";
 import { management } from "./manage.js";
-import { landscape, drawWorking, easeDelivery } from "./scenery.js";
+import { easeDelivery } from "./scenery.js";
+import { factions, skinFor, normalizeSkin } from "./skins.js";
 const $ = (s) => document.querySelector(s),
   esc = (value) =>
     String(value ?? "").replace(
@@ -51,6 +52,48 @@ let token =
   new URLSearchParams(location.hash.slice(1)).get("token") ||
   sessionStorage.getItem("brokk-town-token") ||
   "";
+
+// The theme is a look, not a lever: switching it repaints the same snapshot
+// and never opens a socket, sends a command, or writes to GitHub. The choice
+// lives in this browser only, and ?skin=frontline makes a link that opens the
+// war map for someone else.
+let skin = (() => {
+  let requested = "";
+  try {
+    requested = new URLSearchParams(location.search || "").get("skin") || "";
+  } catch {
+    requested = "";
+  }
+  try {
+    return normalizeSkin(requested || localStorage.getItem("brokk-town-skin"));
+  } catch {
+    return normalizeSkin(requested);
+  }
+})();
+let activeSkin = skinFor(skin);
+function factionOverrides() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("brokk-town-factions") || "{}");
+    return stored && typeof stored === "object" ? stored : {};
+  } catch {
+    return {};
+  }
+}
+function saveFactionOverride(townId, faction) {
+  const overrides = factionOverrides();
+  if (faction) overrides[townId] = faction;
+  else delete overrides[townId];
+  try {
+    localStorage.setItem("brokk-town-factions", JSON.stringify(overrides));
+  } catch {
+    /* Private browsing keeps the choice for this session only. */
+  }
+}
+// The faction a base flies: derived from the repository, or whatever the
+// player picked for it. Town skin returns null and every artist ignores it.
+function currentFaction(townId = selectedTown) {
+  return activeSkin.faction(townId, factionOverrides()[townId]);
+}
 if (token) {
   sessionStorage.setItem("brokk-town-token", token);
   history.replaceState(null, "", location.pathname);
@@ -350,6 +393,84 @@ function renderViewSwitcher() {
   });
 }
 
+// applySkin paints the chrome a skin supplies: body attribute for the
+// stylesheet, every data-skin-text label, and the canvas description. It
+// touches no town state, so it is safe to call on any snapshot or redraw.
+function applySkin() {
+  activeSkin = skinFor(skin);
+  if (document.body) document.body.dataset.skin = activeSkin.id;
+  document.querySelectorAll("[data-skin-text]").forEach((element) => {
+    const key = element.dataset?.skinText,
+      value = key ? activeSkin.text[key] : undefined;
+    if (value !== undefined) element.textContent = value;
+  });
+  const button = $("#skin");
+  if (button) {
+    button.textContent = activeSkin.switchLabel;
+    button.title = activeSkin.switchTitle;
+    button.dataset.skin = activeSkin.id;
+    button.setAttribute(
+      "aria-label",
+      `${activeSkin.switchLabel}. ${activeSkin.switchTitle}`,
+    );
+  }
+  const note = $("#skin-note");
+  if (note) {
+    note.textContent = activeSkin.note;
+    note.hidden = !activeSkin.note;
+  }
+  if (canvas) canvas.setAttribute("aria-label", activeSkin.text["world-aria"]);
+  // The cached backdrop belongs to the base and its banner, so it is dropped
+  // whenever either could have changed.
+  field = null;
+  fieldTown = null;
+}
+
+function selectSkin(next) {
+  skin = normalizeSkin(next);
+  try {
+    localStorage.setItem("brokk-town-skin", skin);
+  } catch {
+    /* Private browsing keeps the theme for this session only. */
+  }
+  moving = [];
+  applySkin();
+  if (state) render();
+}
+
+// A base flies one faction. The picker shows what the repository derives and
+// lets a player rename the banner without changing anything Town does.
+function renderFactionPicker(t) {
+  const picker = $("#faction-picker"),
+    select = $("#faction-select");
+  if (!picker || !select) return;
+  picker.hidden = !activeSkin.supportsFactions || !t;
+  if (picker.hidden) return;
+  const options = [
+    { value: "", label: `Auto · ${activeSkin.factionLabel(activeSkin.faction(t.id))}` },
+    ...factions.map((f) => ({ value: f.id, label: `${f.name} · ${f.species}` })),
+  ];
+  const signature = options.map((o) => `${o.value}|${o.label}`).join("\n");
+  if (select.dataset.options !== signature) {
+    select.dataset.options = signature;
+    select.replaceChildren(
+      ...options.map((o) => {
+        const option = document.createElement("option");
+        option.value = o.value;
+        option.textContent = o.label;
+        return option;
+      }),
+    );
+  }
+  const override = factionOverrides()[t.id];
+  select.value = factions.some((f) => f.id === override) ? override : "";
+  select.onchange = () => {
+    saveFactionOverride(t.id, select.value);
+    applySkin();
+    render();
+  };
+}
+
 function renderCapacity() {
   const { active, limit } = capacityInfo();
   $("#capacity-summary").textContent = `${active}/${limit} workers`;
@@ -528,29 +649,31 @@ function renderTownControls(t) {
   if (!t) {
     chip.hidden = true;
     pauseAll.hidden = true;
-    toggle.textContent = "▶ Wake the town";
+    toggle.textContent = activeSkin.rewrite("▶ Wake the town");
     toggle.dataset.action = "start";
     detail.hidden = true;
     return;
   }
   const controls = townControls(t);
   chip.hidden = false;
-  chip.textContent = controls.status;
+  chip.textContent = activeSkin.rewrite(controls.status);
   chip.className = `status-chip status-${controls.statusClass}`;
-  toggle.textContent = controls.primary.label;
+  toggle.textContent = activeSkin.rewrite(controls.primary.label);
   toggle.dataset.action = controls.primary.action;
   toggle.classList.toggle("primary", controls.primary.action === "start");
-  toggle.title = controls.detail || controls.primary.label;
-  detail.textContent = controls.detail || "";
+  toggle.title = activeSkin.rewrite(controls.detail || controls.primary.label);
+  detail.textContent = activeSkin.rewrite(controls.detail || "");
   detail.hidden = !controls.detail;
   pauseAll.hidden = !controls.secondary;
-  if (controls.secondary) pauseAll.textContent = controls.secondary.label;
+  if (controls.secondary)
+    pauseAll.textContent = activeSkin.rewrite(controls.secondary.label);
 }
 function render() {
   const focus = focusIdentity(document.activeElement);
   const t = town();
   renderViewSwitcher();
   renderCapacity();
+  renderFactionPicker(t);
   $("#mode").hidden = !state.demo;
   $("#demo-note").hidden = !state.demo;
   $("#empty").hidden = !!t;
@@ -562,8 +685,12 @@ function render() {
   const needs = inbox(state);
   const townNeeds = (id) => needs.towns[id] || { decisions: 0, attention: 0 };
   $("#town-meta").textContent = t
-    ? `${t.config.branch || "Reading repository…"} · ${Object.values(t.workers).filter((w) => w.status === "working").length} agents at work · ${townNeeds(t.id).decisions} await your decision · ${townNeeds(t.id).attention} need attention`
-    : "Connect a repository to bring its agents together.";
+    ? activeSkin.meta(
+        t.id,
+        `${t.config.branch || "Reading repository…"} · ${Object.values(t.workers).filter((w) => w.status === "working").length} agents at work · ${townNeeds(t.id).decisions} ${activeSkin.stats.decisions} · ${townNeeds(t.id).attention} ${activeSkin.stats.attention}`,
+        currentFaction(t.id),
+      )
+    : activeSkin.text["empty-meta"];
   $("#towns").innerHTML = Object.values(state.towns)
     .map((item) => {
       const counts = townNeeds(item.id);
@@ -625,19 +752,23 @@ function renderOverview() {
   $(".town-controls").hidden = overview;
   $("#all-towns").classList.toggle("selected", overview);
   if (!overview) return;
-  $("#repo-owner").textContent = "YOUR LOCAL WORLD";
-  $("#town-name").textContent = "Every town, together.";
-  $("#town-meta").textContent =
-    `${Object.keys(state.towns).length} repositories · independent workers, queues, and releases`;
+  $("#repo-owner").textContent = activeSkin.text["overview-owner"];
+  $("#town-name").textContent = activeSkin.text["overview-title"];
+  const townCount = Object.keys(state.towns).length;
+  $("#town-meta").textContent = `${townCount} ${activeSkin.text[townCount === 1 ? "unit-repository" : "unit-repositories"]} · independent workers, queues, and releases`;
   $("#overview").innerHTML =
     Object.values(state.towns)
       .map((t) => {
         const stats = townSummary(t),
-          spread = projectTown(t).profiles;
-        return `<button class="town-card" data-visit="${esc(t.id)}"><span class="eyebrow">${esc(t.config.repo.split("/")[0])}</span><h2>${esc(t.config.repo.split("/")[1])}</h2>${spread.distinct.length === 1 ? summaryChips(spread.distinct[0]) : `<span class="profile mixed" title="${esc(spread.distinct.map((p) => p.text).join("\n"))}">${esc(spread.label)}${spread.overrides ? ` · ${spread.overrides} custom` : ""}</span>`}<div class="town-card-houses" aria-hidden="true"></div><div class="town-stats"><span><strong>${stats.busy}</strong> working</span><span><strong>${stats.queued}</strong> at the doors</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> to decide</span><span><strong>${stats.blocked + stats.failed}</strong> need attention</span></div><p>${esc(t.error || t.reports.at(-1)?.title || "Repo-bot is taking the first inventory")}</p><small>${esc(stats.release)} · Visit town →</small></button>`;
+          spread = projectTown(t).profiles,
+          faction = currentFaction(t.id),
+          banner = activeSkin.supportsFactions
+            ? ` · ${esc(activeSkin.factionLabel(faction))}`
+            : "";
+        return `<button class="town-card" data-visit="${esc(t.id)}"><span class="eyebrow">${esc(t.config.repo.split("/")[0])}${banner}</span><h2>${esc(t.config.repo.split("/")[1])}</h2>${spread.distinct.length === 1 ? summaryChips(spread.distinct[0]) : `<span class="profile mixed" title="${esc(spread.distinct.map((p) => p.text).join("\n"))}">${esc(spread.label)}${spread.overrides ? ` · ${spread.overrides} custom` : ""}</span>`}<div class="town-card-houses" aria-hidden="true"></div><div class="town-stats"><span><strong>${stats.busy}</strong> ${esc(activeSkin.stats.working)}</span><span><strong>${stats.queued}</strong> ${esc(activeSkin.stats.queued)}</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> ${esc(activeSkin.stats.decisions)}</span><span><strong>${stats.blocked + stats.failed}</strong> ${esc(activeSkin.stats.attention)}</span></div><p>${esc(t.error || t.reports.at(-1)?.title || "Repo-bot is taking the first inventory")}</p><small>${esc(stats.release)} · ${esc(activeSkin.visit)}</small></button>`;
       })
       .join("") ||
-    '<div class="overview-empty"><h2>Your world starts with one repository.</h2><p>Add a town using New town above. Each repository gets its own team of agents.</p></div>';
+    `<div class="overview-empty"><h2>Your world starts with one repository.</h2><p>${esc(activeSkin.text["overview-empty-body"])}</p></div>`;
   $("#overview")
     .querySelectorAll("[data-visit]")
     .forEach((b) => (b.onclick = () => selectTown(b.dataset.visit)));
@@ -695,7 +826,8 @@ function pendingDecisions(t) {
   return queueFor(t || {}, "hall").filter((task) => task.mayoral_decision === "pending").length;
 }
 function renderHouses() {
-  const t = town();
+  const t = town(),
+    faction = currentFaction(t?.id);
   $("#houses").innerHTML = Object.entries(positions)
     .filter(([role]) => isHouse(role))
     .map(([role, [x, y]]) => {
@@ -703,6 +835,7 @@ function renderHouses() {
         worker = projectWorker(t, role, w),
         counts = houseWorkload(t, role),
         status = role === "hall" && worker.status !== "working" ? `${pendingDecisions(t)} to decide` : worker.status,
+        houseLabel = activeSkin.houseLabel(role, faction),
         dot =
           status === "working" || status === "pausing"
             ? "active"
@@ -715,8 +848,8 @@ function renderHouses() {
       const words = status.replaceAll("_", " "),
         profile = role === "hall" ? null : profileSummary(worker.profile),
         agentLabel = role === "hall" ? "" : profile.text,
-        name = `<i class="dot ${dot}"></i><span class="house-name">${houseNames[role].replace(" BOT", '<span class="bot-suffix"> BOT</span>')}</span>`;
-      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${houseNames[role]}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${houseNames[role]} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small class="hall-count">${esc(words)}</small>` : `${profileChips(worker.profile, role)}<span class="house-counts" title="${workloadText(counts)}" aria-label="${workloadText(counts)}"><span class="workload-active" title="Active items">${counts.active}</span> / <span title="Waiting items">${counts.waiting}</span> / <span class="workload-blocked" title="Blocked items">${counts.blocked}</span></span>`}</span></button>`;
+        name = `<i class="dot ${dot}"></i><span class="house-name">${activeSkin.houseLabelMarkup(role, faction)}</span>`;
+      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${esc(houseLabel)}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${esc(houseLabel)} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small class="hall-count">${esc(words)}</small>` : `${profileChips(worker.profile, role)}<span class="house-counts" title="${workloadText(counts)}" aria-label="${workloadText(counts)}"><span class="workload-active" title="Active items">${counts.active}</span> / <span title="Waiting items">${counts.waiting}</span> / <span class="workload-blocked" title="Blocked items">${counts.blocked}</span></span>`}</span></button>`;
     })
     .join("");
   $("#houses")
@@ -759,8 +892,11 @@ function writeInspection(out, html) {
 }
 function renderInspection() {
   const t = town(),
-    out = $("#inspection");
-  $("#inspector-town").textContent = t?.config.repo || "House inspector";
+    out = $("#inspection"),
+    faction = currentFaction(t?.id),
+    houseLabel = activeSkin.houseLabel(selectedHouse, faction);
+  $("#inspector-town").textContent =
+    t?.config.repo || activeSkin.text["inspector-empty-title"];
   if (!t) {
     writeInspection(
       out,
@@ -808,7 +944,7 @@ function renderInspection() {
       ? `<section class="advisor-note"><strong>Simplifier Bot · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
       : "";
     const detailText = task.detail || (liveCapable ? "" : "Following the next step through town.");
-    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${houseNames[selectedHouse] || "House"}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`))
+    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`))
       return;
     $("#back-house").onclick = () => {
       selectedTask = "";
@@ -843,7 +979,7 @@ function renderInspection() {
       mayorControls = workerControls(mayor);
     const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : projectedMayor.status === "failed" ? "blocked" : "waiting"}"></i>Mayor Bot ${esc(projectedMayor.status)}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${mayorControls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${mayorControls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${mayorControls.stop ? "" : " disabled"}>■ Stop</button></div><p class="muted">${mayor?.enabled ? "Mayor Bot judges each arrival below as it comes in, with its reason kept on the task, and writes the bulletin when work merges." : "Start Mayor Bot to have it judge arrivals for you and write the bulletin. Until then, decisions wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
     const bulletinRows = (t.bulletins || []).slice().reverse().slice(0, 20).map((b) => `<article class="bulletin"><h4>${esc(b.title)}</h4><p class="muted">${esc(new Date(b.since).toLocaleString())} – ${esc(new Date(b.until).toLocaleString())} · ${(b.pulls || []).length} merged</p><p>${esc(b.summary)}</p>${(b.items || []).map((item) => `<div class="bulletin-item"><span class="status-chip status-${esc(item.kind)}">${esc(item.kind)}</span> <strong>${esc(item.title)}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${(item.pulls || []).map((n) => `PR #${n}`).join(", ")}${(item.issues || []).length ? ` · ${item.issues.map((n) => `issue #${n}`).join(", ")}` : ""}</small></div>`).join("")}</article>`).join("");
-    if (!writeInspection(out, `<p class="worker-type">THE TOWN HALL</p><h2>Mayoral decisions</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${budgetBlock(t)}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
+    if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${budgetBlock(t)}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
@@ -897,7 +1033,7 @@ function renderInspection() {
   const healthNote = selectedHouse === "repo" ? branchHealthNote(t.health) : "";
   const healthDetails = healthNote ? `<p class="muted">${esc(healthNote)}</p>` : "";
   const agentDetails = `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${selectedHouse === "repo" ? "Inventory runs without an agent. The configured agent starts only to repair a failing branch." : agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this house only" : "Inherited from this town's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
-  if (!writeInspection(out, `<p class="worker-type">${{ bug: "THE GREENHOUSE", simplifier: "THE CLARIFIER", feature: "THE STUDY", issue: "THE WORKSHOP", review: "THE OBSERVATORY", release: "THE SHIPPING DEPOT", repo: "THE WATCHTOWER" }[selectedHouse]}</p><h2>${houseNames[selectedHouse]}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${workloadChips(houseWorkload(t, selectedHouse))}${policyBlock(t, selectedHouse)}<h3>BOT QUEUE · ${queue.length}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
+  if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline(selectedHouse, faction))}</p><h2>${esc(houseLabel)}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${workloadChips(houseWorkload(t, selectedHouse))}${policyBlock(t, selectedHouse)}<h3>${esc(activeSkin.queueHeading(queue.length))}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
 
     queue
       .map(
@@ -932,7 +1068,8 @@ function renderInspection() {
   );
 }
 function renderJournal() {
-  const events = (state?.events || [])
+  const faction = currentFaction(),
+    events = (state?.events || [])
     .filter((e) => e.town === selectedTown)
     .slice(-30)
     .reverse();
@@ -941,7 +1078,7 @@ function renderJournal() {
     events
       .map(
         (e) =>
-          `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span class="event-route">${esc(e.kind === "delivery" ? `${e.from} → ${e.to}` : e.kind)}</span><button data-cargo="${esc(e.cargo || "")}" data-house="${esc(e.to || "hall")}">${esc(e.title)}</button></li>`,
+          `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span class="event-route">${esc(e.kind === "delivery" ? activeSkin.routeLabel(e, faction) : activeSkin.rewrite(e.kind))}</span><button data-cargo="${esc(e.cargo || "")}" data-house="${esc(e.to || "hall")}">${esc(e.title)}</button></li>`,
       )
       .join("") ||
     '<li class="muted">The journal will fill as work moves through town.</li>';
@@ -1101,12 +1238,16 @@ function draw(now) {
     requestAnimationFrame(draw);
     return;
   }
-  if (!field || fieldTown !== selectedTown) {
-    field = landscape(selectedTown);
-    fieldTown = selectedTown;
+  const t = town(),
+    faction = currentFaction(),
+    // The backdrop belongs to a base and its banner: a new town, a new theme
+    // or a new faction all require a repaint.
+    key = `${activeSkin.id}\u0000${selectedTown}\u0000${faction || ""}`;
+  if (!field || fieldTown !== key) {
+    field = activeSkin.landscape(selectedTown, faction);
+    fieldTown = key;
   }
   ctx.drawImage(field, 0, 0);
-  const t = town();
   for (const [role, [x, y]] of Object.entries(positions)) {
     if (!isHouse(role)) continue;
     if (role === selectedHouse) {
@@ -1115,66 +1256,56 @@ function draw(now) {
       ctx.ellipse(x, y + 72, 118, 28, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (standaloneBuildings[role]) singleSprite(standaloneBuildings[role], x, y, 235);
-    else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
+    activeSkin.paintInstallation(ctx, { role, x, y, faction, now, motion }, () => {
+      if (standaloneBuildings[role]) singleSprite(standaloneBuildings[role], x, y, 235);
+      else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
+    });
     const w = t?.workers[role];
-    if (w?.status === "working" || w?.status === "pausing") {
-      drawWorking(ctx, role, x, y, now, motion, (index) =>
+    if (w?.status === "working" || w?.status === "pausing")
+      activeSkin.paintOccupants(ctx, { role, x, y, faction, now, motion }, (index, px = 0, py = 0, size = 52) =>
         index === "feature"
-          ? singleSprite(featureReader, 0, 0, 58)
-          : sprite(actors, index, 0, 0, 52),
+          ? singleSprite(featureReader, px, py, 58)
+          : sprite(actors, index, px, py, size),
       );
-    }
   }
 
-  moving = moving.filter((m) => now - m.start < 6500);
+  const travel = activeSkin.travelMs;
+  moving = moving.filter((m) => now - m.start < travel + activeSkin.impactMs);
   if (motion)
     for (const m of moving) {
       if (m.town !== selectedTown) continue;
-      const p = routePosition(
+      const elapsed = now - m.start,
+        progress = Math.min(1, elapsed / travel),
+        p = routePosition(
           m.from,
           m.to,
-          easeDelivery((now - m.start) / 6500),
+          easeDelivery(progress),
         ),
         right = p.direction >= 0,
-        truck = m.from === "outside" || m.to === "outside";
-      ctx.fillStyle = "#192b2270";
-      ctx.beginPath();
-      ctx.ellipse(p.x + 6, p.y + 25, truck ? 38 : 23, 7, 0, 0, Math.PI * 2);
-      ctx.fill();
-      for (let i = 0; i < 3; i++) {
-        const dust = (now / 500 + i / 3) % 1;
-        ctx.fillStyle = `rgba(219,202,155,${(1 - dust) * 0.3})`;
-        ctx.beginPath();
-        ctx.ellipse(
-          p.x - (right ? 1 : -1) * (20 + dust * 25),
-          p.y + 22 - dust * 5,
-          2 + dust * 5,
-          2 + dust * 2,
-          0,
-          0,
-          Math.PI * 2,
+        strikeFaction = activeSkin.strikeFaction(m, faction),
+        strike = {
+          x: p.x,
+          y: p.y,
+          from: m.from,
+          to: m.to,
+          cargo: m.cargo,
+          now,
+          progress,
+          direction: right ? 1 : -1,
+          faction: strikeFaction,
+          motion,
+        };
+      if (elapsed <= travel)
+        activeSkin.drawStrike(ctx, strike, (index, px, py, size) =>
+          sprite(actors, index, px, py, size),
         );
-        ctx.fill();
-      }
-      sprite(
-        actors,
-        truck ? (right ? 3 : 4) : right ? 0 : 1,
-        p.x,
-        p.y + Math.sin(now / 100) * 1.3,
-        truck ? 57 : 58,
-      );
-      ctx.fillStyle = "#0b1a10";
-      ctx.fillRect(p.x - 34, p.y - 48, 68, 19);
-      ctx.fillStyle = "#dbe6cc";
-      ctx.font = "11px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(
-        m.cargo?.replace("issue:", "#").replace("pr:", "PR #").slice(0, 10) ||
-          "cargo",
-        p.x,
-        p.y - 35,
-      );
+      else if (activeSkin.impactMs)
+        activeSkin.drawImpact(ctx, {
+          x: p.x,
+          y: p.y,
+          faction: strikeFaction,
+          age: (elapsed - travel) / activeSkin.impactMs,
+        });
     }
   requestAnimationFrame(draw);
 }
@@ -1216,6 +1347,9 @@ $("#motion").onclick = () => {
   motionUI();
 };
 motionUI();
+$("#skin").onclick = () =>
+  selectSkin(activeSkin.id === "frontline" ? "town" : "frontline");
+applySkin();
 matchMedia("(prefers-reduced-motion: reduce)").addEventListener(
   "change",
   (e) => {
@@ -1249,7 +1383,7 @@ canvas.onclick = (e) => {
     const p = routePosition(
       m.from,
       m.to,
-      easeDelivery((performance.now() - m.start) / 6500),
+      easeDelivery(Math.min(1, (performance.now() - m.start) / activeSkin.travelMs)),
     );
     if (Math.hypot(x - p.x, y - p.y) < 50) {
       selectedTask = m.cargo;
