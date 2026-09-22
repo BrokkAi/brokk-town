@@ -27,10 +27,16 @@ python3 scripts/publish_tag.py --tag vX.Y.Z-town --sha "$(git rev-parse HEAD)" -
 
 ## Publishing connections
 
-Before the first release, configure all five npm packages in each project family
-(the launcher and four platform packages) to trust `BrokkAi/brokk-town`, their
-`release-PROJECT.yml` workflow, and the `packages-publish` environment. These
-external connections were not changed by the source import.
+All 45 npm publisher connections were updated and read back on 2026-09-22:
+Town and all eight bot families, each with a launcher and four platform packages.
+They trust `BrokkAi/brokk-town`, their `release-PROJECT.yml` workflow, and the
+`packages-publish` environment. Town uses `release-town.yml`; bots use their
+project names, such as `release-issue-bot.yml`. Direct publishing is enabled for
+the GitHub Actions workflows; existing staging permissions were preserved.
+
+When adding a package or renaming a workflow, update its connection before
+releasing. npm authentication on a maintainer machine is for managing this trust;
+release package publication runs in GitHub Actions.
 
 Inspect the installed CLI's `npm trust --help` and list existing connections with
 `npm trust list PACKAGE --json`. npm's CLI supports create, list and revoke, not

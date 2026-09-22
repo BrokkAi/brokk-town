@@ -24,7 +24,8 @@
 - Removed Town's Issue Bot Go dependency, TUI, login registration, runtime version
   selection, update polling/installers and their tests. No compatibility migration.
 - Added complete native/npm bundles, independent suffix release workflows and
-  version validation. External publishing connections await a release request.
+  version validation. All 45 external publishing connections were repaired and
+  verified on 2026-09-22 as part of the authorized release.
 - Persistent processes start for every house. Sequential-job, overlap rejection,
   cancellation and parent-pipe tests pass across worker implementations. Issue Bot
   summaries/retry are covered by a real local protocol test preserving evidence.
@@ -43,7 +44,7 @@
   directories, updated source README notices/descriptions/homepage links, and
   archived all eight original repositories at the user’s explicit request.
 
-## Town 0.6.0 release (in progress)
+## Town 0.6.0 release (complete)
 
 - User authorized a Town release and local installation update, plus repair of
   publishing trust for all eight bots. Publish only through GitHub Actions.
@@ -52,5 +53,13 @@
 - Advanced all eight bundled bot patch versions for their changed lifecycle code.
   Corrected the npm launcher description to browser and CLI clients.
 - Town race/vet, 27 packaging tests, browser syntax and 39 browser tests pass.
-- Updating and verifying all 45 npm publisher connections; full CI, suffix-tag
-  release, and installation of the published Town package remain.
+- Replaced and read back all 45 npm publisher connections for Town and eight bot
+  families, preserving environments and staging permissions. Each now trusts its
+  release workflow in BrokkAi/brokk-town with direct publishing enabled.
+- All 19 preparation CI checks passed. Tag v0.6.0-town at fe09bb7 triggered
+  GitHub Actions run 35703157496; all 20 jobs succeeded. Four native bundles and
+  five npm packages were submitted by Actions; npm reported processing pending.
+- Installed the checksum-verified native v0.6.0 bundle in ~/.local/bin while npm
+  processed its packages, and removed the superseded npm 0.5.0 installation.
+  bt reports v0.6.0; all eight installed bots initialized at manifest versions
+  and exited on parent loss with no jobs dispatched. Town remains stopped.
