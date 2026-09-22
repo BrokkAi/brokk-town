@@ -42,3 +42,15 @@
 - Published the consolidation to Brokk Town master, verified all eight destination
   directories, updated source README notices/descriptions/homepage links, and
   archived all eight original repositories at the user’s explicit request.
+
+## Town 0.6.0 release (in progress)
+
+- User authorized a Town release and local installation update, plus repair of
+  publishing trust for all eight bots. Publish only through GitHub Actions.
+- Fixed Feature Bot shutdown using a separate bounded drain context after job
+  cancellation; worker race tests passed 20 repetitions and vet passed.
+- Advanced all eight bundled bot patch versions for their changed lifecycle code.
+  Corrected the npm launcher description to browser and CLI clients.
+- Town race/vet, 27 packaging tests, browser syntax and 39 browser tests pass.
+- Updating and verifying all 45 npm publisher connections; full CI, suffix-tag
+  release, and installation of the published Town package remain.

@@ -92,7 +92,7 @@ def package(tag, assets, output, sha):
             npm_pack(package_name, {"os": [system], "cpu": [arch], "description": f"Brokk Town native binary for {system}/{arch}"},
                      {("bin/" + name if name in build_bundle.executables() else name): data for name, data in files.items()})
         npm_pack(NPM_ROOT, {
-            "description": "Brokk Town: a local multi-repository agent town with browser and TUI clients",
+            "description": "Brokk Town: a local multi-repository agent town with browser and CLI clients",
             "bin": {"bt": "bin/bt.cjs"}, "engines": {"node": ">=18"},
             "os": ["linux", "darwin"], "cpu": ["x64", "arm64"], "optionalDependencies": dependencies,
         }, {"bin/bt.cjs": (ROOT / "npm/bt.cjs").read_bytes(), **{name: files[name] for name in licenses.LEGAL_FILES}, "README.md": files["README.md"]})
