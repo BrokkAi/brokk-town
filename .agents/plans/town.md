@@ -143,3 +143,25 @@
   -- so every bot result carries no usage and no cost. `BudgetState` leaves
   `usage` and `cost_usd` null and clients render "not reported"; the validation
   error, CLI help, Town Hall and README all state the limitation.
+
+## issue-bot on acp-go 0.8.1 (#102, fixes #106)
+
+- acp-go 0.8.1 released first: `clienthost.Host.Answer` ignored
+  `ContentChunk.MessageID`, so an agent that ended a commentary message without
+  a newline had it welded to the receipt that followed. That was the cause of
+  #106, and it was still present in 0.8.0, so the upgrade alone would not have
+  fixed it. BrokkAi/acp-go#7, tag v0.8.1.
+- issue-bot moved from acp-go v0.1.0 to v0.8.1. No source changes were needed:
+  `runner.Runner`, `Config`, `AgentConfig`, `SetupError` and `Execute` are
+  unchanged, and feature-bot and release-bot already ran v0.7.0 and v0.8.0.
+- Licence review: acp-go's LICENSE is byte-identical, and v0.8.1 adds a NOTICE
+  the 0.1.0 tree did not have. Recorded both in `licenses/policy.json` and
+  regenerated the notices, so Apache-2.0 attribution now ships with the bot.
+- Added `agent_acp_test.go`: a credential-free simulated ACP agent over stdio
+  that drives the real `agentProcess`, covering startup, session setup,
+  model/effort selection ordering, transcripts, cancellation, and a rejected
+  model. Nothing else in the suite exercised the runner, so a wire regression
+  would have gone unnoticed. Confirmed the #106 case fails on v0.1.0 with
+  "agent did not finish with an ISSUE_RESULT receipt" and passes on v0.8.1.
+- Not done: `bundle.json` still pins issue-bot 0.5.6, so Town ships this only
+  after an issue-bot release.
