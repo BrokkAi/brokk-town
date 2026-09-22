@@ -51,6 +51,37 @@ type Request struct {
 	PR             int                `json:"pr,omitempty"`
 	BaseSHA        string             `json:"base_sha,omitempty"`
 	HeadSHA        string             `json:"head_sha,omitempty"`
+	// Policy is Town's work selection and limits for this run.
+	Policy *Policy `json:"policy,omitempty"`
+}
+
+// Policy is Town's work selection and limits for this house. An empty field
+// keeps this bot's own default, so a request without a policy behaves exactly
+// as it did before the field existed. A bot advertises the "policy" capability
+// only for the fields it honours; Town refuses to send one otherwise.
+type Policy struct {
+	Labels        []string       `json:"labels,omitempty"`
+	ExcludeLabels []string       `json:"exclude_labels,omitempty"`
+	Only          int            `json:"only,omitempty"`
+	Focus         string         `json:"focus,omitempty"`
+	Limit         int            `json:"limit,omitempty"`
+	Attempts      int            `json:"attempts,omitempty"`
+	Verify        []string       `json:"verify,omitempty"`
+	Release       *ReleasePolicy `json:"release,omitempty"`
+}
+
+// ReleasePolicy carries the cadence and gating only a release run uses.
+type ReleasePolicy struct {
+	DailySeconds               int      `json:"daily_seconds,omitempty"`
+	MinimumGapSeconds          int      `json:"minimum_gap_seconds,omitempty"`
+	QuietSeconds               int      `json:"quiet_seconds,omitempty"`
+	Burst                      int      `json:"burst,omitempty"`
+	BurstWindowSeconds         int      `json:"burst_window_seconds,omitempty"`
+	Triage                     *bool    `json:"triage,omitempty"`
+	Preflight                  []string `json:"preflight,omitempty"`
+	VerificationTimeoutSeconds int      `json:"verification_timeout_seconds,omitempty"`
+	Workflows                  []string `json:"workflows,omitempty"`
+	Assets                     []string `json:"assets,omitempty"`
 }
 
 type Progress struct {

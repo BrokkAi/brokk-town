@@ -249,9 +249,42 @@ func (s *Supervisor) SettingsForRole(id string, role Role, settings AgentSetting
 	return s.SettingsForRoleAndPolicy(id, role, settings, nil, nil, nil)
 }
 
+// BudgetEdit distinguishes leaving the budget alone from clearing it: a nil
+// *BudgetEdit preserves the saved budget, and one holding a nil Budget
+// removes it.
+type BudgetEdit struct {
+	Budget *Budget `json:"budget"`
+}
+
+// PolicyEdit distinguishes leaving a house's work policy alone from clearing
+// it: a nil *PolicyEdit preserves the saved policy, and one holding a nil or
+// empty Policy removes it.
+type PolicyEdit struct {
+	Policy *BotPolicy `json:"policy"`
+}
+
+// TownSettings are the town-wide edits one submission may carry alongside an
+// agent profile. A nil field leaves that setting as it was saved.
+type TownSettings struct {
+	MergePolicy    *string     `json:"merge_policy,omitempty"`
+	SimplifierMode *string     `json:"simplifier_mode,omitempty"`
+	CloseSeverity  *string     `json:"review_close_severity,omitempty"`
+	Budget         *BudgetEdit `json:"budget,omitempty"`
+	// WorkPolicy edits the policy of the role this submission names. It needs
+	// a role: a work policy always belongs to one house.
+	WorkPolicy *PolicyEdit `json:"work_policy,omitempty"`
+}
+
 // SettingsForRoleAndPolicy commits agent and merge-policy edits together so a
 // form submission cannot leave only half of the requested settings applied.
 func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings AgentSettings, mergePolicy *string, simplifierMode *string, closeSeverity *string) error {
+	return s.ApplySettings(id, role, settings, TownSettings{MergePolicy: mergePolicy, SimplifierMode: simplifierMode, CloseSeverity: closeSeverity})
+}
+
+// ApplySettings commits one agent profile edit and any town-wide edits in a
+// single transaction.
+func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings, edits TownSettings) error {
+	mergePolicy, simplifierMode, closeSeverity := edits.MergePolicy, edits.SimplifierMode, edits.CloseSeverity
 	if err := settings.validateRole(role); err != nil {
 		return err
 	}
@@ -263,6 +296,19 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 	}
 	if closeSeverity != nil && !ValidSeverity(*closeSeverity) {
 		return errors.New("review close severity must be P1, P2 or P3")
+	}
+	if edits.Budget != nil {
+		if err := edits.Budget.Budget.Validate(); err != nil {
+			return err
+		}
+	}
+	if edits.WorkPolicy != nil {
+		if role == "" {
+			return errors.New("a work policy belongs to one bot; name it with a role")
+		}
+		if err := edits.WorkPolicy.Policy.Validate(role); err != nil {
+			return err
+		}
 	}
 	cancelRelease := false
 	err := s.Store.Update(func(st *State) error {
@@ -283,6 +329,27 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 		}
 		if closeSeverity != nil {
 			t.Config.ReviewCloseSeverity = *closeSeverity
+		}
+		if edits.Budget != nil {
+			t.Config.Budget = edits.Budget.Budget
+			// A changed period starts a fresh window rather than carrying an
+			// old one's spend into a differently sized one.
+			t.rollBudget(s.now())
+		}
+		if edits.WorkPolicy != nil {
+			if edits.WorkPolicy.Policy.Empty() {
+				delete(t.Config.BotPolicies, role)
+			} else {
+				if t.Config.BotPolicies == nil {
+					t.Config.BotPolicies = map[Role]BotPolicy{}
+				}
+				t.Config.BotPolicies[role] = *edits.WorkPolicy.Policy
+			}
+			// Filters change which queued work is eligible, so the house looks
+			// again rather than waiting out its current delay.
+			if w := t.Workers[role]; w != nil {
+				w.Next = time.Time{}
+			}
 		}
 		switch {
 		case role == "":

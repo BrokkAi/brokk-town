@@ -15,7 +15,7 @@ import (
 
 func TestWorkerCapabilities(t *testing.T) {
 	info := workerInfo("fixture")
-	if info.Protocol != 1 || info.MinimumProtocol != 1 || info.Bot != "feature-bot" || info.Version != "fixture" || !reflect.DeepEqual(info.Capabilities, []string{"run", "progress", "feature-research", "feature-research-controls"}) {
+	if info.Protocol != 1 || info.MinimumProtocol != 1 || info.Bot != "feature-bot" || info.Version != "fixture" || !reflect.DeepEqual(info.Capabilities, []string{"policy", "run", "progress", "feature-research", "feature-research-controls"}) {
 		t.Fatalf("unexpected initialization: %+v", info)
 	}
 }
@@ -61,5 +61,53 @@ func TestWorkerResearchMappingAndIsolation(t *testing.T) {
 		if _, err := run(context.Background(), request, func(worker.Progress) {}); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestWorkerPolicyOverlaysDefaultsWithoutLosingThem(t *testing.T) {
+	dir := t.TempDir()
+	request := worker.Request{
+		Remote: "https://github.com/o/r.git", Branch: "main",
+		Directory: filepath.Join(dir, "checkout"), StateDirectory: filepath.Join(dir, "state"),
+		Repo: "o/r", Host: "github.com", Agent: runner.AgentConfig{Command: []string{"simulated"}},
+		Verify: []string{"town-verifier"},
+	}
+	var configs []bot.Config
+	run := workerRun(func(_ context.Context, cfg bot.Config, _ *slog.Logger, _ bool) error {
+		configs = append(configs, cfg)
+		return nil
+	})
+	defaults := bot.DefaultConfig()
+	for _, policy := range []*worker.Policy{
+		nil,
+		{},
+		{Labels: []string{"agent-ready", "agent-ready"}, Focus: "billing", Limit: 2, Attempts: 4, Verify: []string{"house-verifier"}},
+	} {
+		request.Policy = policy
+		if _, err := run(context.Background(), request, func(worker.Progress) {}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// No policy and an empty policy both leave the bot's own defaults alone.
+	for i := range 2 {
+		if configs[i].Focus != "" || configs[i].MaxIssues != defaults.MaxIssues || configs[i].Attempts != defaults.Attempts {
+			t.Fatalf("request %d changed a default: %+v", i, configs[i])
+		}
+		if !reflect.DeepEqual(configs[i].Verify, []string{"town-verifier"}) {
+			t.Fatalf("request %d lost the town verifier: %v", i, configs[i].Verify)
+		}
+	}
+	applied := configs[2]
+	if applied.Focus != "billing" || applied.MaxIssues != 2 || applied.Attempts != 4 {
+		t.Fatalf("policy was not applied: %+v", applied)
+	}
+	if !reflect.DeepEqual(applied.Verify, []string{"house-verifier"}) {
+		t.Fatalf("the house verifier did not replace the town's: %v", applied.Verify)
+	}
+	if !reflect.DeepEqual(applied.Labels, []string{"agent-ready"}) {
+		t.Fatalf("labels = %v, want the duplicate collapsed", applied.Labels)
+	}
+	if !strings.Contains(strings.Join(applied.InstructionFiles, " "), "AGENTS.md") {
+		t.Fatal("a policy replaced unrelated defaults")
 	}
 }

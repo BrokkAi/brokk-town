@@ -103,3 +103,43 @@
   with a paused copy of current saved state, HTTP state and new inbox assets,
   and clean shutdown without dispatching repository jobs or requests.
   bt reports v0.6.1; the actual Town service is stopped and ready for the user.
+
+## Per-house work policies (#3)
+
+- `Config.BotPolicies` gives each house label filters, one pinned issue or pull
+  request, a discovery focus, a per-run limit, an attempt limit, its own
+  verification command, and for the release house the cadence, preflight,
+  required workflows and required assets. Every field maps onto a setting the
+  bundled bot already has; `policySupported` is the single table validation and
+  the operator-facing summary both read.
+- Carried over the worker protocol as `policy`, behind a new `policy`
+  capability. A configured policy dispatched to a worker that does not
+  advertise it is refused by name and version rather than run unfiltered. All
+  eight bots read it; the town-wide `verify` is deliberately not treated as a
+  policy, so towns that only set it keep dispatching unchanged.
+- repo-bot now reports issue and pull-request labels, Reconcile stores them on
+  the task, and Town applies the same filters to its own selection that it
+  sends to the bot. Filtered work stays in the snapshot marked
+  `policy_excluded` with a per-town count, and each house's inspector states
+  its policy and how much inventory it holds back.
+- Public config reports command arguments as lengths only, so verification and
+  preflight arguments never reach a client snapshot.
+- Settings API, `bt settings --role BOT` flags, and `bot_policies` in the
+  config file all edit the same thing; `--clear-policy` removes one.
+
+## Agent budgets (#6)
+
+- `Config.Budget` bounds agent attempts and agent minutes per day, week or
+  month of local wall clock. `Town.Budget` is a durable per-period ledger, so
+  totals survive restarts and the snapshot path costs nothing to read.
+- Only attempts that held an agent slot are charged: a repository inventory is
+  not, a branch repair is. An attempt with no measured elapsed time is counted
+  in `untimed` rather than billed as zero.
+- An exhausted budget holds new agent dispatch and branch repairs for that town
+  only. Running work finishes, cancellation and saved work are untouched, and
+  the inventory keeps running so uncertain writes still reconcile.
+- No token or monetary cap is offered. No released acp-go runner reports usage
+  to a bot -- `runner.Execute` returns the agent's final text and nothing else
+  -- so every bot result carries no usage and no cost. `BudgetState` leaves
+  `usage` and `cost_usd` null and clients render "not reported"; the validation
+  error, CLI help, Town Hall and README all state the limitation.

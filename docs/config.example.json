@@ -31,6 +31,32 @@
       "poll_seconds": 60,
       "report_seconds": 1800,
       "max_cycles": 5,
+      "budget": {"period": "day", "max_attempts": 40, "max_agent_minutes": 600},
+      "bot_policies": {
+        "issue": {
+          "labels": ["agent-ready"],
+          "exclude_labels": ["needs-discussion"],
+          "attempts": 3,
+          "verify": ["go", "test", "./internal/..."]
+        },
+        "review": {"limit": 20, "focus": "concurrency and error handling"},
+        "bug": {"focus": "the storage layer", "limit": 3},
+        "simplifier": {"limit": 5},
+        "release": {
+          "release": {
+            "daily_seconds": 86400,
+            "minimum_gap_seconds": 3600,
+            "quiet_seconds": 900,
+            "burst": 10,
+            "burst_window_seconds": 3600,
+            "triage": true,
+            "preflight": ["make", "preflight"],
+            "verification_timeout_seconds": 600,
+            "workflows": ["ci"],
+            "assets": ["dist/*.tar.gz"]
+          }
+        }
+      },
       "funnels": [
         {
           "id": "github-ready",

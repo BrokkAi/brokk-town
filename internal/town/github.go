@@ -20,9 +20,31 @@ type RemoteIssue struct {
 	URL     string          `json:"html_url"`
 	State   string          `json:"state"`
 	Locked  bool            `json:"locked"`
+	Labels  []RemoteLabel   `json:"labels,omitempty"`
 	Pull    json.RawMessage `json:"pull_request"`
 	Updated time.Time       `json:"updated_at"`
 }
+
+// RemoteLabel is one repository label. Only the name is kept: Town filters on
+// it and shows it, and the colour and description are the repository's business.
+type RemoteLabel struct {
+	Name string `json:"name"`
+}
+
+// LabelNames flattens observed labels into the form Town's filters compare.
+func LabelNames(labels []RemoteLabel) []string {
+	if len(labels) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(labels))
+	for _, l := range labels {
+		if name := strings.TrimSpace(l.Name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 type Ref struct {
 	Ref  string `json:"ref"`
 	SHA  string `json:"sha"`
@@ -31,19 +53,20 @@ type Ref struct {
 	} `json:"repo"`
 }
 type Pull struct {
-	Number         int        `json:"number"`
-	Title          string     `json:"title"`
-	Body           string     `json:"body"`
-	URL            string     `json:"html_url"`
-	State          string     `json:"state"`
-	Draft          bool       `json:"draft"`
-	Locked         bool       `json:"locked"`
-	Comments       int        `json:"comments"`
-	ReviewComments int        `json:"review_comments"`
-	Head           Ref        `json:"head"`
-	Base           Ref        `json:"base"`
-	MergedAt       *time.Time `json:"merged_at"`
-	MergeCommit    string     `json:"merge_commit_sha"`
+	Number         int           `json:"number"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	URL            string        `json:"html_url"`
+	State          string        `json:"state"`
+	Draft          bool          `json:"draft"`
+	Locked         bool          `json:"locked"`
+	Labels         []RemoteLabel `json:"labels,omitempty"`
+	Comments       int           `json:"comments"`
+	ReviewComments int           `json:"review_comments"`
+	Head           Ref           `json:"head"`
+	Base           Ref           `json:"base"`
+	MergedAt       *time.Time    `json:"merged_at"`
+	MergeCommit    string        `json:"merge_commit_sha"`
 	User           struct {
 		Login string `json:"login"`
 	} `json:"user"`

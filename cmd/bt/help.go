@@ -13,27 +13,48 @@ import (
 // help, and a help command. Flag parsing stays on the standard library.
 
 type cliFlags struct {
-	daemon         *bool
-	closeSeverity  *string
-	dir            *string
-	listen         *string
-	demo           *bool
-	repo           *string
-	role           *string
-	task           *string
-	config         *string
-	harness        *string
-	harnessVersion *string
-	refresh        *bool
-	model          *string
-	effort         *string
-	agentCommand   *string
-	inherit        *bool
-	kind           *string
-	title          *string
-	bodyFile       *string
-	requestID      *string
-	maxWorkers     *int
+	daemon               *bool
+	closeSeverity        *string
+	dir                  *string
+	listen               *string
+	demo                 *bool
+	repo                 *string
+	role                 *string
+	task                 *string
+	config               *string
+	harness              *string
+	harnessVersion       *string
+	refresh              *bool
+	model                *string
+	effort               *string
+	agentCommand         *string
+	inherit              *bool
+	kind                 *string
+	title                *string
+	bodyFile             *string
+	requestID            *string
+	maxWorkers           *int
+	budgetPeriod         *string
+	budgetAttempts       *int
+	budgetMinutes        *int
+	labels               *string
+	excludeLabels        *string
+	only                 *int
+	focus                *string
+	limit                *int
+	attempts             *int
+	verify               *string
+	clearPolicy          *bool
+	releaseDaily         *int
+	releaseGap           *int
+	releaseQuiet         *int
+	releaseBurst         *int
+	releaseWindow        *string
+	releaseTriage        *string
+	releasePreflight     *string
+	releaseVerifyTimeout *int
+	releaseWorkflows     *string
+	releaseAssets        *string
 }
 
 // addCLIFlags defines every client flag on one set. Parsing stays lenient
@@ -62,6 +83,27 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.bodyFile = fs.String("body-file", "", "issue description file, or - for stdin (request)")
 	fl.requestID = fs.String("request-id", "", "saved submission ID (request/check-request)")
 	fl.maxWorkers = fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
+	fl.budgetPeriod = fs.String("budget-period", "", "accounting period for this town's agent budget: day, week, month, or none to remove it (settings)")
+	fl.budgetAttempts = fs.Int("budget-attempts", 0, "agent attempts allowed per period; 0 leaves attempts uncapped (settings)")
+	fl.budgetMinutes = fs.Int("budget-agent-minutes", 0, "agent minutes allowed per period; 0 leaves time uncapped (settings)")
+	fl.labels = fs.String("labels", "", "comma-separated labels this bot's work must carry (settings --role BOT)")
+	fl.excludeLabels = fs.String("exclude-labels", "", "comma-separated labels that exclude work from this bot (settings --role issue|review)")
+	fl.only = fs.Int("only", 0, "restrict this bot to one issue (--role issue) or pull request (--role review) number (settings)")
+	fl.focus = fs.String("focus", "", "what a discovery scan should concentrate on (settings --role bug|feature|review)")
+	fl.limit = fs.Int("limit", 0, "most items one run may produce: issues filed, findings, proposals, repairs or bulletin items depending on the bot (settings --role BOT)")
+	fl.attempts = fs.Int("attempts", 0, "tries this bot gives one item before giving up (settings --role BOT)")
+	fl.verify = fs.String("verify", "", "verification command for this bot as a JSON argument array; overrides the town command (settings --role BOT)")
+	fl.clearPolicy = fs.Bool("clear-policy", false, "remove this bot's work policy and take every item again (settings --role BOT)")
+	fl.releaseDaily = fs.Int("release-daily-seconds", 0, "deadline after which unreleased commits are released (settings --role release)")
+	fl.releaseGap = fs.Int("release-minimum-gap-seconds", 0, "shortest interval between two releases (settings --role release)")
+	fl.releaseQuiet = fs.Int("release-quiet-seconds", 0, "how long the branch must be still before a release (settings --role release)")
+	fl.releaseBurst = fs.Int("release-burst", 0, "commits inside the burst window that trigger an early release (settings --role release)")
+	fl.releaseWindow = fs.String("release-burst-window-seconds", "", "burst window in seconds (settings --role release)")
+	fl.releaseTriage = fs.String("release-triage", "", "on or off: ask the agent whether unreleased commits warrant an early release (settings --role release)")
+	fl.releasePreflight = fs.String("release-preflight", "", "preflight command as a JSON argument array; a non-zero exit stops the release (settings --role release)")
+	fl.releaseVerifyTimeout = fs.Int("release-verification-timeout-seconds", 0, "bound on the independent publication check (settings --role release)")
+	fl.releaseWorkflows = fs.String("release-workflows", "", "comma-separated GitHub workflow names a release must see succeed (settings --role release)")
+	fl.releaseAssets = fs.String("release-assets", "", "comma-separated file patterns a release must publish (settings --role release)")
 	return fl
 }
 
@@ -98,7 +140,9 @@ var cliCommands = []commandInfo{
 	{name: "add", short: "Add a town", long: "Add a town for a GitHub repository.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "model", "repo"}},
 	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog.", args: "[flags]", flags: []string{"refresh"}},
-	{name: "settings", short: "Configure a town or bot", long: "Configure a town's defaults or one bot house. Omit --role to edit town defaults.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "inherit", "model", "repo", "review-close-severity", "role"}},
+	{name: "settings", short: "Configure a town or bot", long: "Configure a town's defaults or one bot house. Omit --role to edit town defaults.\n\n" +
+		"A budget bounds agent attempts and agent minutes per accounting period. Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol.\n\n" +
+		"With --role, the work-policy flags choose what that bot takes on: label filters, one selected issue or pull request, a discovery focus, per-run limits, attempts, and its own verification command. Each flag is refused by a bot that cannot honour it.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "attempts", "budget-agent-minutes", "budget-attempts", "budget-period", "clear-policy", "effort", "exclude-labels", "focus", "harness", "harness-version", "inherit", "labels", "limit", "model", "only", "release-burst", "release-burst-window-seconds", "release-daily-seconds", "release-minimum-gap-seconds", "release-assets", "release-preflight", "release-quiet-seconds", "release-triage", "release-verification-timeout-seconds", "release-workflows", "repo", "review-close-severity", "role", "verify"}},
 	{name: "request", short: "Submit a GitHub issue request", long: "Submit a GitHub issue as work for a town.", args: "--repo OWNER/REPO --title TITLE --body-file FILE [flags]", flags: []string{"body-file", "kind", "repo", "request-id", "title"}},
 	{name: "check-request", short: "Check a submitted request", long: "Check the status of a submitted request.", args: "--repo OWNER/REPO --request-id ID [flags]", flags: []string{"repo", "request-id"}},
 	{name: "start", short: "Start a town or bot house", long: "Start a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},

@@ -1754,3 +1754,20 @@ textarea {
 .inbox-context summary { cursor: pointer; font-size: 12px; color: #a0b394; }
 .inbox-actions a { border-radius: 6px; text-decoration: none; display: inline-block; }
 .inbox-item.attention .inbox-actions { flex-direction: column; align-items: stretch; }
+
+/* A held budget is a state the operator chose, not a failure: it reads as a
+   notice rather than an error. */
+.budget-held {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--green);
+  background: var(--panel);
+  border-radius: 4px;
+}
+
+/* Work a filter holds back stays listed: hiding it would leave an operator
+   unable to see what their own policy excluded. It is dimmed, not removed. */
+.task-card.filtered {
+  opacity: 0.55;
+  border-style: dashed;
+}

@@ -59,6 +59,35 @@ type Request struct {
 	// Commits are the revisions Town still needs release ancestry for. The
 	// worker proves each one against the latest published release.
 	Commits []string `json:"commits,omitempty"`
+	// Policy is Town's work selection and limits for this run.
+	Policy *Policy `json:"policy,omitempty"`
+}
+
+// Policy is Town's work selection and limits for this house. An empty field
+// keeps this bot's own default, so a request without a policy behaves exactly
+// as it did before the field existed. A bot advertises the "policy" capability
+// only for the fields it honours; Town refuses to send one otherwise.
+type Policy struct {
+	Labels        []string       `json:"labels,omitempty"`
+	ExcludeLabels []string       `json:"exclude_labels,omitempty"`
+	Only          int            `json:"only,omitempty"`
+	Focus         string         `json:"focus,omitempty"`
+	Limit         int            `json:"limit,omitempty"`
+	Attempts      int            `json:"attempts,omitempty"`
+	Verify        []string       `json:"verify,omitempty"`
+	Release       *ReleasePolicy `json:"release,omitempty"`
+}
+
+// ReleasePolicy carries the cadence and gating only a release run uses.
+type ReleasePolicy struct {
+	DailySeconds               int      `json:"daily_seconds,omitempty"`
+	MinimumGapSeconds          int      `json:"minimum_gap_seconds,omitempty"`
+	QuietSeconds               int      `json:"quiet_seconds,omitempty"`
+	Burst                      int      `json:"burst,omitempty"`
+	BurstWindowSeconds         int      `json:"burst_window_seconds,omitempty"`
+	Triage                     *bool    `json:"triage,omitempty"`
+	Preflight                  []string `json:"preflight,omitempty"`
+	VerificationTimeoutSeconds int      `json:"verification_timeout_seconds,omitempty"`
 }
 
 type Progress struct {
@@ -91,8 +120,15 @@ type Issue struct {
 	URL     string          `json:"html_url"`
 	State   string          `json:"state"`
 	Locked  bool            `json:"locked"`
+	Labels  []Label         `json:"labels,omitempty"`
 	Pull    json.RawMessage `json:"pull_request,omitempty"`
 	Updated time.Time       `json:"updated_at"`
+}
+
+// Label is one repository label. Only the name crosses the protocol: Town
+// filters and displays on it, and the rest belongs to the repository.
+type Label struct {
+	Name string `json:"name"`
 }
 
 type Ref struct {
@@ -111,6 +147,7 @@ type Pull struct {
 	State          string     `json:"state"`
 	Draft          bool       `json:"draft"`
 	Locked         bool       `json:"locked"`
+	Labels         []Label    `json:"labels,omitempty"`
 	Comments       int        `json:"comments"`
 	ReviewComments int        `json:"review_comments"`
 	Head           Ref        `json:"head"`

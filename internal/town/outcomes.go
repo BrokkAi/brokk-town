@@ -13,22 +13,28 @@ import (
 // Metrics remain nil when the worker/provider did not report them; JSON then
 // exposes an explicit null instead of silently treating missing data as zero.
 type OutcomeRecord struct {
-	ID            string           `json:"id"`
-	Town          string           `json:"town,omitempty"`
-	At            time.Time        `json:"at"`
-	Class         string           `json:"class"`
-	Kind          string           `json:"kind"`
-	Status        string           `json:"status"`
-	Role          Role             `json:"role,omitempty"`
-	TaskID        string           `json:"task_id,omitempty"`
-	RelatedTaskID string           `json:"related_task_id,omitempty"`
-	Revision      string           `json:"revision,omitempty"`
-	URL           string           `json:"url,omitempty"`
-	Detail        string           `json:"detail,omitempty"`
-	ElapsedMS     *int64           `json:"elapsed_ms"`
-	Usage         *OutcomeUsage    `json:"usage"`
-	CostUSD       *float64         `json:"cost_usd"`
-	Judgment      *OutcomeJudgment `json:"judgment"`
+	ID            string    `json:"id"`
+	Town          string    `json:"town,omitempty"`
+	At            time.Time `json:"at"`
+	Class         string    `json:"class"`
+	Kind          string    `json:"kind"`
+	Status        string    `json:"status"`
+	Role          Role      `json:"role,omitempty"`
+	TaskID        string    `json:"task_id,omitempty"`
+	RelatedTaskID string    `json:"related_task_id,omitempty"`
+	Revision      string    `json:"revision,omitempty"`
+	URL           string    `json:"url,omitempty"`
+	Detail        string    `json:"detail,omitempty"`
+	ElapsedMS     *int64    `json:"elapsed_ms"`
+	// Agent reports whether this attempt held one of the service's agent
+	// slots. A repository inventory reads GitHub without starting an agent;
+	// a branch repair starts one. Budgets charge only the attempts that did.
+	// For a repair the elapsed time covers the whole repo attempt, so the
+	// charged minutes are an upper bound on the agent's own share.
+	Agent    bool             `json:"agent,omitempty"`
+	Usage    *OutcomeUsage    `json:"usage"`
+	CostUSD  *float64         `json:"cost_usd"`
+	Judgment *OutcomeJudgment `json:"judgment"`
 }
 
 type OutcomeUsage struct {

@@ -31,7 +31,7 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 	}
 	return worker.Serve(ctx, *socket, worker.Initialize{
 		Protocol: worker.ProtocolVersion, MinimumProtocol: worker.MinimumProtocol,
-		Bot: "review-bot", Version: version, Capabilities: []string{"run", "progress", "exact-revision-review", "finding-severity"},
+		Bot: "review-bot", Version: version, Capabilities: []string{"policy", "run", "progress", "exact-revision-review", "finding-severity"},
 	}, func(ctx context.Context, request worker.Request, progress func(worker.Progress)) (worker.Result, error) {
 		if request.PR < 1 {
 			return worker.Result{}, fmt.Errorf("review worker requires a positive PR number")
@@ -46,6 +46,25 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 		cfg.GitHub.Host = request.Host
 		cfg.PR = request.PR
 		cfg.Verify = request.Verify
+		if policy := request.Policy; policy != nil {
+			cfg.Labels = appendLabels(cfg.Labels, policy.Labels)
+			cfg.ExcludeLabels = appendLabels(cfg.ExcludeLabels, policy.ExcludeLabels)
+			if policy.Only > 0 && cfg.PR == 0 {
+				cfg.PR = policy.Only
+			}
+			if policy.Focus != "" {
+				cfg.Focus = policy.Focus
+			}
+			if policy.Limit > 0 {
+				cfg.MaxFindings = policy.Limit
+			}
+			if policy.Attempts > 0 {
+				cfg.Attempts = policy.Attempts
+			}
+			if len(policy.Verify) > 0 {
+				cfg.Verify = policy.Verify
+			}
+		}
 		ctx = bot.WithProgress(ctx, func(p bot.Progress) {
 			progress(worker.Progress{Phase: p.Phase, Task: p.Task})
 		})
@@ -91,4 +110,25 @@ func reviewResult(saved *bot.State, request worker.Request) worker.ReviewResult 
 		}
 	}
 	return result
+}
+
+// appendLabels adds Town's filter to the bot's own default without duplicating
+// an entry the configuration already carries.
+func appendLabels(existing, extra []string) []string {
+	if len(extra) == 0 {
+		return existing
+	}
+	seen := map[string]bool{}
+	for _, l := range existing {
+		seen[strings.ToLower(strings.TrimSpace(l))] = true
+	}
+	for _, l := range extra {
+		key := strings.ToLower(strings.TrimSpace(l))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		existing = append(existing, strings.TrimSpace(l))
+	}
+	return existing
 }

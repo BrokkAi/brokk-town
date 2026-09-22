@@ -226,6 +226,11 @@ func (s *Supervisor) claimRepair(id string) bool {
 	if _, limit := s.Store.dispatchEligibility(id, Repo, s.now()); s.activeWorkers() >= limit {
 		return false
 	}
+	// A repair is the repo house's only agent work, so it answers to the
+	// budget even though the inventory around it does not.
+	if s.Store.budgetExhausted(id, s.now()) {
+		return false
+	}
 	if s.repairing == nil {
 		s.repairing = map[string]bool{}
 	}
@@ -319,6 +324,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	log := slog.New(&workerLog{role: r, out: updates, now: s.now})
 	var result RunResult
 	var err error
+	repaired := false
 	func() {
 		defer func() {
 			if v := recover(); v != nil {
@@ -327,6 +333,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		}()
 		if r == Repo {
 			repair := s.claimRepair(t.ID)
+			repaired = repair
 			err = s.reconcile(ctx, t, repair, observe, log)
 			if repair {
 				s.releaseRepair(t.ID)
@@ -483,7 +490,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 				status, detail = "abandoned", "Worker attempt was canceled"
 			}
 			attemptID := fmt.Sprintf("attempt:%s:%d:%s", r, started.UnixNano(), taskID)
-			current.RecordOutcome(OutcomeRecord{ID: attemptID, At: finished, Class: "attempt", Kind: "worker_attempt", Status: status, Role: r, TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished), Usage: result.Usage, CostUSD: result.CostUSD})
+			attempt := OutcomeRecord{ID: attemptID, At: finished, Class: "attempt", Kind: "worker_attempt", Status: status, Role: r, TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished), Agent: OccupiesAgentSlot(r) || repaired, Usage: result.Usage, CostUSD: result.CostUSD}
+			current.RecordOutcome(attempt)
+			current.chargeBudget(attempt, finished)
 			if status == "abandoned" {
 				current.RecordOutcome(OutcomeRecord{ID: "abandoned:" + attemptID, At: finished, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished)})
 			}

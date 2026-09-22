@@ -64,6 +64,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		}
 		task.Title = i.Title
 		task.URL = i.URL
+		task.Labels = LabelNames(i.Labels)
 		if task.MayoralDecision == "declined" {
 			// A decline is final, and closing the issue is how Town carries it
 			// out; the resulting closure must not erase the decision.
@@ -124,6 +125,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		}
 		task.Title = p.Title
 		task.URL = p.URL
+		task.Labels = LabelNames(p.Labels)
 		task.Branch = p.Head.Ref
 		if (task.Head != "" && task.Head != p.Head.SHA) || (task.Base != "" && task.Base != p.Base.SHA) || (task.Description != "" && task.Description != description(p)) {
 			if task.Head != "" && task.Head != p.Head.SHA && !isOwned {

@@ -718,3 +718,97 @@ test("responsive and reduced-motion contracts remain shipped in the stylesheet",
     assert.match(css, new RegExp(`\\.profile-chip\\.rank-${rank}\\s*\\{`), `effort rank ${rank} has no shade`);
   assert.match(css, /\.profile\.own\s+\.profile-chip/, "a profile set for one house is marked apart from an inherited one");
 });
+
+// openTownHall renders one snapshot and opens the Town Hall inspector. The
+// client keeps its own copy of a delivered snapshot, so a test that needs
+// different town state installs a fresh fixture rather than mutating this one.
+async function openTownHall(budget) {
+  const elements = installFixture();
+  const live = structuredClone(state);
+  live.seq = 1;
+  live.demo = false;
+  live.towns["acme/project"].budget = budget;
+  const message = `data: ${JSON.stringify(live)}\n\n`;
+  let served = false;
+  globalThis.fetch = async (url) => {
+    if (url === "/api/events")
+      return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(message), done: false }) : { done: true }) }) } };
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?budget=${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  return elements.inspection.textContent;
+}
+
+test("an exhausted agent budget explains itself and never renders absent telemetry as zero", async () => {
+  const text = await openTownHall({
+    configured: true, period: "day",
+    from: "2026-09-22T00:00:00Z", to: "2026-09-23T00:00:00Z",
+    attempts: 12, max_attempts: 12, agent_seconds: 300, max_agent_minutes: 0,
+    untimed: 2, exhausted: true,
+    reason: "Budget reached: 12 of 12 agent attempts this day. New agent work resumes at 00:00 on 23 Sep.",
+    advice: "Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol.",
+    usage: null, cost_usd: null,
+  });
+  assert.match(text, /Agent budget/, "Town Hall shows the budget");
+  assert.match(text, /12 of 12 agent attempts/, "the ceiling is shown against the spend");
+  assert.match(text, /5 agent minutes/, "measured agent time is shown in minutes");
+  assert.match(text, /2 attempts reported no elapsed time/, "unmeasured attempts are called out");
+  assert.match(text, /Tokens not reported/, "missing usage reads as unreported");
+  assert.match(text, /cost not reported/, "missing cost reads as unreported");
+  assert.doesNotMatch(text, /\$0/, "absent cost is never rendered as zero dollars");
+  assert.match(text, /no bundled agent harness reports usage/, "the telemetry limitation is stated");
+  assert.match(text, /New agent work resumes/, "an exhausted budget explains when work resumes");
+});
+
+test("a town with no budget still reports the agent spend it measured", async () => {
+  const text = await openTownHall({
+    configured: false, period: "day", from: "2026-09-22T00:00:00Z", to: "2026-09-23T00:00:00Z",
+    attempts: 3, agent_seconds: 0, untimed: 0, exhausted: false,
+    advice: "Town cannot cap token or dollar spend.", usage: null, cost_usd: null,
+  });
+  assert.match(text, /3 agent attempts/, "spend is reported without a budget");
+  assert.match(text, /No budget set for this town/, "an absent budget is stated plainly");
+  assert.doesNotMatch(text, /New agent work resumes/, "an unlimited town is not described as held");
+});
+
+test("a house shows its work policy and marks the inventory that policy holds back", async () => {
+  const elements = installFixture();
+  const live = structuredClone(state);
+  live.seq = 1;
+  live.demo = false;
+  const t = live.towns["acme/project"];
+  t.config.work_policies = [
+    { role: "issue", labels: ["agent-ready"], summary: "Takes work labelled agent-ready." },
+  ];
+  t.tasks["issue:2"].policy_excluded = true;
+  t.tasks["issue:5"] = { id: "issue:5", kind: "issue", number: 5, title: "Eligible work", house: "issue", stage: "queued", labels: ["agent-ready"] };
+  const message = `data: ${JSON.stringify(live)}\n\n`;
+  let served = false;
+  globalThis.fetch = async (url) => {
+    if (url === "/api/events")
+      return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(message), done: false }) : { done: true }) }) } };
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?policy=${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  const text = elements.inspection.textContent;
+  assert.match(text, /WORK POLICY/, "the house states its policy");
+  assert.match(text, /Takes work labelled agent-ready/, "the policy is spelled out");
+  assert.match(text, /1 inventory item is held back/, "the held-back count is reported");
+  const held = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:2");
+  assert.ok(held, "filtered work stays listed rather than vanishing");
+  assert.match(held.textContent, /held by this house/, "filtered work says why it is not eligible");
+  assert.equal(held.className.includes("filtered"), true, "filtered work is marked apart");
+  const eligible = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5");
+  assert.ok(eligible, "eligible work is still queued");
+  assert.doesNotMatch(eligible.textContent, /held by this house/, "eligible work is not marked as filtered");
+});

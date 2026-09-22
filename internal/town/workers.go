@@ -372,6 +372,14 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
 		Agent: agent, Verify: t.Config.Verify, Issue: d.issue, PR: d.pr, BaseSHA: d.base, HeadSHA: d.head,
 	}
+	// The house's policy carries its own verification command when it has
+	// one, so Verify stays the town default for a house without a policy.
+	if policy, configured := t.Config.PolicyForRole(role); configured {
+		request.Policy = &policy
+		if len(policy.Verify) > 0 {
+			request.Verify = policy.Verify
+		}
+	}
 	if role == Simplifier {
 		request.Mode = t.Config.SimplifierModeOrDefault()
 	}
@@ -473,6 +481,9 @@ func validateWorkerResult(result workerResult, role Role) error {
 func nextTask(t *Town, role Role, stage string) *Task {
 	tasks := []*Task{}
 	for _, task := range t.Tasks {
+		if !t.Config.eligibleUnderPolicy(role, task) {
+			continue
+		}
 		if (task.Kind == "pr" || (role == Simplifier && task.Kind == "issue")) && task.House == role && task.Stage == stage && !task.Blocked && !task.RetryAt.After(time.Now()) {
 			tasks = append(tasks, task)
 		}
@@ -495,6 +506,9 @@ func nextTask(t *Town, role Role, stage string) *Task {
 func nextIssue(t *Town) *Task {
 	tasks := []*Task{}
 	for _, task := range t.Tasks {
+		if !t.Config.eligibleUnderPolicy(Issue, task) {
+			continue
+		}
 		if task.Kind == "issue" && task.House == Issue && task.Stage == "queued" && !task.Blocked && !task.RetryAt.After(time.Now()) {
 			tasks = append(tasks, task)
 		}

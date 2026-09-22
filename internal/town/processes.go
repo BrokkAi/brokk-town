@@ -124,6 +124,11 @@ func (p *workerProcess) run(ctx context.Context, request workerRequest, retry bo
 	if request.SupersededPR > 0 && !p.info.has(workerRequeueCapability) {
 		return workerResult{}, errors.New("worker does not support requeue")
 	}
+	// A configured filter that the bot would ignore is worse than no run at
+	// all: it would work on items the operator excluded.
+	if !request.Policy.Empty() && !p.info.has(workerPolicyCapability) {
+		return workerResult{}, fmt.Errorf("%s %s does not support work policies; clear this house's policy or update the bot", p.info.Bot, p.bot.version)
+	}
 	if err := p.bot.unchanged(); err != nil {
 		return workerResult{}, err
 	}

@@ -29,6 +29,12 @@ const workerProtocolVersion = 1
 // after Town closed its pull request.
 const workerRequeueCapability = "requeue"
 
+// workerPolicyCapability marks a worker that reads Town's work policy:
+// label filters, a pinned item, a focus, limits and per-house verification.
+// Town refuses to dispatch a configured policy to a worker without it rather
+// than letting the bot run unfiltered.
+const workerPolicyCapability = "policy"
+
 var workerBotNames = map[Role]string{
 	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot", Repo: "repo-bot", Hall: "mayor-bot",
 }
@@ -101,6 +107,9 @@ type workerRequest struct {
 	Arrival json.RawMessage `json:"arrival,omitempty"`
 	Since   *time.Time      `json:"since,omitempty"`
 	Until   *time.Time      `json:"until,omitempty"`
+	// Policy is the operator's work selection and limits for this house.
+	// Requires the "policy" capability whenever it changes anything.
+	Policy *BotPolicy `json:"policy,omitempty"`
 }
 
 type workerProgress struct {

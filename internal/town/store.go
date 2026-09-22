@@ -106,6 +106,17 @@ func validateState(s State, demo bool) error {
 		if t.DefaultBranch != "" && !ValidBranch(t.DefaultBranch) {
 			return errors.New("invalid observed default branch")
 		}
+		if l := t.Budget; l != nil {
+			if !ValidBudgetPeriod(l.Period) || l.From.IsZero() || l.Attempts < 0 || l.AgentMS < 0 || l.Untimed < 0 || l.Untimed > l.Attempts {
+				return errors.New("invalid budget ledger")
+			}
+			if l.Usage != nil && (l.Usage.InputTokens < 0 || l.Usage.OutputTokens < 0) {
+				return errors.New("invalid budget ledger usage")
+			}
+			if l.CostUSD != nil && *l.CostUSD < 0 {
+				return errors.New("invalid budget ledger cost")
+			}
+		}
 		for _, r := range Roles {
 			if t.Workers[r] == nil || t.Workers[r].Role != r {
 				return errors.New("missing worker")
@@ -263,8 +274,23 @@ func (s *Store) dispatchEligibility(id string, role Role, now time.Time) (bool, 
 	if role == Release && t.Config.MergePolicy == "manual" {
 		return false, s.state.ServiceConfig.MaxWorkers
 	}
+	// An exhausted budget holds new agent work only. The repository
+	// inventory keeps running: a town that cannot see GitHub cannot
+	// reconcile the writes its earlier attempts may already have made.
+	if OccupiesAgentSlot(role) && t.BudgetState(now).Exhausted {
+		return false, s.state.ServiceConfig.MaxWorkers
+	}
 	w := t.Workers[role]
 	return w != nil && w.Enabled && w.Run == nil && w.Recovery == nil && !w.Next.After(now), s.state.ServiceConfig.MaxWorkers
+}
+
+// budgetExhausted reports whether this town has spent its accounting
+// period. Running work is never interrupted by it.
+func (s *Store) budgetExhausted(id string, now time.Time) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t := s.state.Towns[id]
+	return t != nil && !t.Deleted && t.BudgetState(now).Exhausted
 }
 
 // setActive publishes reservation changes through the same snapshot stream.

@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -317,6 +318,37 @@ func run(ctx context.Context, args []string) error {
 				return errors.New("--review-close-severity is a town setting; omit --role")
 			}
 			payload["review_close_severity"] = strings.ToUpper(*fl.closeSeverity)
+		}
+		budgetEdited := *fl.budgetPeriod != "" || *fl.budgetAttempts != 0 || *fl.budgetMinutes != 0
+		if budgetEdited {
+			if settingsRole != "" {
+				return errors.New("a budget is a town setting; omit --role")
+			}
+			period := strings.ToLower(*fl.budgetPeriod)
+			if period == "none" {
+				if *fl.budgetAttempts != 0 || *fl.budgetMinutes != 0 {
+					return errors.New("--budget-period none removes the budget; drop the limit flags")
+				}
+				payload["budget"] = map[string]any{"budget": nil}
+			} else {
+				if period == "" {
+					return errors.New("--budget-period day|week|month is required with a budget limit")
+				}
+				if *fl.budgetAttempts == 0 && *fl.budgetMinutes == 0 {
+					return errors.New("set --budget-attempts or --budget-agent-minutes. " + town.BudgetLimitAdvice)
+				}
+				payload["budget"] = map[string]any{"budget": map[string]any{"period": period, "max_attempts": *fl.budgetAttempts, "max_agent_minutes": *fl.budgetMinutes}}
+			}
+		}
+		policy, edited, err := workPolicyEdit(fl, fs)
+		if err != nil {
+			return err
+		}
+		if edited {
+			if settingsRole == "" {
+				return errors.New("a work policy belongs to one bot; add --role BOT")
+			}
+			payload["work_policy"] = map[string]any{"policy": policy}
 		}
 		return request(ctx, conn, "POST", "/api/settings", payload, &result)
 	case "request":
@@ -641,4 +673,124 @@ func decodeConfigFile(data []byte) ([]townEntry, *int, error) {
 		limit = &value
 	}
 	return towns, limit, nil
+}
+
+// policyFlagNames are the settings flags that build a bot's work policy. They
+// are listed once so flag presence, not a zero value, decides what was edited:
+// --limit 0 is meaningless, but --labels "" has to be able to clear a filter.
+var policyFlagNames = map[string]bool{
+	"labels": true, "exclude-labels": true, "only": true, "focus": true,
+	"limit": true, "attempts": true, "verify": true, "clear-policy": true,
+	"release-daily-seconds": true, "release-minimum-gap-seconds": true,
+	"release-quiet-seconds": true, "release-burst": true,
+	"release-burst-window-seconds": true, "release-triage": true,
+	"release-preflight": true, "release-verification-timeout-seconds": true,
+}
+
+// splitLabels turns a comma-separated flag into the list the API takes. An
+// empty value clears the filter rather than sending one empty label.
+func splitLabels(value string) []string {
+	out := []string{}
+	for _, part := range strings.Split(value, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func jsonCommand(flagName, value string) ([]string, error) {
+	var args []string
+	if err := json.Unmarshal([]byte(value), &args); err != nil {
+		return nil, fmt.Errorf("--%s must be a JSON argument array: %w", flagName, err)
+	}
+	return args, nil
+}
+
+// workPolicyEdit builds the work policy this invocation asks for, reporting
+// whether any policy flag was given at all. A nil policy with edited true is
+// the request to remove the saved one.
+func workPolicyEdit(fl *cliFlags, fs *flag.FlagSet) (map[string]any, bool, error) {
+	given := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) {
+		if policyFlagNames[f.Name] {
+			given[f.Name] = true
+		}
+	})
+	if len(given) == 0 {
+		return nil, false, nil
+	}
+	if given["clear-policy"] && *fl.clearPolicy {
+		// Clearing is all or nothing: pairing it with a filter would leave the
+		// operator guessing which one won.
+		if len(given) > 1 {
+			return nil, true, errors.New("--clear-policy removes the whole policy; run it on its own")
+		}
+		return nil, true, nil
+	}
+	policy := map[string]any{}
+	release := map[string]any{}
+	var err error
+	fs.Visit(func(f *flag.Flag) {
+		if err != nil {
+			return
+		}
+		switch f.Name {
+		case "labels":
+			policy["labels"] = splitLabels(*fl.labels)
+		case "exclude-labels":
+			policy["exclude_labels"] = splitLabels(*fl.excludeLabels)
+		case "only":
+			policy["only"] = *fl.only
+		case "focus":
+			policy["focus"] = *fl.focus
+		case "limit":
+			policy["limit"] = *fl.limit
+		case "attempts":
+			policy["attempts"] = *fl.attempts
+		case "verify":
+			var command []string
+			if command, err = jsonCommand("verify", *fl.verify); err == nil {
+				policy["verify"] = command
+			}
+		case "release-daily-seconds":
+			release["daily_seconds"] = *fl.releaseDaily
+		case "release-minimum-gap-seconds":
+			release["minimum_gap_seconds"] = *fl.releaseGap
+		case "release-quiet-seconds":
+			release["quiet_seconds"] = *fl.releaseQuiet
+		case "release-burst":
+			release["burst"] = *fl.releaseBurst
+		case "release-burst-window-seconds":
+			var seconds int
+			if seconds, err = strconv.Atoi(strings.TrimSpace(*fl.releaseWindow)); err != nil {
+				err = errors.New("--release-burst-window-seconds must be a whole number of seconds")
+				return
+			}
+			release["burst_window_seconds"] = seconds
+		case "release-triage":
+			switch strings.ToLower(strings.TrimSpace(*fl.releaseTriage)) {
+			case "on", "true", "yes":
+				release["triage"] = true
+			case "off", "false", "no":
+				release["triage"] = false
+			default:
+				err = errors.New("--release-triage must be on or off")
+			}
+		case "release-preflight":
+			var command []string
+			if command, err = jsonCommand("release-preflight", *fl.releasePreflight); err == nil {
+				release["preflight"] = command
+			}
+		case "release-verification-timeout-seconds":
+			release["verification_timeout_seconds"] = *fl.releaseVerifyTimeout
+		}
+	})
+	if err != nil {
+		return nil, true, err
+	}
+	if len(release) > 0 {
+		policy["release"] = release
+	}
+	return policy, true, nil
 }

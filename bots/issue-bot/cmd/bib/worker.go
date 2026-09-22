@@ -32,7 +32,7 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 	}
 	return worker.Serve(ctx, *socket, worker.Initialize{
 		Protocol: worker.ProtocolVersion, MinimumProtocol: worker.MinimumProtocol,
-		Bot: "issue-bot", Version: version, Capabilities: []string{"run", "progress", "issue-result", "exact-issue", "requeue", "jobs", "retry-issue"},
+		Bot: "issue-bot", Version: version, Capabilities: []string{"policy", "run", "progress", "issue-result", "exact-issue", "requeue", "jobs", "retry-issue"},
 	}, func(ctx context.Context, request worker.Request, progress func(worker.Progress)) (worker.Result, error) {
 		cfg := bot.DefaultConfig()
 		cfg.Remote = request.Remote
@@ -74,6 +74,21 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 		default:
 			return worker.Result{}, fmt.Errorf("unknown issue worker mode %q", request.Mode)
 		}
+		if policy := request.Policy; policy != nil {
+			cfg.Labels = appendLabels(cfg.Labels, policy.Labels)
+			cfg.ExcludeLabels = appendLabels(cfg.ExcludeLabels, policy.ExcludeLabels)
+			// Town selects the issue it wants; Only is the operator's standing
+			// restriction and applies when no exact issue was dispatched.
+			if policy.Only > 0 && cfg.Issue == 0 {
+				cfg.Issue = policy.Only
+			}
+			if policy.Attempts > 0 {
+				cfg.Attempts = policy.Attempts
+			}
+			if len(policy.Verify) > 0 {
+				cfg.Verify = policy.Verify
+			}
+		}
 		if request.SupersededPR > 0 {
 			if request.Issue < 1 {
 				return worker.Result{}, fmt.Errorf("requeue requires an exact issue")
@@ -111,4 +126,25 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 		}
 		return result, runErr
 	}, slog.Default())
+}
+
+// appendLabels adds Town's filter to the bot's own default without duplicating
+// an entry the configuration already carries.
+func appendLabels(existing, extra []string) []string {
+	if len(extra) == 0 {
+		return existing
+	}
+	seen := map[string]bool{}
+	for _, l := range existing {
+		seen[strings.ToLower(strings.TrimSpace(l))] = true
+	}
+	for _, l := range extra {
+		key := strings.ToLower(strings.TrimSpace(l))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		existing = append(existing, strings.TrimSpace(l))
+	}
+	return existing
 }

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	bot "github.com/BrokkAi/feature-bot"
 	"github.com/BrokkAi/feature-bot/internal/worker"
@@ -33,7 +34,7 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 func workerInfo(version string) worker.Initialize {
 	return worker.Initialize{
 		Protocol: worker.ProtocolVersion, MinimumProtocol: worker.MinimumProtocol,
-		Bot: "feature-bot", Version: version, Capabilities: []string{"run", "progress", "feature-research", "feature-research-controls"},
+		Bot: "feature-bot", Version: version, Capabilities: []string{"policy", "run", "progress", "feature-research", "feature-research-controls"},
 	}
 }
 
@@ -48,6 +49,21 @@ func workerRun(run runFunc) worker.RunFunc {
 		cfg.GitHub.Repo = request.Repo
 		cfg.GitHub.Host = request.Host
 		cfg.Verify = request.Verify
+		if policy := request.Policy; policy != nil {
+			cfg.Labels = appendLabels(cfg.Labels, policy.Labels)
+			if policy.Focus != "" {
+				cfg.Focus = policy.Focus
+			}
+			if policy.Limit > 0 {
+				cfg.MaxIssues = policy.Limit
+			}
+			if policy.Attempts > 0 {
+				cfg.Attempts = policy.Attempts
+			}
+			if len(policy.Verify) > 0 {
+				cfg.Verify = policy.Verify
+			}
+		}
 		if options := request.FeatureResearch; options != nil {
 			cfg.Focus = options.Focus
 			if options.MaxIssues != nil {
@@ -62,4 +78,25 @@ func workerRun(run runFunc) worker.RunFunc {
 		})
 		return worker.Result{}, run(ctx, cfg, slog.Default(), true)
 	}
+}
+
+// appendLabels adds Town's filter to the bot's own default without duplicating
+// an entry the configuration already carries.
+func appendLabels(existing, extra []string) []string {
+	if len(extra) == 0 {
+		return existing
+	}
+	seen := map[string]bool{}
+	for _, l := range existing {
+		seen[strings.ToLower(strings.TrimSpace(l))] = true
+	}
+	for _, l := range extra {
+		key := strings.ToLower(strings.TrimSpace(l))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		existing = append(existing, strings.TrimSpace(l))
+	}
+	return existing
 }

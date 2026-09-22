@@ -108,13 +108,16 @@ type Config struct {
 	HarnessDefinition *harness.Entry          `json:"harness_definition,omitempty"`
 	Agent             runner.AgentConfig      `json:"agent"`
 	BotAgents         map[Role]BotAgentConfig `json:"bot_agents,omitempty"`
-	Verify            []string                `json:"verify,omitempty"`
-	MergePolicy       string                  `json:"merge_policy"`
-	PollSeconds       int                     `json:"poll_seconds"`
-	ReportSeconds     int                     `json:"report_seconds"`
-	MaxCycles         int                     `json:"max_cycles"`
-	Funnels           FunnelConfigs           `json:"funnels,omitempty"`
-	SimplifierMode    string                  `json:"simplifier_mode,omitempty"`
+	// BotPolicies is the per-house work selection and limits. An absent role
+	// takes every item the house is given, with the bot's own defaults.
+	BotPolicies    map[Role]BotPolicy `json:"bot_policies,omitempty"`
+	Verify         []string           `json:"verify,omitempty"`
+	MergePolicy    string             `json:"merge_policy"`
+	PollSeconds    int                `json:"poll_seconds"`
+	ReportSeconds  int                `json:"report_seconds"`
+	MaxCycles      int                `json:"max_cycles"`
+	Funnels        FunnelConfigs      `json:"funnels,omitempty"`
+	SimplifierMode string             `json:"simplifier_mode,omitempty"`
 	// BulletinSeconds is how often Mayor Bot writes the town bulletin when
 	// something merged since the last one. Zero uses DefaultBulletinSeconds.
 	BulletinSeconds int `json:"bulletin_seconds,omitempty"`
@@ -122,6 +125,10 @@ type Config struct {
 	// still closes a pull request when it survives the second review. Findings
 	// below it are filed as follow-up issues and the pull request merges.
 	ReviewCloseSeverity string `json:"review_close_severity,omitempty"`
+	// Budget bounds the agent attempts and agent minutes this town may start
+	// in one accounting period. Nil leaves automation bounded only by capacity
+	// and the existing per-task attempt limits.
+	Budget *Budget `json:"budget,omitempty"`
 }
 
 // BotAgentConfig is a complete private selection. Omitted roles inherit the town
@@ -233,6 +240,17 @@ func (c Config) Validate() error {
 	if !ValidSeverity(c.ReviewCloseSeverityOrDefault()) {
 		return fmt.Errorf("review close severity must be P1, P2 or P3")
 	}
+	for role, policy := range c.BotPolicies {
+		if !ValidRole(role) {
+			return fmt.Errorf("work policy names an unknown house: %q", role)
+		}
+		if err := policy.Validate(role); err != nil {
+			return fmt.Errorf("%s policy: %w", role, err)
+		}
+	}
+	if err := c.Budget.Validate(); err != nil {
+		return err
+	}
 	if err := c.Funnels.Validate(); err != nil {
 		return err
 	}
@@ -255,7 +273,9 @@ type PublicConfig struct {
 	BulletinSeconds int                           `json:"bulletin_seconds"`
 	// ReviewCloseSeverity is the least severe finding that closes a pull
 	// request after its second review.
-	ReviewCloseSeverity string `json:"review_close_severity"`
+	ReviewCloseSeverity string            `json:"review_close_severity"`
+	Budget              *Budget           `json:"budget,omitempty"`
+	WorkPolicies        []PublicBotPolicy `json:"work_policies"`
 }
 
 type PublicBotAgentConfig struct {
@@ -410,14 +430,18 @@ func (a *Audit) OpenFindings() []Finding {
 }
 
 type Task struct {
-	ID              string            `json:"id"`
-	Kind            string            `json:"kind"`
-	Number          int               `json:"number,omitempty"`
-	Title           string            `json:"title"`
-	URL             string            `json:"url,omitempty"`
-	Stage           string            `json:"stage"`
-	House           Role              `json:"house"`
-	External        bool              `json:"external"`
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Number   int    `json:"number,omitempty"`
+	Title    string `json:"title"`
+	URL      string `json:"url,omitempty"`
+	Stage    string `json:"stage"`
+	House    Role   `json:"house"`
+	External bool   `json:"external"`
+	// Labels are the repository labels the last inventory observed. Town
+	// applies its own label filters against them so the queue it shows an
+	// operator is the queue the house will take from.
+	Labels          []string          `json:"labels,omitempty"`
 	MayoralDecision string            `json:"mayoral_decision,omitempty"`
 	Head            string            `json:"head,omitempty"`
 	Base            string            `json:"base,omitempty"`
@@ -525,7 +549,9 @@ type Town struct {
 	// whatever the operator chose, or empty to follow this default.
 	DefaultBranch string `json:"default_branch,omitempty"`
 	// Health is what Repo Bot last reported about the branch this town covers.
-	Health      *BranchHealth `json:"health,omitempty"`
+	Health *BranchHealth `json:"health,omitempty"`
+	// Budget is the measured agent spend for the accounting period in progress.
+	Budget      *BudgetLedger `json:"budget_ledger,omitempty"`
 	LastSync    time.Time     `json:"last_sync"`
 	LastRelease string        `json:"last_release"`
 	Error       string        `json:"error,omitempty"`
@@ -634,6 +660,29 @@ func (t *Town) Branch() string {
 	return t.DefaultBranch
 }
 
+// markFiltered tags the tasks a house's work policy excludes, and counts
+// them, so a client can tell the repository's inventory apart from the work
+// this town will actually pick up. The task stays in the snapshot: an
+// operator has to be able to see what their filter is holding back.
+func (t *Town) markFiltered(public map[string]any) {
+	if len(t.Config.BotPolicies) == 0 {
+		public["filtered_tasks"] = 0
+		return
+	}
+	tasks, _ := public["tasks"].(map[string]any)
+	filtered := 0
+	for id, task := range t.Tasks {
+		if t.Config.eligibleUnderPolicy(task.House, task) {
+			continue
+		}
+		filtered++
+		if entry, ok := tasks[id].(map[string]any); ok {
+			entry["policy_excluded"] = true
+		}
+	}
+	public["filtered_tasks"] = filtered
+}
+
 // PublicConfig reports the branch in use so clients show the effective branch
 // rather than an empty setting on a town that follows the repository default.
 func (t *Town) PublicConfig() PublicConfig {
@@ -665,8 +714,13 @@ func (t *Town) Report(title, body string, now time.Time) {
 		t.Reports = t.Reports[len(t.Reports)-100:]
 	}
 }
-func clone[T any](v T) T { b, _ := json.Marshal(v); var out T; _ = json.Unmarshal(b, &out); return out }
-func (s State) Public() map[string]any {
+func clone[T any](v T) T               { b, _ := json.Marshal(v); var out T; _ = json.Unmarshal(b, &out); return out }
+func (s State) Public() map[string]any { return s.PublicAt(time.Now()) }
+
+// PublicAt projects state for clients as of now. The budget view is derived
+// rather than stored, so a period that rolled over while nothing ran still
+// reads as an empty new period.
+func (s State) PublicAt(now time.Time) map[string]any {
 	b, _ := json.Marshal(s)
 	var public map[string]any
 	_ = json.Unmarshal(b, &public)
@@ -676,6 +730,8 @@ func (s State) Public() map[string]any {
 			continue
 		}
 		public["towns"].(map[string]any)[id].(map[string]any)["config"] = t.PublicConfig()
+		public["towns"].(map[string]any)[id].(map[string]any)["budget"] = t.BudgetState(now)
+		t.markFiltered(public["towns"].(map[string]any)[id].(map[string]any))
 	}
 	events := []Event{}
 	for _, e := range s.Events {
@@ -709,5 +765,5 @@ func (c Config) Public() PublicConfig {
 	for _, funnel := range c.Funnels {
 		funnels = append(funnels, funnel.Public())
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault()}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies()}
 }

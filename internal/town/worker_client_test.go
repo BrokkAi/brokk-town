@@ -102,6 +102,8 @@ class Handler(BaseHTTPRequestHandler):
             while not os.path.exists(INIT_BLOCK + '.release'):
                 time.sleep(0.02)
         capabilities = ['run', 'progress', 'issue-result', 'exact-issue']
+        if os.environ.get('TOWN_WORKER_TEST_POLICY'):
+            capabilities.append('policy')
         self.send_json(200, {
             'protocol': 1,
             'minimum_protocol': 1,
@@ -335,4 +337,86 @@ func TestManualMergePolicyDoesNotStartFakeReleaseWorker(t *testing.T) {
 	if _, statErr := os.Stat(capture); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("fake release worker received a request: %v", statErr)
 	}
+}
+
+// TestWorkerPolicyReachesTheBotOrIsRefused covers both halves of the contract:
+// a policy-aware worker receives the operator's selection verbatim, and one
+// that never learned to read it is refused rather than run unfiltered.
+func TestWorkerPolicyReachesTheBotOrIsRefused(t *testing.T) {
+	newTown := func(t *testing.T, dir, fake string) (*Town, *BotWorkers) {
+		t.Helper()
+		store := testStore(t, false)
+		x := addTown(t, store)
+		x.Config.Branch = "main"
+		x.Config.Verify = []string{"go", "test", "./..."}
+		x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
+		x.Config.BotPolicies = map[Role]BotPolicy{Issue: {
+			Labels:        []string{"agent-ready"},
+			ExcludeLabels: []string{"blocked"},
+			Attempts:      2,
+			Verify:        []string{"make", "issue-check"},
+		}}
+		x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued", Labels: []string{"agent-ready"}}
+		return x, &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Issue: fake}}
+	}
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("a policy-aware worker receives it", func(t *testing.T) {
+		dir := t.TempDir()
+		fake := filepath.Join(dir, "fake-worker")
+		capture := filepath.Join(dir, "request.json")
+		writeFakeWorker(t, fake, pythonFakeWorker)
+		t.Setenv("TOWN_WORKER_TEST_CAPTURE", capture)
+		t.Setenv("TOWN_WORKER_TEST_POLICY", "1")
+		x, workers := newTown(t, dir, fake)
+		if _, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, quiet); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(capture)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sent struct {
+			Verify []string   `json:"verify"`
+			Policy *BotPolicy `json:"policy"`
+		}
+		if err := json.Unmarshal(data, &sent); err != nil {
+			t.Fatal(err)
+		}
+		if sent.Policy == nil {
+			t.Fatal("the worker request carried no policy")
+		}
+		if !reflect.DeepEqual(sent.Policy.Labels, []string{"agent-ready"}) || !reflect.DeepEqual(sent.Policy.ExcludeLabels, []string{"blocked"}) || sent.Policy.Attempts != 2 {
+			t.Fatalf("policy did not survive the protocol: %+v", sent.Policy)
+		}
+		// The house's own verification command replaces the town's.
+		if !reflect.DeepEqual(sent.Verify, []string{"make", "issue-check"}) {
+			t.Fatalf("verify = %v, want the house's own command", sent.Verify)
+		}
+	})
+
+	t.Run("a worker without the capability is refused", func(t *testing.T) {
+		dir := t.TempDir()
+		fake := filepath.Join(dir, "fake-worker")
+		writeFakeWorker(t, fake, pythonFakeWorker)
+		x, workers := newTown(t, dir, fake)
+		_, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, quiet)
+		if err == nil {
+			t.Fatal("an unfiltered run was allowed against a configured policy")
+		}
+		if !strings.Contains(err.Error(), "does not support work policies") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("a town with no policy still runs on that worker", func(t *testing.T) {
+		dir := t.TempDir()
+		fake := filepath.Join(dir, "fake-worker")
+		writeFakeWorker(t, fake, pythonFakeWorker)
+		x, workers := newTown(t, dir, fake)
+		x.Config.BotPolicies = nil
+		if _, err := workers.Run(context.Background(), x, Issue, func(Progress) {}, quiet); err != nil {
+			t.Fatalf("an unconfigured town was refused: %v", err)
+		}
+	})
 }

@@ -110,6 +110,73 @@ the Mayor as decision maker and shows Simplifier Bot's advice on every pending
 arrival. Auto lets the bot's assessment route routine work without a separate
 Mayoral decision, including closing low-value complex issues.
 
+### What each bot takes on
+
+Each house can be told what work to accept and how much of it to produce. Every
+setting here is one the bot already supports, and a house refuses a setting it
+cannot honour rather than accepting it and ignoring it:
+
+| Setting | Flag | Houses |
+| --- | --- | --- |
+| Required labels | `--labels` | bug, feature, issue, review, simplifier |
+| Excluded labels | `--exclude-labels` | issue, review |
+| One selected item | `--only` | issue (an issue number), review (a PR number) |
+| Discovery focus | `--focus` | bug, feature, review |
+| Per-run limit | `--limit` | bug/feature (issues filed), review (findings), simplifier (proposals), repo (repair attempts per revision), hall (bulletin items) |
+| Attempts per item | `--attempts` | bug, feature, issue, review, release |
+| Verification command | `--verify` | every house; overrides the town's `verify` |
+| Release cadence, preflight, required workflows and assets | `--release-*` | release |
+
+```sh
+./bin/bt settings --repo BrokkAi/my-project --role issue --labels agent-ready --exclude-labels needs-discussion
+./bin/bt settings --repo BrokkAi/my-project --role issue --only 412
+./bin/bt settings --repo BrokkAi/my-project --role bug --focus 'the storage layer' --limit 3
+./bin/bt settings --repo BrokkAi/my-project --role review --verify '["make","review-check"]'
+./bin/bt settings --repo BrokkAi/my-project --role release --release-quiet-seconds 900 --release-burst 10 --release-burst-window-seconds 3600 --release-triage on
+./bin/bt settings --repo BrokkAi/my-project --role issue --clear-policy
+```
+
+Config-file towns take the same settings under `bot_policies`, keyed by house;
+the example lists every supported field. A town that sets none behaves exactly
+as it did before these settings existed.
+
+Town applies the same filters to its own queue that it sends to the bot, so the
+queue you read is the queue the house will take from. Filtered work is not
+hidden: each house's inspector states its policy, counts the inventory it holds
+back, and marks each held item, so you can always see what your own filter
+excluded. A house whose bundled bot is too old to read a policy is refused the
+dispatch with the bot and version named, instead of running unfiltered.
+
+### Agent budgets
+
+A town can bound how much automation it starts in a repeating accounting period:
+
+```sh
+./bin/bt settings --repo BrokkAi/my-project --budget-period day --budget-attempts 40 --budget-agent-minutes 600
+./bin/bt settings --repo BrokkAi/my-project --budget-period none
+```
+
+The period is `day`, `week`, or `month` on your local clock, and at least one of
+`--budget-attempts` or `--budget-agent-minutes` is required. Config-file towns
+take the same settings as `"budget": {"period": "day", "max_attempts": 40,
+"max_agent_minutes": 600}`.
+
+Town charges the budget for every attempt that started an agent. A repository
+inventory reads GitHub without one and is never charged; a branch repair is.
+When a ceiling is reached, Town stops dispatching new agent work for that town
+and says so in Town Hall with the time the period resets. Work already running
+finishes normally, cancellation and saved work are untouched, and the repository
+inventory keeps running so uncertain writes can still be reconciled. Other towns
+are unaffected: a budget is per town, not per worker slot.
+
+**Town cannot cap token or dollar spend.** No bundled agent harness reports usage
+back through the worker protocol -- the acp-go runner hands a bot the agent's
+final text and nothing else -- so Town would be enforcing a limit against numbers
+it never receives. Attempts and agent minutes are what it measures, so those are
+what it enforces. Where usage or cost is missing, Town Hall prints "not
+reported"; it never shows absent telemetry as zero. Attempts whose elapsed time
+never arrived are counted and reported separately rather than billed as free.
+
 For each profile, select any agent from the
 [official ACP registry](https://agentclientprotocol.com/get-started/registry),
 plus **Anvil**, **Muse ACP**, **Draupnir**, or a custom ACP command. The full
@@ -292,8 +359,8 @@ bot profiles, verification command, and policy, then run:
 Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
 `merge_policy`, `simplifier_mode`, optional `review_close_severity` (`P1`, `P2`
-or `P3`, default `P2`), `poll_seconds`, `report_seconds`, and
-`max_cycles`. The example
+or `P3`, default `P2`), optional `budget`, optional `bot_policies`,
+`poll_seconds`, `report_seconds`, and `max_cycles`. The example
 lists all required values. To persist global capacity alongside the town list,
 use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
 remains accepted. When `serve --config` includes `max_workers`, that value

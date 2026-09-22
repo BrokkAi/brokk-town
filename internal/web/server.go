@@ -314,6 +314,12 @@ type settingsInput struct {
 	// ReviewCloseSeverity is the least severe finding that closes a pull
 	// request after its second review: P1, P2 or P3.
 	ReviewCloseSeverity *string `json:"review_close_severity,omitempty"`
+	// Budget is present only when the submission edits it. Its inner budget
+	// is null to remove the town's ceiling.
+	Budget *town.BudgetEdit `json:"budget,omitempty"`
+	// WorkPolicy is present only when the submission edits the named role's
+	// work selection. Its inner policy is null to remove it.
+	WorkPolicy *town.PolicyEdit `json:"work_policy,omitempty"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -322,7 +328,8 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		problem(w, err.Error(), 400)
 		return
 	}
-	if err := s.Supervisor.SettingsForRoleAndPolicy(input.Town, input.Role, input.Agent, input.MergePolicy, input.SimplifierMode, input.ReviewCloseSeverity); err != nil {
+	edits := town.TownSettings{MergePolicy: input.MergePolicy, SimplifierMode: input.SimplifierMode, CloseSeverity: input.ReviewCloseSeverity, Budget: input.Budget, WorkPolicy: input.WorkPolicy}
+	if err := s.Supervisor.ApplySettings(input.Town, input.Role, input.Agent, edits); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

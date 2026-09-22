@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	bot "github.com/BrokkAi/bug-bot"
 	"github.com/BrokkAi/bug-bot/internal/worker"
@@ -29,7 +30,7 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 	}
 	return worker.Serve(ctx, *socket, worker.Initialize{
 		Protocol: worker.ProtocolVersion, MinimumProtocol: worker.MinimumProtocol,
-		Bot: "bug-bot", Version: version, Capabilities: []string{"run", "progress", "bug-scan"},
+		Bot: "bug-bot", Version: version, Capabilities: []string{"policy", "run", "progress", "bug-scan"},
 	}, func(ctx context.Context, request worker.Request, progress func(worker.Progress)) (worker.Result, error) {
 		cfg := bot.DefaultConfig()
 		cfg.Remote = request.Remote
@@ -40,9 +41,45 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 		cfg.GitHub.Repo = request.Repo
 		cfg.GitHub.Host = request.Host
 		cfg.Verify = request.Verify
+		if policy := request.Policy; policy != nil {
+			cfg.Labels = appendLabels(cfg.Labels, policy.Labels)
+			if policy.Focus != "" {
+				cfg.Focus = policy.Focus
+			}
+			if policy.Limit > 0 {
+				cfg.MaxIssues = policy.Limit
+			}
+			if policy.Attempts > 0 {
+				cfg.Attempts = policy.Attempts
+			}
+			if len(policy.Verify) > 0 {
+				cfg.Verify = policy.Verify
+			}
+		}
 		ctx = bot.WithProgress(ctx, func(p bot.Progress) {
 			progress(worker.Progress{Phase: p.Phase, Task: p.Task})
 		})
 		return worker.Result{}, bot.Run(ctx, cfg, slog.Default(), true)
 	}, slog.Default())
+}
+
+// appendLabels adds Town's filter to the bot's own default without duplicating
+// an entry the configuration already carries.
+func appendLabels(existing, extra []string) []string {
+	if len(extra) == 0 {
+		return existing
+	}
+	seen := map[string]bool{}
+	for _, l := range existing {
+		seen[strings.ToLower(strings.TrimSpace(l))] = true
+	}
+	for _, l := range extra {
+		key := strings.ToLower(strings.TrimSpace(l))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		existing = append(existing, strings.TrimSpace(l))
+	}
+	return existing
 }
