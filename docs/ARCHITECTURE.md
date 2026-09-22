@@ -107,10 +107,17 @@ ID's marker; absence never permits another POST. Deletion preserves in-flight
 outcomes while canceling submissions that have not begun. Demo requests only
 create local tasks.
 
-Field scenery is generated once per selected town and cached as a canvas.
-Active worker poses and effects read committed worker status. Delivery easing
-changes presentation only; pointer hit testing uses the same eased positions.
-Reduced-motion preferences freeze worker poses and clear moving deliveries.
+Field scenery is generated once per selected town and skin and cached as a
+canvas. Active worker poses and effects read committed worker status. Delivery
+easing changes presentation only; pointer hit testing asks the active skin for
+the same eased positions. Reduced-motion preferences freeze worker poses and
+clear moving deliveries.
+
+Skins (`internal/web/skins.js`) are presentation only. Each one paints the
+field, a house, a working bot and a delivery from the same state and events,
+and declares how long a delivery takes to cross the field. The swarm skin draws
+a house's queue as burrows from workload counts, so the picture matches the
+board after a reload regardless of which raids were seen arriving.
 
 ## Review, repair, merge, release
 

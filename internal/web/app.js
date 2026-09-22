@@ -3,7 +3,6 @@ import {
   houseNames,
   houseAuthority,
   houseShortcuts,
-  routePosition,
   queueFor,
   issueJobDetails,
   taskRetryEligible,
@@ -33,7 +32,7 @@ import {
   profileSummary,
 } from "./town.js";
 import { management } from "./manage.js";
-import { landscape, drawWorking, easeDelivery } from "./scenery.js";
+import { skins, normalizeSkin, nextSkin } from "./skins.js";
 const $ = (s) => document.querySelector(s),
   esc = (value) =>
     String(value ?? "").replace(
@@ -53,7 +52,7 @@ let token =
   "";
 if (token) {
   sessionStorage.setItem("brokk-town-token", token);
-  history.replaceState(null, "", location.pathname);
+  history.replaceState(null, "", location.pathname + (location.search || ""));
 }
 let overview = (() => {
   try { return localStorage.getItem("brokk-town-scope") !== "town"; }
@@ -85,6 +84,19 @@ let state = null,
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
   streamAbort = null,
   servedVersion = "";
+// The skin is presentation only: a query parameter lets a launcher open a
+// specific look, and the choice then sticks in this browser.
+let skinId = (() => {
+  try {
+    return normalizeSkin(
+      new URLSearchParams(location.search || "").get("skin") ||
+        localStorage.getItem("brokk-town-skin"),
+    );
+  } catch {
+    return normalizeSkin("");
+  }
+})();
+const skin = () => skins[skinId];
 let liveDetail = null;
 let liveDetailEpoch = 0;
 let outcomeDays = 7;
@@ -126,7 +138,7 @@ const crops = [
   [1024, 512, 512, 512],
 ];
 let field = null,
-  fieldTown = null;
+  fieldKey = null;
 const actorCrops = [
   [116, 145, 333, 296],
   [86, 145, 311, 293],
@@ -1096,85 +1108,66 @@ function singleSprite(image, x, y, height) {
   const width = (height * image.naturalWidth) / image.naturalHeight;
   ctx.drawImage(image, x - width / 2, y - height / 2, width, height);
 }
+// Skins paint houses and couriers, but the atlases belong here, so a skin
+// receives these painters instead of the images.
+const sprites = {
+  building(role, x, y) {
+    if (standaloneBuildings[role]) singleSprite(standaloneBuildings[role], x, y, 235);
+    else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
+  },
+  actor(index, x, y, size) {
+    sprite(actors, index, x, y, size);
+  },
+  worker(index) {
+    if (index === "feature") singleSprite(featureReader, 0, 0, 58);
+    else sprite(actors, index, 0, 0, 52);
+  },
+};
+// A strike is the moment a raid reaches its gate; the house shakes and
+// flashes in proportion, and the village skin ignores it.
+function strikeAt(role, now) {
+  let strike = 0;
+  if (!motion || !skin().strike) return strike;
+  for (const m of moving) {
+    if (m.town !== selectedTown || m.to !== role) continue;
+    strike = Math.max(strike, skin().strike(m, (now - m.start) / skin().duration));
+  }
+  return strike;
+}
 function draw(now) {
   if (overview || viewMode !== "town" || document.hidden) {
     requestAnimationFrame(draw);
     return;
   }
-  if (!field || fieldTown !== selectedTown) {
-    field = landscape(selectedTown);
-    fieldTown = selectedTown;
+  const key = `${skinId}\u0000${selectedTown}`;
+  if (!field || fieldKey !== key) {
+    field = skin().landscape(selectedTown);
+    fieldKey = key;
   }
   ctx.drawImage(field, 0, 0);
-  const t = town();
+  const t = town(),
+    look = skin();
+  moving = moving.filter((m) => now - m.start < look.duration);
   for (const [role, [x, y]] of Object.entries(positions)) {
     if (!isHouse(role)) continue;
-    if (role === selectedHouse) {
-      ctx.fillStyle = "#b0e98115";
-      ctx.beginPath();
-      ctx.ellipse(x, y + 72, 118, 28, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (standaloneBuildings[role]) singleSprite(standaloneBuildings[role], x, y, 235);
-    else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
-    const w = t?.workers[role];
-    if (w?.status === "working" || w?.status === "pausing") {
-      drawWorking(ctx, role, x, y, now, motion, (index) =>
-        index === "feature"
-          ? singleSprite(featureReader, 0, 0, 58)
-          : sprite(actors, index, 0, 0, 52),
-      );
-    }
+    const w = t?.workers[role],
+      counts = houseWorkload(t, role);
+    look.drawHouse(ctx, role, x, y, {
+      selected: role === selectedHouse,
+      sprites,
+      counts,
+      worker: w,
+      now,
+      motion,
+      strike: strikeAt(role, now),
+    });
+    if (w?.status === "working" || w?.status === "pausing")
+      look.drawWorking(ctx, role, x, y, now, motion, sprites.worker, counts);
   }
-
-  moving = moving.filter((m) => now - m.start < 6500);
   if (motion)
     for (const m of moving) {
       if (m.town !== selectedTown) continue;
-      const p = routePosition(
-          m.from,
-          m.to,
-          easeDelivery((now - m.start) / 6500),
-        ),
-        right = p.direction >= 0,
-        truck = m.from === "outside" || m.to === "outside";
-      ctx.fillStyle = "#192b2270";
-      ctx.beginPath();
-      ctx.ellipse(p.x + 6, p.y + 25, truck ? 38 : 23, 7, 0, 0, Math.PI * 2);
-      ctx.fill();
-      for (let i = 0; i < 3; i++) {
-        const dust = (now / 500 + i / 3) % 1;
-        ctx.fillStyle = `rgba(219,202,155,${(1 - dust) * 0.3})`;
-        ctx.beginPath();
-        ctx.ellipse(
-          p.x - (right ? 1 : -1) * (20 + dust * 25),
-          p.y + 22 - dust * 5,
-          2 + dust * 5,
-          2 + dust * 2,
-          0,
-          0,
-          Math.PI * 2,
-        );
-        ctx.fill();
-      }
-      sprite(
-        actors,
-        truck ? (right ? 3 : 4) : right ? 0 : 1,
-        p.x,
-        p.y + Math.sin(now / 100) * 1.3,
-        truck ? 57 : 58,
-      );
-      ctx.fillStyle = "#0b1a10";
-      ctx.fillRect(p.x - 34, p.y - 48, 68, 19);
-      ctx.fillStyle = "#dbe6cc";
-      ctx.font = "11px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(
-        m.cargo?.replace("issue:", "#").replace("pr:", "PR #").slice(0, 10) ||
-          "cargo",
-        p.x,
-        p.y - 35,
-      );
+      look.drawDelivery(ctx, m, (now - m.start) / look.duration, now, sprites, motion);
     }
   requestAnimationFrame(draw);
 }
@@ -1216,6 +1209,21 @@ $("#motion").onclick = () => {
   motionUI();
 };
 motionUI();
+function skinUI() {
+  $("#skin").textContent = `${skin().label} skin`;
+  $("#skin").setAttribute("aria-label", `${skin().label} skin. Switch to ${skins[nextSkin(skinId)].label}`);
+  $("#skin").setAttribute("title", `Switch to the ${skins[nextSkin(skinId)].label.toLowerCase()} skin (S)`);
+  if (document.documentElement) document.documentElement.dataset.skin = skinId;
+}
+function chooseSkin(next) {
+  skinId = normalizeSkin(next);
+  try {
+    localStorage.setItem("brokk-town-skin", skinId);
+  } catch {}
+  skinUI();
+}
+$("#skin").onclick = () => chooseSkin(nextSkin(skinId));
+skinUI();
 matchMedia("(prefers-reduced-motion: reduce)").addEventListener(
   "change",
   (e) => {
@@ -1237,6 +1245,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "t") selectView("town");
   if (e.key.toLowerCase() === "b") selectView("board");
   if (e.key.toLowerCase() === "c") selectView("compact");
+  if (e.key.toLowerCase() === "s") chooseSkin(nextSkin(skinId));
   if (e.key === "Escape") closeInspector();
   if (/^[1-9]$/.test(e.key) && houseShortcuts[Number(e.key) - 1])
     chooseHouse(houseShortcuts[Number(e.key) - 1]);
@@ -1246,11 +1255,7 @@ canvas.onclick = (e) => {
     x = ((e.clientX - r.left) * 1120) / r.width,
     y = ((e.clientY - r.top) * 680) / r.height;
   for (const m of moving) {
-    const p = routePosition(
-      m.from,
-      m.to,
-      easeDelivery((performance.now() - m.start) / 6500),
-    );
+    const p = skin().deliveryPoint(m, (performance.now() - m.start) / skin().duration);
     if (Math.hypot(x - p.x, y - p.y) < 50) {
       selectedTask = m.cargo;
       selectedHouse = isHouse(m.to) ? m.to : "hall";

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add town skins. The header toggle (or `S`) switches between the village and
+  a new swarm defence look, the choice is remembered per browser, and `?skin=`
+  opens a specific one. Every skin paints the same committed state and events:
+  in the swarm skin a delivery is a raid that leaves a burrow at the target's
+  gate, a house's burrows are its queue, and a working bot burns the active
+  burrow out. Reduced motion freezes it like the village.
+
 ## 0.6.2 — 2026-09-22
 
 - Give each bot house its own work policy: label filters, one selected issue or

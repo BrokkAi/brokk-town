@@ -1,4 +1,4 @@
-import { positions, roadSegments, houseRoad } from "./town.js";
+import { positions, roadSegments, houseRoad, routePosition } from "./town.js";
 
 // Scenery is painted once per town. Animation only reads committed worker state.
 export function seededRandom(seed) {
@@ -414,3 +414,70 @@ export function drawWorking(c, role, x, y, now, motion, paintWorker) {
     }
   }
 }
+
+// The village skin gathers every hook the renderer needs to paint a town so
+// app.js can swap in another skin without knowing how houses or couriers are
+// drawn. Sprites come from the caller because the atlases belong to app.js.
+export function drawHouse(c, role, x, y, { selected, sprites }) {
+  if (selected) {
+    c.fillStyle = "#b0e98115";
+    c.beginPath();
+    c.ellipse(x, y + 72, 118, 28, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+  sprites.building(role, x, y);
+}
+export function deliveryPoint(m, progress) {
+  return routePosition(m.from, m.to, easeDelivery(progress));
+}
+export function drawDelivery(c, m, progress, now, sprites) {
+  const p = deliveryPoint(m, progress),
+    right = p.direction >= 0,
+    truck = m.from === "outside" || m.to === "outside";
+  c.fillStyle = "#192b2270";
+  c.beginPath();
+  c.ellipse(p.x + 6, p.y + 25, truck ? 38 : 23, 7, 0, 0, Math.PI * 2);
+  c.fill();
+  for (let i = 0; i < 3; i++) {
+    const dust = (now / 500 + i / 3) % 1;
+    c.fillStyle = `rgba(219,202,155,${(1 - dust) * 0.3})`;
+    c.beginPath();
+    c.ellipse(
+      p.x - (right ? 1 : -1) * (20 + dust * 25),
+      p.y + 22 - dust * 5,
+      2 + dust * 5,
+      2 + dust * 2,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    c.fill();
+  }
+  sprites.actor(
+    truck ? (right ? 3 : 4) : right ? 0 : 1,
+    p.x,
+    p.y + Math.sin(now / 100) * 1.3,
+    truck ? 57 : 58,
+  );
+  c.fillStyle = "#0b1a10";
+  c.fillRect(p.x - 34, p.y - 48, 68, 19);
+  c.fillStyle = "#dbe6cc";
+  c.font = "11px monospace";
+  c.textAlign = "center";
+  c.fillText(cargoLabel(m.cargo), p.x, p.y - 35);
+}
+export function cargoLabel(cargo) {
+  return (
+    cargo?.replace("issue:", "#").replace("pr:", "PR #").slice(0, 10) || "cargo"
+  );
+}
+export const village = {
+  id: "village",
+  label: "Village",
+  duration: 6500,
+  landscape,
+  drawHouse,
+  drawWorking,
+  deliveryPoint,
+  drawDelivery,
+};

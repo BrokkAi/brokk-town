@@ -171,3 +171,24 @@
   untouched on v0.1.0. The worker smoke test initializes all eight.
 - Remaining: a Town release publishes this to users. RELEASING.md requires an
   explicit request for that.
+
+## Town skins and the swarm defence look (experiment, 2026-09-22)
+
+- The renderer now paints through a skin: `internal/web/skins.js` lists them,
+  each exposes `landscape`, `drawHouse`, `drawWorking`, `deliveryPoint`,
+  `drawDelivery` and a delivery `duration`, and app.js hands a skin the atlas
+  painters instead of the images. The village skin is the original look, moved
+  unchanged into `scenery.js`. Toggle in the header or with `S`, remembered in
+  localStorage, `?skin=` overrides for launchers, unknown names fall back.
+- The swarm skin (`internal/web/swarm.js`) is fully procedural, no assets. A
+  delivery is a raid: approach on the road, strike at the gate (flash, shake,
+  scattering pack), withdraw and fade. Pack size comes from the cargo kind and
+  origin; every creature's position is a pure function of progress, clock and a
+  seed, so nothing is kept per frame. Burrows at a gate come from
+  `houseWorkload`, not from the animation, so they match the board after a
+  reload. Hall orders are an airdrop; shipments are a sortie with a banner.
+- Honour the theme without naming any game: docs/ARTWORK.md records the
+  genre-only inspiration and that creatures, palette and structures are ours.
+- Open questions to play with: pack sizes and the 8s raid length, whether the
+  stockade should show damage per blocked item, and whether the DOM house
+  labels want a darker treatment under the swarm skin than the current CSS hook.

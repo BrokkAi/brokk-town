@@ -40,3 +40,26 @@ style direction. `internal/web/assets/atlas.json` records their source dimension
 and bounds. The seven-house layout and its delivery paths share the geometry in
 `internal/web/town.js`; the feature reader appears only for committed working or
 pausing state and respects reduced motion.
+
+## Skins
+
+The town can be viewed through more than one skin. A skin is presentation only:
+`internal/web/skins.js` lists them, and each one paints the field, the houses,
+a working bot and a delivery from the same committed state and the same
+delivery events. The village skin in `internal/web/scenery.js` is the original
+look. The choice is a header toggle (or the `S` key), is remembered per browser,
+and can be requested with `?skin=` when a launcher opens the page.
+
+The swarm defence skin added on 2026-09-22 lives in `internal/web/swarm.js` and
+is drawn entirely in code: scorched ground, craters, trench roads, a stockade
+around every house, gate lamps, burrows, small six-legged creatures, walkers,
+a courier drone and a banner. It reuses the existing building and actor atlases
+and adds no image assets. Its idea is that the bugs are literal: a delivery is
+a raid that reaches a house's gate and leaves a burrow, the burrows at a gate
+are that house's queue drawn from workload counts rather than from the
+animation, and a working bot is a defender burning the active burrow out. Orders
+from Town Hall arrive as a friendly airdrop; a shipment is a sortie leaving the
+map. The look borrows only genre conventions shared by base-defence and
+real-time strategy games in general (selection rings, build bars, hordes,
+burrows, fog at the edges). It names no game, faction or unit, and its
+creatures, palette and structures are this project's own.

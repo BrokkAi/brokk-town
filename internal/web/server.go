@@ -17,7 +17,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-//go:embed index.html style.css app.js town.js tools.js manage.js scenery.js assets/*
+//go:embed index.html style.css app.js town.js tools.js manage.js scenery.js skins.js swarm.js assets/*
 var files embed.FS
 
 type Server struct {

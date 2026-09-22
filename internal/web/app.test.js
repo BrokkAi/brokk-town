@@ -183,7 +183,7 @@ function matches(element, selector) {
   return element.matches(selector);
 }
 
-function installFixture() {
+function installFixture({ storage, search = "" } = {}) {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const elements = {};
   for (const [, id] of html.matchAll(/\bid="([^"]+)"/g)) {
@@ -243,9 +243,9 @@ function installFixture() {
   globalThis.requestAnimationFrame = () => 0;
   globalThis.setInterval = () => 0;
   globalThis.setTimeout = () => 0;
-  globalThis.localStorage = { getItem: () => null, setItem() {} };
+  globalThis.localStorage = storage || { getItem: () => null, setItem() {} };
   globalThis.sessionStorage = { getItem: () => null, setItem() {} };
-  globalThis.location = { hash: "#token=test-key", pathname: "/" };
+  globalThis.location = { hash: "#token=test-key", pathname: "/", search };
   globalThis.history = { replaceState() {} };
   globalThis.confirm = () => true;
   return elements;
@@ -476,8 +476,8 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(elements["capacity-dialog"].open, false);
 });
 
-async function openMayoralDecision(taskDetail) {
-  const elements = installFixture();
+async function openMayoralDecision(taskDetail, fixture = {}) {
+  const elements = installFixture(fixture);
   const requests = [];
   const live = { ...state, seq: 1, demo: false };
   const message = `data: ${JSON.stringify(live)}\n\n`;
@@ -518,6 +518,28 @@ test("mayoral inspection loads live GitHub details on open", async () => {
   assert.match(elements.inspection.textContent, /4 comments/);
   assert.match(elements.inspection.textContent, /Issue #3/);
   assert.match(elements.inspection.textContent, /Issue Bot/);
+});
+
+test("the skin toggle cycles skins, remembers the choice, and honours a saved or requested skin", async () => {
+  const saved = {},
+    storage = { getItem: (key) => saved[key] ?? null, setItem: (key, value) => { saved[key] = value; } },
+    detail = async () => ({ ok: true, json: async () => ({}) });
+  const { elements } = await openMayoralDecision(detail, { storage });
+  assert.equal(elements.skin.textContent, "Village skin");
+  elements.skin.onclick();
+  assert.equal(elements.skin.textContent, "Swarm skin");
+  assert.equal(saved["brokk-town-skin"], "swarm");
+  assert.match(elements.skin.getAttribute("aria-label"), /Switch to Village/);
+  document.dispatchEvent({ type: "keydown", key: "s", target: { matches: () => false } });
+  assert.equal(elements.skin.textContent, "Village skin");
+  saved["brokk-town-skin"] = "swarm";
+  const remembered = await openMayoralDecision(detail, { storage });
+  assert.equal(remembered.elements.skin.textContent, "Swarm skin", "a saved skin is restored");
+  const requested = await openMayoralDecision(detail, { storage, search: "?skin=village" });
+  assert.equal(requested.elements.skin.textContent, "Village skin", "a launcher can request a skin");
+  saved["brokk-town-skin"] = "nonsense";
+  const unknown = await openMayoralDecision(detail, { storage });
+  assert.equal(unknown.elements.skin.textContent, "Village skin", "an unknown skin falls back to the village");
 });
 
 test("mayoral inspection stays decidable when live details fail", async () => {

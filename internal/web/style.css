@@ -806,6 +806,23 @@ canvas {
   color: #b8cdb4;
   pointer-events: none;
 }
+#skin {
+  white-space: nowrap;
+}
+/* The swarm skin darkens the chrome around the field so the scorched ground
+   and the house labels read as one scene; every control keeps its place. */
+:root[data-skin="swarm"] .world-legend {
+  color: #d8c9b0;
+}
+:root[data-skin="swarm"] .house-label {
+  background: #14110dd9;
+  border-color: #5a4d38;
+}
+:root[data-skin="swarm"] .house:hover .house-label,
+:root[data-skin="swarm"] .house.selected .house-label {
+  border-color: #9be07a;
+  box-shadow: 0 0 20px #0b0a08;
+}
 .world-legend .dot {
   margin-right: 5px;
 }
