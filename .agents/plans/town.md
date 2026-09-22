@@ -38,3 +38,7 @@
 - Built and validated all four native bundles and five npm packages from commit
   67e7262 using check-only mode; nothing uploaded. Workflow lint and final root/
   Issue Bot race tests and vet passed. Implementation committed on master.
+
+- Published the consolidation to Brokk Town master, verified all eight destination
+  directories, updated source README notices/descriptions/homepage links, and
+  archived all eight original repositories at the user’s explicit request.

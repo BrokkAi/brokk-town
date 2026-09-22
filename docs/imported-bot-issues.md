@@ -21,3 +21,11 @@ their original authors, dates and URLs; GitHub authorship is not impersonated.
 | [release-bot #19](https://github.com/BrokkAi/release-bot/issues/19) | [#109](https://github.com/BrokkAi/brokk-town/issues/109) | 0 |
 | [release-bot #16](https://github.com/BrokkAi/release-bot/issues/16) | [#110](https://github.com/BrokkAi/brokk-town/issues/110) | 3 |
 | [release-bot #14](https://github.com/BrokkAi/release-bot/issues/14) | [#111](https://github.com/BrokkAi/brokk-town/issues/111) | 2 |
+
+## Original repositories archived
+
+On 2026-09-22, all eight original bot repositories were updated with prominent
+README notices and repository homepage links to their standalone directories in
+Brokk Town, then archived. This includes bug-bot, feature-bot, issue-bot,
+review-bot, release-bot, repo-bot, simplifier-bot, and mayor-bot. Historical issues
+and releases remain available there; new work and discussion belong in Brokk Town.
