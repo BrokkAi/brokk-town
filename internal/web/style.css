@@ -287,7 +287,8 @@ header {
   gap: 5px;
   flex-shrink: 0;
 }
-.inbox-actions button {
+.inbox-actions button,
+.inbox-actions a {
   font-size: 12px;
   padding: 6px 9px;
 }
@@ -1745,3 +1746,11 @@ textarea {
     overflow-wrap: anywhere;
   }
 }
+
+.inbox-context { min-width: 0; }
+.inbox-context p { margin: 9px 0; font-size: 13px; line-height: 1.5; }
+.inbox-context .inbox-next { color: #c9ddba; }
+.inbox-context details { margin-top: 12px; }
+.inbox-context summary { cursor: pointer; font-size: 12px; color: #a0b394; }
+.inbox-actions a { border-radius: 6px; text-decoration: none; display: inline-block; }
+.inbox-item.attention .inbox-actions { flex-direction: column; align-items: stretch; }

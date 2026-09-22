@@ -35,6 +35,7 @@ import {
   workerControls,
   townControls,
   inbox,
+  attentionGuidance,
   ago,
   decisionReason,
 } from "./town.js";
@@ -566,4 +567,20 @@ test("unresolved dispatches show recovery instead of a runnable schedule", () =>
   assert.equal(scheduleLabel(worker), "Recovery required");
   assert.equal(workerControls(worker).start, false);
   assert.equal(workerControls({ ...worker, recovery: { detail: "Check recent issues, then start the scan" } }).start, true);
+});
+
+
+test("attention guidance distinguishes setup, prior release failure, and uncertain writes", () => {
+  const setup = attentionGuidance({ kind: "worker", house: "feature", detail: "Muse ACP is not on the service PATH. Uses muse-acp on PATH." });
+  assert.equal(setup.configure, true);
+  assert.match(setup.next, /Choose an available agent/);
+  const failure = { kind: "worker", house: "release", retryRelease: true, detail: "release retry budget exhausted; last failure: https://github.com/BrokkAi/brokk-town/actions/runs/34853392035: failure" };
+  const release = attentionGuidance(failure);
+  assert.equal(release.workflow, "https://github.com/BrokkAi/brokk-town/actions/runs/34853392035");
+  assert.equal(release.retryRelease, true);
+  assert.match(release.summary, /earlier attempt/);
+  assert.equal(attentionGuidance({ ...failure, detail: "release retry budget exhausted https://github.com.evil.test/o/r/actions/runs/12" }).workflow, "");
+  const uncertain = attentionGuidance({ status: "uncertain_write", task: "pr:5" });
+  assert.match(uncertain.next, /recorded outcome/);
+  assert.equal(uncertain.retryRelease, undefined);
 });

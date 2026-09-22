@@ -650,6 +650,40 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   assert.ok(control, "declining from the inbox sends the control command");
   assert.deepEqual(JSON.parse(control.options.body), { town: "acme/project", role: "hall", action: "decline", task: "issue:3" }, "the command targets the item's own town, not the selected one");
   assert.equal(elements["inbox-error"].textContent, "");
+
+  other.workers.feature = { role: "feature", enabled: true, status: "failed", error: "Muse ACP is not on the service PATH.", logs: [] };
+  other.workers.release = { role: "release", enabled: true, status: "failed", error: "release retry budget exhausted; last failure: https://github.com/beta/tools/actions/runs/123: failure", logs: [] };
+  elements["inbox-dialog"].close();
+  elements["inbox-toggle"].onclick();
+  assert.match(elements["inbox-list"].textContent, /Technical details/);
+  assert.match(elements["inbox-list"].textContent, /earlier attempt/);
+  assert.match(elements["inbox-list"].innerHTML, /href="https:\/\/github\.com\/beta\/tools\/actions\/runs\/123"/, "failed workflow is a direct link");
+  const configure = elements["inbox-list"].querySelectorAll("[data-inbox-configure]")[0];
+  configure.onclick();
+  assert.equal(elements["settings-dialog"].open, true);
+  assert.equal(elements["agent-role"].value, "feature", "opens the failed bot's agent settings");
+  assert.equal(elements["inspector-town"].textContent, "beta/tools");
+  elements["settings-dialog"].close();
+  elements["inbox-toggle"].onclick();
+  const retry = elements["inbox-list"].querySelectorAll("[data-inbox-retry]")[0];
+  const before = requests.filter((r) => r.url === "/api/control").length;
+  globalThis.confirm = () => false;
+  await retry.onclick();
+  assert.equal(requests.filter((r) => r.url === "/api/control").length, before, "canceling sends no command");
+  globalThis.confirm = (message) => { assert.match(message, /may publish a release/); return true; };
+  await retry.onclick();
+  assert.deepEqual(JSON.parse(requests.filter((r) => r.url === "/api/control").at(-1).options.body), { town: "beta/tools", role: "release", action: "retry" });
+  const successfulFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => url === "/api/control"
+    ? { ok: false, json: async () => ({ error: "Release retry is unavailable" }) }
+    : successfulFetch(url, options);
+  await elements["inbox-list"].querySelectorAll("[data-inbox-retry]")[0].onclick();
+  assert.equal(elements["inbox-error"].textContent, "Release retry is unavailable", "a rejected retry stays visible in the inbox");
+  other.config.merge_policy = "manual";
+  elements["inbox-dialog"].close();
+  elements["inbox-toggle"].onclick();
+  assert.equal(elements["inbox-list"].querySelectorAll("[data-inbox-retry]").length, 0, "manual release policy does not offer automation retry");
+
 });
 
 test("reopening a Mayoral card refreshes live details and retries failures", async () => {

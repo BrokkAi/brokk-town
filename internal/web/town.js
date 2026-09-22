@@ -223,6 +223,43 @@ export const attentionStatuses = ["blocked", "failed", "inconclusive", "uncertai
 // decisions and stuck work.  Oldest first, so the longest wait surfaces on top.
 // Each item names the town and house to open so the caller can navigate
 // straight to the place where the decision or retry lives.
+// Recovery guidance offers only actions the UI can actually perform.
+export function attentionGuidance(item) {
+  const detail = item.detail || "";
+  const bot = houseNames[item.house] || "Bot";
+  if (item.kind === "worker" && /not on the service PATH|needs .+ on the service PATH/i.test(detail)) {
+    return {
+      title: `${bot} cannot start its agent`,
+      summary: "The configured agent is not available to Town.",
+      next: "Choose an available agent in settings, or follow its setup instructions. Then return to the bot and start it.",
+      configure: true,
+    };
+  }
+  if (item.kind === "worker" && item.house === "release" && /release retry budget exhausted/i.test(detail)) {
+    const workflow = detail.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d+(?:\/attempts\/\d+)?/)?.[0] || "";
+    return {
+      title: "Release Bot needs help with a previous release",
+      summary: "Automatic attempts stopped after repeated failures. This saved error describes an earlier attempt, not the current release status.",
+      next: !item.retryRelease
+        ? "Review the failed workflow and bot logs. Release retry is unavailable under this bot’s current policy or recovery state."
+        : workflow
+        ? "Open the failed workflow first. Once the failure is resolved, retry the release to clear the attempt limit and resume Release Bot."
+        : "Review the saved error and bot logs. Once the failure is resolved, retry the release to clear the attempt limit and resume Release Bot.",
+      workflow,
+      retryRelease: !!item.retryRelease,
+    };
+  }
+  return {
+    title: item.title,
+    summary: item.status === "uncertain_write"
+      ? "Town could not confirm whether the last action reached GitHub."
+      : item.kind === "worker" ? "This bot stopped after an error." : "This item needs your attention before work can continue.",
+    next: item.status === "uncertain_write"
+      ? "Check the item’s recorded outcome before deciding whether to retry."
+      : item.task ? "Open the task to review its context and available recovery actions." : "Open the bot’s logs to review the failure and its controls.",
+  };
+}
+
 export function inbox(state) {
   const decisions = [],
     attention = [],
@@ -281,6 +318,7 @@ export function inbox(state) {
         statusLabel: taskStatuses.failed.label,
         statusClass: taskStatuses.failed.className,
         detail: worker.recovery?.detail || worker.error || "",
+        retryRelease: role === "release" && town.config?.merge_policy !== "manual" && !worker.recovery && !worker.run,
       });
     }
   }

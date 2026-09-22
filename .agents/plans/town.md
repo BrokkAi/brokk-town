@@ -74,3 +74,16 @@
 - Verified the installed binary starts using a temporary copy of the repaired
   state with all workers paused, serves authenticated HTTP 200, and shuts down
   cleanly. Actual worker settings and other saved work remain unchanged.
+
+## Actionable attention inbox
+
+- Replaced raw failure cards with a plain-language explanation and next step.
+  Missing agent executables link directly to the affected bot’s agent settings.
+- Release retry exhaustion links the previous failed GitHub workflow and offers
+  the existing worker-protocol retry operation, with confirmation that it resumes
+  work and may publish. Manual policy and recovery holds suppress the retry.
+- Kept full errors in expandable technical details, explicit task/bot-log links,
+  stable expanded state, keyboard focus, and visible request errors.
+- Go race tests/vet and frontend syntax checks pass; 40 browser tests cover
+  settings navigation, workflow links, canceled/accepted/rejected retry, policy
+  restrictions, and uncertain-outcome guidance. No live actions used for tests.

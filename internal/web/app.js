@@ -28,6 +28,7 @@ import {
   townControls,
   decisionReason,
   inbox,
+  attentionGuidance,
   ago,
   profileSummary,
 } from "./town.js";
@@ -542,7 +543,7 @@ function render() {
   renderInbox(needs);
   if (focus) {
     const root = document.querySelector(`#${focus.surface}`);
-    const restored = [...(root?.querySelectorAll("button") || [])].find((button) =>
+    const restored = [...(root?.querySelectorAll("button, a, summary") || [])].find((button) =>
       focusMatches(button, focus),
     );
     restored?.focus({ preventScroll: true });
@@ -946,8 +947,18 @@ function renderInbox(needs = inbox(state)) {
     `<button class="${primary ? "primary" : ""}" data-inbox-key="open:${esc(item.task || item.house)}" data-inbox-town="${esc(item.town)}" data-inbox-house="${esc(item.house)}" data-inbox-task="${esc(item.task)}" data-inbox-open="1">${label}</button>`;
   const decisionCard = (item) =>
     `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · admitting sends it to ${item.kind === "issue" ? "Issue Bot" : "Review Bot"}</small></div><div class="inbox-actions">${openButton(item, "Open in Town Hall", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit">${item.reviewAgain ? "Review again" : "Admit"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline">Decline</button></div></article>`;
-  const attentionCard = (item) =>
-    `<article class="inbox-item attention"><div><strong>${esc(item.title)}</strong><small><span class="status-chip status-${esc(item.statusClass)}">${esc(item.statusLabel)}</span> · ${esc([houseNames[item.house] || item.house, ...inboxLabel(item)].join(" · "))}</small>${item.detail ? `<small>${esc(item.detail)}</small>` : ""}</div><div class="inbox-actions">${openButton(item, "Inspect", true)}</div></article>`;
+  const expanded = new Set([...$("#inbox-list").querySelectorAll("[data-inbox-detail]")]
+    .filter((detail) => detail.open).map((detail) => detail.dataset.inboxDetail));
+  const attentionCard = (item) => {
+    const guidance = attentionGuidance(item);
+    const configure = guidance.configure
+      ? `<button class="primary" data-inbox-key="configure:${esc(item.house)}" data-inbox-town="${esc(item.town)}" data-inbox-house="${esc(item.house)}" data-inbox-configure="1">Configure agent</button>` : "";
+    const workflow = guidance.workflow
+      ? `<a class="primary" data-inbox-key="workflow:${esc(item.house)}" data-inbox-town="${esc(item.town)}" href="${esc(guidance.workflow)}" target="_blank" rel="noopener noreferrer">View failed workflow ↗</a>` : "";
+    const retry = guidance.retryRelease
+      ? `<button data-inbox-key="retry:release" data-inbox-town="${esc(item.town)}" data-inbox-retry="1">Retry release…</button>` : "";
+    return `<article class="inbox-item attention"><div class="inbox-context"><strong>${esc(guidance.title)}</strong><small><span class="status-chip status-${esc(item.statusClass)}">${esc(item.statusLabel)}</span> · ${esc([houseNames[item.house] || item.house, ...inboxLabel(item)].join(" · "))}</small><p>${esc(guidance.summary)}</p><p class="inbox-next">${esc(guidance.next)}</p>${item.detail ? `<details data-inbox-detail="${esc(JSON.stringify([item.town, item.task || item.house]))}"><summary data-inbox-key="details:${esc(item.task || item.house)}" data-inbox-town="${esc(item.town)}">Technical details</summary><small>${esc(item.detail)}</small></details>` : ""}</div><div class="inbox-actions">${configure}${workflow}${retry}${openButton(item, item.task ? "View task" : "View bot &amp; logs", !configure && !workflow)}</div></article>`;
+  };
   $("#inbox-list").innerHTML =
     (needs.decisions.length
       ? `<h2>Awaiting your decision <span class="count">${needs.decisions.length}</span></h2>${inboxGroups(needs.decisions, decisionCard)}`
@@ -956,12 +967,43 @@ function renderInbox(needs = inbox(state)) {
       ? `<h2>Needs attention <span class="count">${needs.attention.length}</span></h2>${inboxGroups(needs.attention, attentionCard)}`
       : "") ||
     '<p class="muted">Nothing needs you right now. New arrivals and stuck work will appear here from every town.</p>';
+  $("#inbox-list").querySelectorAll("[data-inbox-detail]").forEach((detail) => {
+    detail.open = expanded.has(detail.dataset.inboxDetail);
+  });
+  $("#inbox-list").querySelectorAll("[data-inbox-retry]").forEach((button) => {
+    button.disabled = inboxRetries.has(button.dataset.inboxTown);
+    button.onclick = () => retryReleaseFromInbox(button.dataset.inboxTown);
+  });
+  $("#inbox-list").querySelectorAll("[data-inbox-configure]").forEach((button) => {
+    button.onclick = () => {
+      openInboxItem(button.dataset.inboxTown, button.dataset.inboxHouse, "");
+      document.dispatchEvent(new CustomEvent("open-settings", { detail: { role: button.dataset.inboxHouse } }));
+    };
+  });
   $("#inbox-list")
     .querySelectorAll("[data-inbox-open]")
     .forEach((button) => (button.onclick = () => openInboxItem(button.dataset.inboxTown, button.dataset.inboxHouse, button.dataset.inboxTask)));
   $("#inbox-list")
     .querySelectorAll("[data-inbox-decide]")
     .forEach((button) => (button.onclick = () => decideFromInbox(button.dataset.inboxTown, button.dataset.inboxTask, button.dataset.inboxDecide)));
+}
+const inboxRetries = new Set();
+async function retryReleaseFromInbox(id) {
+  if (inboxRetries.has(id)) return;
+  const repo = state?.towns[id]?.config?.repo || id;
+  if (!globalThis.confirm(`Retry Release Bot for ${repo}? This clears its saved attempt limit and resumes release work. It may publish a release. Continue only after reviewing the previous failure.`)) return;
+  inboxRetries.add(id);
+  $("#inbox-error").textContent = "";
+  renderInbox();
+  try {
+    await api("/api/control", { town: id, role: "release", action: "retry" });
+    await refreshState();
+  } catch (error) {
+    $("#inbox-error").textContent = error.message;
+  } finally {
+    inboxRetries.delete(id);
+    renderInbox();
+  }
 }
 function openInboxItem(id, house, task) {
   if (!state?.towns[id]) return;
