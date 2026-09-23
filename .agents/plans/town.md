@@ -353,6 +353,41 @@
 - A regression test (with and without a quiet period) failed before the fix.
 - `bundle.json` moves release-bot to 0.6.4 at the fix commit.
 
+## review-bot repository capitalization (#108)
+
+- PR eligibility and state keys already treated `github.repo` case-insensitively,
+  but `validatePublished` compared the review URL path byte-for-byte. With
+  `github.repo: O/R` and GitHub's canonical `/o/r/pull/1`, a posted review
+  stayed `posting` forever and every reconciliation reported it as uncertain.
+- The URL check now compares only the owner/repository segment ASCII
+  case-insensitively (it must still be a valid slug); scheme, host,
+  credentials, query, raw path encoding, `/pull/<n>` and the review anchor
+  stay exact.
+- `ReadState` compares the saved repository the same way, and the saved host
+  case-insensitively like the URL and lock checks, so restarting with a
+  differently capitalized `github.repo` or `github.host` keeps the saved jobs
+  and reconciles them instead of refusing the state. The loaded state takes
+  the configured spelling, so `brv status` and the next save match the config.
+- Tests cover ordinary success, lost-response recovery and restart with
+  differing capitalization (each with exactly one POST), plus the URL fields
+  that must still be rejected.
+- `bundle.json` moves review-bot to 0.2.7 at the fix commit.
+
+## Restoring deleted towns (#24)
+
+- `Town.Restore` revives a deleted town under a complete, validated config;
+  tasks, ownership, intents and recovery holds are kept, a branch change on an
+  initialized town is refused, only the reporter is re-enabled and every
+  worker's `Next` is cleared. The event says the town was restored.
+- The add request (web, `bt add`) goes through `Supervisor.AddRepo`: a deleted
+  town's kept config is the base, and only a non-empty merge policy and the
+  agent settings are applied over it, so budget, policies, bot profiles,
+  funnels (and their intents) and branch survive.
+- `serve --config` restores a listed deleted town with the file's config (the
+  same replacement a live town gets); `serve --repo` restores it with its kept
+  config. Both print a notice.
+- Deleting a deleted town returns `unknown town` and appends no event.
+
 ## bug-bot review model and effort (#97)
 
 - Optional `review_model`/`review_effort` (`--review-model`/`--review-effort`)

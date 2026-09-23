@@ -134,3 +134,36 @@ func TestEligibilityIncludesForksAndHonorsPRAndLabels(t *testing.T) {
 		t.Fatal("excluded label accepted")
 	}
 }
+func TestPublishedURLIgnoresOnlyRepositoryCase(t *testing.T) {
+	e, _, f, _, _ := fixture(t)
+	e.config.GitHub.Repo = "O/R"
+	j := &Job{PR: f.prs[0], Actor: "reviewer", Payload: &ReviewPayload{Body: "b"}}
+	r := &RemoteReview{ID: 7, Body: "b", Commit: j.PR.Head.SHA, State: "COMMENTED"}
+	r.User.Login = "reviewer"
+	for _, u := range []string{"https://github.com/o/r/pull/1#pullrequestreview-7", "https://GitHub.com/O/r/pull/1#pullrequestreview-7"} {
+		r.URL = u
+		if err := validatePublished(e.config, j, r); err != nil {
+			t.Fatalf("%s rejected: %v", u, err)
+		}
+	}
+	for _, u := range []string{
+		"http://github.com/o/r/pull/1#pullrequestreview-7",
+		"https://example.com/o/r/pull/1#pullrequestreview-7",
+		"https://x@github.com/o/r/pull/1#pullrequestreview-7",
+		"https://github.com/o/r/pull/1?x=1#pullrequestreview-7",
+		"https://github.com/o/r%2Fpull/1#pullrequestreview-7",
+		"https://github.com/o/r/PULL/1#pullrequestreview-7",
+		"https://github.com/o/r/pull/2#pullrequestreview-7",
+		"https://github.com/o/r/pull/01#pullrequestreview-7",
+		"https://github.com/o/rr/pull/1#pullrequestreview-7",
+		"https://github.com/o/x/r/pull/1#pullrequestreview-7",
+		"https://github.com//o/r/pull/1#pullrequestreview-7",
+		"https://github.com/o/r/pull/1#pullrequestreview-8",
+		"https://github.com/o/r/pull/1#PullRequestReview-7",
+	} {
+		r.URL = u
+		if validatePublished(e.config, j, r) == nil {
+			t.Fatalf("%s accepted", u)
+		}
+	}
+}
