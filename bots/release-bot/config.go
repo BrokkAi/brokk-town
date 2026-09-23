@@ -63,6 +63,12 @@ type Config struct {
 	// ReleaseTriggerIgnore lists repository-relative files, and directories
 	// ending in "/", whose changes alone never start a new automatic release.
 	ReleaseTriggerIgnore []string `json:"release_trigger_ignore,omitempty"`
+	// Notify is an optional operator command run, best effort, with a
+	// versioned JSON event on stdin after a verified release or before exiting
+	// on an exhausted retry budget. Empty disables it. NotifyTimeout bounds
+	// each invocation and is required with a command.
+	Notify        []string `json:"notify,omitempty"`
+	NotifyTimeout Duration `json:"notify_timeout,omitempty"`
 }
 
 func DefaultConfig() Config {
@@ -178,6 +184,17 @@ func (c Config) Validate() error {
 	}
 	if len(c.Preflight) > 0 && c.Preflight[0] == "" {
 		return errors.New("preflight command is empty")
+	}
+	if len(c.Notify) > 0 && strings.TrimSpace(c.Notify[0]) == "" {
+		return errors.New("notify command is empty")
+	}
+	for _, arg := range c.Notify {
+		if strings.ContainsRune(arg, 0) {
+			return errors.New("notify arguments must not contain NUL bytes")
+		}
+	}
+	if c.NotifyTimeout < 0 || len(c.Notify) > 0 && c.NotifyTimeout <= 0 {
+		return errors.New("notify_timeout must be positive when notify is configured")
 	}
 	for _, s := range c.InstructionFiles {
 		if !filepath.IsLocal(s) {

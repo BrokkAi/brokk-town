@@ -725,3 +725,21 @@
   unconfirmed selection, is a failure to select naming the same setting.
   Other phases pass through unchanged. An untyped error is never read as an
   agent rejection.
+
+## release-bot outcome notifications (#109)
+
+- Optional `notify` argument array and required positive `notify_timeout` in
+  an explicit config file; empty (the default) disables it. Discovery and the
+  worker never set it, and the worker protocol is unchanged.
+- `Run` delegates to `engine.run`. `finish` records a `verified` event (job
+  identity and tries captured before the job is cleared) only after the
+  receipt and baseline save succeed; `run` emits it after the cycle. An
+  `errAttemptsExhausted` cycle emits `exhausted` before `run` returns, so
+  new and startup exhaustion each notify once per invocation. Cancellation,
+  backoff, setup errors and ordinary failures emit nothing.
+- The hook runs via `osrun.StartCommand` in `state_directory` with literal
+  args, JSON (`version: 1`) on stdin, discarded stdout, a 4 KiB stderr tail
+  and the timeout killing its process group. Missing, nonzero and timeout
+  failures are classified and logged only; they never touch state or the
+  returned error. Payload: event, time, repository slug, branch, job id,
+  release id, target, commit, tag, attempts; no failure text or paths.
