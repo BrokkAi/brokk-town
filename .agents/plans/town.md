@@ -596,4 +596,4 @@
   bypasses the policy.
 - Town is unchanged: the worker protocol carries no such field (a non-goal of
   the issue), so the setting applies only to config-file runs.
-- `bundle.json` moves release-bot to 0.7.0 at the feature commit.
+- `bundle.json` moves release-bot to 0.7.0 at the final feature commit.
