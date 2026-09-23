@@ -153,8 +153,13 @@ type GitHub interface {
 
 type GitHubClient struct{}
 
+// githubTimeout bounds each gh invocation. Town's own GitHub reads and writes,
+// such as the merge gate, run outside any worker attempt, so without it a
+// stalled gh would hold a house indefinitely.
+var githubTimeout = time.Minute
+
 func (g GitHubClient) api(ctx context.Context, method, path string, body any, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, githubTimeout)
 	defer cancel()
 	args := []string{"gh", "api", "--hostname", "github.com", "--method", method, path}
 	if body != nil {
@@ -231,6 +236,8 @@ func (g GitHubClient) Discussion(ctx context.Context, repo string, n int) ([]Dis
 }
 func (g GitHubClient) Gate(ctx context.Context, repo string, n int) (MergeGate, error) {
 	var gate MergeGate
+	ctx, cancel := context.WithTimeout(ctx, githubTimeout)
+	defer cancel()
 	raw, err := osrun.Run(ctx, "", nil, "gh", "pr", "view", fmt.Sprint(n), "--repo", repo, "--json", "headRefOid,baseRefOid,baseRefName,isDraft,state,mergeable,mergeStateStatus,reviewDecision")
 	if err != nil {
 		return gate, err

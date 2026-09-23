@@ -78,6 +78,51 @@ func TestSettingsCLISendsSpecificProfileOrDefaults(t *testing.T) {
 	}
 }
 
+func TestMergePolicyCLIIsATownSetting(t *testing.T) {
+	received := make(chan map[string]any, 1)
+	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/state" && r.Method == "GET" {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		received <- body
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer h.Close()
+	dir := t.TempDir()
+	conn, _ := json.Marshal(connection{URL: h.URL, Token: "test-key", PID: os.Getpid()})
+	if err := os.WriteFile(filepath.Join(dir, "connection.json"), conn, 0600); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"settings", "--state-dir", dir, "--repo", "Acme/Team"}
+
+	if err := run(context.Background(), append(append([]string{}, base...), "--merge-policy", "Manual")); err != nil {
+		t.Fatal(err)
+	}
+	if body := <-received; body["merge_policy"] != "manual" || body["role"] != "" {
+		t.Fatalf("merge policy payload = %+v", body)
+	}
+	if err := run(context.Background(), append(append([]string{}, base...), "--model", "m")); err != nil {
+		t.Fatal(err)
+	}
+	if body := <-received; body["merge_policy"] != nil {
+		t.Fatalf("an unrelated edit sent a merge policy: %+v", body)
+	}
+	err := run(context.Background(), append(append([]string{}, base...), "--role", "review", "--merge-policy", "all"))
+	if err == nil || !strings.Contains(err.Error(), "omit --role") {
+		t.Fatalf("merge policy with a role = %v", err)
+	}
+	select {
+	case got := <-received:
+		t.Fatal("a per-bot merge policy reached the service", got)
+	default:
+	}
+}
+
 func TestBudgetCLISendsEditsAndRejectsUnenforceableCombinations(t *testing.T) {
 	received := make(chan map[string]any, 1)
 	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -298,3 +298,18 @@
   comment and state-write failures after a reconciliation, and the daemon
   and `--once` handling of issue-only failures.
 - `bundle.json` moves issue-bot to 0.5.9 at the final fix commit.
+
+## Documentation drift (#29)
+
+- `GitHubClient.Gate` shares the one-minute `githubTimeout` with `api()`, so a
+  stalled `gh pr view` cannot hold the review house's merge pass. Every other
+  gh call on the supervisor path already goes through `api()`; worker jobs
+  keep the two-hour `workerDeadline`.
+- `bt settings --merge-policy bot|manual|all` sets the town policy through the
+  existing settings API; it refuses `--role`.
+- README states that config-file entries get no defaults, that a release retry
+  starts a paused release house (a task retry does not), and what each
+  deadline covers.
+- Demo paper-trail opens with its own report instead of orchard's.
+- The README keyboard map no longer exists; the browser help dialog lists the
+  current 0–8 shortcuts. Release docs agree on 0.6.2.
