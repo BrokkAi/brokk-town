@@ -172,6 +172,30 @@
 - Remaining: a Town release publishes this to users. RELEASING.md requires an
   explicit request for that.
 
+## Town on acp-go 0.8.1 (fixes #59)
+
+- The root module moved from acp-go v0.1.0 to v0.8.1, the latest GitHub
+  release and the version issue-bot runs. v0.9.0 is tagged without a release
+  and only changes the draft-v2 packages and `clienthost` tool-call titles.
+- `runner.AgentConfig` keeps its JSON tags, so saved town state loads
+  unchanged. `runner.Runner`, `Config` and `Execute` needed no changes.
+- The harness choice probe spoke the v0.1.0 hand-written types. It now reads
+  generated `schema.SessionConfigOption`s through the same lookup as
+  `SetModel`/`SetEffort` (a category match, else an uncategorized `model` or
+  `reasoning_effort` ID), flattens grouped values, and maps them to Town's own
+  `ChoiceValue`, so `/api/choices` keeps its `{value, name}` shape. It also
+  advertises session config options, as the runner does, so the probe and a
+  run see the same selectors.
+- Licence review: LICENSE byte-identical, NOTICE new in v0.8.1. Both recorded
+  in `licenses/policy.json`; notices regenerated.
+- Added `internal/town/agent_acp_test.go`: a credential-free simulated ACP
+  agent from the test binary, driving `runAgent` through the real runner.
+  Covers startup, model/effort selection before the prompt, permission
+  auto-approval, transcripts, a rejected model as a setup error, and
+  cancellation of a prompt in flight. The commentary-then-receipt case fails
+  on v0.1.0 and passes on v0.8.1.
+- Bots keep their own pins; review-bot's upgrade is #107.
+
 ## Retargeted pull requests (#9)
 
 - A pull request retargeted to another branch keeps its head and base commits,
