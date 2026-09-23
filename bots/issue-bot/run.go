@@ -124,19 +124,22 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 	// is no longer returned by the issue query. Never rerun an agent to do this.
 	numbers := make([]int, 0, len(s.Jobs))
 	for n := range s.Jobs {
-		numbers = append(numbers, n)
+		if e.config.Issue == 0 || n == e.config.Issue {
+			numbers = append(numbers, n)
+		}
 	}
 	sort.Ints(numbers)
 	for _, n := range numbers {
-		if e.config.Issue != 0 && n != e.config.Issue {
-			continue
-		}
 		j := s.Jobs[n]
 		if j.ClaimPending && j.Claim != nil && j.Claim.Status != "working" {
 			if err := e.syncClaim(ctx, s, j); err != nil {
 				e.log.Error("Status comment update failed; retaining it for retry", "issue", n, "error", err)
 			}
 		}
+	}
+	// A reconciliation is this step's unit of work; --once stops after one.
+	for _, n := range numbers {
+		j := s.Jobs[n]
 		if j.Status == "pending" && j.Tries > 0 {
 			pr, err := e.source.pull(ctx, j)
 			if err != nil {
@@ -146,6 +149,7 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 				if err := e.complete(ctx, s, j, pr); err != nil {
 					return false, err
 				}
+				return true, nil
 			}
 		}
 	}
@@ -175,7 +179,7 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 			if err := e.complete(ctx, s, j, pr); err != nil {
 				return false, err
 			}
-			continue
+			return true, nil
 		}
 		linked, err := e.source.linkedPull(ctx, i.Number, j.Superseded)
 		if err != nil {
