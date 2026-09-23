@@ -19,6 +19,7 @@ type Store struct {
 	path    string
 	lock    *os.File
 	changed chan struct{}
+	notice  string
 }
 
 // ErrServiceRunning means another process holds this state directory's lock.
@@ -40,13 +41,37 @@ func Open(dir string, demo bool) (*Store, error) {
 	b, err := os.ReadFile(s.path)
 	if err == nil {
 		err = json.Unmarshal(b, &s.state)
+		parsed := err == nil
 		if err == nil {
 			err = validateState(s.state, demo)
+		}
+		// Demo state is a simulation, so a file an older Town wrote must not
+		// stop the demo from starting. It is set aside with every byte kept and
+		// the demo seeds itself again. Only a file that parsed and says it is
+		// demo state is treated this way: anything else may be real work that
+		// someone pointed at this directory, and that is never discarded.
+		if err != nil && parsed && demoStateIsDisposable(demo, s.state) {
+			if rejected, e := setAside(s.path); e == nil {
+				s.notice = fmt.Sprintf("demo state this Town cannot read was set aside as %s; starting a fresh demo", filepath.Base(rejected))
+				s.state = NewState(true)
+				err = nil
+			}
 		}
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		s.Close()
+		if demo {
+			return nil, fmt.Errorf("read town state: %w (the demo keeps its state in %s; move that file aside to start over)", err, dir)
+		}
 		return nil, fmt.Errorf("read town state: %w", err)
+	}
+	if s.notice != "" {
+		// Leave the directory holding a state this Town can reopen, rather than
+		// waiting for the first write.
+		if err := s.Update(func(*State) error { return nil }); err != nil {
+			s.Close()
+			return nil, fmt.Errorf("replace unreadable demo state: %w", err)
+		}
 	}
 	// External bot processes outlive a service restart; their handles stay so
 	// the supervisor can reconnect before it schedules anything new. Every other
@@ -77,6 +102,42 @@ func Open(dir string, demo bool) (*Store, error) {
 	}
 	return s, nil
 }
+
+// Notice reports a one-time fact about how this store was opened, such as a
+// demo state that had to be set aside. It is empty when nothing happened. Call
+// it before the store is shared: it is not synchronized with writes.
+func (s *Store) Notice() string { return s.notice }
+
+// demoStateIsDisposable reports whether a state that failed validation may be
+// replaced by the demo that asked for it. Real state is never disposable, and
+// a store opened outside demo mode never replaces anything.
+func demoStateIsDisposable(demo bool, s State) bool {
+	return demo && s.Demo
+}
+
+// setAside renames a state file to a sibling name, keeping the original bytes
+// and permissions so a reset never destroys the evidence of what was there.
+func setAside(path string) (string, error) {
+	dir, base := filepath.Split(path)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	stamp := time.Now().UTC().Format("20060102-150405")
+	for i := 0; i < 100; i++ {
+		name := fmt.Sprintf("%s.rejected-%s.json", stem, stamp)
+		if i > 0 {
+			name = fmt.Sprintf("%s.rejected-%s-%d.json", stem, stamp, i)
+		}
+		target := filepath.Join(dir, name)
+		if _, err := os.Lstat(target); err == nil {
+			continue // Another rejected state already holds that name.
+		}
+		if err := os.Rename(path, target); err != nil {
+			return "", err
+		}
+		return target, nil
+	}
+	return "", fmt.Errorf("no free name beside %s", path)
+}
+
 func validateState(s State, demo bool) error {
 	if err := s.ServiceConfig.Validate(); err != nil {
 		return err
@@ -119,7 +180,7 @@ func validateState(s State, demo bool) error {
 		}
 		for _, r := range Roles {
 			if t.Workers[r] == nil || t.Workers[r].Role != r {
-				return errors.New("missing worker")
+				return fmt.Errorf("town %s is missing its %s house", id, r)
 			}
 			if err := t.Workers[r].Run.Validate(r); err != nil {
 				return err

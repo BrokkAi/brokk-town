@@ -221,3 +221,23 @@
 - 8 new module tests plus 2 app tests drive the real handlers (43 → 53 browser
   tests); `npm run check` covers both new files. Both themes were rendered in a
   headless browser against a stubbed snapshot to check the art and labels.
+
+## Demo state recovery
+
+- `bt --demo` refused to start with "read town state: missing worker" against a
+  demo state written on 2026-09-16, before the Clarifier house and Mayor Bot
+  existed. Demo state is disposable, so `Open` now sets an unreadable demo state
+  aside as `state.rejected-<timestamp>.json`, keeps every byte at 0600, records
+  a one-time `Store.Notice()` that `bt` prints, and starts an empty demo state
+  that `town.Demo` seeds again.
+- Only a state that parsed and reports `Demo: true` is replaced, and only for a
+  store opened in demo mode. Real state — including real state left in the demo
+  directory — is still refused and left exactly as it was, and a file Town
+  cannot parse is never assumed to be disposable: that error now says where the
+  demo keeps its state and how to start over.
+- `validateState` now names the town and the missing house, so the failure that
+  began this ("missing worker") can be diagnosed from the message alone.
+- Verified against the real stale file: the demo started, the 50608-byte state
+  was preserved as `state.rejected-20260923-071158.json`, and the seeded villages
+  came back. Five store tests cover the reset, the protection of non-demo state,
+  an unparseable file, a usable demo state, and the reseeding.
