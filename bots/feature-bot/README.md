@@ -66,6 +66,8 @@ make build
 ./bin/bfb /path/to/your-repo --model RESEARCH_MODEL_ID --review-model REVIEW_MODEL_ID --review-effort high
 ./bin/bfb status /path/to/your-repo
 ./bin/bfb report /path/to/your-repo --branch master --status dry_run > proposals.md
+./bin/bfb publish /path/to/your-repo --branch master --list
+./bin/bfb publish /path/to/your-repo --proposal SELECTOR
 ./bin/bfb prune /path/to/your-repo --branch master --older-than 720h
 ./bin/bfb version
 ./bin/bfb retry /path/to/your-repo --once
@@ -127,7 +129,7 @@ details on exit.
 
 Piped input, redirected stderr, and `TERM=dumb` use scrolling output automatically.
 `--plain` and `--json` disable the dashboard and are mutually exclusive.
-`NO_COLOR` disables dashboard colors. `status`, `report`, `version`, and help keep their
+`NO_COLOR` disables dashboard colors. `status`, `report`, `publish`, `version`, and help keep their
 existing output and never open the dashboard.
 
 ## How it works
@@ -340,10 +342,61 @@ Reporting only reads saved state: it starts no scan or agent and does not requir
 `gh` or an ACP executable. Explicit configuration permits fully local reading;
 with repository discovery, pass `--branch` to avoid a default-branch network
 lookup. Use the same configuration and branch as the original run.
-Reports omit commit attribution because completed candidates do not retain their
-original commit. Internal workspace paths, transcripts, and publication markers
-are not included as metadata. Proposal and review prose is preserved as Markdown;
+Candidates discovered by this release record the commit at which their cited
+files were validated, shown as `Researched at commit`; candidates saved by older
+releases have no commit and are never attributed to another scan's commit.
+Internal workspace paths, transcripts, and publication markers are not included
+as metadata. Proposal and review prose is preserved as Markdown;
 review that content before sharing it.
+
+### Publish a saved dry-run proposal
+
+After inspecting dry-run proposals, list their selectors and publish exactly one:
+
+```sh
+bfb publish --config feature-bot.json --list
+bfb publish --config feature-bot.json --proposal 3fa2b1c0d9e8
+```
+
+`--list` reads saved state only, like `report`: it starts no agent, fetch or
+GitHub request. Each row shows a stable 12-character selector, eligibility, the
+recorded source commit and the title. Selectors are derived from the saved
+candidate and do not change across restarts; they do not reveal publication markers.
+
+`--proposal` processes only the selected proposal and never starts discovery.
+It fetches the branch and refuses unless the branch is still at the proposal's
+recorded commit, then prepares a new isolated worktree at that commit, checks
+the cited source files, and runs a fresh independent review against all open
+and closed issues and discussions. The dry run's review progress is discarded
+on selection. The configured verifier, the tracked-content check, the
+pre-publication history refresh and the saved posting intent all apply as in a
+scan. A `dry_run` setting in the configuration is ignored by `publish`, and
+`--dry-run` is rejected. Other saved proposals are unchanged.
+
+- Success records the issue URL and `submitted` status. Repeating the command
+  prints the saved URL without reviewing or creating anything.
+- A duplicate, uncertain or invalid verdict prevents creation, saves that status
+  and the review explanation, and exits non-zero.
+- An incomplete review, verifier failure, changed tracked content, missing cited
+  file or confirmed create rejection keeps the proposal `dry_run` and saves the
+  selection with its failure. Run the same command to retry; review batches
+  already completed for this selection are reused. Selecting a different
+  proposal abandons an unfinished selection that has not sent a create request.
+- A branch that advanced before or during publication refuses it. The proposal
+  is not adapted to the newer revision and no replacement discovery starts;
+  research again with `bfb once --dry-run`.
+- A lost create response keeps the `posting` state and the proposal's request
+  ID. Running the command again reconciles the hidden marker and never sends
+  another create request; another proposal cannot be selected until then. An
+  existing issue that already carries the marker, such as a hand-copied dry-run
+  body, is never claimed and blocks creation.
+- Proposals saved by older releases have no recorded commit. They remain
+  readable in reports but are refused; research them again with a new dry run.
+
+Publishing is refused while a scan is active (`once` or the daemon has
+unfinished work), and it takes the same repository locks as a scan. A
+successfully resolved selection's worktree is recorded for `prune`. Worktrees
+of failed attempts are left for inspection, as with scans.
 
 ### Reclaim completed scan workspaces
 

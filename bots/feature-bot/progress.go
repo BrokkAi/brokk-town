@@ -73,8 +73,8 @@ func (e engine) report(s *State, phase, task string) {
 	e.observe(p)
 }
 
-// Completed candidates do not store their original commit. Do not label old
-// findings with the current scan's commit or display publication request markers.
+// Candidates from older releases do not store their original commit. Do not label
+// old findings with the current scan's commit or display publication request markers.
 func findingDetails(c *Candidate) string {
 	f := c.Finding
 	return fmt.Sprintf("User problem\n%s\n\nCurrent workflow\n%s\n\nProposed feature\n%s\n\nUser value\n%s\n\nScope and non-goals\n%s\n\nAcceptance criteria\n- %s\n\nFiles\n%s\n\nEvidence\n%s\n\nReview\n%s", f.UserProblem, f.CurrentWorkflow, f.ProposedSolution, f.UserValue, f.Scope, strings.Join(f.AcceptanceCriteria, "\n- "), strings.Join(f.Files, "\n"), strings.Join(f.Evidence, "\n"), c.Review)

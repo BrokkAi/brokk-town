@@ -245,3 +245,94 @@ func TestPruneCLIOfflineAndFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestPublishCLIListOfflineAndSelection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"remote":"https://github.com/o/r.git","dry_run":true,"agent":{"command":["sh"]}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bot.ReadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cfg.StateDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	candidate := func(id, title, commit string) *bot.Candidate {
+		return &bot.Candidate{RequestID: strings.Repeat(id, 32), Commit: commit, Status: "dry_run", Finding: bot.Finding{
+			Title: title, UserProblem: "problem", CurrentWorkflow: "workflow", ProposedSolution: "solution", UserValue: "value", Scope: "scope", AcceptanceCriteria: []string{"criterion"}, Files: []string{"README.md"}, Evidence: []string{"evidence"},
+		}}
+	}
+	eligible, legacy := candidate("a", "Eligible proposal", strings.Repeat("c", 40)), candidate("b", "Legacy proposal", "")
+	state := bot.State{Format: 1, Remote: cfg.Remote, Branch: cfg.Branch, Directory: cfg.Directory, Repo: cfg.GitHubRepo(), Host: cfg.GitHub.Host, Completed: []*bot.Candidate{eligible, legacy}}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.StateDirectory, "state.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	run := func(context.Context, bot.Config, *slog.Logger, bool) error {
+		t.Fatal("publish started research")
+		return nil
+	}
+	original := publishProposal
+	t.Cleanup(func() { publishProposal = original })
+	publishProposal = func(context.Context, bot.Config, *slog.Logger, string, io.Writer) error {
+		t.Fatal("listing published")
+		return nil
+	}
+	// Listing needs no gh, Git or agent.
+	searchPath := os.Getenv("PATH")
+	t.Setenv("PATH", t.TempDir())
+	output, err := os.CreateTemp(dir, "stdout-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout := os.Stdout
+	os.Stdout = output
+	listErr := executeWithRun(context.Background(), []string{"publish", "--list", "--config", path}, log, run)
+	os.Stdout = stdout
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := os.ReadFile(output.Name())
+	if listErr != nil || err != nil {
+		t.Fatal(listErr, err)
+	}
+	for _, want := range []string{bot.ProposalSelector(eligible), "Eligible proposal", bot.ProposalSelector(legacy), "ineligible: no recorded source commit", "cccccccccccc"} {
+		if !strings.Contains(string(listed), want) {
+			t.Fatalf("listing lacks %q: %s", want, listed)
+		}
+	}
+	for _, args := range [][]string{
+		{"publish", "--config", path},
+		{"publish", "--config", path, "--list", "--proposal", "x"},
+		{"publish", "--config", path, "--proposal", "x", "--dry-run"},
+		{"once", "--config", path, "--proposal", "x"},
+		{"report", "--config", path, "--list"},
+		{"publish", "--config", path, "--list", "--status", "dry_run"},
+	} {
+		if err := executeWithRun(context.Background(), args, log, run); err == nil {
+			t.Fatalf("accepted %v", args)
+		}
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+searchPath)
+	var selected string
+	publishProposal = func(_ context.Context, c bot.Config, _ *slog.Logger, selector string, _ io.Writer) error {
+		if c.GitHubRepo() != "o/r" {
+			t.Fatalf("wrong config %+v", c)
+		}
+		selected = selector
+		return nil
+	}
+	if err := executeWithRun(context.Background(), []string{"publish", "--config", path, "--proposal", bot.ProposalSelector(eligible)}, log, run); err != nil || selected != bot.ProposalSelector(eligible) {
+		t.Fatalf("selection %q %v", selected, err)
+	}
+}
