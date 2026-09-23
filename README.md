@@ -20,7 +20,9 @@ make build
 ./bin/bt web --demo
 ```
 
-Bare `bt` runs in the foreground and prints its browser URL. Ctrl+C, SIGTERM or
+Bare `bt` runs in the foreground and prints its browser URL. The URL carries the
+access key, so it is printed only to a terminal; redirected output and the
+background service's log point to `bt web` instead. Ctrl+C, SIGTERM or
 SIGHUP stops Town, its bots and their agent processes. Closing the browser does
 not stop the service. Demo mode is isolated and never invokes bots, agents or GitHub.
 
