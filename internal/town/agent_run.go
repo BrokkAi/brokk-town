@@ -1,7 +1,8 @@
-package reviewbot
+package town
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,34 +12,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/acp-go"
+	acp "github.com/BrokkAi/acp-go"
 	"github.com/BrokkAi/acp-go/clienthost"
 	"github.com/BrokkAi/acp-go/runner"
 	"github.com/BrokkAi/acp-go/schema"
-	"github.com/BrokkAi/review-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
-type Agent interface {
-	Execute(context.Context, string) (string, error)
-}
-type agentProcess struct {
-	config Config
-	log    *slog.Logger
-}
-
-// Execute follows acp-go v0.8.1 runner/runner.go (Apache-2.0, Copyright 2026
-// Brokk.ai and contributors; originally part of BrokkAi/release-bot), as
-// feature-bot's agentProcess and Town's executeACP do. runner.Execute has no
-// hook between model and effort selection, and its SetEffort dropped v0.1.0's
-// fallback to an uncategorized thought_level option; setEffort restores it so
-// an effort Town lists for this harness still selects. Keep the lifecycle
-// aligned with the upstream runner otherwise.
-func (a agentProcess) Execute(ctx context.Context, prompt string) (result string, runErr error) {
-	log := a.log
+// executeACP follows acp-go v0.8.1 runner/runner.go (Apache-2.0, Copyright
+// 2026 Brokk.ai and contributors; originally part of BrokkAi/release-bot), as
+// feature-bot's agentProcess does. runner.Execute has no hook between model
+// and effort selection, and its SetEffort dropped v0.1.0's fallback to an
+// uncategorized thought_level option; setEffort restores it so a run selects
+// the same effort option the choice probe lists. Keep the lifecycle aligned
+// with the upstream runner otherwise.
+func executeACP(ctx context.Context, cfg runner.Config, log *slog.Logger, prompt string) (result string, runErr error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	cfg := a.config
+	if cfg.ClientInfo.Name == "" || cfg.ClientInfo.Version == "" {
+		cfg.ClientInfo = acp.ClientInfo{Name: "acp-go-runner", Version: "0.1.0"}
+	}
 	if len(cfg.Agent.Command) == 0 || cfg.Agent.Command[0] == "" {
 		return "", &runner.SetupError{Err: errors.New("agent command is required")}
 	}
@@ -62,7 +56,7 @@ func (a agentProcess) Execute(ctx context.Context, prompt string) (result string
 		return result, err
 	}
 	defer host.Close()
-	host.SetAutoApprove(true)
+	host.SetAutoApprove(cfg.AutoApprove)
 	log.Info("Starting agent", "command", strings.Join(cfg.Agent.Command, " "), "transcript", transcript.Name())
 	cmd := osrun.StartCommand(context.Background(), cfg.Directory, cfg.Agent.Command, cfg.Agent.Environment)
 	diagnostics := &osrun.Tail{Capacity: 64 << 10}
@@ -108,7 +102,7 @@ func (a agentProcess) Execute(ctx context.Context, prompt string) (result string
 	}()
 	capabilities := acp.WorkspaceCapabilities(true, true, true)
 	capabilities.Session = acp.ConfigOptionsClientCapabilities(true)
-	init, err := connection.InitializeWithInfo(ctx, capabilities, acp.ClientInfo{Name: "review-bot", Version: "0.1.0"})
+	init, err := connection.InitializeWithInfo(ctx, capabilities, cfg.ClientInfo)
 	if err != nil {
 		return result, err
 	}
@@ -183,6 +177,10 @@ func selectOption(options []schema.SessionConfigOption, name string) *schema.Ses
 	return nil
 }
 
+func modelOption(options []schema.SessionConfigOption) *schema.SessionConfigOption {
+	return selectOption(options, "model")
+}
+
 // effortOption keeps acp-go v0.1.0's order: thought_level, then Codex's
 // reasoning_effort. acp-go v0.8.1 SetEffort only honors the thought_level
 // category and an uncategorized reasoning_effort ID.
@@ -217,4 +215,36 @@ func setEffort(ctx context.Context, connection *acp.Connection, session *acp.Ses
 		session.ConfigOptions = compatible.ConfigOptions
 	}
 	return err
+}
+
+// selectValues flattens a select option's values exactly as acp-go does when
+// selecting one: the first entry decides between flat and grouped values.
+func selectValues(option *schema.SessionConfigOption) ([]ChoiceValue, error) {
+	out := []ChoiceValue{}
+	if option == nil || option.Select.Options == nil {
+		return out, nil
+	}
+	encoded, err := json.Marshal(option.Select.Options)
+	if err != nil {
+		return nil, err
+	}
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &items); err != nil || len(items) == 0 {
+		return out, err
+	}
+	var flat []schema.SessionConfigSelectOption
+	if _, grouped := items[0]["group"]; grouped || json.Unmarshal(encoded, &flat) != nil {
+		var groups []schema.SessionConfigSelectGroup
+		if err := json.Unmarshal(encoded, &groups); err != nil {
+			return nil, fmt.Errorf("unsupported %s options: %w", option.Name, err)
+		}
+		flat = nil
+		for _, group := range groups {
+			flat = append(flat, group.Options...)
+		}
+	}
+	for _, value := range flat {
+		out = append(out, ChoiceValue{Value: string(value.Value), Name: value.Name})
+	}
+	return out, nil
 }

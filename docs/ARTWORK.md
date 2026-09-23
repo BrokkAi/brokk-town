@@ -56,6 +56,23 @@ request number, and an impact burst where the work arrived. No new image assets
 are used, so the atlases and `docs/artwork-prompts.json` are unchanged.
 `internal/web/skins.js` is the one surface both themes answer.
 
+## Frontline artwork refresh (2026-09-23)
+
+Frontline now uses four original RGBA atlases in `internal/web/assets`:
+`frontline-vanguard.png`, `frontline-ascendancy.png`, `frontline-hive.png`, and
+`frontline-craft.png`. The three building atlases each hold eight structures in
+role order, four columns by two rows. The craft atlas holds one craft per
+faction, left to right. They were generated with the built-in `image_gen` tool
+for this project and are included under its Apache-2.0 distribution. The art
+uses the detailed isometric industrial, psionic, and biological vocabulary of
+classic space strategy games; it does not reuse game assets or named designs.
+
+`frontline.js` draws the atlases over the existing seeded battlefield and
+retains its canvas shapes as a loading fallback. The browser loads images once
+per faction, outside the draw loop. Committed deliveries, animation timing,
+reduced motion, and all service commands are unchanged. The Frontline CSS adds
+metal-framed map and HUD surfaces. The Town skin still uses its original art.
+
 The theme is presentation only. A base's faction comes from the repository name
 and can be pinned per base in the browser; `?skin=frontline` opens the theme for
 whoever the link is sent to. Strikes still follow committed events, the motion

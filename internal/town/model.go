@@ -635,16 +635,18 @@ func (s *State) Add(c Config) (*Town, error) {
 		return nil, err
 	}
 	id := strings.ToLower(c.Repo)
-	if _, ok := s.Towns[id]; ok {
-		t := s.Towns[id]
+	if t := s.Towns[id]; t != nil {
 		if !t.Deleted {
 			return nil, fmt.Errorf("town already exists")
 		}
-		// Retain ownership, worktrees and uncertain writes when restoring a town.
-		// Restoration never resumes automation or pending issue submissions.
-		t.Deleted = false
-		t.Workers[Repo].Enabled = true
-		t.Workers[Repo].Next = time.Time{}
+		if c.Branch == "" {
+			// Adding names no branch; the restored town keeps the branch its
+			// recovery records were made on.
+			c.Branch = t.Config.Branch
+		}
+		if err := t.Restore(c); err != nil {
+			return nil, err
+		}
 		return t, nil
 	}
 	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, FunnelIntents: map[string]*WriteIntent{}, FunnelSyncs: map[FunnelID]*FunnelSync{}, Reports: []Report{}, Bulletins: []Bulletin{}, Outcomes: []OutcomeRecord{}}
@@ -653,6 +655,29 @@ func (s *State) Add(c Config) (*Town, error) {
 	}
 	s.Towns[id] = t
 	return t, nil
+}
+
+// Restore revives a deleted town under the complete configuration c.
+// Ownership, worktrees, tasks and uncertain writes are retained; restoration
+// never resumes automation or pending issue submissions. An initialized town
+// cannot be restored onto a different named branch in place; an empty branch
+// follows the repository default.
+func (t *Town) Restore(c Config) error {
+	if !t.Deleted {
+		return fmt.Errorf("town %s is not deleted", t.ID)
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if t.Initialized && c.Branch != "" && c.Branch != t.Branch() {
+		return fmt.Errorf("cannot restore town %s from branch %s onto %s; use a separate state directory", t.ID, t.Branch(), c.Branch)
+	}
+	t.Config = c
+	t.Deleted = false
+	for r, w := range t.Workers {
+		w.Enabled, w.Status, w.Next = r == Repo, "paused", time.Time{}
+	}
+	return nil
 }
 
 // Branch is the branch this town actually works on: the operator's choice when

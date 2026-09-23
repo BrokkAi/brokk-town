@@ -132,6 +132,9 @@ func (s *Supervisor) SubmitRequest(id string, input IssueRequest) (*IssueRequest
 	return result, err
 }
 
+// ErrUnknownRequest reports a submission ID this town has never recorded.
+var ErrUnknownRequest = errors.New("unknown request")
+
 // Recheck only reads GitHub. An uncertain POST is never blindly sent again.
 func (s *Supervisor) RecheckRequest(id, requestID string) error {
 	err := s.Store.Update(func(st *State) error {
@@ -140,7 +143,10 @@ func (s *Supervisor) RecheckRequest(id, requestID string) error {
 			return errors.New("unknown town")
 		}
 		r := t.Requests[requestID]
-		if r == nil || r.Status != "uncertain" {
+		if r == nil {
+			return fmt.Errorf("%w %q", ErrUnknownRequest, requestID)
+		}
+		if r.Status != "uncertain" {
 			return errors.New("request does not need reconciliation")
 		}
 		r.Next = time.Time{}
