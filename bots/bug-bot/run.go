@@ -259,8 +259,13 @@ func (e engine) step(ctx context.Context, s *State, force bool) error {
 	if err := e.save(s); err != nil {
 		return err
 	}
-	e.report(s, "attempt", "Loading GitHub issue history")
-	err = e.attempt(ctx, s, g, w)
+	// Setup belongs to the counted attempt: its failures keep pending findings,
+	// consume the attempt and wait the retry delay like any other failure.
+	err = e.setup(ctx, s, w)
+	if err == nil {
+		e.report(s, "attempt", "Loading GitHub issue history")
+		err = e.attempt(ctx, s, g, w)
+	}
 	if err == nil || s.Scan == nil {
 		return err
 	}
@@ -275,6 +280,31 @@ func (e engine) step(ctx context.Context, s *State, force bool) error {
 }
 func containsMarker(i Issue, key string) bool {
 	return strings.Contains(i.Body, marker(key))
+}
+
+// setup runs the operator's workspace preparation once per counted attempt,
+// within the attempt timeout. It may add untracked or ignored prerequisites but
+// must leave HEAD and tracked source unchanged. Only the tail of its combined
+// output is kept for the saved failure.
+func (e engine) setup(ctx context.Context, s *State, w checkout) error {
+	if len(e.config.Setup) == 0 {
+		return nil
+	}
+	e.report(s, "preparing", "Running workspace setup")
+	e.log.Info("Running workspace setup", "commit", s.Scan.Commit, "directory", w.config.Directory)
+	cmd := osrun.StartCommand(ctx, w.config.Directory, e.config.Setup, map[string]string{"BUG_COMMIT": s.Scan.Commit})
+	output := &osrun.Tail{Capacity: 16 << 10}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		text, _ := output.Text()
+		// Report the deadline or cancellation, not only the killed process.
+		return fmt.Errorf("workspace setup: %s: %w\n%s", e.config.Setup[0], errors.Join(err, ctx.Err()), text)
+	}
+	if err := w.verify(ctx, s.Scan); err != nil {
+		return fmt.Errorf("workspace setup changed the scan worktree: %w", err)
+	}
+	return nil
 }
 
 func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
