@@ -29,6 +29,13 @@ type Scan struct {
 	Candidates []*Candidate `json:"candidates,omitempty"`
 	Discovered bool         `json:"discovered"`
 }
+
+// LastCompleted records the most recent revision whose discovered scan finished
+// without being discarded as stale, and whether it ran without publishing.
+type LastCompleted struct {
+	Commit string `json:"commit"`
+	DryRun bool   `json:"dry_run"`
+}
 type State struct {
 	Format    int          `json:"format"`
 	Remote    string       `json:"remote"`
@@ -40,6 +47,8 @@ type State struct {
 	History   []string     `json:"history,omitempty"`
 	Completed []*Candidate `json:"completed,omitempty"`
 	NextScan  time.Time    `json:"next_scan,omitempty"`
+	// Absent in state written before only_on_change; such state scans once.
+	LastCompleted *LastCompleted `json:"last_completed,omitempty"`
 }
 
 func newState(cfg Config) *State {
@@ -59,6 +68,9 @@ func ReadState(cfg Config) (*State, error) {
 	}
 	if s.Format != 1 || s.Remote != cfg.Remote || s.Branch != cfg.Branch || s.Directory != cfg.Directory || s.Repo != cfg.GitHubRepo() || s.Host != cfg.GitHub.Host {
 		return nil, errors.New("state version or repository identity differs from configuration")
+	}
+	if s.LastCompleted != nil && !validCommit(s.LastCompleted.Commit) {
+		return nil, errors.New("invalid saved completed commit")
 	}
 	candidates := append([]*Candidate(nil), s.Completed...)
 	if s.Scan != nil {

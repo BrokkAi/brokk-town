@@ -318,6 +318,10 @@ func (d *dashboard) render(width, height int, now time.Time, color bool) string 
 	if p.Phase == "waiting" || p.Phase == "paused" {
 		if !p.WakeAt.IsZero() {
 			task = "Next check in " + elapsed(max(time.Duration(0), p.WakeAt.Sub(now))) + " · " + p.WakeAt.Local().Format("15:04:05")
+			// Keep a waiting explanation, such as an unchanged branch, beside the countdown.
+			if p.Phase == "waiting" && p.Task != "" && p.Task != "Next scan" {
+				task = p.Task + " · " + task
+			}
 		}
 	}
 	if d.stopping {

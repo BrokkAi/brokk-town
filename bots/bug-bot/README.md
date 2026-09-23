@@ -50,6 +50,7 @@ make build
 ./bin/bbb once /path/to/your-repo --dry-run
 ./bin/bbb once /path/to/your-repo --focus "parser and input validation"
 ./bin/bbb /path/to/your-repo --max-issues 2 --label bug
+./bin/bbb /path/to/your-repo --only-on-change
 ./bin/bbb /path/to/your-repo --model YOUR_MODEL_ID --effort low
 ./bin/bbb /path/to/your-repo --model SCAN_MODEL_ID --review-model REVIEW_MODEL_ID --review-effort high
 ./bin/bbb status /path/to/your-repo
@@ -147,6 +148,17 @@ belonging to that report. The bot does not reopen or comment on it.
 The default is at most **three issues per scan**, a **two-hour attempt budget**,
 and another scan **30 minutes after completion**, even if the commit is unchanged.
 Recent summaries guide exploration; this is not a claim of exhaustive coverage.
+With `only_on_change` (`--only-on-change`), the daemon still fetches at each poll
+but starts no investigation while the branch commit matches the last completed
+scan for the same dry-run setting; the dashboard reports the unchanged branch and
+the next check. A completed scan is one whose findings were all reviewed,
+including a scan with zero findings; a scan discarded because the branch
+advanced does not count. Switching from dry-run to publication permits a new scan
+of the same commit. Saved state from earlier versions scans once to establish the
+baseline. Uncertain publications, pending retries and exhausted budgets are
+handled before this check, and `once` always runs. This is a polling policy, not
+a claim that the revision was exhaustively investigated; use `once` to rescan after
+changing focus or model settings.
 `once` runs or resumes one scan and exits. Failed scans retain their candidates,
 workspace, and diagnostics; retries wait at least 15 minutes and run on the next
 poll, with three attempts before requiring `retry`. Agent startup failures are
@@ -231,6 +243,7 @@ See [bug-bot.example.json](bug-bot.example.json).
   "focus": "",
   "labels": [],
   "dry_run": false,
+  "only_on_change": false,
   "agent": {"command": ["codex-acp"]}
 }
 ```

@@ -54,10 +54,13 @@ type Config struct {
 	Attempts   int      `json:"attempts"`
 	Labels     []string `json:"labels,omitempty"`
 
-	MaxIssues int      `json:"max_issues"`
-	DryRun    bool     `json:"dry_run"`
-	Focus     string   `json:"focus,omitempty"`
-	Verify    []string `json:"verify,omitempty"`
+	MaxIssues int  `json:"max_issues"`
+	DryRun    bool `json:"dry_run"`
+	// OnlyOnChange skips daemon polls whose fetched commit matches the last
+	// completed scan for the same dry-run setting. Once invocations always run.
+	OnlyOnChange bool     `json:"only_on_change"`
+	Focus        string   `json:"focus,omitempty"`
+	Verify       []string `json:"verify,omitempty"`
 }
 
 func DefaultConfig() Config {
