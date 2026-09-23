@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
 )
@@ -280,15 +281,18 @@ for line in sys.stdin:
 	e.agent = func(cfg Config, stage string) Agent {
 		return agentProcess{config: cfg, log: e.log.With("stage", stage)}
 	}
+	// Bound the real subprocesses so a stuck fake agent fails the test instead of hanging it.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 	var setup *runner.SetupError
-	if err := e.step(context.Background(), s, true); !errors.As(err, &setup) || !strings.Contains(err.Error(), "unsupported") {
+	if err := e.step(ctx, s, true); !errors.As(err, &setup) || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("expected setup error for unsupported review model, got %v", err)
 	}
 	if got, _ := os.ReadFile(record); string(got) != "scan scout\n" || source.creates != 0 || s.Scan.Candidates[0].Status != "pending" {
 		t.Fatalf("prompts %q, creates %d, scan %+v", got, source.creates, s.Scan)
 	}
 	e.config.ReviewModel = ptr("judge")
-	if err := e.step(context.Background(), s, true); err != nil {
+	if err := e.step(ctx, s, true); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(record); string(got) != "scan scout\nreview judge\n" || source.creates != 1 {

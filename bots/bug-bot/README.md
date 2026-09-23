@@ -231,8 +231,7 @@ See [bug-bot.example.json](bug-bot.example.json).
   "focus": "",
   "labels": [],
   "dry_run": false,
-  "agent": {"command": ["codex-acp"], "effort": "medium"},
-  "review_effort": "high"
+  "agent": {"command": ["codex-acp"]}
 }
 ```
 
@@ -247,7 +246,9 @@ validation and every duplicate-review batch, including reviews after issue
 history changes and reviews of pending findings resumed from a saved scan, use
 `review_model` and `review_effort` (`--review-model`, `--review-effort`). Each
 omitted review setting inherits the discovery setting; CLI flags override JSON,
-and blank values are rejected. Review runs with the same agent command,
+and blank values are rejected. For example, adding
+`"review_model": "REVIEW_MODEL_ID"` to the configuration keeps discovery on
+`agent.model` while review uses `REVIEW_MODEL_ID`. Review runs with the same agent command,
 environment, workspace, retries, timeout, and publication gates. A review model
 or effort the adapter does not offer stops the scan with a setup error before any
 review prompt; pending findings stay pending and never fall back to the discovery

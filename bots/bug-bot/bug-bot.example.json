@@ -12,7 +12,6 @@
   "focus": "",
   "labels": [],
   "dry_run": false,
-  "agent": {"command": ["codex-acp"], "effort": "medium"},
-  "review_effort": "high",
+  "agent": {"command": ["codex-acp"]},
   "github": {"host": "github.com"}
 }
