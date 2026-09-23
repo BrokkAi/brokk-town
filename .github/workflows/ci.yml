@@ -1,18 +1,32 @@
 name: CI
-on: [push, pull_request, workflow_dispatch, workflow_call]
+# Pushes only run CI on master: a pull request branch is already covered by its
+# pull_request run, and a release tag by the release workflow's own call.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
+# A newer push to a pull request cancels its older run so it stops holding a
+# runner. Master and release runs always finish.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     # One runner per platform covers every module. Fanning the nine modules out
     # across nine runners per platform asked for nine macOS machines at once,
     # and macOS runners queue: concurrent runs starved each other while the work
     # itself takes under half an hour in total. Every module pins the same Go
-    # version, so one toolchain setup serves them all.
+    # version, so one toolchain setup serves them all. The account's runner
+    # limit is tight, so pull requests run on Ubuntu only; macOS runs on master
+    # and releases.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
