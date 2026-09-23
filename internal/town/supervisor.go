@@ -912,6 +912,13 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 // Mayor's decline for Town's own proposals, or Simplifier's auto decline for an
 // intake issue. Closing is idempotent, so an issue that is already closed is
 // skipped and an uncertain attempt is retried by the next inventory.
+//
+// The candidates come from a snapshot, and the Mayor can admit an auto-declined
+// issue while this runs. Each issue is therefore claimed under the store just
+// before the GitHub write: the claim rechecks the decline and moves an
+// auto-declined issue to "closing", which the Mayor's admission refuses. The
+// claim stays until an inventory confirms the closure, so an uncertain write is
+// retried rather than admitted.
 func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote RepoSnapshot) error {
 	if t == nil || t.Deleted {
 		return nil
@@ -924,9 +931,7 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	}
 	numbers := []int{}
 	for _, task := range t.Tasks {
-		mayorDeclined := !task.External && task.MayoralDecision == "declined"
-		simplifierDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
-		if task.Kind == "issue" && (mayorDeclined || simplifierDeclined) && open[task.Number] {
+		if closableDecline(task) && open[task.Number] {
 			numbers = append(numbers, task.Number)
 		}
 	}
@@ -934,6 +939,28 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	var failures error
 	for _, n := range numbers {
 		id := fmt.Sprintf("issue:%d", n)
+		claimed := false
+		if err := s.Store.Update(func(st *State) error {
+			current := st.Towns[t.ID]
+			if current == nil || current.Deleted {
+				return nil
+			}
+			task := current.Tasks[id]
+			if !closableDecline(task) {
+				return nil
+			}
+			if task.MayoralDecision == "" && task.Stage == "declined" {
+				task.Stage = "closing"
+				task.Updated = s.now()
+			}
+			claimed = true
+			return nil
+		}); err != nil {
+			return errors.Join(failures, err)
+		}
+		if !claimed {
+			continue
+		}
 		if err := s.GitHub.CloseIssue(ctx, t.Config.Repo, n); err != nil {
 			failures = errors.Join(failures, fmt.Errorf("close declined issue #%d: %w", n, err))
 			continue
@@ -944,12 +971,10 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 			if current == nil || task == nil {
 				return nil
 			}
-			mayorDeclined := task.MayoralDecision == "declined"
-			simplifierDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
-			if !mayorDeclined && !simplifierDeclined {
+			if !closableDecline(task) {
 				return nil
 			}
-			if mayorDeclined {
+			if task.MayoralDecision == "declined" {
 				task.Detail = "The Mayor declined this proposal. Town closed the issue."
 				st.Event(t.ID, "decision", "hall", string(Repo), id, "Declined proposal closed: "+task.Title, s.now())
 			} else {
@@ -962,6 +987,19 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 		}
 	}
 	return failures
+}
+
+// closableDecline reports whether Town still holds a final decline it carries
+// out by closing the issue: the Mayor's decline of Town's own proposal, or
+// Simplifier's auto decline that nobody has escalated to the Mayor or admitted.
+func closableDecline(task *Task) bool {
+	if task == nil || task.Kind != "issue" {
+		return false
+	}
+	if task.MayoralDecision == "declined" {
+		return !task.External
+	}
+	return task.MayoralDecision == "" && task.House == Hall && autoDeclined(task) && (task.Stage == "declined" || task.Stage == "closing" || task.Stage == "locked")
 }
 func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
 	if action == "delete" {

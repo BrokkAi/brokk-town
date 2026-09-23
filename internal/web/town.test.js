@@ -202,6 +202,8 @@ test("inbox gathers decisions and stuck work from every town, longest wait first
   });
   assert.equal(needs.total, 6);
   assert.deepEqual(inbox(null), { decisions: [], attention: [], towns: {}, total: 0 });
+  const offBranch = inbox({ towns: { "acme/x": { id: "acme/x", config: { repo: "acme/x" }, tasks: { "pr:5": { id: "pr:5", kind: "pr", number: 5, house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", blocked: true } } } } });
+  assert.equal(offBranch.towns["acme/x"].decisions, 0, "a blocked decision is not one to decide, as Mayor Bot skips it");
   assert.equal(decisionReason({ external: true, audit: { verdict: "changes_needed" } }), "Town review asked for changes");
   const now = Date.parse("2026-09-15T12:00:00Z");
   assert.equal(ago("2026-09-15T11:59:40Z", now), "just now");

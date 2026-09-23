@@ -202,7 +202,7 @@ export function townSummary(town) {
     queued: tasks.filter(
       (t) => !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
     ).length,
-    decisions: tasks.filter((t) => t.mayoral_decision === "pending").length,
+    decisions: tasks.filter((t) => t.mayoral_decision === "pending" && !t.blocked).length,
     release: town.last_release || "No releases yet",
   };
 }
@@ -281,7 +281,9 @@ export function inbox(state) {
     });
     for (const task of Object.values(town.tasks || {})) {
       if (!task) continue;
-      if (task.mayoral_decision === "pending") {
+      // A blocked decision (a pull request retargeted off the branch) is not
+      // one Mayor Bot takes up either; it shows as blocked instead.
+      if (task.mayoral_decision === "pending" && !task.blocked) {
         counts.decisions++;
         decisions.push({
           ...base(task),
@@ -366,7 +368,7 @@ export const taskStatuses = {
   unreleased: { label: "Unreleased", className: "unreleased" },
   implemented: { label: "Implemented", className: "implemented" },
   complete: { label: "Done", className: "complete" },
-  closing: { label: "Closing after review", className: "closed" },
+  closing: { label: "Closing", className: "closed" },
   closed: { label: "Closed", className: "closed" },
   merged: { label: "Merged", className: "merged" },
   shipped: { label: "Shipped", className: "shipped" },

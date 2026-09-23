@@ -225,9 +225,21 @@
   where a revision already carried the decline out of Town Hall (including a
   retired or reviewed pull request) has the stale decline cleared on the next
   inventory. Town's own pull request declined by Simplifier is never closed and
-  strands its issue; tracked separately in #126.
+  strands its issue; tracked separately in #126. "Admit anyway" asks for
+  confirmation.
+- The declined-issue closer claims each issue under the store just before the
+  GitHub write: it rechecks the decline, and an auto-declined issue moves to
+  `closing`, which admission refuses, until an inventory confirms the closure.
+  An admission that lands first makes the closer skip the issue.
+- Someone reopening an issue Town closed on Simplifier's decline is an appeal:
+  the issue waits for the Mayor with Simplifier's assessment attached, and the
+  closer leaves it alone. Reopening neither re-closes it nor admits it, so no
+  decision is made for the Mayor.
 - Mayor Bot skips blocked decisions, as other selectors do, so it does not
-  judge a pull request retargeted off this town's branch.
+  judge a pull request retargeted off this town's branch; the browser's "to
+  decide" counts skip them too.
+- Reconcile treats an explicit `"pull_request": null` in the issue inventory as
+  an issue rather than a pull request.
 - A pull request returning from another base branch resumes its intake or
   decline instead of going to Review; a pending one used to fail state
   validation there.

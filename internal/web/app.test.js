@@ -459,7 +459,12 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.ok(declined, "Town Hall lists work Simplifier declined");
   declined.onclick();
   assert.match(elements.inspection.textContent, /Simplifier declined this/, "the overrule explains itself");
+  globalThis.confirm = () => false;
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"task":"pr:4"')), false, "refusing the confirmation sends nothing");
+  globalThis.confirm = (message) => { assert.match(message, /over Simplifier's decline/); return true; };
+  await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
+  globalThis.confirm = () => true;
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"') && request.options.body.includes('"task":"pr:4"')), true, "admitting anyway uses the Mayoral decision command");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();

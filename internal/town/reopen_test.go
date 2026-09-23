@@ -108,10 +108,19 @@ func TestReopenedIssueKeepsItsDecision(t *testing.T) {
 	reconcileIssues(t, state, town, open)
 	task := town.Tasks["issue:8"]
 	applySimplification(state, town, task, &Simplification{Mode: "auto", Decision: "decline", Detail: "No callers."}, nil, time.Now())
-	reconcileIssues(t, state, town, closed)
+	// A lock round trip leaves the decline in place.
+	locked := open
+	locked.Locked = true
+	reconcileIssues(t, state, town, locked)
 	reconcileIssues(t, state, town, open)
 	if task.House != Hall || task.Stage != "declined" || selectedBy(town, task) != "" {
-		t.Fatalf("reopening overturned Simplifier's decline: %s/%s", task.House, task.Stage)
+		t.Fatalf("unlocking overturned Simplifier's decline: %s/%s", task.House, task.Stage)
+	}
+	// Reopening after the closure is an appeal to the Mayor, not an admission.
+	reconcileIssues(t, state, town, closed)
+	reconcileIssues(t, state, town, open)
+	if selectedBy(town, task) != "mayor" || closableDecline(task) {
+		t.Fatalf("reopened declined issue was not appealed to the Mayor: %s/%s", task.House, task.Stage)
 	}
 
 	// A Mayoral admission is kept across a closure; only pending is cleared.

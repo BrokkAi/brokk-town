@@ -3,6 +3,7 @@ package town
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -81,8 +82,95 @@ func TestSimplifierAutoDeclineClosesIssue(t *testing.T) {
 	if len(gh.closed) != 1 || gh.closed[0] != 21 {
 		t.Fatalf("auto decline did not close exactly once: %v", gh.closed)
 	}
-	if task := store.Snapshot().Towns[town.ID].Tasks[task.ID]; task.Stage != "declined" || task.Simplification.Decision != "decline" {
+	// The claim holds until an inventory confirms the closure.
+	if task := store.Snapshot().Towns[town.ID].Tasks[task.ID]; task.Stage != "closing" || task.Simplification.Decision != "decline" {
 		t.Fatalf("closure erased simplifier decision: %+v", task)
+	}
+	if err := supervisor.reconcileNow(context.Background(), store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if task := store.Snapshot().Towns[town.ID].Tasks[task.ID]; task.Stage != "closed" || len(gh.closed) != 1 {
+		t.Fatalf("confirmed closure: stage=%s closes=%v", task.Stage, gh.closed)
+	}
+}
+
+func autoDeclinedIssue(t *testing.T) (*Store, *Town, *fakeGH, *Supervisor) {
+	t.Helper()
+	store := testStore(t, false)
+	town := addTown(t, store)
+	task := &Task{ID: "issue:21", Kind: "issue", Number: 21, Title: "Speculative matrix", Stage: "declined", House: Hall, External: true, Simplification: &Simplification{Mode: "auto", Decision: "decline", Detail: "No callers."}, Updated: time.Now()}
+	update(t, store, func(st *State) { st.Towns[town.ID].Tasks[task.ID] = task })
+	gh := &fakeGH{snapshot: inventory()}
+	gh.snapshot.Issues = []RemoteIssue{{Number: 21, Title: task.Title, State: "open"}}
+	return store, town, gh, NewSupervisor(store, gh, observing{gh: gh})
+}
+
+func TestAdmittedIssueIsNotClosedFromAStaleSnapshot(t *testing.T) {
+	store, town, gh, supervisor := autoDeclinedIssue(t)
+	stale := store.Snapshot().Towns[town.ID]
+	// The Mayor admits the issue after the closer read its candidates.
+	if err := supervisor.Control(town.ID, Hall, "admit", "issue:21"); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.closeDeclinedProposals(context.Background(), stale, gh.snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(gh.closed) != 0 {
+		t.Fatalf("Town closed an issue the Mayor had admitted: %v", gh.closed)
+	}
+	if task := store.Snapshot().Towns[town.ID].Tasks["issue:21"]; task.House != Issue || task.Stage != "queued" {
+		t.Fatalf("admission was disturbed: %s/%s", task.House, task.Stage)
+	}
+}
+
+func TestClaimedClosureRefusesAdmission(t *testing.T) {
+	store, town, gh, supervisor := autoDeclinedIssue(t)
+	// The close write fails without a known outcome; the claim stays.
+	gh.closeError = errors.New("connection reset")
+	if err := supervisor.closeDeclinedProposals(context.Background(), store.Snapshot().Towns[town.ID], gh.snapshot); err == nil {
+		t.Fatal("a failed close was not reported")
+	}
+	if task := store.Snapshot().Towns[town.ID].Tasks["issue:21"]; task.Stage != "closing" {
+		t.Fatalf("the close was not claimed: %+v", task)
+	}
+	if err := supervisor.Control(town.ID, Hall, "admit", "issue:21"); err == nil {
+		t.Fatal("the Mayor admitted an issue Town may already have closed")
+	}
+	// The next attempt still closes it.
+	gh.closeError = nil
+	if err := supervisor.closeDeclinedProposals(context.Background(), store.Snapshot().Towns[town.ID], gh.snapshot); err != nil || len(gh.closed) != 1 {
+		t.Fatalf("the claimed close was not retried: %v %v", err, gh.closed)
+	}
+}
+
+func TestReopeningAnAutoClosedIssueAppealsToTheMayor(t *testing.T) {
+	store, town, gh, supervisor := autoDeclinedIssue(t)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ { // close, then observe the closure
+		if err := supervisor.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if task := store.Snapshot().Towns[town.ID].Tasks["issue:21"]; task.Stage != "closed" {
+		t.Fatalf("auto-declined issue was not closed: %+v", task)
+	}
+	gh.snapshot.Issues[0].State = "open"
+	if err := supervisor.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	current := store.Snapshot().Towns[town.ID]
+	task := current.Tasks["issue:21"]
+	if len(gh.closed) != 1 || nextJudgment(current, time.Now()) == nil || task.MayoralDecision != "pending" || task.Simplification == nil {
+		t.Fatalf("reopen was not appealed to the Mayor: closes=%v task=%+v", gh.closed, task)
+	}
+	if err := supervisor.Control(town.ID, Hall, "admit", "issue:21"); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if task := store.Snapshot().Towns[town.ID].Tasks["issue:21"]; len(gh.closed) != 1 || task.House != Issue || task.Stage != "queued" {
+		t.Fatalf("admitted appeal did not reach Issue Bot: closes=%v %s/%s", gh.closed, task.House, task.Stage)
 	}
 }
 

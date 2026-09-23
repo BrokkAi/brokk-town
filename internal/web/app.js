@@ -822,7 +822,7 @@ $("#capacity-form").onsubmit = async (event) => {
   }
 };
 function pendingDecisions(t) {
-  return queueFor(t || {}, "hall").filter((task) => task.mayoral_decision === "pending").length;
+  return queueFor(t || {}, "hall").filter((task) => task.mayoral_decision === "pending" && !task.blocked).length;
 }
 // simplifierDeclined marks work Simplifier declined in auto mode. The decline
 // is final unless the Mayor admits it anyway.
@@ -963,15 +963,20 @@ function renderInspection() {
     const decisionButtons = [...out.querySelectorAll("button")];
     const admit = decisionButtons.find((button) => button.id === "admit-task"),
       decline = decisionButtons.find((button) => button.id === "decline-task");
-    if (admit) admit.onclick = () => command("admit", "hall", selectedTask);
+    if (admit)
+      admit.onclick = () => {
+        if (simplifierDeclined(task) && !globalThis.confirm(`Admit ${task.kind === "pr" ? "PR" : "issue"} #${task.number} over Simplifier's decline? Town will act on it, and the decline cannot be restored.`)) return;
+        return command("admit", "hall", selectedTask);
+      };
     if (decline) decline.onclick = () => command("decline", "hall", selectedTask);
     return;
   }
   if (selectedHouse === "hall") {
     const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
-    const overrulable = Object.values(t.tasks || {}).filter(simplifierDeclined).sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+    // Newest first and capped, like the other Town Hall feeds.
+    const overrulable = Object.values(t.tasks || {}).filter(simplifierDeclined).sort((a, b) => (b.number ?? 0) - (a.number ?? 0));
     const overrulableBlock = overrulable.length
-      ? `<h3>Declined by Simplifier</h3>${overrulable.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · you can admit it anyway</small></button>`).join("")}`
+      ? `<h3>Declined by Simplifier</h3>${overrulable.slice(0, 20).map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · you can admit it anyway</small></button>`).join("")}${overrulable.length > 20 ? `<p class="muted">${overrulable.length - 20} older declined items are not shown.</p>` : ""}`
       : "";
     const outcomes = outcomeReport(t.outcomes || [], outcomeDays > 0 ? new Date(Date.now() - outcomeDays * 86400000) : new Date(0));
     const metric = (value, label) => `<span><strong>${value}</strong>${label}</span>`;

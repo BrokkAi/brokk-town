@@ -27,7 +27,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		t.DefaultBranch = observed
 	}
 	for _, i := range remote.Issues {
-		if len(i.Pull) > 0 {
+		if len(i.Pull) > 0 && string(i.Pull) != "null" {
+			// An explicit null is an issue: that is how an inventory
+			// re-encoded from RemoteIssue reports "no pull request".
 			continue
 		}
 		id := fmt.Sprintf("issue:%d", i.Number)
@@ -364,6 +366,14 @@ func wake(t *Town, task *Task) {
 // left as they were.
 func resume(t *Town, task *Task) {
 	switch {
+	case task.Kind == "issue" && task.House == Hall && task.MayoralDecision == "" && autoDeclined(task) && task.Stage == "closed":
+		// Someone reopened an issue Simplifier declined, which Town closes.
+		// Closing it again would ignore them and admitting it would bypass
+		// the Mayor, so the reopen is an appeal: the Mayor decides it, with
+		// Simplifier's assessment attached, and the closer leaves it alone.
+		task.Stage = "awaiting_mayor"
+		task.MayoralDecision = "pending"
+		task.Detail = "Reopened after Simplifier declined it and Town closed it. The Mayor decides whether Town takes it on."
 	case task.MayoralDecision == "declined" || (task.House == Hall && autoDeclined(task)):
 		task.Stage = "declined"
 		return
