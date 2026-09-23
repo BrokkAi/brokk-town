@@ -57,3 +57,30 @@ func TestDemoSeedsInspectableBoardAndNoPrivateAgentData(t *testing.T) {
 		t.Fatalf("demo ended with %v", err)
 	}
 }
+
+// Each demo town's opening report describes that town, not its neighbor.
+func TestDemoReportsDescribeTheirOwnTown(t *testing.T) {
+	store := testStore(t, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- runDemo(ctx, store, time.Hour) }()
+	deadline := time.Now().Add(time.Second)
+	for len(store.Snapshot().Towns) != 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	towns := store.Snapshot().Towns
+	for id, name := range map[string]string{"brokkai/orchard": "orchard", "brokkai/paper-trail": "paper-trail"} {
+		town := towns[id]
+		if town == nil || len(town.Reports) == 0 {
+			t.Fatalf("town %s has no opening report", id)
+		}
+		if title := strings.ToLower(town.Reports[0].Title); !strings.Contains(title, name) {
+			t.Fatalf("town %s opened with %q", id, town.Reports[0].Title)
+		}
+	}
+	cancel()
+	if err := <-done; err != context.Canceled {
+		t.Fatalf("demo ended with %v", err)
+	}
+}

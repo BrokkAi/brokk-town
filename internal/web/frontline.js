@@ -61,6 +61,31 @@ export const installationRoles = [
   "simplifier",
 ];
 
+// Each atlas has four columns and two rows in installationRoles order. Image
+// loading happens outside draw calls; until an atlas is ready, the original
+// canvas silhouettes keep the base readable.
+const installationArt = new Map();
+let craftArt;
+function craftAtlas() {
+  if (typeof Image === "undefined") return null;
+  if (!craftArt) {
+    craftArt = new Image();
+    craftArt.src = "/assets/frontline-craft.png";
+  }
+  return craftArt.complete && craftArt.naturalWidth ? craftArt : null;
+}
+function atlasFor(faction) {
+  if (typeof Image === "undefined") return null;
+  const id = factionIds.includes(faction) ? faction : "vanguard";
+  if (!installationArt.has(id)) {
+    const atlas = new Image();
+    atlas.src = `/assets/frontline-${id}.png`;
+    installationArt.set(id, atlas);
+  }
+  const atlas = installationArt.get(id);
+  return atlas.complete && atlas.naturalWidth ? atlas : null;
+}
+
 // Each base names its own installations. The first name is what a player
 // reads on the map, the second is the compact form the journal has room for,
 // and the third is the inspector's eyebrow.
@@ -420,6 +445,26 @@ export function paintInstallation(c, { role, x, y, faction, now = 0, motion = tr
   const p = paletteFor(faction),
     shape = shapes[role] || shapes.hall;
   plate(c, p, x, y + 52);
+  const atlas = atlasFor(faction);
+  const index = installationRoles.indexOf(role);
+  if (atlas && index >= 0) {
+    const cellWidth = atlas.naturalWidth / 4;
+    const cellHeight = atlas.naturalHeight / 2;
+    const height = role === "repo" ? 182 : 172;
+    const width = height * cellWidth / cellHeight;
+    c.drawImage(
+      atlas,
+      (index % 4) * cellWidth,
+      Math.floor(index / 4) * cellHeight,
+      cellWidth,
+      cellHeight,
+      x - width / 2,
+      y + 69 - height,
+      width,
+      height,
+    );
+    return;
+  }
   c.save();
   c.translate(x, y + 52);
   // Beams and domes read as one army without hiding what an installation does.
@@ -433,6 +478,14 @@ function craft(c, p, { x, y, direction = 1, scale = 1, now = 0, motion = true, f
   c.save();
   c.translate(x, y);
   c.scale(direction * scale, scale);
+  const atlas = craftAtlas();
+  if (atlas) {
+    const index = Math.max(0, factionIds.indexOf(faction));
+    const cell = atlas.naturalWidth / 3;
+    c.drawImage(atlas, index * cell, 0, cell, atlas.naturalHeight, -42, -25, 84, 50);
+    c.restore();
+    return;
+  }
   const flick = motion ? Math.sin(now / 70) * 1.4 : 0;
   if (faction === "ascendancy") {
     poly(c, [[0, -9], [30, -3], [36, 6], [-8, 6]], p.armor);

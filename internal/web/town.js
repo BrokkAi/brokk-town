@@ -75,13 +75,17 @@ export const roadSegments = [
     [positions[role][0], houseRoad(role)],
   ]),
 ];
+// settled marks a task with no work left. An issue Town is closing counts:
+// only the GitHub write remains, and the decline behind it is final.
+export function settled(task) {
+  return (
+    ["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(task.stage) ||
+    (task.kind === "issue" && task.stage === "closing")
+  );
+}
 export function queueFor(town, role) {
   return Object.values(town.tasks || {})
-    .filter(
-      (t) =>
-        t.house === role &&
-        !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
-    )
+    .filter((t) => t.house === role && !settled(t))
     .sort(
       (a, b) =>
         Number(!!b.blocked) - Number(!!a.blocked) ||
@@ -199,10 +203,8 @@ export function townSummary(town) {
     ).length,
     blocked: tasks.filter((t) => t.blocked).length,
     failed: workers.filter((w) => w.status === "failed").length,
-    queued: tasks.filter(
-      (t) => !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
-    ).length,
-    decisions: tasks.filter((t) => t.mayoral_decision === "pending").length,
+    queued: tasks.filter((t) => !settled(t)).length,
+    decisions: tasks.filter((t) => t.mayoral_decision === "pending" && !t.blocked).length,
     release: town.last_release || "No releases yet",
   };
 }
@@ -281,7 +283,9 @@ export function inbox(state) {
     });
     for (const task of Object.values(town.tasks || {})) {
       if (!task) continue;
-      if (task.mayoral_decision === "pending") {
+      // A blocked decision (a pull request retargeted off the branch) is not
+      // one Mayor Bot takes up either; it shows as blocked instead.
+      if (task.mayoral_decision === "pending" && !task.blocked) {
         counts.decisions++;
         decisions.push({
           ...base(task),
@@ -360,13 +364,14 @@ export const taskStatuses = {
   waiting_github: { label: "Waiting on GitHub", className: "waiting-github" },
   ready: { label: "Ready", className: "ready" },
   blocked: { label: "Blocked", className: "blocked" },
+  snoozed: { label: "Snoozed", className: "snoozed" },
   failed: { label: "Failed", className: "failed" },
   inconclusive: { label: "Inconclusive", className: "inconclusive" },
   uncertain_write: { label: "Uncertain write", className: "uncertain-write" },
   unreleased: { label: "Unreleased", className: "unreleased" },
   implemented: { label: "Implemented", className: "implemented" },
   complete: { label: "Done", className: "complete" },
-  closing: { label: "Closing after review", className: "closed" },
+  closing: { label: "Closing", className: "closed" },
   closed: { label: "Closed", className: "closed" },
   merged: { label: "Merged", className: "merged" },
   shipped: { label: "Shipped", className: "shipped" },
@@ -607,7 +612,58 @@ export function profileSummary(profile) {
   };
 }
 
-export function taskStatus(town, task) {
+// A snooze is the operator's own hold on one task, set with a resume time.
+// The service clears it when that time passes; until the snapshot says so, the
+// time itself decides, so an expired snooze never reads as still holding.
+export function taskSnooze(task, now = Date.now()) {
+  const until = Date.parse(task?.deferred_until || "");
+  if (!Number.isFinite(until) || until <= now) return null;
+  return { until: new Date(until), reason: task.defer_reason || "" };
+}
+
+// Only an issue or pull request with work still ahead of it can be snoozed.
+// The service applies the same rule and explains a refusal.
+export function taskSnoozable(task) {
+  return (task?.kind === "issue" || task?.kind === "pr") &&
+    !["merged", "closed", "closing", "declined", "implemented"].includes(task?.stage);
+}
+
+// defaultSnoozeUntil suggests tomorrow at the next whole hour, as the local
+// value a datetime-local input takes.
+export function defaultSnoozeUntil(now = Date.now()) {
+  const at = new Date(now + 86400000);
+  at.setMinutes(0, 0, 0);
+  at.setHours(at.getHours() + 1);
+  return localInputValue(at);
+}
+
+export function localInputValue(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// snoozeRequest turns the dialog's local time and reason into the control
+// payload, or explains what is wrong with them. The service checks again.
+export function snoozeRequest(value, reason, now = Date.now()) {
+  const at = Date.parse(value || "");
+  if (!Number.isFinite(at)) return { error: "Choose the date and time the task should resume." };
+  if (at <= now) return { error: "The resume time must be in the future." };
+  if (at > now + 366 * 86400000) return { error: "The resume time must be within 366 days." };
+  const note = String(reason || "").trim();
+  // Count characters as the service does (code points), not UTF-16 units.
+  if ([...note].length > 200) return { error: "Keep the reason to 200 characters or fewer." };
+  return { until: new Date(at).toISOString().replace(/\.\d{3}Z$/, "Z"), reason: note };
+}
+
+export function snoozeLabel(task, now = Date.now()) {
+  const snooze = taskSnooze(task, now);
+  if (!snooze) return "";
+  const at = snooze.until;
+  const sameDay = new Date(now).toDateString() === at.toDateString();
+  return `Snoozed until ${sameDay ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : at.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`;
+}
+
+export function taskStatus(town, task, now = Date.now()) {
   const stage = normalized(task?.stage);
   const intent = intentFor(town, task);
   const intentStatus = normalized(intent?.status);
@@ -625,14 +681,18 @@ export function taskStatus(town, task) {
     normalized(task?.audit?.verdict) === "inconclusive"
   )
     return "inconclusive";
-  if (task?.blocked || stage === "blocked") return "blocked";
-  if (stage === "failed") return "failed";
   const worker = town?.workers?.[task?.house];
   const run = worker?.run;
-  if ((workerIsActive(worker) || worker?.agent) && run &&
+  const running = !!((workerIsActive(worker) || worker?.agent) && run &&
       ((task?.kind === "issue" && task.number > 0 && run.issue === task.number) ||
-       (task?.kind === "pr" && task.number > 0 && run.pr === task.number)))
-    return "working";
+       (task?.kind === "pr" && task.number > 0 && run.pr === task.number)));
+  // A snooze outranks blocked and failed: the operator has set the task
+  // aside, so it is not asking for attention until it resumes. A run already
+  // under way when it was snoozed still finishes, and shows as working.
+  if (!running && taskSnooze(task, now)) return "snoozed";
+  if (task?.blocked || stage === "blocked") return "blocked";
+  if (stage === "failed") return "failed";
+  if (running) return "working";
   if (stage === "ready") return "ready";
   if (stage === "draft") return "draft";
   if (stage === "open") return "open";
@@ -652,6 +712,7 @@ export function boardColumn(task) {
   if (status === "unreleased") return "ready";
   if (attentionStatuses.includes(status)) return "blocked";
   if (status === "simplifying") return "simplifier";
+  if (status === "snoozed") return "queued";
   if (status === "unknown") return "open";
   if (status === "ready") return "ready";
   if (["waiting_github", "review"].includes(status) || ["awaiting_author", "checks"].includes(stage)) return "review";
@@ -661,8 +722,8 @@ export function boardColumn(task) {
   return "open";
 }
 
-export function projectTask(town, task) {
-  const status = taskStatus(town, task);
+export function projectTask(town, task, now = Date.now()) {
+  const status = taskStatus(town, task, now);
   const worker = town?.workers?.[task?.house];
   return {
     ...task,
@@ -670,6 +731,7 @@ export function projectTask(town, task) {
     statusLabel: taskStatuses[status]?.label || status,
     statusClass: taskStatuses[status]?.className || status,
     blocked: !!task?.blocked,
+    snooze: taskSnooze(task, now),
     workerStatus: normalized(worker?.status) || "paused",
     // A queued task must use the configured profile even while its house has
     // another task running with a captured profile.

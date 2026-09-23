@@ -319,6 +319,12 @@ func run(ctx context.Context, args []string) error {
 			}
 			payload["review_close_severity"] = strings.ToUpper(*fl.closeSeverity)
 		}
+		if *fl.mergePolicy != "" {
+			if settingsRole != "" {
+				return errors.New("--merge-policy is a town setting; omit --role")
+			}
+			payload["merge_policy"] = strings.ToLower(*fl.mergePolicy)
+		}
 		budgetEdited := *fl.budgetPeriod != "" || *fl.budgetAttempts != 0 || *fl.budgetMinutes != 0
 		if budgetEdited {
 			if settingsRole != "" {
@@ -390,6 +396,30 @@ func run(ctx context.Context, args []string) error {
 		}
 		var result any
 		return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
+	case "defer", "undefer":
+		if *repo == "" || *task == "" {
+			return errors.New("--repo OWNER/REPO and --task ID are required")
+		}
+		payload := map[string]string{"town": strings.ToLower(*repo), "role": "all", "action": command, "task": *task}
+		if command == "defer" {
+			until, err := deferUntil(*fl.until, time.Now())
+			if err != nil {
+				return err
+			}
+			payload["until"], payload["reason"] = until.Format(time.RFC3339), *fl.reason
+		} else if *fl.until != "" || *fl.reason != "" {
+			return errors.New("--until and --reason apply only to defer")
+		}
+		var result any
+		if err := request(ctx, conn, "POST", "/api/control", payload, &result); err != nil {
+			return err
+		}
+		if command == "defer" {
+			fmt.Printf("Snoozed %s until %s\n", *task, payload["until"])
+		} else {
+			fmt.Printf("Cleared the snooze on %s\n", *task)
+		}
+		return nil
 	case "start", "pause", "stop", "retry", "delete", "admit", "decline":
 		if *repo == "" {
 			return errors.New("--repo OWNER/REPO is required")
@@ -406,6 +436,28 @@ func run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
 	}
+}
+
+// deferUntil reads a resume time as an RFC 3339 timestamp or as a delay from
+// now. A delay accepts Go durations (90m, 4h30m) and whole days (2d). Town
+// checks the result again: it must be in the future and within its limit.
+func deferUntil(value string, now time.Time) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, errors.New("--until is required: an RFC 3339 time such as 2026-01-02T15:04:05Z, or a delay such as 4h or 2d")
+	}
+	if at, err := time.Parse(time.RFC3339, value); err == nil {
+		return at.UTC(), nil
+	}
+	if days, ok := strings.CutSuffix(value, "d"); ok {
+		if n, err := strconv.Atoi(days); err == nil && n > 0 {
+			return now.Add(time.Duration(n) * 24 * time.Hour).UTC().Truncate(time.Second), nil
+		}
+	}
+	if d, err := time.ParseDuration(value); err == nil && d > 0 {
+		return now.Add(d).UTC().Truncate(time.Second), nil
+	}
+	return time.Time{}, fmt.Errorf("--until %q is neither an RFC 3339 time such as 2026-01-02T15:04:05Z nor a positive delay such as 90m, 4h or 2d", value)
 }
 
 // browserLink returns the browser address with its access key only when

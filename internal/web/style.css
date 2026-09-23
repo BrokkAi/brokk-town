@@ -1776,28 +1776,49 @@ textarea {
    else. The base palette below is the only thing a skin may change here, so a
    new theme never has to touch layout or state. */
 body[data-skin="frontline"] {
-  --green: #9de3ff;
-  --line: #2b4050;
-  --panel: #0d1a22;
-  --muted: #93a9b6;
-  background: #070d12;
+  --green: #8ed9f6;
+  --line: #374b56;
+  --panel: #111d24;
+  --muted: #a2b4bd;
+  background: #080e12;
 }
 body[data-skin="frontline"] header {
-  background: #0f1b24;
-  border-bottom-color: #2b4050;
+  background: linear-gradient(180deg, #26343d, #101b22 74%, #0b141a);
+  border-bottom: 2px solid #61727a;
 }
 body[data-skin="frontline"] .sidebar {
-  background: #0b151d;
+  background: linear-gradient(100deg, #17252d, #0b151b);
+  border-right-color: #465c66;
 }
 body[data-skin="frontline"] .primary {
-  color: #05141b;
+  color: #07151b;
+  background: linear-gradient(180deg, #bceaff, #75b7d6);
+  border-color: #c8e8f3;
+  box-shadow: inset 0 1px #ffffff88, 0 0 18px #58b9e433;
+}
+body[data-skin="frontline"] .world {
+  border: 2px solid #70818a;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 3px #0b1318, 0 0 0 1px #10191e;
+}
+body[data-skin="frontline"] .house-label {
+  border-color: #66747b;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #1d303bcc, #09151eea);
+  box-shadow: inset 0 1px #c4dbe422, 0 3px 10px #0009;
 }
 body[data-skin="frontline"] .world-legend {
-  color: #9dc6dc;
+  color: #c3dbe5;
+  background: #08121bd9;
+  border: 1px solid #536570;
+  border-radius: 2px;
+  padding: 7px 10px;
 }
 .skin-toggle[data-skin="frontline"] {
-  color: #9de3ff;
-  border-color: #2b4050;
+  color: #bceaff;
+  border-color: #657780;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #273944, #13232d);
 }
 
 /* The overview strip shows the town's own cottages. A war theme has no
@@ -1846,4 +1867,23 @@ body[data-skin="frontline"] .town-card-houses {
   font: 11px var(--mono);
   color: #8fb4c6;
   line-height: 1.5;
+}
+/* A snooze is the operator's own hold, not a fault: it reads as a calm lilac,
+   apart from the warm tones of blocked and failed work. */
+.status-snoozed { border-top-color: #8f86b8; }
+.status-chip.status-snoozed {
+  border-color: #6f6899;
+  color: #cfc8f2;
+}
+.snooze-note {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #6f6899;
+  border-left: 4px solid #a89fd6;
+  border-radius: 6px;
+  background: #1d1e2e;
+}
+.snooze-note strong {
+  font-size: 12px;
+  letter-spacing: .04em;
 }

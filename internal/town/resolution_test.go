@@ -166,14 +166,14 @@ func TestNextTaskPrefersPullRequestsThatHaveNotFailed(t *testing.T) {
 		town.Tasks["pr:9"] = &Task{ID: "pr:9", Kind: "pr", Number: 9, Stage: "queued", House: Review, Base: baseSHA, Head: headSHA}
 	})
 	town := s.Snapshot().Towns[x.ID]
-	if next := nextTask(town, Review, "queued"); next == nil || next.Number != 7 {
+	if next := nextTask(town, Review, "queued", time.Now()); next == nil || next.Number != 7 {
 		t.Fatalf("a failed pull request was picked ahead of untried ones: %+v", next)
 	}
 	update(t, s, func(st *State) {
 		st.Towns[x.ID].Tasks["pr:7"].Attempts = 1
 		st.Towns[x.ID].Tasks["pr:9"].Attempts = 1
 	})
-	if next := nextTask(s.Snapshot().Towns[x.ID], Review, "queued"); next == nil || next.Number != 1 {
+	if next := nextTask(s.Snapshot().Towns[x.ID], Review, "queued", time.Now()); next == nil || next.Number != 1 {
 		t.Fatalf("ties are not broken by number: %+v", next)
 	}
 }
@@ -195,7 +195,7 @@ func TestRequeuedIssueStaysQueuedUntilIssueBotStartsOver(t *testing.T) {
 	if task := store.Snapshot().Towns[town.ID].Tasks["issue:8"]; task.Stage != "queued" || task.Requeue != 18 || task.Attempts != 0 {
 		t.Fatalf("the closed PR's job put the issue back to implemented: %+v", task)
 	}
-	if next := nextIssue(store.Snapshot().Towns[town.ID]); next == nil || next.Number != 8 || next.Requeue != 18 {
+	if next := nextIssue(store.Snapshot().Towns[town.ID], time.Now()); next == nil || next.Number != 8 || next.Requeue != 18 {
 		t.Fatalf("requeued issue is not dispatched with its superseded PR: %+v", next)
 	}
 	// Once issue-bot has started over, the requeue marker is spent.

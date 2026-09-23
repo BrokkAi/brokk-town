@@ -3,14 +3,14 @@
     "bug": {
       "project": "bug-bot",
       "command": "bbb",
-      "version": "0.3.7",
-      "source_commit": "ecac6efcee71e64b5ef3a6ad3ac8faf60aaca36a"
+      "version": "0.4.0",
+      "source_commit": "5d5edc012b410724ca9cf8ba0fc1f5bacba0becc"
     },
     "feature": {
       "project": "feature-bot",
       "command": "bfb",
-      "version": "0.1.4",
-      "source_commit": "7f0967dc8e43d7cfa07c18e7e98cf49a88917fa2"
+      "version": "0.2.0",
+      "source_commit": "74b2446b191c1f094c401242b966f0e694c56afa"
     },
     "issue": {
       "project": "issue-bot",
@@ -21,8 +21,8 @@
     "review": {
       "project": "review-bot",
       "command": "brv",
-      "version": "0.2.7",
-      "source_commit": "aa71e51cf7c09d377be87ec84facb356083a7d0c"
+      "version": "0.2.8",
+      "source_commit": "378f3ea3828ee9fdef80ef935b9c10c47249f14e"
     },
     "release": {
       "project": "release-bot",

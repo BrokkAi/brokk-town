@@ -358,7 +358,8 @@ limit its authority to publish while forbidding its release-preparation PR merge
 Town pauses Release Bot and rejects attempts to start or retry it under this policy.
 `all` also permits eligible external PRs. Town-managed merges require current clean Town evidence, GitHub mergeability, required checks
 and approvals. Town uses an expected-head squash merge, without admin bypass.
-Change this at any time under **Town Settings → External contributions**.
+Change this at any time under **Town Settings → External contributions**, or
+with `./bin/bt settings --repo BrokkAi/my-project --merge-policy manual`.
 Repositories that require a merge queue or prohibit squash merging need manual
 merges for now. GitHub is the final authority at write time.
 
@@ -376,7 +377,10 @@ Configuration is a JSON array for town-only files. Each entry supplies `repo`, o
 `merge_policy`, `simplifier_mode`, optional `review_close_severity` (`P1`, `P2`
 or `P3`, default `P2`), optional `budget`, optional `bot_policies`,
 `poll_seconds`, `report_seconds`, and `max_cycles`. The example
-lists all required values. To persist global capacity alongside the town list,
+lists all required values. A config-file entry gets no defaults for
+`merge_policy`, `poll_seconds`, `report_seconds`, or `max_cycles`: omitting any
+of them rejects the file. The defaults quoted below apply to towns added with
+`bt add` or the browser. To persist global capacity alongside the town list,
 use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
 remains accepted. When `serve --config` includes `max_workers`, that value
 overrides the persisted service setting in the same atomic state update; an
@@ -405,7 +409,9 @@ Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet repo
 use `report_seconds` (1800). Bug-bot, feature-bot, and simplifier-bot run at most every 30 minutes; mayor-bot
 writes a bulletin at most every `bulletin_seconds` (21600) and only after something merged; release-bot
 checks every five minutes and retains its own quiet window, minimum gap, and
-batching decisions. Each worker attempt has a two-hour deadline. A pull request
+batching decisions. Each worker attempt, including the repo inventory, has a
+two-hour deadline, and each GitHub call Town makes itself, such as the merge
+gate's read, gives up after one minute. A pull request
 gets one fix round and two attempts per revision at any step; `max_cycles` is
 accepted for compatibility but no longer extends that.
 
@@ -515,9 +521,37 @@ the reported failure and ask Town to lift the budget:
 
 The next release run first calls the bot's `POST /v1/retry` worker API, which
 resets the pending release's attempt budget in its own workspace, then resumes
-the same release. Town never edits the bot's private state. The pinned Release
+the same release. Unlike a task retry, a release retry also starts the release
+house if it was paused. Town never edits the bot's private state. The pinned Release
 Bot must advertise the `retry` capability; older pins report that plainly.
 Use `bt status` to inspect saved details and GitHub to resolve conflicts.
+
+### Snoozing one task
+
+To set one issue or pull request aside without pausing its house, snooze it
+until a chosen time. Open the task in the browser and choose **Snooze…**, or:
+
+```sh
+./bin/bt defer --repo BrokkAi/my-project --task pr:123 --until 2d --reason "waiting on the vendor fix"
+./bin/bt defer --repo BrokkAi/my-project --task issue:45 --until 2026-10-01T09:00:00Z
+./bin/bt undefer --repo BrokkAi/my-project --task pr:123
+```
+
+`--until` takes an RFC 3339 time or a delay from now (`90m`, `4h`, `2d`); the
+resume time must be in the future and within 366 days, and the reason is one
+line of at most 200 characters. The house keeps working the rest of its queue.
+Until the resume time, no agent starts for the snoozed task: Issue, Review and
+Simplifier Bots skip it, Mayor Bot does not judge it, and Town does not merge
+it. A run already under way when you snooze finishes. The Mayor can still decide
+a snoozed arrival by hand.
+
+The task shows as **Snoozed** with its reason and resume time in the browser
+and in `bt status` (`deferred_until`, `defer_reason`). Snoozed is distinct from
+blocked and failed, so a snoozed task does not appear in the inbox. At the
+resume time Town clears the snooze, wakes the house and records the event; the
+snooze is saved state, so it survives a restart and repository reconciliation.
+Resume now (`bt undefer`) makes the task eligible immediately. Finished work
+(merged, closed, declined, or an implemented issue) cannot be snoozed.
 
 The HTTP listener accepts loopback IPs only (default `127.0.0.1:8099`). Host,
 origin, and bearer key checks protect the local API. A browser supporting WebMCP

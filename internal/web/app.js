@@ -5,8 +5,14 @@ import {
   houseShortcuts,
   routePosition,
   queueFor,
+  settled,
   issueJobDetails,
   taskRetryEligible,
+  taskSnoozable,
+  snoozeLabel,
+  snoozeRequest,
+  defaultSnoozeUntil,
+  localInputValue,
   visibleEvents,
   outcomeReport,
   safeURL,
@@ -488,7 +494,7 @@ function profileChips(profile, role = "", extra = "") {
   return summaryChips(profileSummary(profile), extra);
 }
 function queuedProfileText(task) {
-  if (["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(task.stage)) return "";
+  if (settled(task)) return "";
   return `<span class="profile-lead">${task.profile?.source === "active" ? "Running profile" : "Next profile"}</span>${profileChips(task.profile, task.house)}`;
 }
 function captureBoardViewport(board) {
@@ -822,7 +828,12 @@ $("#capacity-form").onsubmit = async (event) => {
   }
 };
 function pendingDecisions(t) {
-  return queueFor(t || {}, "hall").filter((task) => task.mayoral_decision === "pending").length;
+  return queueFor(t || {}, "hall").filter((task) => task.mayoral_decision === "pending" && !task.blocked).length;
+}
+// simplifierDeclined marks work Simplifier declined in auto mode. The decline
+// is final unless the Mayor admits it anyway.
+function simplifierDeclined(task) {
+  return task.house === "hall" && task.stage === "declined" && !task.mayoral_decision && task.simplification?.mode === "auto" && task.simplification?.decision === "decline";
 }
 function renderHouses() {
   const t = town(),
@@ -909,7 +920,9 @@ function renderInspection() {
     const source = task.source,
       provenance = source?.provenance,
       sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
-    const mayorActions = task.mayoral_decision !== "pending"
+    const mayorActions = simplifierDeclined(task)
+      ? `<div class="inspector-actions"><button id="admit-task" class="primary">Admit anyway</button></div><p class="muted">Simplifier declined this. Admitting overrules it and sends it to ${task.kind === "issue" ? "Issue Bot" : "Review Bot"}.</p>`
+      : task.mayoral_decision !== "pending"
       ? ""
         : `<div class="inspector-actions"><button id="admit-task" class="primary">${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`;
     const isMayor = task.mayoral_decision === "pending";
@@ -943,7 +956,13 @@ function renderInspection() {
       ? `<section class="advisor-note"><strong>Simplifier Bot · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
       : "";
     const detailText = task.detail || (liveCapable ? "" : "Following the next step through town.");
-    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`))
+    const snooze = projected.snooze;
+    const snoozeBlock = snooze
+      ? `<section class="snooze-note" aria-label="Snooze"><strong>${esc(snoozeLabel(task))}</strong>${snooze.reason ? `<p>${esc(snooze.reason)}</p>` : ""}<p class="muted">Resumes ${esc(snooze.until.toLocaleString())} without any action. Its house keeps working the rest of the queue; no agent starts and no merge happens for this task until then.</p><div class="inspector-actions"><button id="snooze-task" type="button">Change snooze…</button><button id="clear-snooze" type="button">Resume now</button></div></section>`
+      : taskSnoozable(task)
+        ? `<div class="inspector-actions"><button id="snooze-task" type="button">Snooze…</button></div>`
+        : "";
+    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}${snoozeBlock}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? `<button id="retry-task" class="primary">Reconcile and retry</button>${snooze ? '<p class="muted">Retry clears the block but keeps the snooze: the task still waits for its resume time unless you choose Resume now.</p>' : ""}` : ""}`))
       return;
     $("#back-house").onclick = () => {
       selectedTask = "";
@@ -954,14 +973,27 @@ function renderInspection() {
       $("#retry-task").onclick = () =>
         command("retry", selectedHouse, selectedTask);
     const decisionButtons = [...out.querySelectorAll("button")];
+    const snoozeButton = decisionButtons.find((button) => button.id === "snooze-task"),
+      resumeButton = decisionButtons.find((button) => button.id === "clear-snooze");
+    if (snoozeButton) snoozeButton.onclick = () => openSnooze(task);
+    if (resumeButton) resumeButton.onclick = () => command("undefer", selectedHouse, selectedTask);
     const admit = decisionButtons.find((button) => button.id === "admit-task"),
       decline = decisionButtons.find((button) => button.id === "decline-task");
-    if (admit) admit.onclick = () => command("admit", "hall", selectedTask);
+    if (admit)
+      admit.onclick = () => {
+        if (simplifierDeclined(task) && !globalThis.confirm(`Admit ${task.kind === "pr" ? "PR" : "issue"} #${task.number} over Simplifier's decline? Town will act on it, and the decline cannot be restored.`)) return;
+        return command("admit", "hall", selectedTask);
+      };
     if (decline) decline.onclick = () => command("decline", "hall", selectedTask);
     return;
   }
   if (selectedHouse === "hall") {
     const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
+    // Newest first and capped, like the other Town Hall feeds.
+    const overrulable = Object.values(t.tasks || {}).filter(simplifierDeclined).sort((a, b) => (b.number ?? 0) - (a.number ?? 0));
+    const overrulableBlock = overrulable.length
+      ? `<h3>Declined by Simplifier</h3>${overrulable.slice(0, 20).map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · you can admit it anyway</small></button>`).join("")}${overrulable.length > 20 ? `<p class="muted">${overrulable.length - 20} older declined items are not shown.</p>` : ""}`
+      : "";
     const outcomes = outcomeReport(t.outcomes || [], outcomeDays > 0 ? new Date(Date.now() - outcomeDays * 86400000) : new Date(0));
     const metric = (value, label) => `<span><strong>${value}</strong>${label}</span>`;
     const outcomeRows = outcomes.records.slice().reverse().slice(0, 50).map((record) => {
@@ -978,7 +1010,7 @@ function renderInspection() {
       mayorControls = workerControls(mayor);
     const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : projectedMayor.status === "failed" ? "blocked" : "waiting"}"></i>Mayor Bot ${esc(projectedMayor.status)}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${mayorControls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${mayorControls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${mayorControls.stop ? "" : " disabled"}>■ Stop</button></div><p class="muted">${mayor?.enabled ? "Mayor Bot judges each arrival below as it comes in, with its reason kept on the task, and writes the bulletin when work merges." : "Start Mayor Bot to have it judge arrivals for you and write the bulletin. Until then, decisions wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
     const bulletinRows = (t.bulletins || []).slice().reverse().slice(0, 20).map((b) => `<article class="bulletin"><h4>${esc(b.title)}</h4><p class="muted">${esc(new Date(b.since).toLocaleString())} – ${esc(new Date(b.until).toLocaleString())} · ${(b.pulls || []).length} merged</p><p>${esc(b.summary)}</p>${(b.items || []).map((item) => `<div class="bulletin-item"><span class="status-chip status-${esc(item.kind)}">${esc(item.kind)}</span> <strong>${esc(item.title)}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${(item.pulls || []).map((n) => `PR #${n}`).join(", ")}${(item.issues || []).length ? ` · ${item.issues.map((n) => `issue #${n}`).join(", ")}` : ""}</small></div>`).join("")}</article>`).join("");
-    if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${budgetBlock(t)}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
+    if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}${overrulableBlock}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${budgetBlock(t)}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
@@ -1016,11 +1048,13 @@ function renderInspection() {
     projectedWorker = projectWorker(t, selectedHouse, w),
     queue = queueFor(t, selectedHouse);
   if (!w) return;
+  const projectedQueue = new Map(queue.map((task) => [task.id, projectTask(t, task)]));
   const queueSummary = [
     [queue.filter((task) => task.kind === "issue").length, "issue", "issues"],
     [queue.filter((task) => task.kind === "pr").length, "pull request", "pull requests"],
     [queue.filter((task) => !["issue", "pr"].includes(task.kind)).length, "other item", "other items"],
     [queue.filter((task) => task.blocked).length, "blocked", "blocked"],
+    [queue.filter((task) => projectedQueue.get(task.id).snooze).length, "snoozed", "snoozed"],
   ].filter(([count]) => count > 0)
     .map(([count, singular, plural]) => `${count} ${count === 1 ? singular : plural}`).join(" · ");
   const agent = projectedWorker.profile;
@@ -1037,7 +1071,7 @@ function renderInspection() {
     queue
       .map(
         (task) =>
-          `<button class="task-card${task.policy_excluded ? " filtered" : ""}" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectTask(t, task).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}${task.policy_excluded ? " · held by this house\u2019s filter" : ""}</small></button>`,
+          `<button class="task-card${task.policy_excluded ? " filtered" : ""}" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectedQueue.get(task.id).snooze ? snoozeLabel(task) : projectedQueue.get(task.id).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}${task.policy_excluded ? " · held by this house\u2019s filter" : ""}</small></button>`,
       )
       .join("") || '<p class="muted">Nothing waiting at the door.</p>'
   }</div><h3>LATEST ACTIVITY</h3><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}${agentDetails}${healthDetails}${funnelDetails}<h3>WORKBENCH LOG</h3><div class="worker-logs">${
@@ -1093,6 +1127,43 @@ function renderJournal() {
         }),
     );
 }
+// The snooze dialog edits one task's resume time and reason. It remembers the
+// town and task it opened for, so a snapshot that moves the selection while it
+// is open cannot redirect the request to another task.
+let snoozeTarget = null;
+function openSnooze(task) {
+  snoozeTarget = { town: selectedTown, house: selectedHouse, task: task.id };
+  $("#snooze-title").textContent = task.title || task.id;
+  const current = Date.parse(task.deferred_until || "");
+  $("#snooze-until").value = Number.isFinite(current) && current > Date.now()
+    ? localInputValue(new Date(current))
+    : defaultSnoozeUntil();
+  $("#snooze-reason").value = task.defer_reason || "";
+  $("#snooze-error").textContent = "";
+  $("#snooze-dialog").showModal();
+}
+$("#cancel-snooze").onclick = () => $("#snooze-dialog").close();
+$("#snooze-form").onsubmit = async (event) => {
+  event.preventDefault();
+  if (!snoozeTarget) return;
+  const request = snoozeRequest($("#snooze-until").value, $("#snooze-reason").value);
+  if (request.error) {
+    $("#snooze-error").textContent = request.error;
+    return;
+  }
+  const submit = event.submitter;
+  submit.disabled = true;
+  $("#snooze-error").textContent = "";
+  try {
+    await api("/api/control", { town: snoozeTarget.town, role: snoozeTarget.house || "all", action: "defer", task: snoozeTarget.task, until: request.until, reason: request.reason });
+    $("#snooze-dialog").close();
+    showError("");
+  } catch (error) {
+    $("#snooze-error").textContent = error.message;
+  } finally {
+    submit.disabled = false;
+  }
+};
 async function command(action, role = "all", task = "") {
   try {
     await api("/api/control", { town: selectedTown, role, action, task });

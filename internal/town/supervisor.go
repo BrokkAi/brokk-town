@@ -147,6 +147,10 @@ func (s *Supervisor) schedule(ctx context.Context) {
 	if state.Demo {
 		return
 	}
+	if now := s.now(); expiredDeferrals(state, now) {
+		s.update(func(st *State) error { expireDeferrals(st, now); return nil })
+		state = s.Store.Snapshot()
+	}
 	for _, t := range state.Towns {
 		if t.Deleted {
 			continue
@@ -482,7 +486,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			}
 		}
 		if ValidAgentRole(r) {
-			taskID, revision := outcomeAttemptTask(t, r, result)
+			taskID, revision := outcomeAttemptTask(t, r, result, started)
 			status, detail := "attempted", "Worker attempt completed"
 			if err != nil && !errors.Is(err, context.Canceled) {
 				status, detail = "blocked", err.Error()
@@ -601,14 +605,17 @@ func latestProgress(ch chan Progress, p Progress) {
 	}
 }
 
-func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
+// outcomeAttemptTask names the task one attempt worked on. An issue run
+// reports its issue; only a run that failed before choosing one falls back to
+// the issue the house would have chosen, never one the operator snoozed.
+func outcomeAttemptTask(t *Town, role Role, result RunResult, now time.Time) (string, string) {
 	if role == Hall {
 		if task := t.Tasks[result.JudgedTask]; task != nil {
 			return task.ID, task.Head
 		}
 		return result.JudgedTask, ""
 	}
-	if role == Simplifier && result.Issue > 0 {
+	if (role == Simplifier || role == Issue) && result.Issue > 0 {
 		id := fmt.Sprintf("issue:%d", result.Issue)
 		if task := t.Tasks[id]; task != nil {
 			return id, task.Head
@@ -625,7 +632,7 @@ func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
 	if role == Issue {
 		var selected *Task
 		for _, task := range t.Tasks {
-			if task.Kind == "issue" && task.House == Issue && (task.Stage == "queued" || task.Stage == "blocked") && (selected == nil || task.Number < selected.Number) {
+			if task.Kind == "issue" && task.House == Issue && (task.Stage == "queued" || task.Stage == "blocked") && !task.Deferred(now) && (selected == nil || task.Number < selected.Number) {
 				selected = task
 			}
 		}
@@ -912,6 +919,14 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 // Mayor's decline for Town's own proposals, or Simplifier's auto decline for an
 // intake issue. Closing is idempotent, so an issue that is already closed is
 // skipped and an uncertain attempt is retried by the next inventory.
+//
+// The candidates come from a snapshot, and the Mayor can admit an auto-declined
+// issue while this runs. Each issue is therefore claimed under the store just
+// before the GitHub write: the claim rechecks the decline and moves an
+// auto-declined issue to "closing", which the Mayor's admission refuses. An
+// accepted close settles it as closed, a definite rejection releases it, and an
+// uncertain outcome keeps the claim so the write is retried rather than
+// admitted.
 func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote RepoSnapshot) error {
 	if t == nil || t.Deleted {
 		return nil
@@ -924,9 +939,7 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	}
 	numbers := []int{}
 	for _, task := range t.Tasks {
-		mayorDeclined := !task.External && task.MayoralDecision == "declined"
-		simplifierDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
-		if task.Kind == "issue" && (mayorDeclined || simplifierDeclined) && open[task.Number] {
+		if closableDecline(task) && open[task.Number] {
 			numbers = append(numbers, task.Number)
 		}
 	}
@@ -934,8 +947,50 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	var failures error
 	for _, n := range numbers {
 		id := fmt.Sprintf("issue:%d", n)
+		claimed := false
+		if err := s.Store.Update(func(st *State) error {
+			current := st.Towns[t.ID]
+			if current == nil || current.Deleted {
+				return nil
+			}
+			task := current.Tasks[id]
+			if !closableDecline(task) {
+				return nil
+			}
+			if task.MayoralDecision == "" && task.Stage == "declined" {
+				task.Stage = "closing"
+				task.Updated = s.now()
+			}
+			claimed = true
+			return nil
+		}); err != nil {
+			return errors.Join(failures, err)
+		}
+		if !claimed {
+			continue
+		}
 		if err := s.GitHub.CloseIssue(ctx, t.Config.Repo, n); err != nil {
 			failures = errors.Join(failures, fmt.Errorf("close declined issue #%d: %w", n, err))
+			var rejected *RejectedError
+			if errors.As(err, &rejected) {
+				// GitHub refused the close, so nothing happened there; the
+				// claim is released and the Mayor can admit the issue again.
+				if err := s.Store.Update(func(st *State) error {
+					current := st.Towns[t.ID]
+					if current == nil {
+						return nil
+					}
+					if task := current.Tasks[id]; task != nil && task.Stage == "closing" && task.MayoralDecision == "" {
+						task.Stage = "declined"
+						task.Detail = fmt.Sprintf("GitHub refused to close this issue (HTTP %d). Simplifier's decline stands; the Mayor can admit it anyway.", rejected.Status)
+						task.Updated = s.now()
+						st.Event(t.ID, "error", string(Repo), "hall", id, "GitHub refused to close: "+task.Title, s.now())
+					}
+					return nil
+				}); err != nil {
+					return errors.Join(failures, err)
+				}
+			}
 			continue
 		}
 		if err := s.Store.Update(func(st *State) error {
@@ -944,12 +999,16 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 			if current == nil || task == nil {
 				return nil
 			}
-			mayorDeclined := task.MayoralDecision == "declined"
-			simplifierDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
-			if !mayorDeclined && !simplifierDeclined {
+			if !closableDecline(task) {
 				return nil
 			}
-			if mayorDeclined {
+			if task.Stage == "closing" {
+				// GitHub accepted the close. A reopen seen by a later
+				// inventory is then an appeal rather than a close to retry.
+				task.Stage = "closed"
+				task.Updated = s.now()
+			}
+			if task.MayoralDecision == "declined" {
 				task.Detail = "The Mayor declined this proposal. Town closed the issue."
 				st.Event(t.ID, "decision", "hall", string(Repo), id, "Declined proposal closed: "+task.Title, s.now())
 			} else {
@@ -963,12 +1022,31 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	}
 	return failures
 }
+
+// closableDecline reports whether Town still holds a final decline it carries
+// out by closing the issue: the Mayor's decline of Town's own proposal, or
+// Simplifier's auto decline that nobody has escalated to the Mayor or admitted.
+func closableDecline(task *Task) bool {
+	if task == nil || task.Kind != "issue" {
+		return false
+	}
+	if task.MayoralDecision == "declined" {
+		return !task.External
+	}
+	return task.MayoralDecision == "" && task.House == Hall && autoDeclined(task) && (task.Stage == "declined" || task.Stage == "closing" || task.Stage == "locked")
+}
 func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
 	if action == "delete" {
 		if role != "all" {
 			return errors.New("delete applies to the entire town")
 		}
 		return s.Delete(id)
+	}
+	if action == "undefer" {
+		return s.Defer(id, taskID, time.Time{}, "")
+	}
+	if action == "defer" {
+		return errors.New("a snooze needs a resume time")
 	}
 	decision := action == "admit" || action == "decline"
 	if action != "start" && action != "pause" && action != "stop" && action != "retry" && !decision {
@@ -1271,7 +1349,9 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) (bool, error) {
 	numbers := []int{}
 	for _, task := range t.Tasks {
-		if task.Kind == "pr" && task.Stage == "ready" && !task.Blocked && !task.RetryAt.After(s.now()) {
+		// A snoozed pull request is not merged: the operator set it aside,
+		// and a merge is the most consequential write Town makes for it.
+		if task.Kind == "pr" && task.Stage == "ready" && !task.Blocked && !task.RetryAt.After(s.now()) && !task.Deferred(s.now()) {
 			numbers = append(numbers, task.Number)
 		}
 	}

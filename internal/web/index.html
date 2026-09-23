@@ -244,6 +244,23 @@
         </div>
       </form>
     </dialog>
+    <dialog id="snooze-dialog" aria-labelledby="snooze-heading">
+      <form id="snooze-form">
+        <div class="eyebrow">SET ASIDE ONE TASK</div>
+        <h2 id="snooze-heading">Snooze task</h2>
+        <p id="snooze-title" class="muted"></p>
+        <p class="muted">Its house keeps working everything else. No agent starts and no merge happens for this task until the resume time, when it rejoins the queue on its own.</p>
+        <label for="snooze-until">Resume at (your local time)</label>
+        <input id="snooze-until" name="until" type="datetime-local" required />
+        <label for="snooze-reason">Reason <span class="muted">(optional, up to 200 characters)</span></label>
+        <input id="snooze-reason" name="reason" type="text" autocomplete="off" />
+        <div id="snooze-error" class="form-error" role="alert"></div>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-snooze" class="quiet">Cancel</button>
+          <button type="submit" class="primary">Snooze</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="settings-dialog" class="wide-dialog">
       <form id="settings-form">
         <div class="eyebrow">YOUR AGENT TEAM</div>
