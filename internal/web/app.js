@@ -40,6 +40,7 @@ import {
   quietNote,
   parseQuietHours,
   formatQuietHours,
+  reconnectDelay,
 } from "./town.js";
 import { management } from "./manage.js";
 import { easeDelivery } from "./scenery.js";
@@ -242,11 +243,50 @@ function showError(message) {
   $("#error").textContent = message;
   $("#error").hidden = !message;
 }
+// The stream reconnects with capped, jittered exponential backoff. A hidden
+// tab schedules nothing: the retry waits until the page is visible again, and
+// becoming visible retries at once instead of finishing a long backoff.
+let reconnectAttempt = 0,
+  reconnectTimer = 0,
+  reconnectHeld = false,
+  renderHeld = false;
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = 0;
+  if (document.hidden) {
+    reconnectHeld = true;
+    return;
+  }
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = 0;
+    if (document.hidden) {
+      reconnectHeld = true;
+      return;
+    }
+    connect();
+  }, reconnectDelay(reconnectAttempt++));
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (renderHeld && state) {
+    renderHeld = false;
+    render();
+  }
+  if (!reconnectHeld && !reconnectTimer) return;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = 0;
+  reconnectHeld = false;
+  reconnectAttempt = 0;
+  connect();
+});
 async function connect() {
   if (!token) {
     $("#connect-dialog").showModal();
     return;
   }
+  clearTimeout(reconnectTimer);
+  reconnectTimer = 0;
+  reconnectHeld = false;
   streamAbort?.abort();
   streamAbort = new AbortController();
   try {
@@ -275,14 +315,18 @@ async function connect() {
         const message = buffer.slice(0, end);
         buffer = buffer.slice(end + 2);
         const data = message.split("\n").find((l) => l.startsWith("data: "));
-        if (data) receive(JSON.parse(data.slice(6)));
+        if (data) {
+          // A frame, not just an accepted request, proves the stream works.
+          reconnectAttempt = 0;
+          receive(JSON.parse(data.slice(6)));
+        }
       }
     }
   } catch (error) {
     if (error.name === "AbortError") return;
     $("#connection").textContent = "Reconnecting";
     $("#connection-dot").className = "dot";
-    setTimeout(connect, 2000);
+    scheduleReconnect();
   }
 }
 function receive(next) {
@@ -309,12 +353,18 @@ function receive(next) {
   const serviceVersion = typeof state.version === "string" ? state.version.trim() : "";
   $("#town-version").textContent = serviceVersion;
   $("#town-version").hidden = !serviceVersion;
+  $("#town-version").title = serviceVersion;
   $("#help-version").textContent = serviceVersion ? `Brokk Town ${serviceVersion}` : "";
   if (!state.towns[selectedTown]) {
     selectedTown = Object.keys(state.towns)[0] || "";
     selectedTask = "";
   }
   if (selectedTask && !state.towns[selectedTown]?.tasks[selectedTask]) selectedTask = "";
+  // A hidden tab keeps the newest snapshot and paints it when shown again.
+  if (document.hidden) {
+    renderHeld = true;
+    return;
+  }
   render();
 }
 
@@ -686,6 +736,11 @@ function renderTownControls(t) {
   pauseAll.hidden = !controls.secondary;
   if (controls.secondary)
     pauseAll.textContent = activeSkin.rewrite(controls.secondary.label);
+  const townBusy = (action) => pendingWrites.has(writeKey("control", t.id, "all", action, ""));
+  toggle.disabled = townBusy(controls.primary.action);
+  pauseAll.disabled = townBusy("pause");
+  toggle.setAttribute("aria-busy", String(toggle.disabled));
+  pauseAll.setAttribute("aria-busy", String(pauseAll.disabled));
 }
 function render() {
   const focus = focusIdentity(document.activeElement);
@@ -737,13 +792,15 @@ function render() {
   renderJournal();
   renderManagement();
   renderInbox(needs);
-  if (focus) {
-    const root = document.querySelector(`#${focus.surface}`);
-    const restored = [...(root?.querySelectorAll("button, a, summary") || [])].find((button) =>
-      focusMatches(button, focus),
-    );
-    restored?.focus({ preventScroll: true });
-  }
+  restoreFocus(focus);
+}
+function restoreFocus(focus) {
+  if (!focus) return;
+  const root = document.querySelector(`#${focus.surface}`);
+  const restored = [...(root?.querySelectorAll("button, a, summary") || [])].find((button) =>
+    focusMatches(button, focus),
+  );
+  restored?.focus({ preventScroll: true });
 }
 function selectTown(id) {
   if (!state?.towns[id]) throw new Error("Unknown town");
@@ -942,6 +999,13 @@ function writeInspection(out, html) {
   }
   return true;
 }
+function workerButtons(controls, role) {
+  const button = (action, label, primary) => {
+    const pending = busy(writeKey("control", selectedTown, role, action, ""));
+    return `<button${primary ? ' class="primary"' : ""} data-action="${action}"${pending || (controls[action] ? "" : " disabled")}>${label}</button>`;
+  };
+  return `<div class="inspector-actions">${button("start", "▶ Start", true)}${button("pause", "Ⅱ Pause")}${button("stop", "■ Stop")}</div>`;
+}
 function renderInspection() {
   const t = town(),
     out = $("#inspection"),
@@ -962,11 +1026,12 @@ function renderInspection() {
     const source = task.source,
       provenance = source?.provenance,
       sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
+    const taskBusy = (action, role) => busy(writeKey("control", selectedTown, role, action, selectedTask));
     const mayorActions = simplifierDeclined(task)
-      ? `<div class="inspector-actions"><button id="admit-task" class="primary">Admit anyway</button></div><p class="muted">Simplifier declined this. Admitting overrules it and sends it to ${task.kind === "issue" ? "Issue Bot" : "Review Bot"}.</p>`
+      ? `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>Admit anyway</button></div><p class="muted">Simplifier declined this. Admitting overrules it and sends it to ${task.kind === "issue" ? "Issue Bot" : "Review Bot"}.</p>`
       : task.mayoral_decision !== "pending"
       ? ""
-        : `<div class="inspector-actions"><button id="admit-task" class="primary">${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger">Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`;
+        : `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger"${taskBusy("decline", "hall")}>Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`;
     const isMayor = task.mayoral_decision === "pending";
     const liveCapable = isMayor && (task.kind === "issue" || task.kind === "pr") && task.number > 0;
     const kindLabel = task.kind === "pr" ? "PR" : task.kind === "issue" ? "Issue" : task.kind;
@@ -1000,11 +1065,11 @@ function renderInspection() {
     const detailText = task.detail || (liveCapable ? "" : "Following the next step through town.");
     const snooze = projected.snooze;
     const snoozeBlock = snooze
-      ? `<section class="snooze-note" aria-label="Snooze"><strong>${esc(snoozeLabel(task))}</strong>${snooze.reason ? `<p>${esc(snooze.reason)}</p>` : ""}<p class="muted">Resumes ${esc(snooze.until.toLocaleString())} without any action. Its house keeps working the rest of the queue; no agent starts and no merge happens for this task until then.</p><div class="inspector-actions"><button id="snooze-task" type="button">Change snooze…</button><button id="clear-snooze" type="button">Resume now</button></div></section>`
+      ? `<section class="snooze-note" aria-label="Snooze"><strong>${esc(snoozeLabel(task))}</strong>${snooze.reason ? `<p>${esc(snooze.reason)}</p>` : ""}<p class="muted">Resumes ${esc(snooze.until.toLocaleString())} without any action. Its house keeps working the rest of the queue; no agent starts and no merge happens for this task until then.</p><div class="inspector-actions"><button id="snooze-task" type="button">Change snooze…</button><button id="clear-snooze" type="button"${taskBusy("undefer", selectedHouse)}>Resume now</button></div></section>`
       : taskSnoozable(task)
         ? `<div class="inspector-actions"><button id="snooze-task" type="button">Snooze…</button></div>`
         : "";
-    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}${snoozeBlock}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? `<button id="retry-task" class="primary">Reconcile and retry</button>${snooze ? '<p class="muted">Retry clears the block but keeps the snooze: the task still waits for its resume time unless you choose Resume now.</p>' : ""}` : ""}`))
+    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}${snoozeBlock}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? `<button id="retry-task" class="primary"${taskBusy("retry", selectedHouse)}>Reconcile and retry</button>${snooze ? '<p class="muted">Retry clears the block but keeps the snooze: the task still waits for its resume time unless you choose Resume now.</p>' : ""}` : ""}`))
       return;
     $("#back-house").onclick = () => {
       selectedTask = "";
@@ -1041,7 +1106,8 @@ function renderInspection() {
     const outcomeRows = outcomes.records.slice().reverse().slice(0, 50).map((record) => {
       const unknown = record.elapsed_ms == null ? "elapsed unknown" : `${Math.round(record.elapsed_ms / 1000)}s`;
       const judgment = record.judgment ? `${record.judgment.value.replaceAll("_", " ")}: ${record.judgment.explanation}` : "unjudged";
-      const judge = record.kind === "finding_filed" ? `<span class="judgment-actions"><button data-judgment="useful" data-outcome="${esc(record.id)}">Useful</button><button data-judgment="false_positive" data-outcome="${esc(record.id)}">False positive</button></span>` : "";
+      const judging = busy(writeKey("judgment", selectedTown, record.id));
+      const judge = record.kind === "finding_filed" ? `<span class="judgment-actions"><button data-judgment="useful" data-outcome="${esc(record.id)}"${judging}>Useful</button><button data-judgment="false_positive" data-outcome="${esc(record.id)}"${judging}>False positive</button></span>` : "";
       const title = esc(record.kind.replaceAll("_", " "));
       const linkedTitle = safeURL(record.url) ? `<a href="${esc(record.url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
       const provenance = [record.role, record.task_id || "run-wide", record.revision ? `revision ${record.revision.slice(0, 12)}` : "revision unknown"].filter(Boolean).join(" · ");
@@ -1050,7 +1116,7 @@ function renderInspection() {
     const mayor = t.workers?.hall,
       projectedMayor = projectWorker(t, "hall", mayor),
       mayorControls = workerControls(mayor);
-    const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : projectedMayor.status === "failed" ? "blocked" : projectedMayor.status === "quiet" ? "quiet" : "waiting"}"></i>Mayor Bot ${esc(projectedMayor.status === "quiet" ? "quiet hours" : projectedMayor.status)}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${mayorControls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${mayorControls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${mayorControls.stop ? "" : " disabled"}>■ Stop</button></div><p class="muted">${mayor?.enabled ? "Mayor Bot judges each arrival below as it comes in, with its reason kept on the task, and writes the bulletin when work merges." : "Start Mayor Bot to have it judge arrivals for you and write the bulletin. Until then, decisions wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
+    const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : projectedMayor.status === "failed" ? "blocked" : projectedMayor.status === "quiet" ? "quiet" : "waiting"}"></i>Mayor Bot ${esc(projectedMayor.status === "quiet" ? "quiet hours" : projectedMayor.status)}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div>${workerButtons(mayorControls, "hall")}<p class="muted">${mayor?.enabled ? "Mayor Bot judges each arrival below as it comes in, with its reason kept on the task, and writes the bulletin when work merges." : "Start Mayor Bot to have it judge arrivals for you and write the bulletin. Until then, decisions wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
     const bulletinRows = (t.bulletins || []).slice().reverse().slice(0, 20).map((b) => `<article class="bulletin"><h4>${esc(b.title)}</h4><p class="muted">${esc(new Date(b.since).toLocaleString())} – ${esc(new Date(b.until).toLocaleString())} · ${(b.pulls || []).length} merged</p><p>${esc(b.summary)}</p>${(b.items || []).map((item) => `<div class="bulletin-item"><span class="status-chip status-${esc(item.kind)}">${esc(item.kind)}</span> <strong>${esc(item.title)}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${(item.pulls || []).map((n) => `PR #${n}`).join(", ")}${(item.issues || []).length ? ` · ${item.issues.map((n) => `issue #${n}`).join(", ")}` : ""}</small></div>`).join("")}</article>`).join("");
     if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}${overrulableBlock}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${quietBlock(t)}${budgetBlock(t)}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
       t.reports
@@ -1078,10 +1144,13 @@ function renderInspection() {
       button.onclick = async () => {
         const explanation = globalThis.prompt("Explain this usefulness judgment:");
         if (!explanation?.trim()) return;
-        try {
-          await api("/api/outcomes/judgment", { town: selectedTown, outcome: button.dataset.outcome, value: button.dataset.judgment, explanation: explanation.trim() });
-          await refreshState();
-        } catch (error) { showError(error.message); }
+        const townId = selectedTown;
+        await trackWrite(writeKey("judgment", townId, button.dataset.outcome), async () => {
+          try {
+            await api("/api/outcomes/judgment", { town: townId, outcome: button.dataset.outcome, value: button.dataset.judgment, explanation: explanation.trim() });
+            await refreshState();
+          } catch (error) { showError(error.message); }
+        });
       };
     });
     return;
@@ -1108,7 +1177,7 @@ function renderInspection() {
   const healthNote = selectedHouse === "repo" ? branchHealthNote(t.health) : "";
   const healthDetails = healthNote ? `<p class="muted">${esc(healthNote)}</p>` : "";
   const agentDetails = `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${selectedHouse === "repo" ? "Inventory runs without an agent. The configured agent starts only to repair a failing branch." : agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this house only" : "Inherited from this town's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
-  if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline(selectedHouse, faction))}</p><h2>${esc(houseLabel)}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : projectedWorker.status === "quiet" ? "quiet" : "waiting"}"></i>${esc(projectedWorker.status === "quiet" ? "quiet hours" : projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div>${projectedWorker.status === "quiet" ? `<p class="quiet-held">${esc(quietNote(t))}</p>` : ""}<div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${workloadChips(houseWorkload(t, selectedHouse))}${policyBlock(t, selectedHouse)}<h3>${esc(activeSkin.queueHeading(queue.length))}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
+  if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline(selectedHouse, faction))}</p><h2>${esc(houseLabel)}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : projectedWorker.status === "quiet" ? "quiet" : "waiting"}"></i>${esc(projectedWorker.status === "quiet" ? "quiet hours" : projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div>${projectedWorker.status === "quiet" ? `<p class="quiet-held">${esc(quietNote(t))}</p>` : ""}${workerButtons(controls, selectedHouse)}${workloadChips(houseWorkload(t, selectedHouse))}${policyBlock(t, selectedHouse)}<h3>${esc(activeSkin.queueHeading(queue.length))}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
 
     queue
       .map(
@@ -1206,13 +1275,39 @@ $("#snooze-form").onsubmit = async (event) => {
     submit.disabled = false;
   }
 };
-async function command(action, role = "all", task = "") {
+// A write in flight is part of what the page shows, not a property of one
+// element: snapshots rebuild the controls while the request is out, so the
+// markup itself carries the disabled state until the request settles.
+const pendingWrites = new Set();
+const writeKey = (...parts) => parts.join("\u0000");
+function busy(key) {
+  return pendingWrites.has(key) ? ' disabled aria-busy="true"' : "";
+}
+async function trackWrite(key, write) {
+  if (pendingWrites.has(key)) return;
+  const focus = focusIdentity(document.activeElement);
+  pendingWrites.add(key);
+  if (state) render();
   try {
-    await api("/api/control", { town: selectedTown, role, action, task });
-    showError("");
-  } catch (e) {
-    showError(e.message);
+    return await write();
+  } finally {
+    pendingWrites.delete(key);
+    if (state) {
+      render();
+      // Disabling the pressed button dropped focus; give it back.
+      if (!document.activeElement || document.activeElement === document.body) restoreFocus(focus);
+    }
   }
+}
+async function command(action, role = "all", task = "", townId = selectedTown) {
+  return trackWrite(writeKey("control", townId, role, action, task), async () => {
+    try {
+      await api("/api/control", { town: townId, role, action, task });
+      showError("");
+    } catch (e) {
+      showError(e.message);
+    }
+  });
 }
 // The inbox lists what waits on the Mayor in every town and points at the
 // exact house where the decision or retry lives.  It re-renders on every
@@ -1244,8 +1339,14 @@ function renderInbox(needs = inbox(state)) {
   toggle.setAttribute("aria-label", `Needs you: ${summary}`);
   const openButton = (item, label, primary) =>
     `<button class="${primary ? "primary" : ""}" data-inbox-key="open:${esc(item.task || item.house)}" data-inbox-town="${esc(item.town)}" data-inbox-house="${esc(item.house)}" data-inbox-task="${esc(item.task)}" data-inbox-open="1">${label}</button>`;
+  // One decision per task at a time, whichever of its two buttons was pressed.
+  const deciding = (item) =>
+    pendingWrites.has(writeKey("control", item.town, "hall", "admit", item.task)) ||
+    pendingWrites.has(writeKey("control", item.town, "hall", "decline", item.task))
+      ? ' disabled aria-busy="true"'
+      : "";
   const decisionCard = (item) =>
-    `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · admitting sends it to ${item.kind === "issue" ? "Issue Bot" : "Review Bot"}</small></div><div class="inbox-actions">${openButton(item, "Open in Town Hall", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit">${item.reviewAgain ? "Review again" : "Admit"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline">Decline</button></div></article>`;
+    `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · admitting sends it to ${item.kind === "issue" ? "Issue Bot" : "Review Bot"}</small></div><div class="inbox-actions">${openButton(item, "Open in Town Hall", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit"${deciding(item)}>${item.reviewAgain ? "Review again" : "Admit"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline"${deciding(item)}>Decline</button></div></article>`;
   const expanded = new Set([...$("#inbox-list").querySelectorAll("[data-inbox-detail]")]
     .filter((detail) => detail.open).map((detail) => detail.dataset.inboxDetail));
   const attentionCard = (item) => {
@@ -1311,13 +1412,17 @@ function openInboxItem(id, house, task) {
   inspectOperation(id, isHouse(house) ? house : "hall", task);
 }
 async function decideFromInbox(id, task, action) {
+  const other = action === "admit" ? "decline" : "admit";
+  if (pendingWrites.has(writeKey("control", id, "hall", other, task))) return;
   $("#inbox-error").textContent = "";
-  try {
-    await api("/api/control", { town: id, role: "hall", action, task });
-    await refreshState();
-  } catch (error) {
-    $("#inbox-error").textContent = error.message;
-  }
+  await trackWrite(writeKey("control", id, "hall", action, task), async () => {
+    try {
+      await api("/api/control", { town: id, role: "hall", action, task });
+      await refreshState();
+    } catch (error) {
+      $("#inbox-error").textContent = error.message;
+    }
+  });
 }
 function openInbox() {
   if (!state) return;
@@ -1464,7 +1569,7 @@ $("#add-form").onsubmit = async (e) => {
 };
 function motionUI() {
   $("#motion").textContent = motion ? "Motion on" : "Motion off";
-  $("#motion").setAttribute("aria-pressed", String(!motion));
+  $("#motion").setAttribute("aria-pressed", String(motion));
 }
 $("#motion").onclick = () => {
   motion = !motion;

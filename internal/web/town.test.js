@@ -46,6 +46,7 @@ import {
   parseQuietHours,
   formatQuietHours,
   quietNote,
+  reconnectDelay,
 } from "./town.js";
 import { registerTownTools } from "./tools.js";
 test("deliveries resume after cursor and stay in their repository", () => {
@@ -701,4 +702,27 @@ test("quiet hours read as a scheduled pause, apart from paused, working and fail
   assert.match(quietNote({ quiet_hours: { source: "town", active: false, next: "2026-09-21T18:00:00Z" } }), /^Quiet hours next begin /);
   assert.equal(quietNote({ quiet_hours: { source: "", active: false } }), "");
   assert.match(quietNote({ quiet_hours: { source: "town", active: true } }), /all week/);
+});
+
+test("reconnect waits grow exponentially from one second, cap at thirty, and jitter into the upper half", () => {
+  assert.equal(reconnectDelay(0, () => 0), 500);
+  assert.equal(reconnectDelay(0, () => 1), 1000);
+  assert.equal(reconnectDelay(3, () => 0.5), 6000);
+  assert.equal(reconnectDelay(5, () => 1), 30000, "32s is capped");
+  assert.equal(reconnectDelay(50, () => 0), 15000);
+  assert.equal(reconnectDelay(1000, () => 1), 30000);
+  assert.equal(reconnectDelay(-2, () => 1), 1000);
+  assert.equal(reconnectDelay("x", () => 1), 1000);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const delay = reconnectDelay(attempt);
+    assert.ok(delay >= 500 && delay <= 30000);
+  }
+});
+
+test("inspector controls keep their identity across redraws", () => {
+  const inside = { closest: () => ({ id: "inspection" }) };
+  assert.deepEqual(focusIdentity({ ...inside, dataset: { action: "pause" } }), { surface: "inspection", key: "pause", town: "" });
+  assert.deepEqual(focusIdentity({ ...inside, id: "admit-task", dataset: {} }), { surface: "inspection", key: "admit-task", town: "" });
+  assert.equal(focusMatches({ dataset: { action: "pause" } }, { surface: "inspection", key: "pause", town: "" }), true);
+  assert.equal(focusMatches({ dataset: { action: "stop" } }, { surface: "inspection", key: "pause", town: "" }), false);
 });

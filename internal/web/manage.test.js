@@ -29,7 +29,7 @@ class Element {
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 let elements;
 beforeEach(() => {
-  elements = Object.fromEntries([...html.matchAll(/<([a-z]+)\b[^>]*\bid="([^"]+)"[^>]*>/gs)]
+  elements = Object.fromEntries([...html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*\bid="([^"]+)"[^>]*>/gs)]
     .map(([, tag, id]) => [id, new Element(tag)]));
   for (const [, id, body] of html.matchAll(/<form id="([^"]+)">([\s\S]*?)<\/form>/g)) {
     elements[id].children = [...body.matchAll(/\bid="([^"]+)"/g)].map(([, child]) => elements[child]);

@@ -725,3 +725,29 @@
   unconfirmed selection, is a failure to select naming the same setting.
   Other phases pass through unchanged. An untyped error is never read as an
   agent rejection.
+
+## Browser redraws, reconnect and accessibility (#27)
+
+- Writes in flight live in `pendingWrites` (keyed by town, role, action and
+  task), not on an element. The markup renders a pending control
+  `disabled aria-busy="true"`, so a snapshot redraw keeps it disabled and the
+  inspector's signature diff repaints when a write starts or settles. A second
+  press, or the other decision on the same inbox task, sends nothing. Covers
+  worker Start/Pause/Stop, admit/decline/retry/resume, the header wake and
+  pause, inbox decisions, usefulness judgments, and request receipt checks.
+  Focus returns to the pressed control when the write settles; `#inspection`
+  joins the focus-restore surfaces (keyed by `data-action` or id).
+- `/api/events` reconnects with `reconnectDelay`: 1s doubling, capped at 30s,
+  jittered into the upper half. A frame, not an accepted request, resets it.
+  A hidden tab schedules no retry and skips painting snapshots; becoming
+  visible paints the held snapshot and retries at once.
+- The motion toggle's `aria-pressed` is true while motion is on. Every dialog
+  has `aria-labelledby` pointing at its heading.
+- Layout, checked headlessly on the demo at 375-2000px: the header wraps at
+  every width (no two-line labels, no horizontal overflow; the version string
+  truncates, and phones drop the version and capacity readouts). The map
+  legend moved to the top strip above the upper houses, since the lower row's
+  labels reach the bottom edge whenever the map is short (761-1000px and the
+  three-column layout at 1300px as well as phones). Below 1251px the
+  inspector drawer spans the full height, so a wrapped header cannot
+  misalign it.

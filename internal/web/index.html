@@ -49,7 +49,7 @@
       >
         Theme: Town
       </button>
-      <button id="motion" class="quiet" aria-pressed="false">Motion on</button
+      <button id="motion" class="quiet" type="button" aria-pressed="true">Motion on</button
       ><button id="new-town" data-skin-text="new-town">＋ New town</button>
     </header>
     <div class="app">
@@ -192,10 +192,10 @@
         </div>
       </aside>
     </div>
-    <dialog id="add-dialog">
+    <dialog id="add-dialog" aria-labelledby="add-heading">
       <form id="add-form">
         <div class="eyebrow">ESTABLISH A NEIGHBORHOOD</div>
-        <h2>A new town</h2>
+        <h2 id="add-heading">A new town</h2>
         <label for="repo-input">GitHub repository</label
         ><input
           id="repo-input"
@@ -227,17 +227,17 @@
         </div>
       </form>
     </dialog>
-    <dialog id="connect-dialog">
-      <h2>Connect to your town</h2>
+    <dialog id="connect-dialog" aria-labelledby="connect-heading">
+      <h2 id="connect-heading">Connect to your town</h2>
       <p>
         Run <code>bt web</code> and open the URL it prints. That link carries the
         local access key for this browser.
       </p>
     </dialog>
-    <dialog id="capacity-dialog">
+    <dialog id="capacity-dialog" aria-labelledby="capacity-heading">
       <form id="capacity-form">
         <div class="eyebrow">TOWN OPERATIONS</div>
-        <h2>Worker capacity</h2>
+        <h2 id="capacity-heading">Worker capacity</h2>
         <p class="muted">Set the maximum number of active bot workers across all towns. Lowering the limit lets active work finish before more bots start. Reporters and issue publishing use separate capacity.</p>
         <label for="capacity-input">Maximum active workers</label>
         <input id="capacity-input" name="max_workers" type="number" min="1" max="64" step="1" required />
@@ -278,10 +278,10 @@
         </div>
       </form>
     </dialog>
-    <dialog id="settings-dialog" class="wide-dialog">
+    <dialog id="settings-dialog" class="wide-dialog" aria-labelledby="settings-heading">
       <form id="settings-form">
         <div class="eyebrow">YOUR AGENT TEAM</div>
-        <h2>Town settings</h2>
+        <h2 id="settings-heading">Town settings</h2>
         <p id="settings-repo" class="muted"></p>
         <section class="settings-section" aria-labelledby="external-policy-heading">
           <div class="eyebrow" id="external-policy-heading">EXTERNAL CONTRIBUTIONS</div>
@@ -431,10 +431,10 @@
         </div>
       </form>
     </dialog>
-    <dialog id="delete-dialog">
+    <dialog id="delete-dialog" aria-labelledby="delete-heading">
       <form id="delete-form">
         <div class="eyebrow">REMOVE A NEIGHBORHOOD</div>
-        <h2>Delete this town?</h2>
+        <h2 id="delete-heading">Delete this town?</h2>
         <p id="delete-repo"></p>
         <p>
           This stops its workers and removes the town from your world. Your
@@ -452,10 +452,10 @@
         </div>
       </form>
     </dialog>
-    <dialog id="request-dialog" class="wide-dialog">
+    <dialog id="request-dialog" class="wide-dialog" aria-labelledby="request-heading">
       <form id="request-form">
         <div class="eyebrow">BRING AN IDEA TO TOWN</div>
-        <h2>A new piece of work</h2>
+        <h2 id="request-heading">A new piece of work</h2>
         <p id="request-repo" class="muted"></p>
         <label for="request-kind">What would you like to submit?</label>
         <select id="request-kind">
@@ -494,9 +494,9 @@
         <div id="request-history" aria-live="polite"></div>
       </section>
     </dialog>
-    <dialog id="inbox-dialog" class="wide-dialog">
+    <dialog id="inbox-dialog" class="wide-dialog" aria-labelledby="inbox-heading">
       <div class="eyebrow">ACROSS YOUR TOWNS</div>
-      <h2>What needs you</h2>
+      <h2 id="inbox-heading">What needs you</h2>
       <p class="muted">
         Mayoral decisions and stuck work from every town, longest wait first.
         Each item explains what is blocked and your next step.
@@ -508,8 +508,8 @@
         <button type="button" id="close-inbox" class="quiet">Close</button>
       </div>
     </dialog>
-    <dialog id="help-dialog">
-      <h2>Around the town</h2>
+    <dialog id="help-dialog" aria-labelledby="help-heading">
+      <h2 id="help-heading">Around the town</h2>
       <p class="muted" id="help-version"></p>
       <p><kbd>0</kbd> All towns</p>
       <p><kbd>I</kbd> What needs you, across every town</p>
