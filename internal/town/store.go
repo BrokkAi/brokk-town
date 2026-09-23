@@ -214,8 +214,9 @@ func validateState(s State, demo bool) error {
 			if task.MayoralDecision == "pending" && (task.House != Hall || task.Stage != "awaiting_mayor") {
 				return errors.New("pending Mayoral decision left Town Hall")
 			}
-			// A declined pull request its author closed keeps the decline.
-			if task.MayoralDecision == "declined" && (task.House != Hall || (task.Stage != "declined" && (task.Stage != "closed" || task.Kind != "pr"))) {
+			// A declined pull request its author closed keeps the decline, as
+			// does Town's own declined pull request while Town closes it.
+			if task.MayoralDecision == "declined" && (task.House != Hall || (task.Stage != "declined" && ((task.Stage != "closed" && task.Stage != "closing") || task.Kind != "pr"))) {
 				return errors.New("declined Mayoral decision is not final")
 			}
 			if task.Stage == "simplifying" && (task.House != Simplifier || (task.Kind != "issue" && task.Kind != "pr")) {

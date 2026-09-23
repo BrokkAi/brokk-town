@@ -72,6 +72,64 @@ func markClosing(st *State, t *Town, task *Task, reason string, now time.Time) {
 	}
 }
 
+// declinedOwnPull reports whether Town holds a final decline of its own pull
+// request that it carries out by closing it: the Mayor's decline, or
+// Simplifier's auto decline that nobody has escalated to the Mayor or admitted.
+func declinedOwnPull(task *Task) bool {
+	if task == nil || task.Kind != "pr" || task.External || task.House != Hall || task.Stage != "declined" {
+		return false
+	}
+	return task.MayoralDecision == "declined" || (task.MayoralDecision == "" && autoDeclined(task))
+}
+
+// claimDeclinedPulls hands each declined pull request of Town's own to the
+// closer that closes pull requests after review, which also starts the issue
+// over. It runs under the store right before that closer, and only outside
+// quiet hours, so until then the Mayor can still admit an auto-declined pull
+// request; once claimed as "closing", admission refuses it. A snoozed pull
+// request waits for its snooze. The decline itself is kept, so a reopen is
+// judged by it.
+func claimDeclinedPulls(st *State, t *Town, now time.Time) {
+	if t == nil || t.Deleted {
+		return
+	}
+	for _, task := range t.Tasks {
+		if !declinedOwnPull(task) || task.Deferred(now) {
+			continue
+		}
+		task.Attempts = 0
+		task.RetryAt = time.Time{}
+		task.Blocked = false
+		task.Detail = declineCloseReason(task)
+		st.Move(t, task, "closing", Hall, "Closing declined PR: "+task.Title, now)
+	}
+}
+
+func declineCloseReason(task *Task) string {
+	if task.MayoralDecision == "declined" {
+		return "The Mayor declined this pull request. Town is closing it and starting the issue over."
+	}
+	reason := "Simplifier declined this pull request. Town is closing it and starting the issue over."
+	if s := task.Simplification; s != nil {
+		if s.Summary != "" {
+			reason += "\n\n" + s.Summary
+		}
+		reason += "\n\n" + s.Detail
+	}
+	return reason
+}
+
+// closedCause says why Town closed one of its own pull requests.
+func closedCause(task *Task) string {
+	switch {
+	case task.MayoralDecision == "declined":
+		return "the Mayor declined it"
+	case autoDeclined(task):
+		return "Simplifier declined it"
+	}
+	return "its second review"
+}
+
 // severity is the rating Town holds for one certified finding: the certifier's
 // own when it gave one, otherwise the reviewer's.
 func (task *Task) severity(f Finding) string {
@@ -154,7 +212,7 @@ func closingComment(task *Task, owned Ownership) string {
 }
 
 func requeueComment(task *Task, pr int) string {
-	return fmt.Sprintf("## Brokk Town\n\nPull request #%d was closed after its second review. The next attempt starts over from the current base branch and should address what the review found:\n\n%s\n\n<!-- brokk-town:requeued pr=%d -->", pr, task.Detail, pr)
+	return fmt.Sprintf("## Brokk Town\n\nPull request #%d was closed after %s. The next attempt starts over from the current base branch and should address the reason:\n\n%s\n\n<!-- brokk-town:requeued pr=%d -->", pr, closedCause(task), task.Detail, pr)
 }
 
 // closeRetiredPulls performs the GitHub side of a closing decision: close the
@@ -186,6 +244,18 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 		if p, known := pulls[n]; !known || p.State == "open" {
 			if err := s.GitHub.ClosePull(ctx, t.Config.Repo, n); err != nil {
 				failures = errors.Join(failures, fmt.Errorf("close PR #%d: %w", n, err))
+				var rejected *RejectedError
+				if errors.As(err, &rejected) && task.MayoralDecision == "" && autoDeclined(task) {
+					// GitHub refused the close, so nothing happened there.
+					// Simplifier's decline is released, as for an issue, so the
+					// Mayor can admit the pull request before the next claim.
+					if err := s.Store.Update(func(st *State) error {
+						releaseDeclinedPull(st, st.Towns[t.ID], n, rejected.Status, s.now())
+						return nil
+					}); err != nil {
+						return errors.Join(failures, err)
+					}
+				}
 				continue
 			}
 			if err := s.GitHub.Comment(ctx, t.Config.Repo, n, closingComment(task, owned)); err != nil {
@@ -215,6 +285,22 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 	return failures
 }
 
+// releaseDeclinedPull returns an auto-declined pull request GitHub refused to
+// close from "closing" to "declined", where the Mayor can admit it.
+func releaseDeclinedPull(st *State, t *Town, n int, status int, now time.Time) {
+	if t == nil {
+		return
+	}
+	task := t.Tasks[fmt.Sprintf("pr:%d", n)]
+	if task == nil || task.Stage != "closing" || task.MayoralDecision != "" || !autoDeclined(task) {
+		return
+	}
+	task.Stage = "declined"
+	task.Detail = fmt.Sprintf("GitHub refused to close this pull request (HTTP %d). Simplifier's decline stands; the Mayor can admit it anyway.", status)
+	task.Updated = now
+	st.Event(t.ID, "error", string(Repo), "hall", task.ID, "GitHub refused to close: "+task.Title, now)
+}
+
 // finalizeClosedPull records the closed pull request and queues its issue for a
 // fresh attempt that starts over rather than on top of the closed work.
 func finalizeClosedPull(st *State, t *Town, n int, now time.Time) {
@@ -232,10 +318,14 @@ func finalizeClosedPull(st *State, t *Town, n int, now time.Time) {
 	}
 	task.Stage = "closed"
 	task.House = Hall
-	task.MayoralDecision = ""
+	if task.MayoralDecision != "declined" {
+		// A Mayoral decline stays on the closed pull request, as it does
+		// when an author closes one, so a reopen does not undo it.
+		task.MayoralDecision = ""
+	}
 	task.Updated = now
 	t.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("closed:%s:%s", task.ID, task.Head), At: now, Class: "outcome", Kind: "closed", Status: "confirmed", Role: Review, TaskID: task.ID, RelatedTaskID: related, Revision: task.Head, URL: task.URL, Detail: task.Detail})
-	st.Event(t.ID, "delivery", "hall", "outside", task.ID, "Closed after review: "+task.Title, now)
+	st.Event(t.ID, "delivery", "hall", "outside", task.ID, "Closed after "+closedCause(task)+": "+task.Title, now)
 	if related == "" {
 		return
 	}
@@ -249,7 +339,7 @@ func finalizeClosedPull(st *State, t *Town, n int, now time.Time) {
 	issue.Blocked = false
 	issue.IssueJob = nil
 	issue.MayoralDecision = ""
-	issue.Detail = fmt.Sprintf("PR #%d was closed after review. A fresh attempt is queued; the review findings are on the issue.", n)
+	issue.Detail = fmt.Sprintf("PR #%d was closed after %s. A fresh attempt is queued; the reason is on the issue.", n, closedCause(task))
 	if issue.Stage == "queued" && issue.House == Issue {
 		issue.Updated = now
 	} else {

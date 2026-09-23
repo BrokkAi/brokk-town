@@ -152,11 +152,13 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			related := fmt.Sprintf("issue:%d", owned.Issue)
 			t.RecordOutcome(OutcomeRecord{ID: "implementation-pr:" + id, At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", Role: Issue, TaskID: id, RelatedTaskID: related, Revision: p.Head.SHA, URL: p.URL, Detail: p.Title})
 		}
-		if autoDeclined(task) && (task.House != Hall || task.MayoralDecision == "pending" || task.Retired || task.Audit != nil) {
+		if autoDeclined(task) && (task.House != Hall || (task.MayoralDecision == "pending" && task.External) || task.Retired || task.Audit != nil) {
 			// Older state let a revision carry an auto-declined pull request
 			// back to Review, from where a review can send it to the Mayor;
 			// the decline no longer describes where it is. A declined pull
-			// request is never reviewed or retired.
+			// request is never reviewed or retired. Town's own pull request
+			// awaits the Mayor with a decline only on appeal (see resume),
+			// and keeps the assessment the Mayor judges it with.
 			task.Simplification = nil
 		}
 		if task.Offbranch {
@@ -236,6 +238,11 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 					t.Tasks[cid] = &Task{ID: cid, Kind: "commit", Title: p.Title, URL: p.URL, Stage: "unreleased", House: Release, Head: p.MergeCommit, Updated: *p.MergedAt}
 				}
 			}
+		} else if task.Stage == "closing" && p.State == "closed" {
+			// Town's close was accepted, or its outcome was uncertain and it
+			// happened, but a later step (the comments, the branch, starting
+			// the issue over) is still owed. The claim stays until the closer
+			// finishes it; settling it here stranded the issue as implemented.
 		} else if p.State == "closed" {
 			if isOwned && task.Stage != "closed" {
 				t.RecordOutcome(OutcomeRecord{ID: "abandoned:" + id + ":" + p.Head.SHA, At: now, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: id, RelatedTaskID: fmt.Sprintf("issue:%d", owned.Issue), Revision: p.Head.SHA, URL: p.URL, Detail: "Implementation PR closed without a confirmed merge"})
@@ -253,15 +260,16 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				// way of a later revision.
 				resume(t, task)
 			}
-			if holdsIntake(task) {
+			if task.Stage == "closing" {
+				// Town is closing this pull request; the next inventory finishes
+				// it. A draft or lock change does not cancel the close.
+			} else if holdsIntake(task) {
 				// A contributor revision or draft-state change never bypasses the
 				// durable Simplifier or Mayoral intake decision.
 			} else if p.Draft {
 				task.Stage = "draft"
 			} else if p.Locked {
 				task.Stage = "locked"
-			} else if task.Stage == "closing" {
-				// Town is closing this pull request; the next inventory finishes it.
 			} else if task.Stage == "draft" || task.Stage == "locked" {
 				resume(t, task)
 			}
@@ -387,6 +395,12 @@ func resume(t *Town, task *Task) {
 		task.Stage = "awaiting_mayor"
 		task.MayoralDecision = "pending"
 		task.Detail = "Reopened after Simplifier declined it and Town closed it. The Mayor decides whether Town takes it on."
+	case task.Kind == "pr" && !task.External && task.House == Hall && task.MayoralDecision == "" && autoDeclined(task) && task.Stage == "closed":
+		// Town's own pull request, closed on Simplifier's decline, reopened:
+		// an appeal as for an issue. The issue has already started over.
+		task.Stage = "awaiting_mayor"
+		task.MayoralDecision = "pending"
+		task.Detail = "Reopened after Simplifier declined it and Town closed it. The Mayor decides whether Town reviews it; its issue has already started over."
 	case task.MayoralDecision == "declined" || (task.House == Hall && autoDeclined(task)):
 		task.Stage = "declined"
 		return

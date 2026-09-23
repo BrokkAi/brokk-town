@@ -469,9 +469,8 @@
   list), which clears the decline. A Mayoral decline stays final. Older state
   where a revision already carried the decline out of Town Hall (including a
   retired or reviewed pull request) has the stale decline cleared on the next
-  inventory. Town's own pull request declined by Simplifier is never closed and
-  strands its issue; tracked separately in #126. "Admit anyway" asks for
-  confirmation.
+  inventory. Town's own pull request declined by Simplifier is closed and its
+  issue started over (#126, below). "Admit anyway" asks for confirmation.
 - The declined-issue closer claims each issue under the store just before the
   GitHub write: it rechecks the decline, and an auto-declined issue moves to
   `closing`, which admission refuses. An accepted close settles it `closed`
@@ -705,6 +704,36 @@
   `until`/`next` across DST resolve to the real instant the clock reaches
   (the jump past a skipped reading, the repeated reading still ahead);
   `mergeReady` rechecks quiet hours just before writing its intent.
+
+## Declined own pull requests (#126)
+
+- A declined Town-owned pull request stayed open with nothing selecting it,
+  and reconcile kept its issue `implemented` while it was open. This held for
+  Simplifier's auto decline and for the Mayor's decline in suggest mode.
+- Decision: close it the way a failed second review does (`retirePull` already
+  closes Town's own work and leaves contributors' to the Mayor). Skipping
+  intake for own pull requests was rejected: the README documents that
+  implementation pull requests pass Simplifier, and the Mayor sees them in
+  suggest mode. Outside pull requests are still only ignored.
+- `applySimplification` and `decideTask` leave the own pull request
+  `hall/declined` and wake Repo Bot. After each inventory, outside quiet hours,
+  `claimDeclinedPulls` moves it to `closing` under the store just before
+  `closeRetiredPulls`, which closes it, comments, deletes Town's branch,
+  comments on the issue and requeues it (`Requeue`). Until the claim, the Mayor
+  can admit an auto decline; `closing` refuses admission. A snoozed pull request
+  is not claimed until its snooze ends.
+- The decline is kept through `closing` and `closed`: Simplifier's assessment,
+  and a Mayoral `declined` (state validation now allows `closing`). Comments,
+  events and the issue's detail name the cause.
+- Outcomes: a definite GitHub rejection (`RejectedError`) of the close
+  releases an auto decline back to `declined` for the Mayor; any other failure
+  keeps the claim. Reconcile no longer settles a `closing` pull request that
+  GitHub lists closed, so a close that happened with an uncertain outcome, or
+  whose later steps failed, is finished by the next inventory instead of
+  stranding the issue. A draft or lock change no longer overwrites `closing`.
+- Reopen: Town's own pull request closed on Simplifier's decline is an appeal
+  and waits for the Mayor with the assessment kept; one the Mayor declined is
+  closed again, as a Mayor-declined proposal issue is.
 
 ## acp-go upgrade policy
 

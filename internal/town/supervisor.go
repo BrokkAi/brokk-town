@@ -710,6 +710,17 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Simplifier declined: "+task.Title, now)
 			return
 		}
+		if !task.External {
+			// Town's own pull request implements an issue that already went
+			// through intake; left open, it kept that issue implemented with
+			// nothing working on it. Town closes it and starts the issue over,
+			// as after a failed review. The closer claims it at the next
+			// inventory outside quiet hours, so the Mayor can admit it first.
+			task.Detail = "Simplifier declined Town's own pull request. Town is closing it and starting the issue over."
+			t.Workers[Repo].Next = time.Time{}
+			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Simplifier declined: "+task.Title, now)
+			return
+		}
 		task.Detail = "Simplifier declined this pull request. Town will not review it."
 		st.Event(t.ID, "decision", string(Simplifier), "outside", task.ID, "Simplifier declined: "+task.Title, now)
 		return
@@ -925,6 +936,12 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 	// step, so waiting loses nothing.
 	if s.Store.quietActive(t.ID, s.now()) {
 		return nil
+	}
+	if err := s.Store.Update(func(st *State) error {
+		claimDeclinedPulls(st, st.Towns[t.ID], s.now())
+		return nil
+	}); err != nil {
+		return err
 	}
 	current := s.Store.Snapshot().Towns[t.ID]
 	err = errors.Join(s.closeDeclinedProposals(ctx, current, remote), s.closeRetiredPulls(ctx, current, remote))
