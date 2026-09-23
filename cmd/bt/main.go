@@ -319,6 +319,12 @@ func run(ctx context.Context, args []string) error {
 			}
 			payload["review_close_severity"] = strings.ToUpper(*fl.closeSeverity)
 		}
+		if *fl.mergePolicy != "" {
+			if settingsRole != "" {
+				return errors.New("--merge-policy is a town setting; omit --role")
+			}
+			payload["merge_policy"] = strings.ToLower(*fl.mergePolicy)
+		}
 		budgetEdited := *fl.budgetPeriod != "" || *fl.budgetAttempts != 0 || *fl.budgetMinutes != 0
 		if budgetEdited {
 			if settingsRole != "" {

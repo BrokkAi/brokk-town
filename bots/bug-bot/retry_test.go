@@ -27,7 +27,7 @@ func TestRetryDelayAfterFailure(t *testing.T) {
 			now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 			e.now = func() time.Time { return now }
 			failure := errors.New("agent failed")
-			e.agent = func(Config) Agent { return timedFailingAgent{&now, duration, failure} }
+			e.agent = func(Config, string) Agent { return timedFailingAgent{&now, duration, failure} }
 			ctx := context.Background()
 			if err := e.step(ctx, s, false); !errors.Is(err, failure) {
 				t.Fatalf("expected agent failure, got %v", err)

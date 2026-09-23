@@ -40,8 +40,8 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				w.Status = "waiting"
 				w.Task = "Watching the village"
 			}
-			t.Report("A good morning in orchard", "The town is awake. Bug and feature investigations are underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
 			if repo == "BrokkAi/orchard" {
+				t.Report("A good morning in orchard", "The town is awake. Bug and feature investigations are underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
 				seedDemoBoard(s, t, time.Now())
 				now := time.Now()
 				id := WorkIdentity{Funnel: "demo-slack", Provider: "slack", Item: "1712345678.000100"}
@@ -53,6 +53,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				doneGitHub := WorkItem{Identity: doneGitHubID, Title: "Retire the legacy import endpoint", Status: WorkClosed, Eligible: false, Eligibility: "issue is closed at source", Priority: Priority{Policy: "demo-explicit"}, Provenance: Provenance{Identity: doneGitHubID, URL: "https://github.com/BrokkAi/orchard/issues/706", Revision: "demo-r3", ObservedAt: now, ExternalState: "closed"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
 				_ = ReconcileFunnelPage(s, t, DiscoveryPage{Funnel: "demo-github", Provider: "github", Items: []WorkItem{doneGitHub}, Complete: true, Outcome: Outcome{Kind: OutcomeComplete, Covered: true}, ObservedAt: now}, now)
 			} else {
+				t.Report("Paper-trail is waiting on its watchtower", "The last inventory failed and waits for an operator retry. The other houses keep watching. This is simulated activity.", time.Now())
 				t.Workers[Repo].Status = "failed"
 				t.Workers[Repo].Error = "Demo inventory is waiting for an operator retry"
 				t.Workers[Repo].Task = "Inspect the watchtower report"
