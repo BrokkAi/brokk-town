@@ -301,10 +301,12 @@
 
 ## Documentation drift (#29)
 
-- `GitHubClient.Gate` shares the one-minute `githubTimeout` with `api()`, so a
-  stalled `gh pr view` cannot hold the review house's merge pass. Every other
-  gh call on the supervisor path already goes through `api()`; worker jobs
-  keep the two-hour `workerDeadline`.
+- `GitHubClient.Gate` and `api()` share one bounded `gh` runner
+  (`GitHubClient.Timeout`, default one minute), so a stalled `gh pr view`
+  cannot hold the review house's merge pass. An expired bound reports
+  "gh ... timed out after 1m0s" rather than a killed process; a caller's own
+  cancellation is reported as that. Worker jobs keep the two-hour
+  `workerDeadline`.
 - `bt settings --merge-policy bot|manual|all` sets the town policy through the
   existing settings API; it refuses `--role`.
 - README states that config-file entries get no defaults, that a release retry
