@@ -542,3 +542,25 @@
 - Logs tag agent sessions `stage=discovery|review` with the selection; the
   dashboard shows both. Town and the worker protocol are unchanged.
 - `bundle.json` moves feature-bot to 0.2.0 at the feature commit.
+
+## Test coverage for GitHub, repair and result routing (#26)
+
+- `github_client_test.go`: a recording fake `gh` on PATH (canned output per
+  argv prefix, request bodies captured, unrouted calls fail) covers Pull,
+  Actor, Discussion pagination and partial-read refusal, `pages` on a path
+  with a query, Gate parsing, Merge with `merged:false` or no commit, the
+  close/comment/create writes, DeleteBranch validation and "Reference does
+  not exist", and Contains statuses and refusals.
+- `repair_guard_test.go`: every repair guard driven to failure (dirty tree,
+  left branch, amend, reset, no commit, empty and reverted commits, verify
+  failing/committing/dirtying, redirected push remote), `checkRepairRef`,
+  and `resumeRepair` against a bare remote whose pre-receive hook rejects
+  the first push, including its saved-commit, dirty, verify and moved-PR
+  refusals.
+- `execute_routing_test.go`: table test of `execute` result routing.
+- `worker_log_test.go`: redaction, bounding and drop-oldest behaviour.
+- Fixed: `workerLog` printed grouped and `LogValuer` attributes whole, so a
+  `token` nested in a group reached persisted logs; it now resolves and walks
+  groups. Its 4000-byte cut could split a UTF-8 character; it now cuts on a
+  rune boundary.
+- internal/town coverage 74.4% -> 76.7%.
