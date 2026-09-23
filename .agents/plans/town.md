@@ -403,3 +403,25 @@
 - `check-request` on an unknown ID returns "unknown request" (404) rather than
   "does not need reconciliation".
 - The stale `connection.json` PID was already handled by `processAlive`.
+
+## release-bot release_trigger_ignore (#110)
+
+- Optional `release_trigger_ignore` config: repository-relative literal files
+  and directory prefixes ending in `/`; empty by default. Absolute paths,
+  backslashes, globs, empty entries and empty, `.` or `..` segments are
+  rejected.
+- Before a new automatic job (after pending-job recovery, before cadence and
+  triage), `git diff --no-renames --name-status -z` compares the released
+  commit with the watched branch head and, when different, the local release
+  head. A nonempty union of paths that are all ignored keeps monitoring with a
+  "waiting" progress task that names the policy; no triage or preparation runs.
+  Renames count both paths, deletions count, a net-empty diff and a release
+  without a recorded time (first release, `initial_ref`) keep existing
+  behavior, and a Git failure is returned as an error.
+- The decision is recomputed from Git every cycle; nothing is saved, so the
+  baseline never moves and a restart reaches the same answer. Commit counts,
+  quiet period, publication and verification are unchanged. `--once --force`
+  bypasses the policy.
+- Town is unchanged: the worker protocol carries no such field (a non-goal of
+  the issue), so the setting applies only to config-file runs.
+- `bundle.json` moves release-bot to 0.7.0 at the feature commit.

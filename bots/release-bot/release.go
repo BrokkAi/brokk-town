@@ -26,6 +26,9 @@ type engine struct {
 	state              *State
 	unreleased, recent int
 	changesKnown       bool
+	// deferred explains why the last check left unreleased commits waiting
+	// because release_trigger_ignore excluded every changed path.
+	deferred string
 }
 
 var errAttemptsExhausted = errors.New("release retry budget exhausted; fix the reported failure and run release-bot retry")
@@ -69,7 +72,11 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once, force bool) er
 			log.Error("release cycle", "error", err)
 		}
 		if err == nil {
-			e.report(e.state, "waiting", "Waiting for the next release check")
+			task := "Waiting for the next release check"
+			if e.deferred != "" {
+				task = e.deferred
+			}
+			e.report(e.state, "waiting", task)
 		}
 		timer := time.NewTimer(time.Duration(cfg.Poll))
 		select {
@@ -137,6 +144,7 @@ func (e *engine) cycle(ctx context.Context, force bool) error {
 	}
 	e.state = s
 	e.changesKnown = false
+	e.deferred = ""
 	e.report(s, "fetching", "Checking repository for changes")
 	e.log.Info("Checking repository for changes")
 	if err := e.git.open(ctx); err != nil {
@@ -174,6 +182,18 @@ func (e *engine) cycle(ctx context.Context, force bool) error {
 	if err := e.save(s); err != nil {
 		return err
 	}
+	if !force {
+		ignored, err := e.onlyIgnoredChanges(ctx, s, total, head, remoteHead)
+		if err != nil {
+			return err
+		}
+		if ignored {
+			e.deferred = "Waiting: unreleased changes touch only release_trigger_ignore paths"
+			e.report(s, "waiting", e.deferred)
+			e.log.Info("monitoring; changes touch only release_trigger_ignore paths", "unreleased_commits", total, "recent_commits", recent)
+			return nil
+		}
+	}
 	reason := due(e.config, s, total, recent, now)
 	if force && total > 0 {
 		reason = "forced cadence"
@@ -204,6 +224,35 @@ func (e *engine) cycle(ctx context.Context, force bool) error {
 	}
 	e.log.Info("release due", "reason", reason, "target", head, "work_branch", workBranch)
 	return e.resume(ctx, s)
+}
+
+// onlyIgnoredChanges reports whether every path changed since the verified
+// release, on the watched branch and in the preserved local head, matches
+// release_trigger_ignore. Without a policy, unreleased commits or an
+// established release (commit and time), and for an empty net diff, it is
+// false, so first releases and the existing cadence are unchanged. A Git
+// failure is returned rather than read as ignorable.
+func (e *engine) onlyIgnoredChanges(ctx context.Context, s *State, total int, head, remoteHead string) (bool, error) {
+	if len(e.config.ReleaseTriggerIgnore) == 0 || total == 0 || s.Released == "" || s.ReleasedAt.IsZero() {
+		return false, nil
+	}
+	changed := 0
+	for _, tip := range []string{remoteHead, head} {
+		paths, err := e.git.changedPaths(ctx, s.Released, tip)
+		if err != nil {
+			return false, fmt.Errorf("inspect changed paths for release_trigger_ignore: %w", err)
+		}
+		for _, path := range paths {
+			if !e.config.triggerIgnored(path) {
+				return false, nil
+			}
+		}
+		changed += len(paths)
+		if head == remoteHead {
+			break
+		}
+	}
+	return changed > 0, nil
 }
 func (e *engine) resume(ctx context.Context, s *State) error {
 	j := s.Job
