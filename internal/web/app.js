@@ -71,20 +71,19 @@ let skin = (() => {
   }
 })();
 let activeSkin = skinFor(skin);
-function factionOverrides() {
+const factionOverrides = (() => {
   try {
     const stored = JSON.parse(localStorage.getItem("brokk-town-factions") || "{}");
     return stored && typeof stored === "object" ? stored : {};
   } catch {
     return {};
   }
-}
+})();
 function saveFactionOverride(townId, faction) {
-  const overrides = factionOverrides();
-  if (faction) overrides[townId] = faction;
-  else delete overrides[townId];
+  if (faction) factionOverrides[townId] = faction;
+  else delete factionOverrides[townId];
   try {
-    localStorage.setItem("brokk-town-factions", JSON.stringify(overrides));
+    localStorage.setItem("brokk-town-factions", JSON.stringify(factionOverrides));
   } catch {
     /* Private browsing keeps the choice for this session only. */
   }
@@ -92,7 +91,7 @@ function saveFactionOverride(townId, faction) {
 // The faction a base flies: derived from the repository, or whatever the
 // player picked for it. Town skin returns null and every artist ignores it.
 function currentFaction(townId = selectedTown) {
-  return activeSkin.faction(townId, factionOverrides()[townId]);
+  return activeSkin.faction(townId, factionOverrides[townId]);
 }
 if (token) {
   sessionStorage.setItem("brokk-town-token", token);
@@ -462,7 +461,7 @@ function renderFactionPicker(t) {
       }),
     );
   }
-  const override = factionOverrides()[t.id];
+  const override = factionOverrides[t.id];
   select.value = factions.some((f) => f.id === override) ? override : "";
   select.onchange = () => {
     saveFactionOverride(t.id, select.value);
