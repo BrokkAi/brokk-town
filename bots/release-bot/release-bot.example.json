@@ -23,5 +23,6 @@
   "retry_delay": "15m",
   "attempts": 3,
   "triage": true,
-  "triage_timeout": "10m"
+  "triage_timeout": "10m",
+  "release_trigger_ignore": []
 }

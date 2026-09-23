@@ -206,3 +206,18 @@ func TestDashboardNavigationBeforeFirstFinding(t *testing.T) {
 		t.Fatalf("first result was not selectable: %s", text)
 	}
 }
+
+func TestDashboardUnchangedBranchWaits(t *testing.T) {
+	d := dashboardFixture()
+	now := time.Now()
+	d.update(bot.Progress{Phase: "waiting", Task: "Branch unchanged since the last completed scan", WakeAt: now.Add(30 * time.Minute)})
+	d.update(bot.Progress{Phase: "waiting", Task: "Branch unchanged since the last completed scan", WakeAt: now.Add(30 * time.Minute)})
+	text := d.render(160, 24, now, false)
+	if !strings.Contains(text, "Branch unchanged since the last completed scan · Next check in 30m") || !strings.Contains(text, "2 scans") {
+		t.Fatalf("unchanged wait display:\n%s", text)
+	}
+	d.update(bot.Progress{Phase: "waiting", Task: "Next scan", WakeAt: now.Add(30 * time.Minute)})
+	if text := d.render(160, 24, now, false); strings.Contains(text, "Next scan ·") || !strings.Contains(text, "Next check in 30m") {
+		t.Fatalf("normal wait display:\n%s", text)
+	}
+}

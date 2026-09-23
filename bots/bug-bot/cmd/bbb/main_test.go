@@ -124,3 +124,36 @@ func TestCLIReviewSelection(t *testing.T) {
 		}
 	}
 }
+
+func TestCLIOnlyOnChange(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, tc := range []struct {
+		config string
+		args   []string
+		want   bool
+	}{
+		{"", nil, false},
+		{"", []string{"--only-on-change"}, true},
+		{`,"only_on_change":true`, nil, true},
+		{`,"only_on_change":true`, []string{"--only-on-change=false"}, false},
+		{`,"only_on_change":false`, []string{"--only-on-change"}, true},
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		if err := os.WriteFile(path, []byte(`{"remote":"https://github.com/o/r.git","agent":{"command":["sh"]}`+tc.config+`}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		var got bot.Config
+		run := func(_ context.Context, c bot.Config, _ *slog.Logger, _ bool) error { got = c; return nil }
+		if err := executeWithRun(context.Background(), append([]string{"run", "--config", path}, tc.args...), log, run); err != nil {
+			t.Fatal(err)
+		}
+		if got.OnlyOnChange != tc.want {
+			t.Fatalf("%s %v: only_on_change = %t", tc.config, tc.args, got.OnlyOnChange)
+		}
+	}
+}
