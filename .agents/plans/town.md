@@ -211,7 +211,10 @@
   contrary to the README.
 - Both reconciliation paths now end the step and report work. Without
   `--once` the loop steps again immediately, so the queue still drains.
+- Retained status-comment retries run over every saved job before the first
+  reconciliation, so ending the step early does not defer them.
 - Regression tests cover the restart path (a lost PR response reconciled on
-  the next step) and a PR found while fetching; both failed before the fix.
+  the next step), a PR found while fetching, and a later job's retained status
+  comment; each failed before its fix.
 - Not changed here: a reconciliation error still aborts the whole step (#105).
 - `bundle.json` moves issue-bot to 0.5.8 at the fix commit.

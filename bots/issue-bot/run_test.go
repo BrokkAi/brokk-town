@@ -212,6 +212,20 @@ func TestReconciliationIsOneStepOfWork(t *testing.T) {
 		t.Fatalf("next step did not continue the queue: job2=%+v calls=%d creates=%d", saved.Jobs[2], f.calls, f.source.creates)
 	}
 }
+func TestReconciliationStillRetriesLaterStatusComments(t *testing.T) {
+	f := newFixture(t)
+	f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+	f.source.prs[1] = &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
+	claim := newClaim(f.e.config, 3, f.e.now())
+	claim.Status = "released"
+	f.s.Jobs[3] = &Job{Issue: Issue{Number: 3, Title: "Third", State: "open"}, Branch: branchName(f.e.config, 3), Status: "blocked", Claim: claim, ClaimPending: true}
+	if worked, err := f.e.step(context.Background(), f.s); err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[1].Status != "submitted" || f.s.Jobs[3].ClaimPending {
+		t.Fatalf("reconciling #1 skipped the retained status comment for #3: job3=%+v", f.s.Jobs[3])
+	}
+}
 func TestFetchedPRReconciliationIsOneStepOfWork(t *testing.T) {
 	f := newFixture(t)
 	p := &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
@@ -222,6 +236,12 @@ func TestFetchedPRReconciliationIsOneStepOfWork(t *testing.T) {
 	}
 	if f.s.Jobs[1].Status != "submitted" || f.s.Jobs[2] != nil || f.calls != 0 {
 		t.Fatalf("reconciling #1 also started #2: job2=%+v calls=%d", f.s.Jobs[2], f.calls)
+	}
+	if worked, err := f.e.step(context.Background(), f.s); err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[2].Status != "submitted" || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("next step did not continue the queue: job2=%+v calls=%d creates=%d", f.s.Jobs[2], f.calls, f.source.creates)
 	}
 }
 func TestBlockedIssueDoesNotStarveNextIssueAndRetryRetainsWork(t *testing.T) {
