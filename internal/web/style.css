@@ -1905,7 +1905,6 @@ body[data-skin="frontline"] [data-faction="hive"] .base-mini {
 body[data-skin="frontline"] .base-mini.hall { background-position: 0 0; }
 body[data-skin="frontline"] .base-mini.bug { background-position: 66.667% 0; }
 body[data-skin="frontline"] .base-mini.release { background-position: 66.667% 100%; }
-}
 
 /* The faction picker states which army a base flies. It only appears for a
    skin that has factions, and it never changes what the base does. */
