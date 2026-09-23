@@ -98,8 +98,8 @@ function saveFactionOverride(townId, faction) {
     /* Private browsing keeps the choice for this session only. */
   }
 }
-// The faction a base flies: derived from the repository, or whatever the
-// player picked for it. Town skin returns null and every artist ignores it.
+// Each base's automatic race comes from its repository. Different bases may
+// share one of the three races; a browser choice changes only that base.
 function currentFaction(townId = selectedTown) {
   return activeSkin.faction(townId, factionOverrides[townId]);
 }
@@ -527,7 +527,7 @@ function renderFactionPicker(t) {
   picker.hidden = !activeSkin.supportsFactions || !t;
   if (picker.hidden) return;
   const options = [
-    { value: "", label: `Auto · ${activeSkin.factionLabel(activeSkin.faction(t.id))}` },
+    { value: "", label: `Automatic · ${activeSkin.factionLabel(activeSkin.faction(t.id))}` },
     ...factions.map((f) => ({ value: f.id, label: `${f.name} · ${f.species}` })),
   ];
   const signature = options.map((o) => `${o.value}|${o.label}`).join("\n");
@@ -779,11 +779,12 @@ function render() {
   $("#towns").innerHTML = Object.values(state.towns)
     .map((item) => {
       const counts = townNeeds(item.id);
+      const faction = activeSkin.supportsFactions ? currentFaction(item.id) : "";
       const flags = [
         counts.decisions ? `<span class="town-flag decide">${counts.decisions} to decide</span>` : "",
         counts.attention ? `<span class="town-flag attention">${counts.attention} attention</span>` : "",
       ].join("");
-      return `<button class="town-link ${item.id === selectedTown ? "selected" : ""}" data-town="${esc(item.id)}"><strong>▧ ${esc(item.config.repo.split("/")[1])}</strong><small>${esc(item.config.repo.split("/")[0])} · ${Object.values(item.workers).filter((w) => w.enabled).length} awake</small>${flags ? `<span class="town-flags">${flags}</span>` : ""}</button>`;
+      return `<button class="town-link ${item.id === selectedTown ? "selected" : ""}" data-town="${esc(item.id)}"${faction ? ` data-faction="${esc(faction)}"` : ""}><strong>▧ ${esc(item.config.repo.split("/")[1])}</strong><small>${esc(item.config.repo.split("/")[0])} · ${faction ? `${esc(activeSkin.factionLabel(faction))} · ` : ""}${Object.values(item.workers).filter((w) => w.enabled).length} awake</small>${flags ? `<span class="town-flags">${flags}</span>` : ""}</button>`;
     })
     .join("");
   $("#towns")
@@ -849,10 +850,12 @@ function renderOverview() {
         const stats = townSummary(t),
           spread = projectTown(t).profiles,
           faction = currentFaction(t.id),
-          banner = activeSkin.supportsFactions
-            ? ` · ${esc(activeSkin.factionLabel(faction))}`
-            : "";
-        return `<button class="town-card" data-visit="${esc(t.id)}"><span class="eyebrow">${esc(t.config.repo.split("/")[0])}${banner}</span><h2>${esc(t.config.repo.split("/")[1])}</h2>${spread.distinct.length === 1 ? summaryChips(spread.distinct[0]) : `<span class="profile mixed" title="${esc(spread.distinct.map((p) => p.text).join("\n"))}">${esc(spread.label)}${spread.overrides ? ` · ${spread.overrides} custom` : ""}</span>`}<div class="town-card-houses" aria-hidden="true"></div><div class="town-stats"><span><strong>${stats.busy}</strong> ${esc(activeSkin.stats.working)}</span><span><strong>${stats.queued}</strong> ${esc(activeSkin.stats.queued)}</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> ${esc(activeSkin.stats.decisions)}</span><span><strong>${stats.blocked + stats.failed}</strong> ${esc(activeSkin.stats.attention)}</span></div><p>${esc(t.error || t.reports.at(-1)?.title || "Repo-bot is taking the first inventory")}</p><small>${esc(stats.release)} · ${esc(activeSkin.visit)}</small></button>`;
+          badge = activeSkin.supportsFactions
+            ? `<span class="faction-badge">${esc(activeSkin.factionLabel(faction))}</span>` : "",
+          art = activeSkin.supportsFactions
+            ? `<div class="town-card-houses frontline-card-art" aria-hidden="true"><span class="base-mini hall"></span><span class="base-mini bug"></span><span class="base-mini release"></span></div>`
+            : `<div class="town-card-houses" aria-hidden="true"></div>`;
+        return `<button class="town-card" data-visit="${esc(t.id)}"${faction ? ` data-faction="${esc(faction)}"` : ""}><span class="eyebrow">${esc(t.config.repo.split("/")[0])}</span><h2>${esc(t.config.repo.split("/")[1])}</h2>${badge}${spread.distinct.length === 1 ? summaryChips(spread.distinct[0]) : `<span class="profile mixed" title="${esc(spread.distinct.map((p) => p.text).join("\n"))}">${esc(spread.label)}${spread.overrides ? ` · ${spread.overrides} custom` : ""}</span>`}${art}<div class="town-stats"><span><strong>${stats.busy}</strong> ${esc(activeSkin.stats.working)}</span><span><strong>${stats.queued}</strong> ${esc(activeSkin.stats.queued)}</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> ${esc(activeSkin.stats.decisions)}</span><span><strong>${stats.blocked + stats.failed}</strong> ${esc(activeSkin.stats.attention)}</span></div><p>${esc(t.error || t.reports.at(-1)?.title || "Repo-bot is taking the first inventory")}</p><small>${esc(stats.release)} · ${esc(activeSkin.visit)}</small></button>`;
       })
       .join("") ||
     `<div class="overview-empty"><h2>Your world starts with one repository.</h2><p>${esc(activeSkin.text["overview-empty-body"])}</p></div>`;

@@ -236,6 +236,15 @@
 
 ## Frontline theme (browser, presentation only)
 
+- 2026-09-23 per-base faction clarity: the overview cards display three
+  cropped structures from each base's faction atlas, faction color, and a named
+  badge; the sidebar names the race too. Town cards keep their cottage art.
+  Each town independently takes one of the three available race styles;
+  repeats are allowed. A browser user can change a base's race with the
+  selector. Browser tests cover repeating automatic races and matching art.
+  Frontend syntax, 66 browser tests, `go vet ./...`, and
+  `go test -race ./...` pass.
+
 - 2026-09-23 attack and defender pass: a new transparent six-unit atlas gives
   every installation two faction ground defenders and an emplacement. Working
   status affects patrol stance; idle defenders remain visible. A committed
@@ -264,8 +273,9 @@
   supplying strings and art, not by threading conditionals through render code.
   `index.html` carries the theme button, the faction picker and a note that the
   theme is a look rather than a lever.
-- A base's faction derives from its repository name and can be pinned per base
-  in `localStorage`; `?skin=frontline` opens the theme from a link. Nothing on
+- A base's automatic faction derives from its repository name and can be
+  changed for that browser in `localStorage`.
+  `?skin=frontline` opens the theme from a link. Nothing on
   this path touches town state, commands, the worker protocol or GitHub, and
   the delivered animation still follows committed events and reduced motion.
 - 8 new module tests plus 2 app tests drive the real handlers (43 → 53 browser

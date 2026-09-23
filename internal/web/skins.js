@@ -75,7 +75,7 @@ export const townText = {
   "legend-blocked": "Needs attention",
   "legend-quiet": "Quiet hours",
   "world-aria": "Animated deliveries between the agent houses",
-  "faction-label": "Sector faction",
+  "faction-label": "Base race",
   "overview-owner": "YOUR LOCAL WORLD",
   "overview-title": "Every town, together.",
   "overview-empty-body":
@@ -205,7 +205,7 @@ export const skins = {
     label: "Frontline",
     switchLabel: "Theme: Frontline",
     switchTitle: "Switch back to the Brokk Town neighbourhood",
-    note: "Frontline is a look, not a lever: every strike animates a delivery Town already committed, and nothing here writes to GitHub.",
+    note: "Each base uses one of three race styles, and bases can share one. Changing a base race only changes this browser's art; strikes still follow committed deliveries and nothing here writes to GitHub.",
     prepare: preloadFrontlineArt,
     showIdleOccupants: true,
     supportsFactions: true,

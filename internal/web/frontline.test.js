@@ -59,7 +59,7 @@ function installCanvas() {
   return ops;
 }
 
-test("a base keeps one army across sessions and every army is reachable", () => {
+test("a repository has a stable faction preference and every faction is reachable", () => {
   assert.deepEqual(
     Array.from({ length: 5 }, () => factionFor("BrokkAi/brokk-town")),
     Array(5).fill(factionFor("BrokkAi/brokk-town")),
@@ -83,6 +83,15 @@ test("a base keeps one army across sessions and every army is reachable", () => 
   for (const faction of factionIds)
     assert.notEqual(rivalFaction(faction), faction, `${faction} raids as someone else`);
   assert.equal(new Set(factionIds.map(rivalFaction)).size, factionIds.length);
+});
+
+test("automatic faction choices are independent and may repeat", () => {
+  const ids = ["acme/repo-0", "acme/repo-3", "acme/repo-5", "acme/repo-6"];
+  assert.equal(new Set(ids.slice(0, 3).map(factionFor)).size, 1,
+    "three different repositories can choose the same race");
+  assert.equal(factionOf(ids[0], "hive"), "hive",
+    "changing one base does not affect another base's automatic choice");
+  assert.equal(factionOf(ids[1]), factionFor(ids[1]));
 });
 
 test("every army names all eight installations and shortens them for the journal", () => {
