@@ -252,5 +252,21 @@
   `localStorage` write no longer resets the picker, and canvas redraws no
   longer read or parse browser storage. A browser test exercises both cases.
 - Root `go test -race ./...`, `go vet ./...`, browser syntax and 54 browser
-  tests pass. The fixes are on a separate branch based on PR #114, leaving
-  its contributor branch untouched.
+  tests pass. The fixes landed in PR #114 through follow-up PR #116.
+
+## issue-bot --once after a reconciliation (#104)
+
+- `step` reconciled a saved job's pull request and then fell through to fetch
+  issues and attempt another one, and the fetch loop did the same with
+  `continue`. `Run` checks `--once` only after `step` returns, so one
+  invocation could reconcile issue 1 and still start an agent for issue 2,
+  contrary to the README.
+- Both reconciliation paths now end the step and report work. Without
+  `--once` the loop steps again immediately, so the queue still drains.
+- Retained status-comment retries run over every saved job before the first
+  reconciliation, so ending the step early does not defer them.
+- Regression tests cover the restart path (a lost PR response reconciled on
+  the next step), a PR found while fetching, and a later job's retained status
+  comment; each failed before its fix.
+- Not changed here: a reconciliation error still aborts the whole step (#105).
+- `bundle.json` moves issue-bot to 0.5.8 at the final fix commit.
