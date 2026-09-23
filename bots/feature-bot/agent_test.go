@@ -295,6 +295,8 @@ func TestACPReviewSelectionUnavailable(t *testing.T) {
 	for _, tc := range []struct{ scenario, model, want string }{
 		{"model-unavailable", "unoffered-model", `review model "unoffered-model" was not accepted by the ACP adapter; choose a value it offers with --review-model or review_model: unknown model "unoffered-model"; available values: test-model`},
 		{"effort-unavailable", "test-model", `review effort "high" was not accepted by the ACP adapter; choose a value it offers with --review-effort or review_effort`},
+		{"effort-wrong-category", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent does not advertise ACP reasoning effort selection`},
+		{"effort-unconfirmed", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent did not confirm thought_level`},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			state := t.TempDir()

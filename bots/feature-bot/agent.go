@@ -29,8 +29,11 @@ type agentProcess struct {
 	stage string
 }
 
-// selectionError explains which setting selected a model or effort the ACP
-// adapter rejected. Available values are defined by the adapter.
+// selectionError names the setting behind a failed model or effort selection.
+// Only a value missing from the adapter's advertised choices (acp-go reports
+// "unknown <name> <value>; available values: ...") is described as rejected;
+// unsupported selection, transport and cancellation failures are reported as
+// failures to select.
 func (a agentProcess) selectionError(kind, value string, err error) error {
 	setting := map[string]string{"model": "--model or agent.model", "effort": "--effort or agent.effort"}[kind]
 	if a.stage == "review" {
@@ -40,7 +43,10 @@ func (a agentProcess) selectionError(kind, value string, err error) error {
 	if stage == "" {
 		stage = "agent"
 	}
-	return fmt.Errorf("%s %s %q was not accepted by the ACP adapter; choose a value it offers with %s: %w", stage, kind, value, setting, err)
+	if strings.Contains(err.Error(), fmt.Sprintf("%q; available values: ", value)) {
+		return fmt.Errorf("%s %s %q was not accepted by the ACP adapter; choose a value it offers with %s: %w", stage, kind, value, setting, err)
+	}
+	return fmt.Errorf("failed to select %s %s %q (set with %s): %w", stage, kind, value, setting, err)
 }
 
 // Execute follows acp-go v0.7.0 runner/runner.go (Apache-2.0,

@@ -302,7 +302,9 @@ keeps discovered candidates pending, creates no issue and never falls back to
 the research settings. Saved review progress records the effective review model
 and effort; changing either, or resuming progress saved before this identity
 was recorded, reviews pending candidates again from validation through every
-issue batch without repeating discovery. Logs mark `stage=discovery` or
+issue batch without repeating discovery. A review setup failure has already
+replaced saved review progress with the failed selection, so reverting the
+setting afterwards also restarts validation. Logs mark `stage=discovery` or
 `stage=review` with the effective model and effort.
 
 `verify` accepts an argument array, such as `["/opt/checks/verify-feature"]`, executed
