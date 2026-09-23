@@ -137,9 +137,11 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			related := fmt.Sprintf("issue:%d", owned.Issue)
 			t.RecordOutcome(OutcomeRecord{ID: "implementation-pr:" + id, At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", Role: Issue, TaskID: id, RelatedTaskID: related, Revision: p.Head.SHA, URL: p.URL, Detail: p.Title})
 		}
-		if autoDeclined(task) && (task.House != Hall || task.MayoralDecision == "pending") {
+		if autoDeclined(task) && (task.House != Hall || task.MayoralDecision == "pending" || task.Retired || task.Audit != nil) {
 			// Older state let a revision carry an auto-declined pull request
-			// back to Review; the decline no longer describes where it is.
+			// back to Review, from where a review can send it to the Mayor;
+			// the decline no longer describes where it is. A declined pull
+			// request is never reviewed or retired.
 			task.Simplification = nil
 		}
 		if task.Offbranch {

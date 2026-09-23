@@ -217,9 +217,17 @@
   state applies, so a later revision cannot carry it out of intake. `Blocked`,
   `Attempts` and `RetryAt` are left as they were, so a decision whose Mayor Bot
   attempts are exhausted still waits for the operator.
-- A Simplifier auto-decline is now as final as the Mayor's: a new revision or a
-  draft change no longer moves it to Review (`holdsIntake`). Older state where
-  that already happened has its stale decline cleared on the next inventory.
+- A Simplifier auto-decline no longer yields to repository metadata: a new
+  revision or a draft change no longer moves it to Review (`holdsIntake`). The
+  Mayor (not Mayor Bot) can admit it anyway through the usual admit command
+  (`bt admit`, or "Admit anyway" from Town Hall's "Declined by Simplifier"
+  list), which clears the decline. A Mayoral decline stays final. Older state
+  where a revision already carried the decline out of Town Hall (including a
+  retired or reviewed pull request) has the stale decline cleared on the next
+  inventory. Town's own pull request declined by Simplifier is never closed and
+  strands its issue; tracked separately in #126.
+- Mayor Bot skips blocked decisions, as other selectors do, so it does not
+  judge a pull request retargeted off this town's branch.
 - A pull request returning from another base branch resumes its intake or
   decline instead of going to Review; a pending one used to fail state
   validation there.

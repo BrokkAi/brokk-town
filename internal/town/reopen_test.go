@@ -278,6 +278,64 @@ func TestAutoDeclinedPullStaysDeclined(t *testing.T) {
 	}
 }
 
+func TestRetiredAutoDeclinedPullReturnsToTheMayor(t *testing.T) {
+	// State from before the decline was final: a revision carried the pull
+	// request to Review, retirePull sent it to the Mayor, and closing it
+	// cleared the pending decision.
+	state, town := reopenTown(t, "auto")
+	town.Initialized = true
+	task := &Task{ID: "pr:5", Kind: "pr", Number: 5, Title: "Change 5", House: Hall, Stage: "closed", External: true, Retired: true, Head: headSHA, Base: baseSHA, Simplification: &Simplification{Mode: "auto", Decision: "decline", Detail: "Out of scope."}, Updated: time.Now()}
+	town.Tasks[task.ID] = task
+	reconcilePulls(t, state, town, pull(5))
+	if selectedBy(town, task) != "mayor" || task.Simplification != nil {
+		t.Fatalf("retired PR did not return to the Mayor: %s/%s %q", task.House, task.Stage, task.MayoralDecision)
+	}
+}
+
+func TestMayorCanAdmitWorkSimplifierDeclined(t *testing.T) {
+	for _, kind := range []string{"pr", "issue"} {
+		state, town := reopenTown(t, "auto")
+		task := &Task{ID: kind + ":5", Kind: kind, Number: 5, Title: "Speculative matrix", House: Hall, Stage: "declined", External: true, Simplification: &Simplification{Mode: "auto", Decision: "decline", Detail: "No callers."}, Updated: time.Now()}
+		town.Tasks[task.ID] = task
+		// Mayor Bot judges only pending decisions, and the overrule is an
+		// admission only.
+		applyJudgment(state, town, task.ID, &Judgment{Decision: "admit", Reason: "Looks fine."}, nil, time.Now())
+		if err := state.decideTask(town, task, "decline", "you", time.Now()); err == nil || task.Stage != "declined" {
+			t.Fatalf("%s: a Simplifier decline was re-decided: %+v", kind, task)
+		}
+		if err := state.decideTask(town, task, "admit", "you", time.Now()); err != nil {
+			t.Fatalf("%s: the Mayor could not admit a Simplifier decline: %v", kind, err)
+		}
+		want := "review"
+		if kind == "issue" {
+			want = "issue"
+		}
+		if task.MayoralDecision != "admitted" || task.Simplification != nil || selectedBy(town, task) != want {
+			t.Fatalf("%s: admitted work did not reach its worker: %+v", kind, task)
+		}
+		if err := validateState(*state, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestMayorBotSkipsBlockedDecisions(t *testing.T) {
+	state, town := reopenTown(t, "suggest")
+	open := pull(5)
+	reconcilePulls(t, state, town)
+	reconcilePulls(t, state, town, open)
+	away := open
+	away.Base.Ref = "develop"
+	reconcilePulls(t, state, town, away)
+	if task := nextJudgment(town, time.Now()); task != nil {
+		t.Fatalf("Mayor Bot would judge an off-branch PR: %+v", task)
+	}
+	reconcilePulls(t, state, town, open)
+	if task := nextJudgment(town, time.Now()); task == nil || task.ID != "pr:5" {
+		t.Fatal("Mayor Bot does not judge the PR once it is back")
+	}
+}
+
 func TestPullReturningToTheBranchKeepsIntake(t *testing.T) {
 	for _, test := range []struct {
 		name, mode, worker, stage string
