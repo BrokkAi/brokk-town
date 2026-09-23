@@ -236,13 +236,12 @@
 
 ## Frontline theme (browser, presentation only)
 
-- 2026-09-23 per-base faction clarity: automatic assignments now resolve hash
-  collisions across a sorted town roster, keeping the first three unpinned
-  bases distinct. Explicit pins win, so users may choose repeats; a changed
-  roster can change an unpinned default. The overview cards display three
-  cropped structures from their faction atlas, faction color, and a named
-  badge; the sidebar names the faction too. Town cards keep their cottage art.
-  Browser tests cover a real hash collision, pins, and three visible factions.
+- 2026-09-23 per-base faction clarity: the overview cards display three
+  cropped structures from each base's faction atlas, faction color, and a named
+  badge; the sidebar names the race too. Town cards keep their cottage art.
+  Each town independently takes one of the three available race styles;
+  repeats are allowed. A browser user can change a base's race with the
+  selector. Browser tests cover repeating automatic races and matching art.
   Frontend syntax, 66 browser tests, `go vet ./...`, and
   `go test -race ./...` pass.
 
@@ -274,8 +273,8 @@
   supplying strings and art, not by threading conditionals through render code.
   `index.html` carries the theme button, the faction picker and a note that the
   theme is a look rather than a lever.
-- A base's preferred faction derives from its repository name, and the visible
-  roster resolves collisions; it can be pinned per base in `localStorage`.
+- A base's automatic faction derives from its repository name and can be
+  changed for that browser in `localStorage`.
   `?skin=frontline` opens the theme from a link. Nothing on
   this path touches town state, commands, the worker protocol or GitHub, and
   the delivered animation still follows committed events and reduced motion.

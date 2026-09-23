@@ -911,7 +911,7 @@ test("the frontline skin relabels the town, holds its own faction, and leaves st
 
   const options = elements["faction-select"].children;
   assert.equal(options.length, 4, "auto plus one option per army");
-  assert.match(options[0].textContent, /^Auto · /);
+  assert.match(options[0].textContent, /^Automatic · /);
 
   // A base names its own structures; the town's names are gone.
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
@@ -943,16 +943,17 @@ test("?skin=frontline opens the war map for whoever the link is sent to", async 
   assert.equal(elements["skin"].title, "Switch back to the Brokk Town neighbourhood");
 });
 
-test("three Frontline towns show three distinct faction bases in the overview", async () => {
+test("Frontline overview shows each base's race art even when races repeat", async () => {
   const { elements } = await openFrontline({ search: "?skin=frontline",
     extraTowns: ["acme/repo-3", "acme/repo-5"] });
   const links = elements.towns.querySelectorAll("[data-town]");
-  assert.equal(new Set(links.map((link) => link.dataset.faction)).size, 3);
+  assert.equal(new Set(links.map((link) => link.dataset.faction)).size, 2);
+  assert.equal(links.filter((link) => link.dataset.faction === "vanguard").length, 2);
   elements["all-towns"].click();
   const cards = elements.overview.querySelectorAll("[data-visit]");
-  assert.equal(new Set(cards.map((card) => card.dataset.faction)).size, 3);
+  assert.equal(new Set(cards.map((card) => card.dataset.faction)).size, 2);
   assert.equal((elements.overview.innerHTML.match(/town-card-houses frontline-card-art/g) || []).length, 3);
-  for (const label of ["Vanguard", "Ascendancy", "Hive"])
+  for (const label of ["Vanguard", "Hive"])
     assert.match(elements.overview.textContent, new RegExp(label));
 });
 

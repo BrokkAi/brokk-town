@@ -43,7 +43,7 @@ import {
 } from "./town.js";
 import { management } from "./manage.js";
 import { easeDelivery } from "./scenery.js";
-import { factions, assignFactions, skinFor, normalizeSkin } from "./skins.js";
+import { factions, skinFor, normalizeSkin } from "./skins.js";
 const $ = (s) => document.querySelector(s),
   esc = (value) =>
     String(value ?? "").replace(
@@ -96,18 +96,11 @@ function saveFactionOverride(townId, faction) {
   } catch {
     /* Private browsing keeps the choice for this session only. */
   }
-  updateAssignedFactions();
 }
-let assignedFactions = {};
-function updateAssignedFactions() {
-  assignedFactions = assignFactions(Object.keys(state?.towns || {}), factionOverrides);
-}
-// The faction a base flies: the roster gives automatic bases distinct factions
-// where possible, while an explicit browser choice remains pinned.
+// Each base's automatic race comes from its repository. Different bases may
+// share one of the three races; a browser choice changes only that base.
 function currentFaction(townId = selectedTown) {
-  return activeSkin.supportsFactions
-    ? assignedFactions[townId] || activeSkin.faction(townId, factionOverrides[townId])
-    : null;
+  return activeSkin.faction(townId, factionOverrides[townId]);
 }
 if (token) {
   sessionStorage.setItem("brokk-town-token", token);
@@ -304,7 +297,6 @@ function receive(next) {
   moving = moving.slice(-24);
   sequence = next.seq;
   state = next;
-  updateAssignedFactions();
   // The page's assets belong to the binary that served them. When a restart
   // brings a different version, reload so the UI matches the API again.
   if (next.version) {
@@ -474,9 +466,7 @@ function renderFactionPicker(t) {
   picker.hidden = !activeSkin.supportsFactions || !t;
   if (picker.hidden) return;
   const options = [
-    { value: "", label: `Auto · ${activeSkin.factionLabel(assignFactions(
-      Object.keys(state.towns), { ...factionOverrides, [t.id]: undefined },
-    )[t.id])}` },
+    { value: "", label: `Automatic · ${activeSkin.factionLabel(activeSkin.faction(t.id))}` },
     ...factions.map((f) => ({ value: f.id, label: `${f.name} · ${f.species}` })),
   ];
   const signature = options.map((o) => `${o.value}|${o.label}`).join("\n");

@@ -8,7 +8,7 @@ The browser has two themes. The default is the town; Frontline draws every
 repository as a base flying one of three armies — humans, humanoid aliens or a
 swarm — and every committed delivery as a strike between its installations. The
 theme is a look, not a lever: it reads the same snapshot, keeps the theme and
-any pinned base faction in that browser, and never changes what Town does or writes
+any race chosen for a base in that browser, and never changes what Town does or writes
 to GitHub.
 
 ## Build and run

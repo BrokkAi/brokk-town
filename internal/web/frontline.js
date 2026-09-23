@@ -148,34 +148,9 @@ function hash(value) {
   return Math.abs(n >>> 0);
 }
 
-// A repository has a stable preferred faction. A roster of towns resolves
-// collisions below, so the first three automatic bases can look different.
+// A repository has a stable automatic faction, independent of other towns.
 export function factionFor(townId) {
   return factionIds[hash(townId) % factionIds.length];
-}
-
-// Sort IDs so the same roster gets the same assignment on every browser.
-// Explicit choices win; automatic bases take an unclaimed faction when one is
-// available. A fourth base must reuse one of the three factions.
-export function assignFactions(townIds, overrides = {}) {
-  const ids = [...new Set(townIds)].sort();
-  const assigned = {};
-  const claimed = new Set();
-  for (const id of ids) {
-    if (!factionIds.includes(overrides[id])) continue;
-    assigned[id] = overrides[id];
-    claimed.add(overrides[id]);
-  }
-  for (const id of ids) {
-    if (assigned[id]) continue;
-    const preferred = factionFor(id);
-    const start = factionIds.indexOf(preferred);
-    const choices = factionIds.map((_, offset) =>
-      factionIds[(start + offset) % factionIds.length]);
-    assigned[id] = choices.find((choice) => !claimed.has(choice)) || preferred;
-    claimed.add(assigned[id]);
-  }
-  return assigned;
 }
 
 // factionOf honors a player's choice and falls back to the derived base

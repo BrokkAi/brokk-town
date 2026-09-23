@@ -4,7 +4,6 @@ import {
   factionIds,
   factions,
   factionFor,
-  assignFactions,
   factionOf,
   factionName,
   rivalFaction,
@@ -86,20 +85,13 @@ test("a repository has a stable faction preference and every faction is reachabl
   assert.equal(new Set(factionIds.map(rivalFaction)).size, factionIds.length);
 });
 
-test("automatic towns take different factions until all three are claimed", () => {
+test("automatic faction choices are independent and may repeat", () => {
   const ids = ["acme/repo-0", "acme/repo-3", "acme/repo-5", "acme/repo-6"];
   assert.equal(new Set(ids.slice(0, 3).map(factionFor)).size, 1,
-    "this roster starts with a real hash collision");
-  const roster = assignFactions(ids.slice(0, 3));
-  assert.equal(new Set(Object.values(roster)).size, 3);
-  assert.deepEqual(roster, assignFactions([...ids.slice(0, 3)].reverse()),
-    "the same roster looks the same in every browser");
-  const pinned = assignFactions(ids.slice(0, 3), { [ids[2]]: "hive" });
-  assert.equal(pinned[ids[2]], "hive");
-  assert.equal(new Set(Object.values(pinned)).size, 3,
-    "automatic bases leave room for a pinned faction");
-  assert.equal(Object.keys(assignFactions(ids.slice(0, 4))).length, 4,
-    "a fourth base still receives a faction");
+    "three different repositories can choose the same race");
+  assert.equal(factionOf(ids[0], "hive"), "hive",
+    "changing one base does not affect another base's automatic choice");
+  assert.equal(factionOf(ids[1]), factionFor(ids[1]));
 });
 
 test("every army names all eight installations and shortens them for the journal", () => {
