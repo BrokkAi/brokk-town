@@ -451,3 +451,55 @@
 - Demo paper-trail opens with its own report instead of orchard's.
 - The README keyboard map no longer exists; the browser help dialog lists the
   current 0–8 shortcuts. Release docs agree on 0.6.2.
+
+## Reopened intake (#94)
+
+- Reconcile sent every reopened or unlocked issue to `queued` without changing
+  its house, so an issue closed before Simplifier or the Mayor handled it was
+  left `simplifier/queued` or `hall/queued`, which no worker selects. A pull
+  request reopened from Simplifier or Mayoral intake skipped intake and went
+  straight to Review.
+- `resume` now derives where the task returns from its house: Simplifier →
+  `simplifying`, Town Hall → `awaiting_mayor` with a pending decision (issues
+  and outside pull requests), a Mayoral or Simplifier decline stays `declined`,
+  and work past intake returns to Issue or Review as before. It wakes the house
+  that selects the task. A reopened pull request resumes before draft or lock
+  state applies, so a later revision cannot carry it out of intake. `Blocked`,
+  `Attempts` and `RetryAt` are left as they were, so a decision whose Mayor Bot
+  attempts are exhausted still waits for the operator.
+- A Simplifier auto-decline no longer yields to repository metadata: a new
+  revision or a draft change no longer moves it to Review (`holdsIntake`). The
+  Mayor (not Mayor Bot) can admit it anyway through the usual admit command
+  (`bt admit`, or "Admit anyway" from Town Hall's "Declined by Simplifier"
+  list), which clears the decline. A Mayoral decline stays final. Older state
+  where a revision already carried the decline out of Town Hall (including a
+  retired or reviewed pull request) has the stale decline cleared on the next
+  inventory. Town's own pull request declined by Simplifier is never closed and
+  strands its issue; tracked separately in #126. "Admit anyway" asks for
+  confirmation.
+- The declined-issue closer claims each issue under the store just before the
+  GitHub write: it rechecks the decline, and an auto-declined issue moves to
+  `closing`, which admission refuses. An accepted close settles it `closed`
+  (so a reopen before the next inventory is an appeal, not a close to retry),
+  a definite 4xx rejection (`RejectedError`; not 408/429/rate limits) releases
+  it to `declined`, and only an uncertain outcome keeps `closing`. A `closing`
+  issue the full inventory no longer lists (deleted or transferred) is released
+  to `declined`. The browser treats a `closing` issue as settled work. An
+  admission that lands first makes the closer skip the issue.
+- Someone reopening an issue Town closed on Simplifier's decline is an appeal:
+  the issue waits for the Mayor with Simplifier's assessment attached, and the
+  closer leaves it alone. Reopening neither re-closes it nor admits it, so no
+  decision is made for the Mayor.
+- Mayor Bot skips blocked decisions, as other selectors do, so it does not
+  judge a pull request retargeted off this town's branch; the browser's "to
+  decide" counts skip them too.
+- Reconcile treats an explicit `"pull_request": null` in the issue inventory as
+  an issue rather than a pull request.
+- A pull request returning from another base branch resumes its intake or
+  decline instead of going to Review; a pending one used to fail state
+  validation there.
+- Closure clears only a pending decision (the invariant keeps pending in Town
+  Hall). A declined pull request its author closed is stored `closed` with its
+  decline kept, so it is not counted as open or retired off-branch, and resume
+  restores `declined` on reopen. An issue already stranded `queued` outside
+  Issue is healed on the next inventory.
