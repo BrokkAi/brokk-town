@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,6 +109,45 @@ func TestOpenNeverSetsAsideStateThatIsNotDemoState(t *testing.T) {
 	}
 	if !bytes.Equal(kept, real) {
 		t.Fatal("a refused state must be left exactly as it was")
+	}
+}
+
+func TestDemoOpenRequiresExplicitDemoMarker(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stale=%t", stale), func(t *testing.T) {
+			dir := t.TempDir()
+			state := NewState(true)
+			if stale {
+				state.Format = 2
+			}
+			raw, err := json.Marshal(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatal(err)
+			}
+			delete(fields, "demo")
+			raw, err = json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(statePath(dir), raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if store, err := Open(dir, true); err == nil {
+				store.Close()
+				t.Fatal("state without a demo marker must not open as demo")
+			}
+			if rejected := rejectedStates(t, dir); len(rejected) != 0 {
+				t.Fatalf("state without a demo marker was set aside: %v", rejected)
+			}
+			kept, err := os.ReadFile(statePath(dir))
+			if err != nil || !bytes.Equal(kept, raw) {
+				t.Fatalf("state without a demo marker changed: %v", err)
+			}
+		})
 	}
 }
 

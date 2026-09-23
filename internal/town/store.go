@@ -42,15 +42,23 @@ func Open(dir string, demo bool) (*Store, error) {
 	if err == nil {
 		err = json.Unmarshal(b, &s.state)
 		parsed := err == nil
+		// Unmarshal leaves absent fields unchanged. Since the initial state is
+		// marked as demo, read the marker from the file itself before accepting
+		// or replacing it as demo state.
+		explicitDemo := parsed && demoStateIsDisposable(demo, b)
 		if err == nil {
-			err = validateState(s.state, demo)
+			if demo && !explicitDemo {
+				err = errors.New("state format or demo mode mismatch; use a separate state directory")
+			} else {
+				err = validateState(s.state, demo)
+			}
 		}
 		// Demo state is a simulation, so a file an older Town wrote must not
 		// stop the demo from starting. It is set aside with every byte kept and
 		// the demo seeds itself again. Only a file that parsed and says it is
 		// demo state is treated this way: anything else may be real work that
 		// someone pointed at this directory, and that is never discarded.
-		if err != nil && parsed && demoStateIsDisposable(demo, s.state) {
+		if err != nil && explicitDemo {
 			if rejected, e := setAside(s.path); e == nil {
 				s.notice = fmt.Sprintf("demo state this Town cannot read was set aside as %s; starting a fresh demo", filepath.Base(rejected))
 				s.state = NewState(true)
@@ -108,11 +116,16 @@ func Open(dir string, demo bool) (*Store, error) {
 // it before the store is shared: it is not synchronized with writes.
 func (s *Store) Notice() string { return s.notice }
 
-// demoStateIsDisposable reports whether a state that failed validation may be
-// replaced by the demo that asked for it. Real state is never disposable, and
-// a store opened outside demo mode never replaces anything.
-func demoStateIsDisposable(demo bool, s State) bool {
-	return demo && s.Demo
+// demoStateIsDisposable requires a demo marker in the saved JSON. The default
+// value in Store.state cannot prove that a file belongs to the demo.
+func demoStateIsDisposable(demo bool, data []byte) bool {
+	if !demo {
+		return false
+	}
+	var marker struct {
+		Demo *bool `json:"demo"`
+	}
+	return json.Unmarshal(data, &marker) == nil && marker.Demo != nil && *marker.Demo
 }
 
 // setAside renames a state file to a sibling name, keeping the original bytes

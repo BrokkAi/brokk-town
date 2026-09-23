@@ -903,3 +903,20 @@ test("?skin=frontline opens the war map for whoever the link is sent to", async 
   assert.equal(elements["skin"].textContent, "Theme: Frontline");
   assert.equal(elements["skin"].title, "Switch back to the Brokk Town neighbourhood");
 });
+
+test("a faction choice survives blocked browser storage for the session", async () => {
+  const { elements } = await openFrontline({ search: "?skin=frontline" });
+  let reads = 0;
+  localStorage.getItem = () => { reads++; return null; };
+  localStorage.setItem = () => { throw new Error("storage unavailable"); };
+
+  elements["faction-select"].value = "hive";
+  elements["faction-select"].onchange();
+  assert.equal(elements["faction-select"].value, "hive");
+  assert.match(elements["town-meta"].textContent, /Hive base/);
+
+  elements.skin.click();
+  elements.skin.click();
+  assert.equal(elements["faction-select"].value, "hive", "the choice lasts through redraws");
+  assert.equal(reads, 0, "redraws do not read browser storage");
+});

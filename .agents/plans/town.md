@@ -241,3 +241,16 @@
   was preserved as `state.rejected-20260923-071158.json`, and the seeded villages
   came back. Five store tests cover the reset, the protection of non-demo state,
   an unparseable file, a usable demo state, and the reseeding.
+
+## PR #114 review fixes
+
+- Demo recovery now reads the `demo` marker from the saved JSON itself. A file
+  with no marker cannot open as demo or be set aside, even though the store's
+  initial in-memory state is demo; regression tests cover both valid and stale
+  files without the marker.
+- Frontline keeps faction overrides in memory for the browser session. A denied
+  `localStorage` write no longer resets the picker, and canvas redraws no
+  longer read or parse browser storage. A browser test exercises both cases.
+- Root `go test -race ./...`, `go vet ./...`, browser syntax and 54 browser
+  tests pass. The fixes are on a separate branch based on PR #114, leaving
+  its contributor branch untouched.
