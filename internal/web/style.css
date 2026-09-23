@@ -71,13 +71,17 @@ textarea:focus-visible,
   outline: 2px solid var(--green);
   outline-offset: 3px;
 }
+/* The header row wraps rather than squeezing labels onto two lines or pushing
+   past the window; with the three-column layout it still fits one row from
+   roughly 1400px, and a long development version string is truncated. */
 header {
-  height: 74px;
+  min-height: 74px;
   border-bottom: 1px solid var(--line);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 0 25px;
-  gap: 23px;
+  padding: 12px 25px;
+  gap: 10px 23px;
   background: #0b1912;
 }
 .brand {
@@ -193,6 +197,15 @@ header {
 .town-version {
   color: #b5caae;
   font: 11px var(--mono);
+  white-space: nowrap;
+  /* A development build's version runs past forty characters; the full string
+     is in its tooltip and the help dialog. */
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A header control keeps its label on one line; the header row wraps instead. */
+header button {
   white-space: nowrap;
 }
 .inbox-toggle {
@@ -801,12 +814,20 @@ canvas {
   height: 100%;
   display: block;
 }
+/* The legend sits in the open strip above the top row of houses. The bottom
+   edge belongs to the lower row's labels, which hang below their buildings and
+   reach it whenever the map is short (narrow windows and the three-column
+   layout alike). */
 .world-legend {
   position: absolute;
-  bottom: 15px;
-  left: 19px;
+  top: 10px;
+  left: 12px;
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #0a1b15b3;
   font: 12px var(--mono);
   color: #b8cdb4;
   pointer-events: none;
@@ -1500,10 +1521,12 @@ textarea {
   .app {
     grid-template-columns: 175px minmax(370px, 1fr);
   }
+  /* The drawer spans the full window height, so a wrapped header never leaves
+     it misaligned. */
   .inspector {
     position: fixed;
     right: 0;
-    top: 74px;
+    top: 0;
     bottom: 0;
     width: 325px;
     z-index: 4;
@@ -1608,12 +1631,11 @@ textarea {
   }
   .world-legend {
     font-size: 10px;
-    gap: 8px;
-    left: 10px;
-    bottom: 10px;
+    gap: 2px 8px;
+    left: 8px;
+    top: 6px;
   }
   .inspector {
-    top: 64px;
     width: min(350px, 100vw);
   }
   .section-heading > .eyebrow {
@@ -1669,10 +1691,17 @@ textarea {
     margin-top: 3px;
   }
   .world-legend {
-    left: 7px;
-    bottom: 5px;
-    gap: 8px;
+    left: 5px;
+    top: 4px;
+    gap: 2px 8px;
+    padding: 1px 5px;
     font-size: 8px;
+  }
+  /* At phone width the header keeps the controls and drops the two readouts
+     the Capacity and Help dialogs already show. */
+  .town-version,
+  .capacity-summary {
+    display: none;
   }
 }
 
