@@ -264,9 +264,29 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 		Role   town.Role `json:"role"`
 		Action string    `json:"action"`
 		Task   string    `json:"task"`
+		// Until and Reason belong to the defer action only.
+		Until  string `json:"until,omitempty"`
+		Reason string `json:"reason,omitempty"`
 	}
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
+		return
+	}
+	if input.Action == "defer" {
+		until, err := time.Parse(time.RFC3339, strings.TrimSpace(input.Until))
+		if err != nil {
+			problem(w, "resume time must be an RFC 3339 timestamp such as 2026-01-02T15:04:05Z", 400)
+			return
+		}
+		if err := s.Supervisor.Defer(input.Town, input.Task, until, input.Reason); err != nil {
+			problem(w, err.Error(), 400)
+			return
+		}
+		respond(w, map[string]bool{"ok": true})
+		return
+	}
+	if input.Until != "" || input.Reason != "" {
+		problem(w, "until and reason apply only to the defer action", 400)
 		return
 	}
 	if err := s.Supervisor.Control(input.Town, input.Role, input.Action, input.Task); err != nil {

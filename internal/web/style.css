@@ -1868,3 +1868,22 @@ body[data-skin="frontline"] .town-card-houses {
   color: #8fb4c6;
   line-height: 1.5;
 }
+/* A snooze is the operator's own hold, not a fault: it reads as a calm lilac,
+   apart from the warm tones of blocked and failed work. */
+.status-snoozed { border-top-color: #8f86b8; }
+.status-chip.status-snoozed {
+  border-color: #6f6899;
+  color: #cfc8f2;
+}
+.snooze-note {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #6f6899;
+  border-left: 4px solid #a89fd6;
+  border-radius: 6px;
+  background: #1d1e2e;
+}
+.snooze-note strong {
+  font-size: 12px;
+  letter-spacing: .04em;
+}

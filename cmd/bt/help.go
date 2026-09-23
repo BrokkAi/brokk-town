@@ -22,6 +22,8 @@ type cliFlags struct {
 	repo                 *string
 	role                 *string
 	task                 *string
+	until                *string
+	reason               *string
 	config               *string
 	harness              *string
 	harnessVersion       *string
@@ -69,7 +71,9 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.demo = fs.Bool("demo", false, "isolated simulated town (serve only)")
 	fl.repo = fs.String("repo", "", "GitHub OWNER/REPO")
 	fl.role = fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release, simplifier, hall (Mayor Bot); repo/all for controls (start all wakes every house, except release under manual merge policy); omit for town defaults in settings")
-	fl.task = fs.String("task", "", "task ID for retry; omit with --role release to reset the release bot's exhausted attempt budget")
+	fl.task = fs.String("task", "", "task ID for retry, defer, undefer, admit or decline; omit with retry --role release to reset the release bot's exhausted attempt budget")
+	fl.until = fs.String("until", "", "resume time as RFC 3339 (2026-01-02T15:04:05Z) or a delay from now such as 90m, 4h or 2d (defer)")
+	fl.reason = fs.String("reason", "", "short note on why the task is snoozed, at most 200 characters (defer)")
 	fl.config = fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
 	fl.harness = fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
 	fl.harnessVersion = fs.String("harness-version", "", "select an exact catalog version (add/settings)")
@@ -151,6 +155,8 @@ var cliCommands = []commandInfo{
 	{name: "pause", short: "Pause a town or bot house", long: "Pause a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "stop", short: "Stop a town or bot house", long: "Stop a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "retry", short: "Retry a task", long: "Retry a task. Omit --task with --role release to reset the release bot's exhausted attempt budget.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role", "task"}},
+	{name: "defer", short: "Snooze a task until a chosen time", long: "Snooze one issue or pull request until a chosen time. Its house keeps working the rest of the queue; no agent starts and no merge happens for the snoozed task until the resume time, when it rejoins the queue on its own.", args: "--repo OWNER/REPO --task ID --until TIME [flags]", flags: []string{"reason", "repo", "task", "until"}},
+	{name: "undefer", short: "Clear a task's snooze", long: "Clear a task's snooze so its house can take it up at once.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "admit", short: "Admit a Mayoral decision", long: "Admit a pending Mayoral decision, or admit work Simplifier declined in auto mode.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "decline", short: "Decline a Mayoral decision", long: "Decline a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "serve", short: "Run the town service in the foreground", long: "Run the town service in the foreground.", args: "[flags]", flags: []string{"config", "repo"}},
