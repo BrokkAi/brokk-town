@@ -574,6 +574,105 @@
   characters on both service and browser; a snooze that ends on finished work
   is dropped silently; the inspector says retry keeps a snooze.
 
+## bug-bot only-on-change polling (#98)
+
+- Optional `only_on_change` (`--only-on-change`, default false). In daemon mode
+  each poll still fetches; with no active scan left after reconciliation,
+  pending retries and exhausted-revision checks, a fetched commit equal to the
+  last completed scan for the same dry-run setting starts no investigation, no
+  worktree and no history entry. `once` (and so Town's worker) always runs.
+- State gains `last_completed {commit, dry_run}`, validated on read. Only a
+  discovered scan that finishes without stale findings sets it, zero findings
+  included. A scan with any `dry_run` finding records `dry_run: true`, so real
+  publication can rescan that commit. Legacy state without it scans once.
+- An unchanged poll reports `waiting` with an "unchanged" task; the dashboard
+  shows it beside the next-check countdown without counting a completed scan.
+- `bundle.json` moves bug-bot to 0.5.0 at the final feature commit.
+
+## release-bot release_trigger_ignore (#110)
+
+- Optional `release_trigger_ignore` config: repository-relative literal files
+  and directory prefixes ending in `/`; empty by default. Absolute paths,
+  backslashes, globs, surrounding whitespace, empty entries and empty, `.` or
+  `..` segments are rejected. Matching is case-sensitive; a submodule is its
+  bare path, so only a file entry ignores its bumps.
+- Before a new automatic job (after pending-job recovery, before cadence and
+  triage), `git diff --no-renames --ignore-submodules=none --name-status -z`
+  (immune to `diff.ignoreSubmodules`) compares the released
+  commit with the watched branch head and, when different, the local release
+  head. A nonempty union of paths that are all ignored keeps monitoring with a
+  "waiting" progress task that names the policy; no triage or preparation runs.
+  Renames count both paths, deletions count, a net-empty diff and a release
+  without a recorded time (first release, `initial_ref`) keep existing
+  behavior, and a Git failure is returned as an error.
+- The decision is recomputed from Git every cycle; nothing is saved, so the
+  baseline never moves and a restart reaches the same answer. Commit counts,
+  quiet period, publication and verification are unchanged. `--once --force`
+  bypasses the policy.
+- Town is unchanged: the worker protocol carries no such field (a non-goal of
+  the issue), so the setting applies only to config-file runs.
+- `bundle.json` moves release-bot to 0.7.0 at the final feature commit.
+
+## Test coverage for GitHub, repair and result routing (#26)
+
+- `github_client_test.go`: a recording fake `gh` on PATH (canned output per
+  argv prefix, request bodies captured, unrouted calls fail) covers Pull,
+  Actor, Discussion pagination and partial-read refusal, `pages` on a path
+  with a query, Gate parsing, Merge with `merged:false` or no commit, the
+  close/comment/create writes, DeleteBranch validation and "Reference does
+  not exist", and Contains statuses and refusals.
+- `repair_guard_test.go`: every repair guard driven to failure (dirty tree,
+  left branch, amend, reset, no commit, empty and reverted commits, verify
+  failing/committing/dirtying, redirected push remote), `checkRepairRef`,
+  and `resumeRepair` against a bare remote whose pre-receive hook rejects
+  the first push, including its saved-commit, dirty, verify and moved-PR
+  refusals.
+- `execute_routing_test.go`: table test of `execute` result routing.
+- `worker_log_test.go`: redaction, bounding and drop-oldest behaviour.
+- Fixed: `workerLog` printed grouped and `LogValuer` attributes whole, so a
+  `token` nested in a group reached persisted logs; it now resolves and walks
+  groups. Its 4000-byte cut could split a UTF-8 character; it now cuts on a
+  rune boundary. Key-based redaction cannot see inside values passed with
+  `slog.Any` (structs, maps, errors, slices), so every formatted line is also
+  scrubbed of credential-shaped text (GitHub tokens, `x-access-token:` URLs,
+  Anthropic keys, bearer values); a secret with no recognizable shape inside
+  such a value is still printed.
+- Git fixtures set `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`,
+  so a developer's hooksPath or gpgsign cannot break them.
+- internal/town coverage 74.4% -> 76.7%.
+
+## feature-bot completed-workspace pruning (#101)
+
+- `engine.finish` appends `completed_workspaces` (directory, scanned commit,
+  completion time) only for a successful completion, in the same atomic state
+  write; zero-finding and dry-run scans qualify, failed (still active) and
+  discarded or stale scans do not. `ReadState` rejects invalid, duplicate or
+  out-of-tree records.
+- `bfb prune --older-than D` previews records completed strictly before now-D;
+  `--apply` runs one-`--force` `git worktree remove` (removes untracked and
+  ignored artifacts, never overrides Git locks). Both take `lockConfig` and
+  refuse while research runs. No fetch, `gh`, agent or `git gc`; no records
+  means no Git call at all.
+- Removal requires a canonical (symlink-free) `scan-*` path under
+  `<checkout>-scans`, a registered, unlocked, detached worktree of the managed
+  clone at the recorded commit, matching common dir and gitdir back-link, no
+  index flags that hide changes, and no tracked or staged changes. The active
+  scan (including exhausted retries and `posting` candidates) is skipped by
+  path and resolved alias.
+- Each retirement is saved separately. A missing directory with a registration
+  has its private index checked before removing the registration; with neither
+  left, the record is retired. Removal failures keep the record, continue with
+  the rest and return a joined error. Legacy workspaces stay external.
+- A registered directory without `.git` (interrupted `worktree remove`) is
+  finished with `RemoveAll` plus `worktree remove` only if the admin index
+  equals the recorded commit, has no hiding flags and the remaining files show
+  no non-deletion changes; otherwise it is a policy skip with README recovery.
+- Policy skips exit zero; skips from Git/IO errors exit non-zero. Prune's Git
+  calls drop inherited `git rev-parse --local-env-vars` overrides
+  (`osrun.RunWithout`). Git 2.36+ is required for `worktree list -z`.
+- Town and the worker protocol are unchanged; ported from the unmerged
+  BrokkAi/feature-bot#17. `bundle.json` moves feature-bot to 0.3.0.
+
 ## Quiet hours (#50)
 
 - `QuietWindow{days, start, end}`: days name the start day (mon..sun); times
@@ -605,3 +704,8 @@
   [--repo] --quiet-hours SPEC|none|default`; config file `quiet_hours` at top
   level and per town. Browser: Town settings (follow default / own / none) and
   the Capacity dialog; header chip, house dot and Town Hall explain the hold.
+- Review follow-ups: HH:MM refuses signs; an empty schedule must be sent
+  as `none` or an explicit `[]` (`/api/quiet-hours` requires `windows`);
+  `until`/`next` across DST resolve to the real instant the clock reaches
+  (the jump past a skipped reading, the repeated reading still ahead);
+  `mergeReady` rechecks quiet hours just before writing its intent.

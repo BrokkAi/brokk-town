@@ -18,6 +18,9 @@ import (
 // or it still finds blocking work, in which case Town closes the pull request
 // and queues the issue for a fresh attempt from the current base branch.
 
+// pullRetryDelay separates the two attempts a pull request revision gets.
+const pullRetryDelay = 15 * time.Minute
+
 // failPullAttempt records an attempt on a pull request that produced no
 // decision. The first failure on a revision earns one more attempt after a
 // short delay; the second retires the pull request.
@@ -25,7 +28,7 @@ func (s *Supervisor) failPullAttempt(st *State, t *Town, task *Task, role Role, 
 	task.Attempts++
 	task.Blocked = false
 	if task.Attempts < 2 {
-		task.RetryAt = s.now().Add(15 * time.Minute)
+		task.RetryAt = s.now().Add(pullRetryDelay)
 		task.Detail = fmt.Sprintf("%s attempt did not complete; one more attempt is scheduled. %s", houseName(role), detail)
 		return
 	}
