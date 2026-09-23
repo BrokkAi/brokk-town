@@ -149,7 +149,7 @@ func fixture(t *testing.T) (engine, *State, *fakeSource, *fakeAgent, string) {
 	}
 	f := &fakeSource{cfg: cfg}
 	a := &fakeAgent{}
-	e := engine{config: cfg, source: f, log: slog.New(slog.NewTextHandler(io.Discard, nil)), agent: func(Config) Agent { return a }, now: time.Now}
+	e := engine{config: cfg, source: f, log: slog.New(slog.NewTextHandler(io.Discard, nil)), agent: func(Config, string) Agent { return a }, now: time.Now}
 	return e, newState(cfg), f, a, source
 }
 func TestScanPublishAndRestartDoesNotDuplicate(t *testing.T) {
@@ -377,7 +377,7 @@ func TestChangedSourceAndMissingSourceRefused(t *testing.T) {
 				bad.Files = []string{"does-not-exist.go"}
 				a.findings = []Finding{bad}
 			} else {
-				e.agent = func(cfg Config) Agent {
+				e.agent = func(cfg Config, _ string) Agent {
 					a.onScan = func() { writeTestFile(t, filepath.Join(cfg.Directory, "README.md"), "edited source") }
 					return a
 				}
@@ -526,7 +526,7 @@ func (a *truncatingAgent) Execute(ctx context.Context, prompt string) (string, e
 func TestTruncatedScanReceiptIsRecovered(t *testing.T) {
 	e, s, f, _, _ := fixture(t)
 	a := &truncatingAgent{}
-	e.agent = func(Config) Agent { return a }
+	e.agent = func(Config, string) Agent { return a }
 	if err := e.step(context.Background(), s, true); err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +537,7 @@ func TestTruncatedScanReceiptIsRecovered(t *testing.T) {
 func TestUnrecoverableReceiptPausesWithDetail(t *testing.T) {
 	e, s, _, _, _ := fixture(t)
 	a := &truncatingAgent{unrecoverable: true}
-	e.agent = func(Config) Agent { return a }
+	e.agent = func(Config, string) Agent { return a }
 	err := e.step(context.Background(), s, true)
 	if err == nil || a.recoveries != 1 {
 		t.Fatalf("expected one failed recovery, got recoveries=%d err=%v", a.recoveries, err)
@@ -555,7 +555,7 @@ func TestUnrecoverableReceiptPausesWithDetail(t *testing.T) {
 func TestRecoverySetupFailureRefundsAttempt(t *testing.T) {
 	e, s, _, _, _ := fixture(t)
 	a := &truncatingAgent{recoveryErr: &runner.SetupError{Err: errors.New("missing model")}}
-	e.agent = func(Config) Agent { return a }
+	e.agent = func(Config, string) Agent { return a }
 	err := e.step(context.Background(), s, true)
 	var setup *runner.SetupError
 	if !errors.As(err, &setup) || a.recoveries != 1 || s.Scan.Tries != 0 {

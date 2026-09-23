@@ -185,3 +185,24 @@ func TestDashboardNavigationBeforeFirstFinding(t *testing.T) {
 		t.Fatalf("first result was not selectable: %s", text)
 	}
 }
+
+func TestDashboardShowsStageSelections(t *testing.T) {
+	cfg := bot.DefaultConfig()
+	cfg.Agent.Model, cfg.Agent.Effort = "scout", "high"
+	cfg.Agent.Environment = map[string]string{"API_KEY": "secret-value"}
+	d := newDashboard(cfg)
+	if text := d.render(120, 24, time.Now(), false); !strings.Contains(text, "discovery: scout / high · review: scout / high") {
+		t.Fatalf("inherited selection missing:\n%s", text)
+	}
+	log := slog.New(&dashboardHandler{d: d})
+	log.With("stage", "review").Info("Using model", "model", "judge")
+	log.With("stage", "review").Info("Using reasoning effort", "effort", "low")
+	log.With("stage", "discovery").Info("Using model", "model", "scout-2")
+	text := d.render(120, 24, time.Now(), false)
+	if !strings.Contains(text, "discovery: scout-2 / high · review: judge / low") {
+		t.Fatalf("stage selection missing:\n%s", text)
+	}
+	if strings.Contains(text, "secret-value") || strings.Contains(strings.Join(d.activity, "\n"), "secret-value") {
+		t.Fatal("agent environment displayed")
+	}
+}

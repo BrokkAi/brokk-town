@@ -38,6 +38,11 @@ import {
   attentionGuidance,
   ago,
   decisionReason,
+  taskSnooze,
+  taskSnoozable,
+  snoozeLabel,
+  snoozeRequest,
+  defaultSnoozeUntil,
 } from "./town.js";
 import { registerTownTools } from "./tools.js";
 test("deliveries resume after cursor and stay in their repository", () => {
@@ -588,4 +593,63 @@ test("attention guidance distinguishes setup, prior release failure, and uncerta
   const uncertain = attentionGuidance({ status: "uncertain_write", task: "pr:5" });
   assert.match(uncertain.next, /recorded outcome/);
   assert.equal(uncertain.retryRelease, undefined);
+});
+test("a snoozed task reads as snoozed until its resume time, apart from blocked and failed", () => {
+  const now = Date.parse("2026-09-23T09:00:00Z");
+  const until = "2026-09-23T11:00:00Z";
+  const town = {
+    id: "acme/snooze",
+    config: { repo: "acme/snooze" },
+    workers: { issue: { role: "issue", status: "waiting" }, review: { role: "review", status: "waiting" } },
+    tasks: {
+      quiet: { id: "issue:1", kind: "issue", number: 1, house: "issue", stage: "queued", deferred_until: until, defer_reason: "vendor fix" },
+      blocked: { id: "issue:2", kind: "issue", number: 2, house: "issue", stage: "queued", blocked: true, deferred_until: until },
+      failed: { id: "issue:3", kind: "issue", number: 3, house: "issue", stage: "failed", deferred_until: until },
+      merged: { id: "pr:4", kind: "pr", number: 4, house: "release", stage: "merged", deferred_until: until },
+      running: { id: "pr:5", kind: "pr", number: 5, house: "review", stage: "queued", deferred_until: until },
+    },
+  };
+  assert.deepEqual(taskSnooze(town.tasks.quiet, now), { until: new Date(until), reason: "vendor fix" });
+  assert.equal(taskStatus(town, town.tasks.quiet, now), "snoozed");
+  assert.equal(taskStatus(town, town.tasks.blocked, now), "snoozed");
+  assert.equal(taskStatus(town, town.tasks.failed, now), "snoozed");
+  assert.equal(taskStatus(town, town.tasks.merged, now), "merged");
+  const projected = projectTask(town, town.tasks.quiet, now);
+  assert.equal(projected.statusLabel, "Snoozed");
+  assert.equal(projected.statusClass, "snoozed");
+  assert.equal(boardColumn(projected), "queued");
+  assert.match(snoozeLabel(town.tasks.quiet, now), /^Snoozed until /);
+  // A run already under way when the task was snoozed still shows as working.
+  const busy = { ...town, workers: { ...town.workers, review: { role: "review", status: "working", run: { pr: 5 } } } };
+  assert.equal(taskStatus(busy, town.tasks.running, now), "working");
+  // At the resume time the snooze no longer holds, even before the service
+  // clears it; the task returns to its underlying status.
+  const later = Date.parse(until);
+  assert.equal(taskSnooze(town.tasks.quiet, later), null);
+  assert.equal(taskStatus(town, town.tasks.quiet, later), "queued");
+  assert.equal(taskStatus(town, town.tasks.blocked, later), "blocked");
+  assert.equal(snoozeLabel(town.tasks.quiet, later), "");
+  // A snoozed task asks for no attention: the inbox skips it.
+  const snoozedBlock = { ...town, tasks: { blocked: { ...town.tasks.blocked, deferred_until: "2999-01-01T00:00:00Z" } } };
+  assert.equal(inbox({ towns: { [town.id]: snoozedBlock } }).attention.length, 0);
+});
+test("snooze requests are checked before they are sent", () => {
+  const now = Date.parse("2026-09-23T09:00:00Z");
+  assert.equal(taskSnoozable({ kind: "issue", stage: "queued" }), true);
+  assert.equal(taskSnoozable({ kind: "pr", stage: "ready" }), true);
+  for (const stage of ["merged", "closed", "closing", "declined", "implemented"]) {
+    assert.equal(taskSnoozable({ kind: "pr", stage }), false, stage);
+  }
+  assert.equal(taskSnoozable({ kind: "commit", stage: "unreleased" }), false);
+  assert.deepEqual(snoozeRequest("2026-09-23T12:30:00Z", "  vendor fix  ", now), { until: "2026-09-23T12:30:00Z", reason: "vendor fix" });
+  assert.match(snoozeRequest("", "", now).error, /Choose the date/);
+  assert.match(snoozeRequest("2026-09-23T08:00:00Z", "", now).error, /future/);
+  assert.match(snoozeRequest("2028-09-23T08:00:00Z", "", now).error, /366 days/);
+  assert.match(snoozeRequest("2026-09-24T08:00:00Z", "x".repeat(201), now).error, /200 characters/);
+  // Characters are counted as the service counts them, not as UTF-16 units:
+  // 200 emoji are 400 units but still a valid reason.
+  assert.equal(snoozeRequest("2026-09-24T08:00:00Z", "🙂".repeat(200), now).reason, "🙂".repeat(200));
+  assert.match(snoozeRequest("2026-09-24T08:00:00Z", "🙂".repeat(201), now).error, /200 characters/);
+  const suggested = Date.parse(defaultSnoozeUntil(now));
+  assert.ok(suggested > now + 86400000 - 1 && suggested <= now + 86400000 + 3600000, "suggests about a day ahead");
 });

@@ -57,7 +57,7 @@ for line in sys.stdin:
         continue
     send(dict(jsonrpc='2.0', id=request['id'], result=result))
 `)
-	e.agent = func(cfg Config) Agent {
+	e.agent = func(cfg Config, _ string) Agent {
 		cfg.Agent.Command = []string{"python3", script}
 		cfg.Agent.Environment = map[string]string{
 			"FEATURE_DIG_SCAN":   "FEATURE_RESULT " + jsonContextCompact(ScanResult{Summary: "Researched task export workflow", Findings: []Finding{finding()}}),

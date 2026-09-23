@@ -63,6 +63,7 @@ make build
 ./bin/bfb once /path/to/your-repo --focus "onboarding and reporting workflows"
 ./bin/bfb /path/to/your-repo --max-issues 2 --label enhancement
 ./bin/bfb /path/to/your-repo --model YOUR_MODEL_ID --effort low
+./bin/bfb /path/to/your-repo --model RESEARCH_MODEL_ID --review-model REVIEW_MODEL_ID --review-effort high
 ./bin/bfb status /path/to/your-repo
 ./bin/bfb report /path/to/your-repo --branch master --status dry_run > proposals.md
 ./bin/bfb version
@@ -100,7 +101,8 @@ bfb /path/to/repo --json    # structured logs for tools and log collectors
 
 The overview shows the repository, branch and commit, scan stage, active tool,
 uptime, attempt budget, and next check or retry countdown. Larger panes also
-show the selected model, reasoning effort, and investigation focus.
+show the discovery and review model and reasoning effort, and the investigation
+focus.
 
 **Saved** counts cover findings in the configured repository/branch state,
 including the current scan: found, filed, duplicate, pending, dry run, and skipped
@@ -285,6 +287,25 @@ Use labels that already exist in the target repository. `github.host` supports
 Enterprise, and `github.repo` (`OWNER/REPO`) identifies a local mirror's GitHub
 repository. `agent` also supports `environment`, `auth_method`, `mode`, `model`,
 and `effort`, with selection handled by the shared ACP runner.
+
+Research uses `agent.model` and `agent.effort` (`--model`, `--effort`) for
+discovery and discovery receipt recovery. Independent review uses
+`review_model` and `review_effort` (`--review-model`, `--review-effort`) for
+every review batch, coverage correction and review receipt recovery, including
+pending candidates resumed from a saved scan. Each omitted review setting
+inherits its research setting; CLI flags override JSON, and blank values are
+rejected. Review runs with the same agent command, environment, authentication,
+mode, workspace, timeout and publication gates. The ACP adapter defines which
+model IDs and effort values exist: a review model or effort it does not offer
+stops with a setup error naming the review setting before any review prompt,
+keeps discovered candidates pending, creates no issue and never falls back to
+the research settings. Saved review progress records the effective review model
+and effort; changing either, or resuming progress saved before this identity
+was recorded, reviews pending candidates again from validation through every
+issue batch without repeating discovery. A review setup failure has already
+replaced saved review progress with the failed selection, so reverting the
+setting afterwards also restarts validation. Logs mark `stage=discovery` or
+`stage=review` with the effective model and effort.
 
 `verify` accepts an argument array, such as `["/opt/checks/verify-feature"]`, executed
 in the scan worktree with `FEATURE_COMMIT` and JSON `FEATURE_FINDING` in its environment.

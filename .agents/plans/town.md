@@ -521,6 +521,59 @@
   unset, so review inherits Town's agent settings as before.
 - `bundle.json` moves bug-bot to 0.4.0 at the final feature commit.
 
+## feature-bot review model and effort (#99)
+
+- Optional `review_model`/`review_effort` (`--review-model`/`--review-effort`)
+  select the model and effort for every review batch, coverage correction and
+  review receipt recovery, including resumed pending candidates. Discovery and
+  discovery receipt recovery keep `agent.model`/`agent.effort`. Each omitted
+  value inherits its research setting; CLI overrides JSON; explicit blank
+  values are rejected.
+- The review agent is the scan worktree config with only Model and Effort
+  replaced, built lazily for the first pending candidate, so zero findings
+  start no review session. `agentProcess` keeps its `setAgentEffort` fallback.
+- A rejected selection is a setup error naming `--review-model`/`review_model`
+  (or effort) and the adapter's available values. No attempt is consumed,
+  candidates stay pending, no issue is created, and nothing falls back.
+- `ReviewCheckpoint.reviewer` records the effective model/effort. A different
+  reviewer, or a legacy checkpoint without one, restarts review from
+  validation over every issue batch; discovery is not repeated. Equal
+  effective values (explicit or inherited) reuse the checkpoint.
+- Logs tag agent sessions `stage=discovery|review` with the selection; the
+  dashboard shows both. Town and the worker protocol are unchanged.
+- `bundle.json` moves feature-bot to 0.2.0 at the feature commit.
+
+## Snooze one task (#62)
+
+- `Task.DeferredUntil` and `Task.DeferReason` are operator state, published as
+  `deferred_until` and `defer_reason`. Reconcile and funnel sync update tasks in
+  place and never touch them; state validation rejects a reason over 200
+  characters or a reason without a time.
+- `Supervisor.Defer` sets or clears the snooze through one store update and
+  wakes the scheduler. `/api/control` takes `action: "defer"` with an RFC 3339
+  `until` and optional `reason`; `undefer` goes through `Control`. Refused: a
+  past time, more than 366 days ahead, a multi-line or long reason, a commit or
+  source task, a merged, closed, closing, declined or implemented task, and
+  clearing a task that is not snoozed.
+- Selection gates beside Blocked/RetryAt: `nextIssue`, `nextTask` (review,
+  simplifier intake, repair "fixes"), `nextJudgment` and `mergeReady`. These
+  take the clock explicitly so tests use fake time. A snooze stops new agent
+  dispatch and merges for that task only; a running attempt finishes, and the
+  Mayor's own admit/decline is not gated.
+- Expiry: the scheduler's one-second pass clears ended snoozes, wakes the
+  task's house (`Next` zero) and records "Snooze ended". Demo runs the same
+  sweep on its own ticker, and the demo board seeds a snoozed `issue:707`.
+  Selection ignores an ended snooze even before the sweep runs.
+- Clients: `taskSnooze`/`taskStatus` show "Snoozed" (outranking blocked and
+  failed, not a running attempt) until the resume time; snoozed work is not an
+  attention item. The inspector offers **Snooze…** (dialog with local
+  datetime and reason) and **Resume now**. CLI: `bt defer --until --reason`,
+  `bt undefer`.
+- Review follow-ups: an issue run's attempt and cost go to the issue it
+  reports (the fallback skips snoozed issues); the reason limit counts
+  characters on both service and browser; a snooze that ends on finished work
+  is dropped silently; the inspector says retry keeps a snooze.
+
 ## bug-bot only-on-change polling (#98)
 
 - Optional `only_on_change` (`--only-on-change`, default false). In daemon mode

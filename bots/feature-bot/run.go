@@ -21,7 +21,7 @@ type engine struct {
 	config  Config
 	source  issueSource
 	log     *slog.Logger
-	agent   func(Config) Agent
+	agent   func(cfg Config, stage string) Agent
 	now     func() time.Time
 	observe func(Progress)
 }
@@ -49,7 +49,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		s = newState(cfg)
 	}
 	observe, _ := ctx.Value(progressKey{}).(func(Progress))
-	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config) Agent { return agentProcess{c, log} }, now: time.Now, observe: observe}
+	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config, stage string) Agent { return agentProcess{c, log.With("stage", stage), stage} }, now: time.Now, observe: observe}
 	e.report(s, "starting", "Loading saved scan")
 	for {
 		err := e.step(ctx, s, once)
@@ -240,7 +240,6 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 	if err != nil {
 		return err
 	}
-	a := e.agent(w.config)
 	if !s.Scan.Discovered {
 		// Keep a complete, untruncated snapshot in the agent's workspace for discovery.
 		file, err := os.CreateTemp(w.config.Directory, ".feature-bot-issues-*.json")
@@ -254,9 +253,9 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			return err
 		}
 		e.report(s, "investigating", "Researching new features")
-		e.log.Info("Researching new features", "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
+		e.log.Info("Researching new features", "stage", "discovery", "model", selection(w.config.Agent.Model), "effort", selection(w.config.Agent.Effort), "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
 		var r ScanResult
-		if err := e.execute(ctx, s, "investigating", a, scanPrompt(e.config, s, path), "FEATURE_RESULT", func(text string) (err error) {
+		if err := e.execute(ctx, s, "investigating", e.agent(w.config, "discovery"), scanPrompt(e.config, s, path), "FEATURE_RESULT", func(text string) (err error) {
 			r, err = parseScan(text, e.config.MaxIssues)
 			return err
 		}); err != nil {
@@ -284,15 +283,31 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			return err
 		}
 	}
+	// Review uses the current effective selection, including when resuming pending
+	// candidates discovered under an earlier configuration.
+	var review Agent
 	for _, c := range s.Scan.Candidates {
 		if c.Status != "pending" {
 			continue
 		}
-		if err := e.reviewAndPublish(ctx, s, g, w, a, c); err != nil {
+		if review == nil {
+			cfg := w.config.review()
+			e.log.Info("Reviewing proposals", "stage", "review", "model", selection(cfg.Agent.Model), "effort", selection(cfg.Agent.Effort), "commit", s.Scan.Commit)
+			review = e.agent(cfg, "review")
+		}
+		if err := e.reviewAndPublish(ctx, s, g, w, review, c); err != nil {
 			return err
 		}
 	}
 	return e.finish(s)
+}
+
+// selection names an unset model or effort without implying a specific value.
+func selection(value string) string {
+	if value == "" {
+		return "agent default"
+	}
+	return value
 }
 
 // Bound each review prompt without truncating any issue or discussion. Large individual
@@ -340,8 +355,14 @@ func issueDigest(i Issue) [32]byte { b, _ := json.Marshal(i); return sha256.Sum2
 func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a Agent, c *Candidate) error {
 	e.report(s, "reviewing", "Refreshing issue history: "+c.Finding.Title)
 	contextKey := fmt.Sprintf("%x", sha256.Sum256([]byte(jsonContext(c.Finding)+s.Scan.Commit)))
-	if c.Checkpoint == nil || c.Checkpoint.Context != contextKey {
-		c.Checkpoint = &ReviewCheckpoint{Context: contextKey}
+	selected := w.config.ReviewAgent()
+	reviewer := Reviewer{Model: selected.Model, Effort: selected.Effort}
+	if c.Checkpoint == nil || c.Checkpoint.Context != contextKey || c.Checkpoint.Reviewer == nil || *c.Checkpoint.Reviewer != reviewer {
+		if c.Checkpoint != nil && c.Checkpoint.Context == contextKey && (c.Checkpoint.Validated || len(c.Checkpoint.Batches) > 0) {
+			// Earlier results came from another (or an unrecorded) review selection.
+			e.log.Info("Reviewing again with current review settings", "title", c.Finding.Title, "model", selection(reviewer.Model), "effort", selection(reviewer.Effort))
+		}
+		c.Checkpoint = &ReviewCheckpoint{Context: contextKey, Reviewer: &reviewer}
 	}
 	if c.Checkpoint.Batches == nil {
 		c.Checkpoint.Batches = map[string]bool{}
