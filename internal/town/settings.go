@@ -393,29 +393,30 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 	return nil
 }
 
-type AgentChoices struct {
-	Models  []acp.ConfigValue `json:"models"`
-	Efforts []acp.ConfigValue `json:"efforts"`
+// ChoiceValue is the API shape of one selectable model or effort. It stays
+// independent of acp-go's generated schema so the browser contract is fixed.
+type ChoiceValue struct {
+	Value string `json:"value"`
+	Name  string `json:"name"`
 }
 
-func choices(session acp.Session) AgentChoices {
-	out := AgentChoices{Models: []acp.ConfigValue{}, Efforts: []acp.ConfigValue{}}
-	for _, o := range session.ConfigOptions {
-		if o.Type != "select" {
-			continue
-		}
-		category := o.Category
-		if category == "" {
-			category = o.ID
-		}
-		switch category {
-		case "model":
-			out.Models = append(out.Models, o.Options...)
-		case "thought_level", "reasoning_effort":
-			out.Efforts = append(out.Efforts, o.Options...)
-		}
+type AgentChoices struct {
+	Models  []ChoiceValue `json:"models"`
+	Efforts []ChoiceValue `json:"efforts"`
+}
+
+// choices lists the options a run selects: executeACP picks the model with
+// acp-go's SetModel and the effort with setEffort, both over these lookups.
+func choices(session acp.Session) (AgentChoices, error) {
+	models, err := selectValues(modelOption(session.ConfigOptions))
+	if err != nil {
+		return AgentChoices{}, err
 	}
-	return out
+	efforts, err := selectValues(effortOption(session.ConfigOptions))
+	if err != nil {
+		return AgentChoices{}, err
+	}
+	return AgentChoices{Models: models, Efforts: efforts}, nil
 }
 
 // A discovery session never sends a prompt, exposes client tools or uses a
@@ -458,7 +459,10 @@ func ProbeAgent(ctx context.Context, cfg Config, roots ...string) (AgentChoices,
 	defer func() { cancel(); _ = cmd.Wait() }()
 	c := acp.Connect(in, out, nil, nil)
 	defer c.Close()
-	init, err := c.InitializeWithInfo(ctx, acp.Capabilities{}, acp.ClientInfo{Name: "brokk-town", Version: "dev"})
+	// Advertise the same session config support as runner.Execute, so an agent
+	// that gates its selectors on it reports what a real run would see. No
+	// workspace capabilities: discovery never serves files or terminals.
+	init, err := c.InitializeWithInfo(ctx, acp.Capabilities{Session: acp.ConfigOptionsClientCapabilities(true)}, acp.ClientInfo{Name: "brokk-town", Version: "dev"})
 	if err != nil {
 		return AgentChoices{}, errors.New("harness initialization failed; check its installation and login")
 	}
@@ -481,7 +485,7 @@ func ProbeAgent(ctx context.Context, cfg Config, roots ...string) (AgentChoices,
 			return AgentChoices{}, fmt.Errorf("model selection: %w", err)
 		}
 	}
-	return choices(session), nil
+	return choices(session)
 }
 
 func (s *Supervisor) Choices(ctx context.Context, id string, settings AgentSettings) (AgentChoices, error) {
@@ -512,7 +516,7 @@ func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, s
 	}
 	if s.Store.Snapshot().Demo {
 		s.mu.Unlock()
-		return AgentChoices{Models: []acp.ConfigValue{{Value: "demo-model", Name: "Demo model"}}, Efforts: []acp.ConfigValue{{Value: "low", Name: "Low"}, {Value: "high", Name: "High"}}}, nil
+		return AgentChoices{Models: []ChoiceValue{{Value: "demo-model", Name: "Demo model"}}, Efforts: []ChoiceValue{{Value: "low", Name: "Low"}, {Value: "high", Name: "High"}}}, nil
 	}
 	key := id + ":choices"
 	if s.running[key] != nil {

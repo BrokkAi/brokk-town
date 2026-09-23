@@ -15,8 +15,8 @@
     "issue": {
       "project": "issue-bot",
       "command": "bib",
-      "version": "0.5.8",
-      "source_commit": "53022f48ada19462ebe314c0692b20b42aef1758"
+      "version": "0.5.9",
+      "source_commit": "88ed397f9862f2c069372b15ef24282ec3bf4ed9"
     },
     "review": {
       "project": "review-bot",
@@ -27,8 +27,8 @@
     "release": {
       "project": "release-bot",
       "command": "brb",
-      "version": "0.6.3",
-      "source_commit": "d7222a04471383ab228bda3c4b585ad73f61631d"
+      "version": "0.6.4",
+      "source_commit": "64aa0fa3808b56df883ac68de2533af91e69595b"
     },
     "repo": {
       "project": "repo-bot",
