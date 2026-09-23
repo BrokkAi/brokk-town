@@ -136,6 +136,9 @@ func (a *fakeAgent) Execute(_ context.Context, prompt string) (string, error) {
 func jsonContextCompact(v any) string { b, _ := json.Marshal(v); return string(b) }
 func fixture(t *testing.T) (engine, *State, *fakeSource, *fakeAgent, string) {
 	t.Helper()
+	// Keep the engine's own Git calls independent of the developer's configuration.
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	source, remote := discoveryRepo(t)
 	dir := canonicalTestDir(t)
 	cfg := DefaultConfig()

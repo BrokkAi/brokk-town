@@ -31,10 +31,14 @@ type Reviewer struct {
 type Candidate struct {
 	Checkpoint *ReviewCheckpoint `json:"review_checkpoint,omitempty"`
 	RequestID  string            `json:"request_id"`
-	Finding    Finding           `json:"finding"`
-	Status     string            `json:"status"`
-	URL        string            `json:"url,omitempty"`
-	Review     string            `json:"review,omitempty"`
+	// Commit is the source revision at which discovery validated the finding's
+	// cited files. Candidates saved by older releases lack it and cannot be
+	// selected for publication.
+	Commit  string  `json:"commit,omitempty"`
+	Finding Finding `json:"finding"`
+	Status  string  `json:"status"`
+	URL     string  `json:"url,omitempty"`
+	Review  string  `json:"review,omitempty"`
 }
 type Scan struct {
 	Commit     string       `json:"commit"`
@@ -67,6 +71,18 @@ type State struct {
 	NextScan  time.Time    `json:"next_scan,omitempty"`
 	// Workspaces lists retained worktrees of successful scans; prune retires them.
 	Workspaces []CompletedWorkspace `json:"completed_workspaces,omitempty"`
+	// Publication is the unfinished publication of one selected saved proposal.
+	Publication *Publication `json:"publication,omitempty"`
+}
+
+// Publication scopes a selected saved proposal to its recorded source revision
+// and isolated workspace. The candidate's request ID remains the publication
+// request identity, so a retry reconciles its marker instead of posting again.
+type Publication struct {
+	RequestID string `json:"request_id"`
+	Commit    string `json:"commit"`
+	Directory string `json:"directory"`
+	Failure   string `json:"failure,omitempty"`
 }
 
 func newState(cfg Config) *State {
@@ -102,7 +118,7 @@ func ReadState(cfg Config) (*State, error) {
 		candidates = append(candidates, s.Scan.Candidates...)
 	}
 	for _, c := range candidates {
-		if c == nil || c.Finding.validate() != nil || (len(c.RequestID) != 32 || strings.Trim(c.RequestID, "0123456789abcdef") != "") {
+		if c == nil || c.Finding.validate() != nil || (len(c.RequestID) != 32 || strings.Trim(c.RequestID, "0123456789abcdef") != "") || (c.Commit != "" && !validCommit(c.Commit)) {
 			return nil, errors.New("invalid saved finding")
 		}
 		switch c.Status {
@@ -111,7 +127,23 @@ func ReadState(cfg Config) (*State, error) {
 			return nil, errors.New("invalid saved finding status")
 		}
 	}
+	if p := s.Publication; p != nil {
+		c := completedCandidate(&s, p.RequestID)
+		if c == nil || c.Commit != p.Commit || !validCommit(p.Commit) || !validScanDirectory(cfg, p.Directory) || seen[p.Directory] || (s.Scan != nil && s.Scan.Directory == p.Directory) {
+			return nil, errors.New("invalid saved publication")
+		}
+	}
 	return &s, nil
+}
+
+// completedCandidate finds a completed candidate by its publication request ID.
+func completedCandidate(s *State, requestID string) *Candidate {
+	for _, c := range s.Completed {
+		if c.RequestID == requestID {
+			return c
+		}
+	}
+	return nil
 }
 func validCommit(s string) bool {
 	if len(s) != 40 && len(s) != 64 {

@@ -17,7 +17,8 @@ func ValidateReportStatus(status string) error {
 }
 
 // WriteReport renders all candidates from ReadState, without exposing execution
-// metadata or attributing completed findings to the active scan's commit.
+// metadata. A candidate is attributed only to its own recorded commit, never to
+// the active scan's.
 // Proposal prose is preserved as Markdown and should be reviewed before sharing.
 func WriteReport(w io.Writer, cfg Config, state *State, status string) error {
 	if err := ValidateReportStatus(status); err != nil {
@@ -39,6 +40,9 @@ func WriteReport(w io.Writer, cfg Config, state *State, status string) error {
 			fmt.Fprintf(&out, "\n## %s\n\nStatus: %s\n", f.Title, c.Status)
 			if c.URL != "" {
 				fmt.Fprintf(&out, "\nIssue or duplicate URL: %s\n", c.URL)
+			}
+			if c.Commit != "" {
+				fmt.Fprintf(&out, "\nResearched at commit: %s\n", c.Commit)
 			}
 			for _, section := range [][2]string{
 				{"User problem", f.UserProblem}, {"Current workflow", f.CurrentWorkflow},
