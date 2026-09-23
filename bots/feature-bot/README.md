@@ -66,6 +66,7 @@ make build
 ./bin/bfb /path/to/your-repo --model RESEARCH_MODEL_ID --review-model REVIEW_MODEL_ID --review-effort high
 ./bin/bfb status /path/to/your-repo
 ./bin/bfb report /path/to/your-repo --branch master --status dry_run > proposals.md
+./bin/bfb prune /path/to/your-repo --branch master --older-than 720h
 ./bin/bfb version
 ./bin/bfb retry /path/to/your-repo --once
 ```
@@ -344,8 +345,54 @@ original commit. Internal workspace paths, transcripts, and publication markers
 are not included as metadata. Proposal and review prose is preserved as Markdown;
 review that content before sharing it.
 
-Scan worktrees and research files are retained for inspection. Manage their
-retention along with transcripts externally. Agent instructions prohibit feature implementation, fixes,
+### Reclaim completed scan workspaces
+
+Scan worktrees and research files are retained for inspection. Preview old
+successfully completed workspaces, then explicitly apply removal:
+
+```sh
+bfb prune --config feature-bot.json --older-than 720h
+bfb prune --config feature-bot.json --older-than 720h --apply
+```
+
+A successful scan records its workspace, scanned commit and completion time,
+including zero-finding and dry-run scans. The positive duration is required;
+only scans completed strictly before the cutoff qualify. Preview lists eligible
+workspaces, explains skipped records and changes neither worktrees nor saved
+state. Apply uses Git worktree removal, **including untracked and ignored
+research artifacts**. Saved proposals, reviews, issue URLs, history and
+transcripts are preserved.
+
+Pruning takes the same repository, state and checkout locks as research and
+refuses to run while research holds them. It checks workspace containment, Git
+ownership, detached HEAD, the recorded commit, tracked or staged changes and
+Git locks. Active scans (including exhausted retries and unresolved
+publication), failed or discarded scans, and workspaces without completion
+records are never removed. Symlinked paths, foreign, modified or locked
+worktrees are skipped. Interrupted cleanup can be rerun: a missing directory
+has only its matching Git registration removed, and a record is retired once
+both are gone. A directory an interrupted removal left without its `.git` file
+is deleted, and its registration removed, only when the private index matches
+the recorded commit and no remaining tracked file was modified. Otherwise it is
+skipped; inspect it, keep what you need, then delete the directory and rerun
+prune, which removes the registration once its index holds no staged changes
+(or run `git -C CHECKOUT worktree remove --force DIRECTORY` yourself). A failed
+removal, or a skip caused by a Git or filesystem error rather than a policy,
+keeps its record and makes the command exit non-zero after the remaining
+workspaces are processed.
+
+Pruning requires Git 2.36 or newer. Inherited `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE` and similar repository overrides are ignored. With explicit
+configuration, pruning needs local Git and performs no fetch,
+GitHub request or agent execution; `gh` and an ACP executable are not required.
+Repository discovery may look up the default branch; pass `--branch` to avoid
+that lookup. Use the same configuration and branch as the original scan.
+Workspaces from releases before completion records, and transcripts, remain
+externally managed; pruning never runs `git gc`.
+
+### Agent boundaries
+
+Agent instructions prohibit feature implementation, fixes,
 commits, pushes, and direct GitHub writes; tracked source changes or a changed
 HEAD invalidate the scan. Evidence is independently reviewed by the LLM, not
 proof that tests are correct. As in the sibling bots, ACP permission requests

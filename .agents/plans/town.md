@@ -640,3 +640,35 @@
 - Git fixtures set `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`,
   so a developer's hooksPath or gpgsign cannot break them.
 - internal/town coverage 74.4% -> 76.7%.
+
+## feature-bot completed-workspace pruning (#101)
+
+- `engine.finish` appends `completed_workspaces` (directory, scanned commit,
+  completion time) only for a successful completion, in the same atomic state
+  write; zero-finding and dry-run scans qualify, failed (still active) and
+  discarded or stale scans do not. `ReadState` rejects invalid, duplicate or
+  out-of-tree records.
+- `bfb prune --older-than D` previews records completed strictly before now-D;
+  `--apply` runs one-`--force` `git worktree remove` (removes untracked and
+  ignored artifacts, never overrides Git locks). Both take `lockConfig` and
+  refuse while research runs. No fetch, `gh`, agent or `git gc`; no records
+  means no Git call at all.
+- Removal requires a canonical (symlink-free) `scan-*` path under
+  `<checkout>-scans`, a registered, unlocked, detached worktree of the managed
+  clone at the recorded commit, matching common dir and gitdir back-link, no
+  index flags that hide changes, and no tracked or staged changes. The active
+  scan (including exhausted retries and `posting` candidates) is skipped by
+  path and resolved alias.
+- Each retirement is saved separately. A missing directory with a registration
+  has its private index checked before removing the registration; with neither
+  left, the record is retired. Removal failures keep the record, continue with
+  the rest and return a joined error. Legacy workspaces stay external.
+- A registered directory without `.git` (interrupted `worktree remove`) is
+  finished with `RemoveAll` plus `worktree remove` only if the admin index
+  equals the recorded commit, has no hiding flags and the remaining files show
+  no non-deletion changes; otherwise it is a policy skip with README recovery.
+- Policy skips exit zero; skips from Git/IO errors exit non-zero. Prune's Git
+  calls drop inherited `git rev-parse --local-env-vars` overrides
+  (`osrun.RunWithout`). Git 2.36+ is required for `worktree list -z`.
+- Town and the worker protocol are unchanged; ported from the unmerged
+  BrokkAi/feature-bot#17. `bundle.json` moves feature-bot to 0.3.0.
