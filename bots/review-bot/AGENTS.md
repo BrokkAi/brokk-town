@@ -5,9 +5,7 @@ investigation and independent verification separate. Only the daemon owns
 GitHub publication; do not add automatic approvals, change requests, fixes,
 or merges without an explicit feature request.
 
-Use acp-go's runner types and internal/osrun subprocess helpers. agent.go
-follows acp-go's runner lifecycle to keep the legacy effort fallback; keep it
-aligned with the upstream runner on acp-go upgrades. Preserve
+Use the shared acp-go runner and internal/osrun subprocess helpers. Preserve
 bounded output, process-group cancellation, and responsive terminal rendering.
 Do work off the terminal event loop and send owned progress snapshots.
 

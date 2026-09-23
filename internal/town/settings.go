@@ -2,6 +2,7 @@ package town
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	acp "github.com/BrokkAi/acp-go"
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/acp-go/schema"
 	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
@@ -457,18 +459,68 @@ type AgentChoices struct {
 	Efforts []ChoiceValue `json:"efforts"`
 }
 
-// choices lists the options a run selects: executeACP picks the model with
-// acp-go's SetModel and the effort with setEffort, both over these lookups.
+// choices lists the options a run selects. acp-go does not export its
+// selector lookup, so sessionSelector repeats the one SetModel and SetEffort
+// use: model category else uncategorized "model"; thought_level category else
+// uncategorized "reasoning_effort".
 func choices(session acp.Session) (AgentChoices, error) {
-	models, err := selectValues(modelOption(session.ConfigOptions))
+	models, err := selectValues(sessionSelector(session, schema.SessionConfigOptionCategoryModel, "model"))
 	if err != nil {
 		return AgentChoices{}, err
 	}
-	efforts, err := selectValues(effortOption(session.ConfigOptions))
+	efforts, err := selectValues(sessionSelector(session, schema.SessionConfigOptionCategoryThoughtLevel, "reasoning_effort"))
 	if err != nil {
 		return AgentChoices{}, err
 	}
 	return AgentChoices{Models: models, Efforts: efforts}, nil
+}
+
+// sessionSelector matches acp-go's: the first select option in the category,
+// else the first uncategorized select option with the conventional ID.
+func sessionSelector(session acp.Session, category schema.SessionConfigOptionCategory, conventionalID string) *schema.SessionConfigOption {
+	for i := range session.ConfigOptions {
+		if o := &session.ConfigOptions[i]; o.Select != nil && o.Category != nil && *o.Category == category {
+			return o
+		}
+	}
+	for i := range session.ConfigOptions {
+		if o := &session.ConfigOptions[i]; o.Select != nil && o.Category == nil && o.ID == schema.SessionConfigId(conventionalID) {
+			return o
+		}
+	}
+	return nil
+}
+
+// selectValues flattens a select option's values exactly as acp-go does when
+// selecting one: the first entry decides between flat and grouped values.
+func selectValues(option *schema.SessionConfigOption) ([]ChoiceValue, error) {
+	out := []ChoiceValue{}
+	if option == nil || option.Select.Options == nil {
+		return out, nil
+	}
+	encoded, err := json.Marshal(option.Select.Options)
+	if err != nil {
+		return nil, err
+	}
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &items); err != nil || len(items) == 0 {
+		return out, err
+	}
+	var flat []schema.SessionConfigSelectOption
+	if _, grouped := items[0]["group"]; grouped || json.Unmarshal(encoded, &flat) != nil {
+		var groups []schema.SessionConfigSelectGroup
+		if err := json.Unmarshal(encoded, &groups); err != nil {
+			return nil, fmt.Errorf("unsupported %s options: %w", option.Name, err)
+		}
+		flat = nil
+		for _, group := range groups {
+			flat = append(flat, group.Options...)
+		}
+	}
+	for _, value := range flat {
+		out = append(out, ChoiceValue{Value: string(value.Value), Name: value.Name})
+	}
+	return out, nil
 }
 
 // A discovery session never sends a prompt, exposes client tools or uses a

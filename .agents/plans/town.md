@@ -179,23 +179,17 @@
   and only changes the draft-v2 packages and `clienthost` tool-call titles.
 - `runner.AgentConfig` keeps its JSON tags, so saved town state loads
   unchanged.
-- acp-go v0.8.1 `SetEffort` dropped v0.1.0's fallback order (thought_level
-  category, uncategorized `thought_level` ID, reasoning_effort category,
-  uncategorized `reasoning_effort` ID); it sees only the thought_level
-  category and the `reasoning_effort` ID. A harness using the others would
-  lose its effort choices and a saved effort would fail every run.
-  `runner.Execute` has no hook between session setup and the prompt, so
-  `runAgent` now calls `executeACP` (`internal/town/agent_run.go`), a copy of
-  the v0.8.1 runner lifecycle like feature-bot's `agentProcess`, whose
-  `setEffort` finds the option in v0.1.0 order and tags a copy so acp-go
-  still validates and confirms the value. Keep it aligned with the upstream
-  runner on later upgrades.
+- `runAgent` calls acp-go's `runner.Runner.Execute` directly. v0.8.1
+  `SetEffort` selects the thought_level category, else an uncategorized
+  `reasoning_effort` ID; v0.1.0's uncategorized `thought_level` ID and
+  reasoning_effort category fallbacks are gone (see "acp-go upgrade policy").
 - The harness choice probe spoke the v0.1.0 hand-written types. It now reads
-  generated `schema.SessionConfigOption`s through the same `modelOption` and
-  `effortOption` lookups a run uses, flattens grouped values the way acp-go
-  does (the first entry decides), and maps them to Town's own `ChoiceValue`,
-  so `/api/choices` keeps its `{value, name}` shape. It advertises session
-  config options, as a run does, so both see the same selectors.
+  generated `schema.SessionConfigOption`s through `sessionSelector`, the same
+  lookup acp-go's `SetModel`/`SetEffort` use (acp-go does not export it),
+  flattens grouped values the way acp-go does (the first entry decides), and
+  maps them to Town's own `ChoiceValue`, so `/api/choices` keeps its
+  `{value, name}` shape. It advertises session config options, as a run
+  does, so both see the same selectors.
 - Accepted behaviour changes from acp-go: `SetMode` now requires the mode to
   be advertised (in `modes`, or a mode config option) and fails the run
   otherwise, where v0.1.0 sent `session/set_mode` blindly. `session/new` now
@@ -206,10 +200,8 @@
 - Added `internal/town/agent_acp_test.go`: a credential-free simulated ACP
   agent from the test binary, driving `runAgent` over stdio. Covers startup,
   model/effort selection before the prompt, permission auto-approval,
-  transcripts, a rejected model as a setup error, cancellation of a prompt in
-  flight, and the legacy `thought_level` effort in both the probe and a run.
-  The commentary-then-receipt case fails on v0.1.0 and the legacy effort case
-  fails with plain acp-go `SetEffort`; both pass here.
+  transcripts, a rejected model as a setup error, and cancellation of a
+  prompt in flight. The commentary-then-receipt case fails on v0.1.0.
 - Bots keep their own pins; review-bot's upgrade is #107.
 
 ## Retargeted pull requests (#9)
@@ -425,13 +417,8 @@
 ## review-bot on acp-go 0.8.1 (fixes #107)
 
 - review-bot moved from acp-go v0.1.0 to v0.8.1, matching issue-bot and Town.
-- Town passes its harness's effort to review-bot through the worker request,
-  and Town lists an uncategorized `thought_level` option as the effort
-  selector. Plain v0.8.1 `SetEffort` would miss it and fail every review with
-  that effort, so `agentProcess.Execute` now follows the v0.8.1 runner
-  lifecycle and restores the v0.1.0 effort order with the same
-  `selectOption`/`effortOption`/`setEffort` as Town's `executeACP`. Keep it
-  aligned with the upstream runner on later upgrades.
+- `agentProcess.Execute` calls acp-go's `runner.Runner.Execute`, with the
+  v0.8.1 effort selection described under "acp-go upgrade policy".
 - Accepted as in Town: `SetMode` requires an advertised mode, and an unknown
   config option type fails `session/new`; both are setup errors.
 - Licence review: LICENSE byte-identical, NOTICE new in v0.8.1; both recorded
@@ -440,8 +427,7 @@
   agent from the test binary driving `agentProcess` over stdio. Covers
   startup, model/effort selection before the prompt, permission
   auto-approval, transcripts, commentary-then-receipt, a rejected model and a
-  missing command as setup errors, cancellation of a prompt in flight, and
-  the legacy `thought_level` effort (fails with plain `SetEffort`).
+  missing command as setup errors, and cancellation of a prompt in flight.
 - `bundle.json` moves review-bot to the next patch at the upgrade commit.
 
 ## Documentation drift (#29)
@@ -540,7 +526,8 @@
   values are rejected.
 - The review agent is the scan worktree config with only Model and Effort
   replaced, built lazily for the first pending candidate, so zero findings
-  start no review session. `agentProcess` keeps its `setAgentEffort` fallback.
+  start no review session. `agentProcess` selects effort with acp-go's
+  `SetEffort`.
 - A rejected selection is a setup error naming `--review-model`/`review_model`
   (or effort) and the adapter's available values. No attempt is consumed,
   candidates stay pending, no issue is created, and nothing falls back.
@@ -718,3 +705,16 @@
   `until`/`next` across DST resolve to the real instant the clock reaches
   (the jump past a skipped reading, the repeated reading still ahead);
   `mergeReady` rechecks quiet hours just before writing its intent.
+
+## acp-go upgrade policy
+
+- An acp-go upgrade adopts the released API as is: no copied upstream code or
+  compatibility shims without a demonstrated loss. Town, review-bot and
+  feature-bot call acp-go's `SetEffort` (Town and review-bot through
+  `runner.Execute`); the copied runner lifecycles in Town and review-bot and
+  the `setEffort`/`setAgentEffort` shims are removed.
+- v0.1.0's uncategorized `thought_level` effort fallback is gone. An agent
+  that advertises effort only that way gets a setup error when an effort is
+  configured, and Town's choices list no efforts for it.
+- feature-bot keeps its own `agentProcess` lifecycle for stage-specific
+  selection errors (`selectionError`), which `runner.Execute` cannot report.

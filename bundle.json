@@ -9,8 +9,8 @@
     "feature": {
       "project": "feature-bot",
       "command": "bfb",
-      "version": "0.3.0",
-      "source_commit": "ab56336a0eb2869b659a94cd82fcfa58008a6666"
+      "version": "0.3.1",
+      "source_commit": "c940c1888346d6d77ad88257cec8946ed8adb90b"
     },
     "issue": {
       "project": "issue-bot",
@@ -21,8 +21,8 @@
     "review": {
       "project": "review-bot",
       "command": "brv",
-      "version": "0.2.8",
-      "source_commit": "378f3ea3828ee9fdef80ef935b9c10c47249f14e"
+      "version": "0.2.9",
+      "source_commit": "c940c1888346d6d77ad88257cec8946ed8adb90b"
     },
     "release": {
       "project": "release-bot",

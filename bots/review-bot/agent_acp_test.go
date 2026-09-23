@@ -189,19 +189,6 @@ func TestACPCancellationStopsAPromptInFlight(t *testing.T) {
 	}
 }
 
-func TestACPLegacyThoughtLevelEffortIsSelected(t *testing.T) {
-	// acp-go v0.8.1 SetEffort dropped v0.1.0's fallback to an uncategorized
-	// thought_level option, which it preferred over reasoning_effort.
-	// setEffort restores that order, as Town and feature-bot do.
-	run := runSimulatedACP(t, context.Background(), t.TempDir(), "legacy-effort", runner.AgentConfig{Effort: "xhigh"})
-	if run.err != nil {
-		t.Fatalf("a legacy thought_level effort was not selectable: %v", run.err)
-	}
-	if !selected(run.state, "thought_level", "xhigh") {
-		t.Fatalf("effort was not sent to the thought_level option:\n%s", run.state)
-	}
-}
-
 // TestACPAgentHelper speaks ACP over stdio when REVIEW_ACP_HELPER names a
 // script. It records every request it receives, before answering it.
 func TestACPAgentHelper(t *testing.T) {
@@ -227,21 +214,11 @@ func TestACPAgentHelper(t *testing.T) {
 			"sessionId": "fixture", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "messageId": messageID,
 				"content": map[string]string{"type": "text", "text": text}}}})
 	}
-	current := map[string]string{"model": "fast", "reasoning_effort": "low", "thought_level": "low"}
+	current := map[string]string{"model": "fast", "reasoning_effort": "low"}
 	value := func(v, name string) map[string]string { return map[string]string{"value": v, "name": name} }
 	selectors := func() []any {
 		model := map[string]any{"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": current["model"],
 			"options": []any{value("fast", "Fast"), value("careful", "Careful")}}
-		if script == "legacy-effort" {
-			// Uncategorized selectors only: acp-go v0.1.0 chose thought_level
-			// over reasoning_effort; v0.8.1 SetEffort sees only the latter.
-			return []any{model,
-				map[string]any{"id": "reasoning_effort", "name": "Codex effort", "type": "select", "currentValue": current["reasoning_effort"],
-					"options": []any{value("low", "Low"), value("high", "High")}},
-				map[string]any{"id": "thought_level", "name": "Thought level", "type": "select", "currentValue": current["thought_level"],
-					"options": []any{value("low", "Low"), value("xhigh", "Extra high")}},
-			}
-		}
 		return []any{model,
 			map[string]any{"id": "reasoning_effort", "name": "Effort", "category": "thought_level", "type": "select", "currentValue": current["reasoning_effort"],
 				"options": []any{value("low", "Low"), value("xhigh", "Extra high")}},
@@ -288,7 +265,7 @@ func TestACPAgentHelper(t *testing.T) {
 		case "session/prompt":
 			prompt = message.ID
 			switch script {
-			case "commentary", "legacy-effort":
+			case "commentary":
 				chunk("m1", "The review is complete.")
 				chunk("m2", reviewReceipt)
 				reply(message.ID, map[string]string{"stopReason": "end_turn"})
