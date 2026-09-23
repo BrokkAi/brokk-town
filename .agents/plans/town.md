@@ -244,6 +244,15 @@
 
 ## Frontline theme (browser, presentation only)
 
+- 2026-09-23 visual refresh: four original transparent image atlases replace
+  the flat canvas silhouettes when loaded: eight isometric buildings for each
+  of the three factions and a matching three-craft strip. Canvas silhouettes
+  remain a loading fallback. The map and HUD received a dark metal treatment;
+  events, commands, faction choices, and Town art are unchanged. Verified with
+  55 browser tests, frontend syntax checks, `go vet ./...`, and
+  `go test -race ./...` (the race suite needed localhost access outside the
+  sandbox for its `httptest` servers).
+
 - Added `internal/web/skins.js` as the single surface both themes answer
   (landscape, structure, occupants, strike, impact, labels, faction, noun
   rewrite) and `internal/web/frontline.js` for the war art: three armies, a
@@ -372,6 +381,59 @@
   differing capitalization (each with exactly one POST), plus the URL fields
   that must still be rejected.
 - `bundle.json` moves review-bot to 0.2.7 at the fix commit.
+
+## Restoring deleted towns (#24)
+
+- `Town.Restore` revives a deleted town under a complete, validated config;
+  tasks, ownership, intents and recovery holds are kept, a branch change on an
+  initialized town is refused, only the reporter is re-enabled and every
+  worker's `Next` is cleared. The event says the town was restored.
+- The add request (web, `bt add`) goes through `Supervisor.AddRepo`: a deleted
+  town's kept config is the base, and only a non-empty merge policy and the
+  agent settings are applied over it, so budget, policies, bot profiles,
+  funnels (and their intents) and branch survive.
+- `serve --config` restores a listed deleted town with the file's config (the
+  same replacement a live town gets); `serve --repo` restores it with its kept
+  config. Both print a notice.
+- Deleting a deleted town returns `unknown town` and appends no event.
+
+## CLI polish (#28)
+
+- `bt request` encodes without HTML escaping, so `<`, `>` and `&` no longer
+  inflate sixfold and push a valid body past the service's 64 KiB limit. An
+  oversized body now gets 413 and "request body exceeds the 64 KiB limit"
+  instead of a decoder error.
+- The browser link carries the access key, so `serve` and `bt -d` print it only
+  when stdout is a terminal. The detached service's log and redirected output
+  get "run bt web for the link"; `bt web` still prints the key on request.
+- Earlier versions wrote the key into `logs/serve.log`, and the key persists
+  across restarts. Opening the service log redacts any `#token=<key>` link in
+  place; a log over 8 MiB is truncated instead of read.
+- `check-request` on an unknown ID returns "unknown request" (404) rather than
+  "does not need reconciliation".
+- The stale `connection.json` PID was already handled by `processAlive`.
+
+## review-bot on acp-go 0.8.1 (fixes #107)
+
+- review-bot moved from acp-go v0.1.0 to v0.8.1, matching issue-bot and Town.
+- Town passes its harness's effort to review-bot through the worker request,
+  and Town lists an uncategorized `thought_level` option as the effort
+  selector. Plain v0.8.1 `SetEffort` would miss it and fail every review with
+  that effort, so `agentProcess.Execute` now follows the v0.8.1 runner
+  lifecycle and restores the v0.1.0 effort order with the same
+  `selectOption`/`effortOption`/`setEffort` as Town's `executeACP`. Keep it
+  aligned with the upstream runner on later upgrades.
+- Accepted as in Town: `SetMode` requires an advertised mode, and an unknown
+  config option type fails `session/new`; both are setup errors.
+- Licence review: LICENSE byte-identical, NOTICE new in v0.8.1; both recorded
+  in `licenses/policy.json` and notices regenerated.
+- Added `bots/review-bot/agent_acp_test.go`: a credential-free simulated ACP
+  agent from the test binary driving `agentProcess` over stdio. Covers
+  startup, model/effort selection before the prompt, permission
+  auto-approval, transcripts, commentary-then-receipt, a rejected model and a
+  missing command as setup errors, cancellation of a prompt in flight, and
+  the legacy `thought_level` effort (fails with plain `SetEffort`).
+- `bundle.json` moves review-bot to the next patch at the upgrade commit.
 
 ## feature-bot review model and effort (#99)
 
