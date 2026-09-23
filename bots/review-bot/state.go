@@ -63,9 +63,11 @@ func ReadState(c Config) (*State, error) {
 	if err = json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("invalid saved state: %w", err)
 	}
-	if s.Format != 1 || s.Remote != c.Remote || s.Branch != c.Branch || s.Directory != c.Directory || !sameRepo(s.Repo, c.GitHubRepo()) || s.Host != c.GitHub.Host {
+	if s.Format != 1 || s.Remote != c.Remote || s.Branch != c.Branch || s.Directory != c.Directory || !sameRepo(s.Repo, c.GitHubRepo()) || !strings.EqualFold(s.Host, c.GitHub.Host) {
 		return nil, errors.New("state version or repository identity differs from configuration")
 	}
+	// GitHub identities ignore case; report and save the configured spelling.
+	s.Repo, s.Host = c.GitHubRepo(), c.GitHub.Host
 	seen := map[string]bool{}
 	for _, j := range s.Jobs {
 		if j == nil || j.Key != revisionKey(c, j.PR) || !validCommit(j.PR.Head.SHA) || !validCommit(j.PR.Base.SHA) || j.PR.Number < 1 || j.Tries < 0 {

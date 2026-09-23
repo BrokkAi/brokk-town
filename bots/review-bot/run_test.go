@@ -460,11 +460,22 @@ func TestRepositoryCapitalizationStillReconcilesPublishedReviews(t *testing.T) {
 		t.Fatal("unknown response was not retained")
 	}
 	e.config.GitHub.Repo = "O/R"
+	e.config.GitHub.Host = "GitHub.com"
 	saved, err := ReadState(e.config)
 	if err != nil {
 		t.Fatalf("restart with differing capitalization rejected state: %v", err)
 	}
+	if saved.Repo != "O/R" || saved.Host != "GitHub.com" {
+		t.Fatalf("saved identity not updated to configured spelling: %s %s", saved.Repo, saved.Host)
+	}
 	if err = e.step(context.Background(), saved); err != nil || saved.Jobs[0].Status != "submitted" || f.creates != 1 {
 		t.Fatalf("restart did not reconcile once: %v creates %d", err, f.creates)
+	}
+	if saved, err = ReadState(e.config); err != nil || saved.Repo != "O/R" || saved.Host != "GitHub.com" || saved.Jobs[0].Status != "submitted" {
+		t.Fatalf("configured spelling not persisted: %v", err)
+	}
+	e.config.GitHub.Repo = "o/other"
+	if _, err = ReadState(e.config); err == nil {
+		t.Fatal("state for a different repository accepted")
 	}
 }

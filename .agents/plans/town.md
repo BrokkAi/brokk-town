@@ -229,9 +229,11 @@
   case-insensitively (it must still be a valid slug); scheme, host,
   credentials, query, raw path encoding, `/pull/<n>` and the review anchor
   stay exact.
-- `ReadState` compares the saved repository the same way, so restarting with
-  a differently capitalized `github.repo` keeps the saved jobs and reconciles
-  them instead of refusing the state.
+- `ReadState` compares the saved repository the same way, and the saved host
+  case-insensitively like the URL and lock checks, so restarting with a
+  differently capitalized `github.repo` or `github.host` keeps the saved jobs
+  and reconciles them instead of refusing the state. The loaded state takes
+  the configured spelling, so `brv status` and the next save match the config.
 - Tests cover ordinary success, lost-response recovery and restart with
   differing capitalization (each with exactly one POST), plus the URL fields
   that must still be rejected.
