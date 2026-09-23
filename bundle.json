@@ -10,7 +10,7 @@
       "project": "feature-bot",
       "command": "bfb",
       "version": "0.2.0",
-      "source_commit": "d751cab500c4483dd36b694e3791b18c984d09dd"
+      "source_commit": "74b2446b191c1f094c401242b966f0e694c56afa"
     },
     "issue": {
       "project": "issue-bot",
