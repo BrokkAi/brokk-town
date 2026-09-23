@@ -27,8 +27,8 @@
     "release": {
       "project": "release-bot",
       "command": "brb",
-      "version": "0.7.0",
-      "source_commit": "3ee33fa8e56c2d6b5858bc9b375a0e2f319ac011"
+      "version": "0.8.0",
+      "source_commit": "328694104cb6ce20d8276a79a517ff75809a12e8"
     },
     "repo": {
       "project": "repo-bot",
