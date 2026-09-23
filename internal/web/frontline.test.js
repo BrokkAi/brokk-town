@@ -158,6 +158,28 @@ test("installations and garrisons draw for every army without a browser", () => 
     }
 });
 
+test("loaded faction atlases paint the matching structures and craft", () => {
+  const loaded = [];
+  globalThis.Image = class {
+    complete = true;
+    naturalWidth = 1774;
+    naturalHeight = 887;
+    set src(value) { loaded.push(value); }
+  };
+  try {
+    const { ctx, ops } = recording();
+    paintInstallation(ctx, { role: "feature", x: 300, y: 200, faction: "ascendancy" });
+    assert.ok(loaded.includes("/assets/frontline-ascendancy.png"));
+    assert.ok(ops.some((op) => op[0] === "drawImage" && op[2] === 3 * 1774 / 4));
+    ops.length = 0;
+    drawGarrison(ctx, { role: "feature", x: 300, y: 200, faction: "ascendancy", now: 0 });
+    assert.ok(loaded.includes("/assets/frontline-craft.png"));
+    assert.ok(ops.some((op) => op[0] === "drawImage"));
+  } finally {
+    delete globalThis.Image;
+  }
+});
+
 test("a strike frame names its target and repeats exactly for the same event", () => {
   const { ctx, ops } = recording();
   const strike = {
