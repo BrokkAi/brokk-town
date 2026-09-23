@@ -155,3 +155,52 @@ func TestReportCLIExplicitBranchWithoutTools(t *testing.T) {
 		t.Fatalf("empty report: %s %v", data, err)
 	}
 }
+
+func TestCLIReviewSelection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"remote":"https://github.com/o/r.git","agent":{"command":["sh"],"model":"scout","effort":"high"},"review_model":"json-judge","review_effort":"medium"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	bare := filepath.Join(t.TempDir(), "bare.json")
+	if err := os.WriteFile(bare, []byte(`{"remote":"https://github.com/o/r.git","agent":{"command":["sh"],"model":"scout","effort":"high"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, tc := range []struct {
+		config           string
+		args             []string
+		research, review string
+	}{
+		{bare, nil, "scout/high", "scout/high"},
+		{bare, []string{"--model", "m", "--effort", "low"}, "m/low", "m/low"},
+		{bare, []string{"--review-model", "cli-judge"}, "scout/high", "cli-judge/high"},
+		{bare, []string{"--review-effort", "low"}, "scout/high", "scout/low"},
+		{path, nil, "scout/high", "json-judge/medium"},
+		{path, []string{"--review-model", "cli-judge"}, "scout/high", "cli-judge/medium"},
+		{path, []string{"--model", "m", "--review-model", "cli-judge", "--review-effort", "low"}, "m/high", "cli-judge/low"},
+	} {
+		var got bot.Config
+		run := func(_ context.Context, c bot.Config, _ *slog.Logger, _ bool) error { got = c; return nil }
+		if err := executeWithRun(context.Background(), append([]string{"once", "--config", tc.config}, tc.args...), log, run); err != nil {
+			t.Fatal(err)
+		}
+		r := got.ReviewAgent()
+		if got.Agent.Model+"/"+got.Agent.Effort != tc.research || r.Model+"/"+r.Effort != tc.review {
+			t.Fatalf("%v: research %+v, review %+v", tc.args, got.Agent, r)
+		}
+	}
+	for _, args := range [][]string{{"--review-model", ""}, {"--review-model", "  "}, {"--review-effort", ""}, {"--review-effort=\t"}} {
+		run := func(context.Context, bot.Config, *slog.Logger, bool) error {
+			t.Fatal("blank review selection started a scan")
+			return nil
+		}
+		if err := executeWithRun(context.Background(), append([]string{"once", "--config", path}, args...), log, run); err == nil || !strings.Contains(err.Error(), "cannot be empty") {
+			t.Fatalf("%q: %v", args, err)
+		}
+	}
+}

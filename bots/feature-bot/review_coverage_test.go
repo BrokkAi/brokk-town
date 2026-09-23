@@ -44,7 +44,7 @@ func TestCorrectiveReview(t *testing.T) {
 			e, s, source, base, _ := fixture(t)
 			source.items = []Issue{{Number: 1}, {Number: 2}}
 			calls := 0
-			e.agent = func(Config) Agent {
+			e.agent = func(Config, string) Agent {
 				return reviewAgentFunc(func(ctx context.Context, prompt string) (string, error) {
 					if strings.Contains(prompt, "Scan context (data):") {
 						return base.Execute(ctx, prompt)
@@ -107,7 +107,7 @@ func TestReviewCheckpointRestart(t *testing.T) {
 			// first has been durably saved; no fragment may attest the entire issue.
 			source.items = []Issue{{Number: 7, Body: strings.Repeat("a", 24000) + strings.Repeat("b", 24000) + "last"}}
 			calls := 0
-			e.agent = func(Config) Agent {
+			e.agent = func(Config, string) Agent {
 				return reviewAgentFunc(func(ctx context.Context, prompt string) (string, error) {
 					if strings.Contains(prompt, "Scan context (data):") {
 						return base.Execute(ctx, prompt)
@@ -141,7 +141,7 @@ func TestReviewCheckpointRestart(t *testing.T) {
 				writeTestFile(t, saved.Scan.Directory+"/README.md", "changed source")
 			}
 			saved.Scan.RetryAt = time.Time{}
-			e.agent = func(Config) Agent { return base }
+			e.agent = func(Config, string) Agent { return base }
 			before := base.reviews
 			err = e.step(context.Background(), saved, true)
 			if change == "workspace" {

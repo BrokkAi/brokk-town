@@ -24,6 +24,23 @@ type Agent interface {
 type agentProcess struct {
 	config Config
 	log    *slog.Logger
+	// stage is "discovery" or "review"; it names the setting to fix when the
+	// adapter rejects a model or effort selection.
+	stage string
+}
+
+// selectionError explains which setting selected a model or effort the ACP
+// adapter rejected. Available values are defined by the adapter.
+func (a agentProcess) selectionError(kind, value string, err error) error {
+	setting := map[string]string{"model": "--model or agent.model", "effort": "--effort or agent.effort"}[kind]
+	if a.stage == "review" {
+		setting = map[string]string{"model": "--review-model or review_model", "effort": "--review-effort or review_effort"}[kind]
+	}
+	stage := a.stage
+	if stage == "" {
+		stage = "agent"
+	}
+	return fmt.Errorf("%s %s %q was not accepted by the ACP adapter; choose a value it offers with %s: %w", stage, kind, value, setting, err)
 }
 
 // Execute follows acp-go v0.7.0 runner/runner.go (Apache-2.0,
@@ -128,14 +145,14 @@ func (a agentProcess) Execute(ctx context.Context, prompt string) (result string
 	if a.config.Agent.Model != "" {
 		phase = "select model"
 		if err := connection.SetModel(ctx, &session, a.config.Agent.Model); err != nil {
-			return result, err
+			return result, a.selectionError("model", a.config.Agent.Model, err)
 		}
 		a.log.Info("Using model", "model", a.config.Agent.Model)
 	}
 	if a.config.Agent.Effort != "" {
 		phase = "select effort"
 		if err := setAgentEffort(ctx, connection, &session, a.config.Agent.Effort); err != nil {
-			return result, err
+			return result, a.selectionError("effort", a.config.Agent.Effort, err)
 		}
 		a.log.Info("Using reasoning effort", "effort", a.config.Agent.Effort)
 	}

@@ -372,3 +372,25 @@
   differing capitalization (each with exactly one POST), plus the URL fields
   that must still be rejected.
 - `bundle.json` moves review-bot to 0.2.7 at the fix commit.
+
+## feature-bot review model and effort (#99)
+
+- Optional `review_model`/`review_effort` (`--review-model`/`--review-effort`)
+  select the model and effort for every review batch, coverage correction and
+  review receipt recovery, including resumed pending candidates. Discovery and
+  discovery receipt recovery keep `agent.model`/`agent.effort`. Each omitted
+  value inherits its research setting; CLI overrides JSON; explicit blank
+  values are rejected.
+- The review agent is the scan worktree config with only Model and Effort
+  replaced, built lazily for the first pending candidate, so zero findings
+  start no review session. `agentProcess` keeps its `setAgentEffort` fallback.
+- A rejected selection is a setup error naming `--review-model`/`review_model`
+  (or effort) and the adapter's available values. No attempt is consumed,
+  candidates stay pending, no issue is created, and nothing falls back.
+- `ReviewCheckpoint.reviewer` records the effective model/effort. A different
+  reviewer, or a legacy checkpoint without one, restarts review from
+  validation over every issue batch; discovery is not repeated. Equal
+  effective values (explicit or inherited) reuse the checkpoint.
+- Logs tag agent sessions `stage=discovery|review` with the selection; the
+  dashboard shows both. Town and the worker protocol are unchanged.
+- `bundle.json` moves feature-bot to 0.2.0 at the feature commit.

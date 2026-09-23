@@ -207,6 +207,14 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	mode := receive("session/set_mode")
 	require(mode.Params["modeId"], "research")
 	reply(mode, map[string]any{})
+	if scenario == "model-unavailable" {
+		// The unoffered model is rejected locally; no selection or prompt follows.
+		var unexpected message
+		if err := decoder.Decode(&unexpected); err != io.EOF {
+			t.Fatalf("unexpected request after invalid model: %+v, err=%v", unexpected, err)
+		}
+		return
+	}
 	selection := receive("session/set_config_option")
 	require(selection.Params["configId"], "model")
 	require(selection.Params["value"], "test-model")
@@ -279,4 +287,35 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	}
 	reply(prompt, map[string]any{"stopReason": "end_turn"})
 	_, _ = io.Copy(io.Discard, os.Stdin)
+}
+
+// An unoffered review selection is an actionable setup failure naming the
+// review setting, and no prompt reaches the agent.
+func TestACPReviewSelectionUnavailable(t *testing.T) {
+	for _, tc := range []struct{ scenario, model, want string }{
+		{"model-unavailable", "unoffered-model", `review model "unoffered-model" was not accepted by the ACP adapter; choose a value it offers with --review-model or review_model: unknown model "unoffered-model"; available values: test-model`},
+		{"effort-unavailable", "test-model", `review effort "high" was not accepted by the ACP adapter; choose a value it offers with --review-effort or review_effort`},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			state := t.TempDir()
+			a := agentProcess{config: Config{Directory: t.TempDir(), StateDirectory: state, Agent: AgentConfig{
+				Command:     []string{os.Args[0], "-test.run=^TestACPWireHelper$"},
+				Environment: map[string]string{"FEATURE_BOT_ACP_FIXTURE": tc.scenario},
+				Mode:        "research", Model: tc.model, Effort: "high",
+			}}, log: slog.New(slog.NewTextHandler(io.Discard, nil)), stage: "review"}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			answer, err := a.Execute(ctx, "review this proposal")
+			var setup *runner.SetupError
+			if answer != "" || !errors.As(err, &setup) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("answer=%q, err=%v", answer, err)
+			}
+			files, _ := filepath.Glob(filepath.Join(state, "sessions", "session-*.jsonl"))
+			for _, file := range files {
+				if data, _ := os.ReadFile(file); strings.Contains(string(data), "review this proposal") {
+					t.Fatal("prompt sent after review selection failure")
+				}
+			}
+		})
+	}
 }
