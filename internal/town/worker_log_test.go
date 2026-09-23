@@ -1,6 +1,7 @@
 package town
 
 import (
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -68,8 +69,45 @@ func TestWorkerLogRedactsSensitiveAttributes(t *testing.T) {
 	}
 }
 
-// Log lines are bounded without splitting a character, so the persisted state
-// and the JSON pushed to clients stay valid UTF-8.
+type agentSettings struct {
+	Model  string
+	Remote string
+}
+
+// Values passed with slog.Any print whole, so their field names are never
+// inspected; credential-shaped text inside them is scrubbed instead.
+func TestWorkerLogScrubsCredentialsInsideAnyValues(t *testing.T) {
+	out := make(chan Log, 8)
+	log := slog.New(&workerLog{role: Issue, out: out, now: time.Now})
+	pat := "github_pat_" + strings.Repeat("A1", 20)
+	log.Info("config", "agent", agentSettings{Model: "opus", Remote: "https://x-access-token:s3cr3tvalue@github.com/o/r.git"})
+	log.Info("env", "vars", map[string]string{"GH": "ghp_" + strings.Repeat("a", 36), "MODE": "fast"})
+	log.Info("failed", "error", errors.New("push refused for "+pat))
+	log.Info("argv", "args", []string{"curl", "-H", "Authorization: Bearer abcdefghijklmnopqrstuvwxyz", "sk-ant-api03-" + strings.Repeat("z", 20)})
+	log.Info("leaked in message ghu_" + strings.Repeat("b", 36))
+	logs := drainLogs(out)
+	if len(logs) != 5 {
+		t.Fatalf("got %d log lines", len(logs))
+	}
+	for _, l := range logs {
+		for _, leaked := range []string{"s3cr3tvalue", "ghp_", "github_pat_", "abcdefghijklmnop", "sk-ant-", "ghu_"} {
+			if strings.Contains(l.Text, leaked) {
+				t.Fatalf("log line leaked %q: %q", leaked, l.Text)
+			}
+		}
+		if !strings.Contains(l.Text, "[redacted]") {
+			t.Fatalf("nothing redacted in %q", l.Text)
+		}
+	}
+	for i, kept := range []string{"{opus ", "MODE:fast", "push refused for", "curl"} {
+		if !strings.Contains(logs[i].Text, kept) {
+			t.Fatalf("scrubbing removed %q: %q", kept, logs[i].Text)
+		}
+	}
+}
+
+// Log lines are cut on a character boundary, so the persisted state and the
+// JSON pushed to clients never carry a split character.
 func TestWorkerLogBoundsLinesOnRuneBoundaries(t *testing.T) {
 	out := make(chan Log, 1)
 	log := slog.New(&workerLog{role: Issue, out: out, now: time.Now})

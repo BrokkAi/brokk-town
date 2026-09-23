@@ -13,6 +13,14 @@ import (
 
 var fixtureCommitter = []string{"-c", "user.name=Fixture", "-c", "user.email=fixture@example.test"}
 
+// isolateGitConfig keeps a developer's global and system git configuration,
+// such as core.hooksPath or commit.gpgsign, out of the git fixtures.
+func isolateGitConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+}
+
 func fixtureGit(ctx context.Context, dir string, args ...string) (string, error) {
 	return git(ctx, dir, append(append([]string{}, fixtureCommitter...), args...)...)
 }
@@ -176,6 +184,7 @@ func TestCheckRepairRefRequiresTheExactRemoteHead(t *testing.T) {
 // the way a transient GitHub failure leaves a repair's outcome unknown.
 func rejectFirstPush(t *testing.T, remote string) {
 	t.Helper()
+	isolateGitConfig(t)
 	marker := filepath.Join(t.TempDir(), "rejected")
 	hook := "#!/bin/sh\nif [ ! -e '" + marker + "' ]; then touch '" + marker + "'; echo 'transient failure' >&2; exit 1; fi\nexit 0\n"
 	if err := os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte(hook), 0o700); err != nil {

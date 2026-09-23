@@ -34,7 +34,7 @@ func TestExecuteRoutesWorkerResults(t *testing.T) {
 		check  check
 	}{
 		{name: "house_failure", role: Bug, err: errors.New("scanner crashed"), status: "blocked", check: func(t *testing.T, st State, x *Town, w *Worker, task *Task) {
-			if w.Status != "failed" || w.Error != "scanner crashed" || !strings.Contains(w.Task, "Work paused: scanner crashed") || !w.Next.Equal(now.Add(15*time.Minute)) {
+			if w.Status != "failed" || w.Error != "scanner crashed" || w.Task != workPausedPrefix+"scanner crashed" || !w.Next.Equal(now.Add(houseFailureBackoff)) {
 				t.Fatalf("house failure not recorded on the house: %+v", w)
 			}
 			if !hasEvent(st, x.ID, "error", string(Bug)) {
@@ -50,7 +50,7 @@ func TestExecuteRoutesWorkerResults(t *testing.T) {
 			if w.Status != "waiting" || w.Error != "" {
 				t.Fatalf("a pull request failure failed the house: %+v", w)
 			}
-			if task.Attempts != 1 || task.RetryAt.IsZero() || !strings.Contains(task.Detail, "push rejected") {
+			if task.Attempts != 1 || !task.RetryAt.Equal(now.Add(pullRetryDelay)) || !strings.Contains(task.Detail, "push rejected") {
 				t.Fatalf("failure not charged to the pull request: %+v", task)
 			}
 			if hasEvent(st, x.ID, "error", string(Issue)) {

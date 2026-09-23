@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -391,8 +392,8 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil && !taskOwned {
 			w.Status = "failed"
 			w.Error = err.Error()
-			w.Task = "Work paused: " + err.Error()
-			w.Next = s.now().Add(15 * time.Minute)
+			w.Task = workPausedPrefix + err.Error()
+			w.Next = s.now().Add(houseFailureBackoff)
 			st.Event(t.ID, "error", string(r), "hall", "", string(r)+" needs attention", s.now())
 			if r == Repo {
 				current.Error = err.Error()
@@ -1429,6 +1430,18 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 	return false, nil
 }
 
+const (
+	// houseFailureBackoff is how long a house waits after a failure that
+	// belongs to the house rather than to one task.
+	houseFailureBackoff = 15 * time.Minute
+	// workPausedPrefix opens a failed house's task line.
+	workPausedPrefix = "Work paused: "
+)
+
+// credentialText matches credential-shaped text: GitHub tokens, a token
+// embedded in a clone URL, Anthropic keys and bearer authorization values.
+var credentialText = regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|x-access-token:[^@\s]+|sk-ant-[A-Za-z0-9_-]{10,}|(?i:bearer)\s+[A-Za-z0-9._~+/=-]{16,}`)
+
 type workerLog struct {
 	role  Role
 	out   chan Log
@@ -1440,9 +1453,13 @@ type workerLog struct {
 func (l *workerLog) Enabled(context.Context, slog.Level) bool { return true }
 func (l *workerLog) Handle(_ context.Context, r slog.Record) error {
 	text := r.Message
-	// Groups and LogValuers are resolved and walked, so a sensitive key nested
-	// inside one is dropped like a top-level one instead of being printed as
-	// part of the group's rendering.
+	// Redaction works in two layers. By key: groups and LogValuers are
+	// resolved and walked, so a sensitive key nested inside one is dropped
+	// like a top-level one. By value: every formatted line is scrubbed of
+	// credential-shaped text, which is what protects a struct, map, error or
+	// slice passed with slog.Any, since those print whole and their field
+	// names are not inspected. A secret with no recognizable shape inside such
+	// a value is not caught; do not log values that carry one.
 	var appendAttr func(prefix string, a slog.Attr)
 	appendAttr = func(prefix string, a slog.Attr) {
 		key := strings.ToLower(a.Key)
@@ -1465,6 +1482,7 @@ func (l *workerLog) Handle(_ context.Context, r slog.Record) error {
 		appendAttr("", a)
 	}
 	r.Attrs(func(a slog.Attr) bool { appendAttr("", a); return true })
+	text = credentialText.ReplaceAllString(text, "[redacted]")
 	if len(text) > 4000 {
 		cut := 4000
 		for cut > 0 && !utf8.RuneStart(text[cut]) {

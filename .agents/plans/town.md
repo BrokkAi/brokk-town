@@ -562,5 +562,11 @@
 - Fixed: `workerLog` printed grouped and `LogValuer` attributes whole, so a
   `token` nested in a group reached persisted logs; it now resolves and walks
   groups. Its 4000-byte cut could split a UTF-8 character; it now cuts on a
-  rune boundary.
+  rune boundary. Key-based redaction cannot see inside values passed with
+  `slog.Any` (structs, maps, errors, slices), so every formatted line is also
+  scrubbed of credential-shaped text (GitHub tokens, `x-access-token:` URLs,
+  Anthropic keys, bearer values); a secret with no recognizable shape inside
+  such a value is still printed.
+- Git fixtures set `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`,
+  so a developer's hooksPath or gpgsign cannot break them.
 - internal/town coverage 74.4% -> 76.7%.
