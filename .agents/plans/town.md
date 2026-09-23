@@ -503,3 +503,20 @@
   decline kept, so it is not counted as open or retired off-branch, and resume
   restores `declined` on reopen. An issue already stranded `queued` outside
   Issue is healed on the next inventory.
+
+## bug-bot review model and effort (#97)
+
+- Optional `review_model`/`review_effort` (`--review-model`/`--review-effort`)
+  select the model and effort for evidence validation and every duplicate-review
+  batch, including refreshed-history reviews and resumed pending candidates.
+  Each omitted value inherits the discovery `agent.model`/`agent.effort`; CLI
+  overrides JSON; explicit blank values are rejected.
+- The review agent is the worktree config with only Model and Effort replaced,
+  so the runner, startup retries, timeout and publication gates are shared. An
+  unsupported selection is the runner's setup error: pending findings stay
+  pending, no attempt is consumed, and nothing falls back to discovery.
+- Logs tag agent sessions with `stage=discovery|review` and the effective
+  selection; the dashboard shows both. Zero findings start no review session.
+- Town and the worker protocol are unchanged: worker scans leave the overrides
+  unset, so review inherits Town's agent settings as before.
+- `bundle.json` moves bug-bot to 0.4.0 at the final feature commit.

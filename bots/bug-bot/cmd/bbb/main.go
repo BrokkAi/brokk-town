@@ -71,6 +71,8 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	agent := fs.String("agent", "", "ACP executable (default: codex-acp or npx)")
 	model := fs.String("model", "", "agent model ID")
 	effort := fs.String("effort", "", "reasoning effort")
+	reviewModel := fs.String("review-model", "", "agent model ID for evidence and duplicate review (default: --model)")
+	reviewEffort := fs.String("review-effort", "", "reasoning effort for evidence and duplicate review (default: --effort)")
 	maxIssues := fs.Int("max-issues", 3, "maximum new issues per scan (1-20)")
 	focus := fs.String("focus", "", "area or bug class to investigate")
 	dryRun := fs.Bool("dry-run", false, "find and review bugs without creating issues")
@@ -127,6 +129,16 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 			cfg.Agent.Effort = *effort
 			if strings.TrimSpace(*effort) == "" {
 				err = errors.New("effort cannot be empty")
+			}
+		case "review-model":
+			cfg.ReviewModel = reviewModel
+			if strings.TrimSpace(*reviewModel) == "" {
+				err = errors.New("review-model cannot be empty")
+			}
+		case "review-effort":
+			cfg.ReviewEffort = reviewEffort
+			if strings.TrimSpace(*reviewEffort) == "" {
+				err = errors.New("review-effort cannot be empty")
 			}
 		case "max-issues":
 			cfg.MaxIssues = *maxIssues

@@ -28,7 +28,7 @@ type engine struct {
 	config  Config
 	source  issueSource
 	log     *slog.Logger
-	agent   func(Config) Agent
+	agent   func(cfg Config, stage string) Agent
 	now     func() time.Time
 	sleep   func(context.Context, time.Duration) error
 	observe func(Progress)
@@ -73,7 +73,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		s = newState(cfg)
 	}
 	observe, _ := ctx.Value(progressKey{}).(func(Progress))
-	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config) Agent { return agentProcess{c, log} }, now: time.Now, sleep: pause, observe: observe}
+	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config, stage string) Agent { return agentProcess{c, log.With("stage", stage)} }, now: time.Now, sleep: pause, observe: observe}
 	e.report(s, "starting", "Loading saved scan")
 	for {
 		err := e.step(ctx, s, once)
@@ -262,7 +262,6 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 	if err != nil {
 		return err
 	}
-	a := e.agent(w.config)
 	if !s.Scan.Discovered {
 		// Keep a complete, untruncated snapshot in the agent's workspace for discovery.
 		file, err := os.CreateTemp(w.config.Directory, ".bug-bot-issues-*.json")
@@ -276,8 +275,8 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			return err
 		}
 		e.report(s, "investigating", "Investigating new bugs")
-		e.log.Info("Investigating new bugs", "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
-		text, err := e.execute(ctx, s, a, scanPrompt(e.config, s, path))
+		e.log.Info("Investigating new bugs", "stage", "discovery", "model", selection(w.config.Agent.Model), "effort", selection(w.config.Agent.Effort), "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
+		text, err := e.execute(ctx, s, e.agent(w.config, "discovery"), scanPrompt(e.config, s, path))
 		if err != nil {
 			return err
 		}
@@ -307,15 +306,31 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			return err
 		}
 	}
+	// Review uses the current effective selection, including when resuming pending
+	// candidates discovered under an earlier configuration.
+	var review Agent
 	for _, c := range s.Scan.Candidates {
 		if c.Status != "pending" {
 			continue
 		}
-		if err := e.reviewAndPublish(ctx, s, w, a, c); err != nil {
+		if review == nil {
+			cfg := w.config.review()
+			e.log.Info("Reviewing findings", "stage", "review", "model", selection(cfg.Agent.Model), "effort", selection(cfg.Agent.Effort), "commit", s.Scan.Commit)
+			review = e.agent(cfg, "review")
+		}
+		if err := e.reviewAndPublish(ctx, s, w, review, c); err != nil {
 			return err
 		}
 	}
 	return e.finish(s)
+}
+
+// selection names an unset model or effort without implying a specific value.
+func selection(value string) string {
+	if value == "" {
+		return "agent default"
+	}
+	return value
 }
 
 // Bound each review prompt without truncating any issue or discussion. Large individual
