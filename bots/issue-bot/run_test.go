@@ -185,6 +185,45 @@ func TestLostPRResponseReconcilesAfterRestartAtBudgetLimit(t *testing.T) {
 		t.Fatal("recovery duplicated work")
 	}
 }
+func TestReconciliationIsOneStepOfWork(t *testing.T) {
+	// --once exits after one step, so reconciling a saved job must end the step
+	// rather than go on to attempt another issue.
+	f := newFixture(t)
+	f.source.failCreate = true
+	if _, err := f.e.step(context.Background(), f.s); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := ReadState(f.e.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.source.failCreate = false
+	worked, err := f.e.step(context.Background(), saved)
+	if err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if saved.Jobs[1].Status != "submitted" || saved.Jobs[2] != nil || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("reconciling #1 also started #2: job2=%+v calls=%d creates=%d", saved.Jobs[2], f.calls, f.source.creates)
+	}
+	if worked, err := f.e.step(context.Background(), saved); err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if saved.Jobs[2].Status != "submitted" || f.calls != 2 || f.source.creates != 2 {
+		t.Fatalf("next step did not continue the queue: job2=%+v calls=%d creates=%d", saved.Jobs[2], f.calls, f.source.creates)
+	}
+}
+func TestFetchedPRReconciliationIsOneStepOfWork(t *testing.T) {
+	f := newFixture(t)
+	p := &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
+	f.source.prs[1] = p
+	worked, err := f.e.step(context.Background(), f.s)
+	if err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[1].Status != "submitted" || f.s.Jobs[2] != nil || f.calls != 0 {
+		t.Fatalf("reconciling #1 also started #2: job2=%+v calls=%d", f.s.Jobs[2], f.calls)
+	}
+}
 func TestBlockedIssueDoesNotStarveNextIssueAndRetryRetainsWork(t *testing.T) {
 	f := newFixture(t)
 	normal := f.e.agent

@@ -143,9 +143,11 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 				return false, err
 			}
 			if pr != nil {
+				// A reconciliation is this step's unit of work; --once stops here.
 				if err := e.complete(ctx, s, j, pr); err != nil {
 					return false, err
 				}
+				return true, nil
 			}
 		}
 	}
@@ -175,7 +177,7 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 			if err := e.complete(ctx, s, j, pr); err != nil {
 				return false, err
 			}
-			continue
+			return true, nil
 		}
 		linked, err := e.source.linkedPull(ctx, i.Number, j.Superseded)
 		if err != nil {
