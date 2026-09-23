@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
@@ -48,16 +49,24 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 	e := engine{config: cfg, source: githubClient{cfg}, log: log, now: time.Now, agent: func(c Config) Agent { return agentProcess{c, log} }}
 	e.observe, _ = ctx.Value(progressKey{}).(func(Progress))
 	e.report(state, "starting", "Loading saved issues")
+	return e.run(ctx, state, once)
+}
+func (e engine) run(ctx context.Context, state *State, once bool) error {
 	for {
 		worked, err := e.step(ctx, state)
+		if err != nil && !once && issueOnly(err) {
+			// The failures are retained on their jobs; keep serving the queue.
+			e.log.Error("Saved issues need inspection; continuing with others", "error", err)
+			err = nil
+		}
 		if err != nil {
 			e.report(state, "paused", err.Error())
 			var setup *runner.SetupError
 			if once || errors.As(err, &setup) || ctx.Err() != nil {
 				return err
 			}
-			log.Error("Issue scan failed; will retry", "error", err)
-			if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
+			e.log.Error("Issue scan failed; will retry", "error", err)
+			if err := pause(ctx, time.Duration(e.config.Poll)); err != nil {
 				return err
 			}
 			continue
@@ -69,8 +78,8 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 			continue
 		}
 		e.report(state, "waiting", "Waiting for eligible issues")
-		log.Info("Waiting for eligible issues", "poll", time.Duration(cfg.Poll))
-		timer := time.NewTimer(time.Duration(cfg.Poll))
+		e.log.Info("Waiting for eligible issues", "poll", time.Duration(e.config.Poll))
+		timer := time.NewTimer(time.Duration(e.config.Poll))
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -97,7 +106,12 @@ func (e engine) syncClaim(ctx context.Context, s *State, j *Job) error {
 		return err
 	}
 	j.ClaimPending = false
-	return e.save(s)
+	if err := e.save(s); err != nil {
+		// The saved state still has the update pending; retry it in-process too.
+		j.ClaimPending = true
+		return err
+	}
+	return nil
 }
 func (e engine) complete(ctx context.Context, s *State, j *Job, p *PullRequest) error {
 	e.recordPull(j, p)
@@ -115,6 +129,60 @@ func (e engine) complete(ctx context.Context, s *State, j *Job, p *PullRequest) 
 	e.report(s, "reconciled", "Reconciled PR: "+j.Issue.Title)
 	return e.syncClaim(ctx, s, j)
 }
+
+// issueError is a failure specific to one saved job. The job keeps its state
+// and failure, and the step continues with unrelated issues.
+type issueError struct {
+	issue int
+	err   error
+}
+
+func (e *issueError) Error() string { return fmt.Sprintf("issue #%d: %v", e.issue, e.err) }
+func (e *issueError) Unwrap() error { return e.err }
+
+// issueOnly reports whether err is non-nil and every error joined into it is
+// an issueError.
+func issueOnly(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, err := range joined.Unwrap() {
+			if !issueOnly(err) {
+				return false
+			}
+		}
+		return len(joined.Unwrap()) > 0
+	}
+	_, ok := err.(*issueError)
+	return ok
+}
+
+// reconcileFailure prefixes the failure lookup saves on a job.
+const reconcileFailure = "Pull request reconciliation failed; inspect branch "
+
+// lookup finds the job's pull request. An ownership failure is saved on the
+// job and returned as an issueError: the branch may hold this job's published
+// work, so the job must not be attempted again until the lookup succeeds.
+func (e engine) lookup(ctx context.Context, s *State, j *Job) (*PullRequest, error) {
+	pr, err := e.source.pull(ctx, j)
+	if err == nil && pr == nil && strings.HasPrefix(j.Failure, reconcileFailure) {
+		// The branch no longer holds an unowned PR; keep the stale lookup
+		// failure out of the next agent prompt.
+		j.Failure = ""
+		if err := e.save(s); err != nil {
+			return nil, err
+		}
+	}
+	if !errors.Is(err, errPullMismatch) && !errors.Is(err, errMultiplePulls) {
+		return pr, err
+	}
+	e.log.Error("Pull request reconciliation failed; retaining the job", "issue", j.Issue.Number, "branch", j.Branch, "error", err)
+	if failure := reconcileFailure + j.Branch + ": " + err.Error(); j.Failure != failure {
+		j.Failure = failure
+		if err := e.save(s); err != nil {
+			return nil, err
+		}
+	}
+	return nil, &issueError{j.Issue.Number, err}
+}
 func (e engine) step(ctx context.Context, s *State) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -124,39 +192,52 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 	// is no longer returned by the issue query. Never rerun an agent to do this.
 	numbers := make([]int, 0, len(s.Jobs))
 	for n := range s.Jobs {
-		numbers = append(numbers, n)
+		if e.config.Issue == 0 || n == e.config.Issue {
+			numbers = append(numbers, n)
+		}
 	}
 	sort.Ints(numbers)
 	for _, n := range numbers {
-		if e.config.Issue != 0 && n != e.config.Issue {
-			continue
-		}
 		j := s.Jobs[n]
 		if j.ClaimPending && j.Claim != nil && j.Claim.Status != "working" {
 			if err := e.syncClaim(ctx, s, j); err != nil {
 				e.log.Error("Status comment update failed; retaining it for retry", "issue", n, "error", err)
 			}
 		}
+	}
+	// A reconciliation is this step's unit of work; --once stops after one.
+	// A job whose lookup fails keeps its state and is skipped for the rest of
+	// the step; its failure is reported with whatever else the step does.
+	var failures []error
+	failed := map[int]bool{}
+	abort := func(err error) error { return errors.Join(append([]error{err}, failures...)...) }
+	for _, n := range numbers {
+		j := s.Jobs[n]
 		if j.Status == "pending" && j.Tries > 0 {
-			pr, err := e.source.pull(ctx, j)
+			pr, err := e.lookup(ctx, s, j)
+			if issueOnly(err) {
+				failures, failed[n] = append(failures, err), true
+				continue
+			}
 			if err != nil {
-				return false, err
+				return false, abort(err)
 			}
 			if pr != nil {
 				if err := e.complete(ctx, s, j, pr); err != nil {
-					return false, err
+					return false, abort(err)
 				}
+				return true, errors.Join(failures...)
 			}
 		}
 	}
 	e.report(s, "fetching", "Fetching eligible GitHub issues")
 	issues, err := e.source.issues(ctx)
 	if err != nil {
-		return false, err
+		return false, abort(err)
 	}
 	sort.Slice(issues, func(i, j int) bool { return issues[i].Number < issues[j].Number })
 	for _, i := range issues {
-		if !eligible(e.config, i) {
+		if !eligible(e.config, i) || failed[i.Number] {
 			continue
 		}
 		j := s.Jobs[i.Number]
@@ -167,39 +248,43 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 			j = &Job{Issue: i, Branch: branchName(e.config, i.Number), Status: "pending"}
 			s.Jobs[i.Number] = j
 		}
-		pr, err := e.source.pull(ctx, j)
+		pr, err := e.lookup(ctx, s, j)
+		if issueOnly(err) {
+			failures = append(failures, err)
+			continue
+		}
 		if err != nil {
-			return false, err
+			return false, abort(err)
 		}
 		if pr != nil {
 			if err := e.complete(ctx, s, j, pr); err != nil {
-				return false, err
+				return false, abort(err)
 			}
-			continue
+			return true, errors.Join(failures...)
 		}
 		linked, err := e.source.linkedPull(ctx, i.Number, j.Superseded)
 		if err != nil {
-			return false, err
+			return false, abort(err)
 		}
 		if linked != nil {
 			j.Status = "has_pr"
 			j.URL = linked.URL
 			e.log.Info("Skipping issue with an existing PR", "issue", i.Number, "url", linked.URL)
 			if err := e.save(s); err != nil {
-				return false, err
+				return false, abort(err)
 			}
 			continue
 		}
 		if j.Tries >= e.config.Attempts {
 			j.Status = "blocked"
 			if err := e.releaseClaim(ctx, s, j, "Attempt budget exhausted"); err != nil {
-				return false, err
+				return false, abort(err)
 			}
 			continue
 		}
 		latest, err := e.source.issue(ctx, i.Number)
 		if err != nil {
-			return false, err
+			return false, abort(err)
 		}
 		if !eligible(e.config, latest) {
 			continue
@@ -207,15 +292,15 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 		j.Issue = latest
 		worked, err := e.claimedAttempt(ctx, s, j)
 		if err != nil {
-			return false, err
+			return false, abort(err)
 		}
 		if worked {
-			return true, nil
+			return true, errors.Join(failures...)
 		}
 	}
 	e.active = nil
 	e.report(s, "waiting", "Waiting for eligible issues")
-	return false, nil
+	return false, errors.Join(failures...)
 }
 func (e engine) releaseClaim(ctx context.Context, s *State, j *Job, detail string) error {
 	if j.Claim != nil {

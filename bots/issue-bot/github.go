@@ -121,7 +121,7 @@ func (g githubClient) pull(ctx context.Context, j *Job) (*PullRequest, error) {
 		return nil, nil
 	}
 	if len(prs) != 1 {
-		return nil, errors.New("multiple pull requests on the issue branch; inspect before retrying")
+		return nil, errMultiplePulls
 	}
 	pr := &prs[0]
 	if err := validatePull(g.config, j, pr); err != nil {
@@ -131,10 +131,18 @@ func (g githubClient) pull(ctx context.Context, j *Job) (*PullRequest, error) {
 }
 func validatePull(cfg Config, j *Job, p *PullRequest) error {
 	if p.Number < 1 || p.URL == "" || p.Head.Ref != j.Branch || !strings.EqualFold(p.Head.Repo.FullName, cfg.GitHubRepo()) || p.Base.Ref != cfg.Branch || !strings.EqualFold(p.Base.Repo.FullName, cfg.GitHubRepo()) || !strings.Contains(p.Body, marker(cfg, j)) {
-		return errors.New("pull request does not match this issue, repository and branch")
+		return errPullMismatch
 	}
 	return nil
 }
+
+// Ownership failures belong to one issue branch. They never mean the issue is
+// unpublished, and they persist until someone inspects the branch.
+var (
+	errPullMismatch  = errors.New("pull request does not match this issue, repository and branch")
+	errMultiplePulls = errors.New("multiple pull requests on the issue branch; inspect before retrying")
+)
+
 func (g githubClient) create(ctx context.Context, j *Job) (*PullRequest, error) {
 	r := j.Result
 	body := r.Detail + "\n\nValidation:\n"

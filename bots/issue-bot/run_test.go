@@ -185,6 +185,65 @@ func TestLostPRResponseReconcilesAfterRestartAtBudgetLimit(t *testing.T) {
 		t.Fatal("recovery duplicated work")
 	}
 }
+func TestReconciliationIsOneStepOfWork(t *testing.T) {
+	// --once exits after one step, so reconciling a saved job must end the step
+	// rather than go on to attempt another issue.
+	f := newFixture(t)
+	f.source.failCreate = true
+	if _, err := f.e.step(context.Background(), f.s); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := ReadState(f.e.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.source.failCreate = false
+	worked, err := f.e.step(context.Background(), saved)
+	if err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if saved.Jobs[1].Status != "submitted" || saved.Jobs[2] != nil || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("reconciling #1 also started #2: job2=%+v calls=%d creates=%d", saved.Jobs[2], f.calls, f.source.creates)
+	}
+	if worked, err := f.e.step(context.Background(), saved); err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if saved.Jobs[2].Status != "submitted" || f.calls != 2 || f.source.creates != 2 {
+		t.Fatalf("next step did not continue the queue: job2=%+v calls=%d creates=%d", saved.Jobs[2], f.calls, f.source.creates)
+	}
+}
+func TestReconciliationStillRetriesLaterStatusComments(t *testing.T) {
+	f := newFixture(t)
+	f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+	f.source.prs[1] = &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
+	claim := newClaim(f.e.config, 3, f.e.now())
+	claim.Status = "released"
+	f.s.Jobs[3] = &Job{Issue: Issue{Number: 3, Title: "Third", State: "open"}, Branch: branchName(f.e.config, 3), Status: "blocked", Claim: claim, ClaimPending: true}
+	if worked, err := f.e.step(context.Background(), f.s); err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[1].Status != "submitted" || f.s.Jobs[3].ClaimPending {
+		t.Fatalf("reconciling #1 skipped the retained status comment for #3: job3=%+v", f.s.Jobs[3])
+	}
+}
+func TestFetchedPRReconciliationIsOneStepOfWork(t *testing.T) {
+	f := newFixture(t)
+	p := &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
+	f.source.prs[1] = p
+	worked, err := f.e.step(context.Background(), f.s)
+	if err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[1].Status != "submitted" || f.s.Jobs[2] != nil || f.calls != 0 {
+		t.Fatalf("reconciling #1 also started #2: job2=%+v calls=%d", f.s.Jobs[2], f.calls)
+	}
+	if worked, err := f.e.step(context.Background(), f.s); err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[2].Status != "submitted" || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("next step did not continue the queue: job2=%+v calls=%d creates=%d", f.s.Jobs[2], f.calls, f.source.creates)
+	}
+}
 func TestBlockedIssueDoesNotStarveNextIssueAndRetryRetainsWork(t *testing.T) {
 	f := newFixture(t)
 	normal := f.e.agent
@@ -456,5 +515,198 @@ func TestRequeueReplacesAClosedPullRequest(t *testing.T) {
 	}
 	if err := Requeue(Config{}, closed.Number); err == nil {
 		t.Fatal("requeue accepted without an issue")
+	}
+}
+
+// brokenPulls fails the pull request lookup of selected issues.
+type brokenPulls struct {
+	*fakeSource
+	broken map[int]error
+}
+
+func (f brokenPulls) pull(ctx context.Context, j *Job) (*PullRequest, error) {
+	if err := f.broken[j.Issue.Number]; err != nil {
+		return nil, err
+	}
+	return f.fakeSource.pull(ctx, j)
+}
+func TestBrokenSavedPRDoesNotStarveOtherIssues(t *testing.T) {
+	f := newFixture(t)
+	f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+	source := brokenPulls{f.source, map[int]error{1: errPullMismatch}}
+	f.e.source = source
+	// Each poll is still one unit of work, and #1's failure is reported with it.
+	worked, err := f.e.step(context.Background(), f.s)
+	if !worked || !issueOnly(err) || !errors.Is(err, errPullMismatch) {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[2] == nil || f.s.Jobs[2].Status != "submitted" || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("saved #1 lookup failure starved eligible #2: calls=%d creates=%d", f.calls, f.source.creates)
+	}
+	for range 2 {
+		if worked, err := f.e.step(context.Background(), f.s); worked || !issueOnly(err) {
+			t.Fatalf("repeated poll: %v %v", worked, err)
+		}
+	}
+	saved, err := ReadState(f.e.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worked, err := f.e.step(context.Background(), saved); worked || !issueOnly(err) {
+		t.Fatalf("restart: %v %v", worked, err)
+	}
+	j := saved.Jobs[1]
+	if j.Status != "pending" || j.Tries != 1 || j.URL != "" || !strings.Contains(j.Failure, "inspect branch "+j.Branch) || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("broken job was not retained untouched: %+v calls=%d creates=%d", j, f.calls, f.source.creates)
+	}
+	// Once the branch holds exactly this job's PR, it reconciles without new work.
+	delete(source.broken, 1)
+	p := &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
+	f.source.prs[1] = p
+	if worked, err := f.e.step(context.Background(), saved); err != nil || !worked {
+		t.Fatalf("reconcile: %v %v", worked, err)
+	}
+	if j.Status != "submitted" || j.URL != p.URL || j.Failure != "" || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("fixed job did not reconcile: %+v calls=%d creates=%d", j, f.calls, f.source.creates)
+	}
+}
+func TestBrokenPRLookupNeverStartsTheIssue(t *testing.T) {
+	f := newFixture(t)
+	f.source.items = f.source.items[1:]
+	source := brokenPulls{f.source, map[int]error{2: errMultiplePulls}}
+	f.e.source = source
+	for range 2 {
+		if worked, err := f.e.step(context.Background(), f.s); worked || !issueOnly(err) {
+			t.Fatalf("step: %v %v", worked, err)
+		}
+	}
+	if j := f.s.Jobs[2]; j == nil || j.Status != "pending" || j.Failure == "" || f.calls != 0 || f.source.creates != 0 {
+		t.Fatalf("an unowned PR lookup started work: %+v calls=%d", j, f.calls)
+	}
+	// Once the extra PRs are gone the issue is worked, without the stale
+	// lookup failure in the agent's prompt.
+	delete(source.broken, 2)
+	normal, prompts := f.e.agent, []string{}
+	f.e.agent = func(c Config) Agent {
+		return scriptedAgent(func(ctx context.Context, p string) (Result, error) {
+			prompts = append(prompts, p)
+			return normal(c).Execute(ctx, p)
+		})
+	}
+	if worked, err := f.e.step(context.Background(), f.s); err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if len(prompts) != 1 || strings.Contains(prompts[0], reconcileFailure) || f.s.Jobs[2].Status != "submitted" {
+		t.Fatalf("stale lookup failure reached the agent: %q job=%+v", prompts, f.s.Jobs[2])
+	}
+}
+func TestGlobalLookupFailureStillAbortsStep(t *testing.T) {
+	f := newFixture(t)
+	f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+	offline := errors.New("gh: connection refused")
+	f.e.source = brokenPulls{f.source, map[int]error{1: offline}}
+	if worked, err := f.e.step(context.Background(), f.s); worked || !errors.Is(err, offline) || issueOnly(err) {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[2] != nil || f.calls != 0 || f.s.Jobs[1].Failure != "" {
+		t.Fatalf("a global failure continued the scan: job2=%+v calls=%d", f.s.Jobs[2], f.calls)
+	}
+}
+func TestReconciledCommentFailureKeepsQueueMoving(t *testing.T) {
+	f := newFixture(t)
+	f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+	f.source.prs[1] = &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
+	f.source.failPost = true
+	// A comment failure may be GitHub-wide, so it aborts the step, but only
+	// after the reconciliation is saved.
+	if _, err := f.e.step(context.Background(), f.s); err == nil || issueOnly(err) {
+		t.Fatalf("step: %v", err)
+	}
+	saved, err := ReadState(f.e.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j := saved.Jobs[1]; j.Status != "submitted" || !j.ClaimPending {
+		t.Fatalf("reconciliation not retained: %+v", j)
+	}
+	f.source.failPost = false
+	if worked, err := f.e.step(context.Background(), saved); err != nil || !worked {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if saved.Jobs[1].ClaimPending || saved.Jobs[2] == nil || saved.Jobs[2].Status != "submitted" || f.calls != 1 {
+		t.Fatalf("comment retry blocked the queue: job1=%+v job2=%+v", saved.Jobs[1], saved.Jobs[2])
+	}
+}
+
+// hidingState removes the state directory once a status comment is posted, so
+// the save that follows the comment fails.
+type hidingState struct {
+	*fakeSource
+	dir string
+}
+
+func (f hidingState) postComment(ctx context.Context, n int, body string) (issueComment, error) {
+	if err := os.Rename(f.dir, f.dir+".hidden"); err != nil {
+		return issueComment{}, err
+	}
+	return f.fakeSource.postComment(ctx, n, body)
+}
+func TestStatusSaveFailureKeepsCommentPending(t *testing.T) {
+	f := newFixture(t)
+	f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+	f.source.prs[1] = &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
+	dir := f.e.config.StateDirectory
+	f.e.source = hidingState{f.source, dir}
+	if _, err := f.e.step(context.Background(), f.s); err == nil || issueOnly(err) {
+		t.Fatalf("a state write failure did not abort the step: %v", err)
+	}
+	if j := f.s.Jobs[1]; j.Status != "submitted" || !j.ClaimPending {
+		t.Fatalf("status update not kept pending in memory: %+v", j)
+	}
+	if err := os.Rename(dir+".hidden", dir); err != nil {
+		t.Fatal(err)
+	}
+	f.e.source = f.source
+	if _, err := f.e.step(context.Background(), f.s); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := ReadState(f.e.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Jobs[1].ClaimPending || len(f.source.notes[1]) != 1 {
+		t.Fatalf("status update not retried in-process: %+v notes=%d", saved.Jobs[1], len(f.source.notes[1]))
+	}
+}
+func TestDaemonContinuesPastIssueOnlyFailures(t *testing.T) {
+	for _, once := range []bool{false, true} {
+		f := newFixture(t)
+		f.e.config.Poll = Duration(time.Hour)
+		f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+		f.e.source = brokenPulls{f.source, map[int]error{1: errPullMismatch}}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		fetches, paused := 0, false
+		f.e.observe = func(p Progress) {
+			switch p.Phase {
+			case "fetching":
+				// The second scan proves the daemon did not pause for a poll.
+				if fetches++; fetches == 2 {
+					cancel()
+				}
+			case "paused":
+				paused = true
+			}
+		}
+		err := f.e.run(ctx, f.s, once)
+		cancel()
+		if once && (!issueOnly(err) || fetches != 1) {
+			t.Fatalf("--once: %v fetches=%d", err, fetches)
+		}
+		if !once && (!errors.Is(err, context.Canceled) || paused || fetches != 2) {
+			t.Fatalf("daemon: %v paused=%v fetches=%d", err, paused, fetches)
+		}
+		if f.s.Jobs[2] == nil || f.s.Jobs[2].Status != "submitted" || f.calls != 1 {
+			t.Fatalf("once=%v: job2=%+v calls=%d", once, f.s.Jobs[2], f.calls)
+		}
 	}
 }
