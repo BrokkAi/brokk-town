@@ -573,3 +573,18 @@
   reports (the fallback skips snoozed issues); the reason limit counts
   characters on both service and browser; a snooze that ends on finished work
   is dropped silently; the inspector says retry keeps a snooze.
+
+## bug-bot only-on-change polling (#98)
+
+- Optional `only_on_change` (`--only-on-change`, default false). In daemon mode
+  each poll still fetches; with no active scan left after reconciliation,
+  pending retries and exhausted-revision checks, a fetched commit equal to the
+  last completed scan for the same dry-run setting starts no investigation, no
+  worktree and no history entry. `once` (and so Town's worker) always runs.
+- State gains `last_completed {commit, dry_run}`, validated on read. Only a
+  discovered scan that finishes without stale findings sets it, zero findings
+  included. A scan with any `dry_run` finding records `dry_run: true`, so real
+  publication can rescan that commit. Legacy state without it scans once.
+- An unchanged poll reports `waiting` with an "unchanged" task; the dashboard
+  shows it beside the next-check countdown without counting a completed scan.
+- `bundle.json` moves bug-bot to 0.5.0 at the final feature commit.
