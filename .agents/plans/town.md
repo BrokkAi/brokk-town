@@ -588,3 +588,27 @@
 - An unchanged poll reports `waiting` with an "unchanged" task; the dashboard
   shows it beside the next-check countdown without counting a completed scan.
 - `bundle.json` moves bug-bot to 0.5.0 at the final feature commit.
+
+## release-bot release_trigger_ignore (#110)
+
+- Optional `release_trigger_ignore` config: repository-relative literal files
+  and directory prefixes ending in `/`; empty by default. Absolute paths,
+  backslashes, globs, surrounding whitespace, empty entries and empty, `.` or
+  `..` segments are rejected. Matching is case-sensitive; a submodule is its
+  bare path, so only a file entry ignores its bumps.
+- Before a new automatic job (after pending-job recovery, before cadence and
+  triage), `git diff --no-renames --ignore-submodules=none --name-status -z`
+  (immune to `diff.ignoreSubmodules`) compares the released
+  commit with the watched branch head and, when different, the local release
+  head. A nonempty union of paths that are all ignored keeps monitoring with a
+  "waiting" progress task that names the policy; no triage or preparation runs.
+  Renames count both paths, deletions count, a net-empty diff and a release
+  without a recorded time (first release, `initial_ref`) keep existing
+  behavior, and a Git failure is returned as an error.
+- The decision is recomputed from Git every cycle; nothing is saved, so the
+  baseline never moves and a restart reaches the same answer. Commit counts,
+  quiet period, publication and verification are unchanged. `--once --force`
+  bypasses the policy.
+- Town is unchanged: the worker protocol carries no such field (a non-goal of
+  the issue), so the setting applies only to config-file runs.
+- `bundle.json` moves release-bot to 0.7.0 at the final feature commit.
