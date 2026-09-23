@@ -298,3 +298,16 @@
   comment and state-write failures after a reconciliation, and the daemon
   and `--once` handling of issue-only failures.
 - `bundle.json` moves issue-bot to 0.5.9 at the final fix commit.
+
+## CLI polish (#28)
+
+- `bt request` encodes without HTML escaping, so `<`, `>` and `&` no longer
+  inflate sixfold and push a valid body past the service's 64 KiB limit. An
+  oversized body now gets 413 and "request body exceeds the 64 KiB limit"
+  instead of a decoder error.
+- The browser link carries the access key, so `serve` and `bt -d` print it only
+  when stdout is a terminal. The detached service's log and redirected output
+  get "run bt web for the link"; `bt web` still prints the key on request.
+- `check-request` on an unknown ID returns "unknown request" (404) rather than
+  "does not need reconciliation".
+- The stale `connection.json` PID was already handled by `processAlive`.

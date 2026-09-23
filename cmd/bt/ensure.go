@@ -221,6 +221,6 @@ func startBackground(ctx context.Context, base string, demo bool, listen, config
 		return fmt.Errorf("Town is already running (pid %d)", conn.PID)
 	}
 	_ = cmd.Process.Release()
-	fmt.Printf("Town running (pid %d)\nBrowser: %s/#token=%s\nLogs: %s\n", conn.PID, conn.URL, conn.Token, filepath.Join(runtimeDir(base, demo), "logs"))
+	fmt.Printf("Town running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo, stdoutIsTerminal()), filepath.Join(runtimeDir(base, demo), "logs"))
 	return nil
 }

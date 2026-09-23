@@ -489,3 +489,42 @@ func TestHarnessCatalogAPIIncludesRegistryAndSupplements(t *testing.T) {
 		}
 	}
 }
+
+func TestOversizedBodyIsRejectedAsTooLarge(t *testing.T) {
+	_, h := fixture(t)
+	body := `{"town":"acme/managed","id":"x","kind":"bug","title":"t","body":"` + strings.Repeat("a", 70<<10) + `"}`
+	r := call(t, h.URL, "POST", "/api/requests", body, "test-key", "")
+	var v struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&v)
+	if r.StatusCode != http.StatusRequestEntityTooLarge || v.Error != "request body exceeds the 64 KiB limit" {
+		t.Fatal(r.Status, v.Error)
+	}
+}
+
+func TestCheckRequestDistinguishesUnknownFromSettled(t *testing.T) {
+	s, h := fixture(t)
+	s.Supervisor.Publisher = issuePublisher{}
+	if r := call(t, h.URL, "POST", "/api/towns", `{"repo":"acme/managed"}`, "test-key", ""); r.StatusCode != 201 {
+		t.Fatal(r.Status)
+	}
+	id := "12345678123456781234567812345678"
+	if r := call(t, h.URL, "POST", "/api/requests", `{"town":"acme/managed","id":"`+id+`","kind":"bug","title":"t","body":"b"}`, "test-key", ""); r.StatusCode != 202 {
+		t.Fatal(r.Status)
+	}
+	check := func(request string) (int, string) {
+		r := call(t, h.URL, "POST", "/api/requests/check", `{"town":"acme/managed","id":"`+request+`"}`, "test-key", "")
+		var v struct {
+			Error string `json:"error"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&v)
+		return r.StatusCode, v.Error
+	}
+	if status, message := check("ffffffffffffffffffffffffffffffff"); status != http.StatusNotFound || message != "unknown request" {
+		t.Fatal(status, message)
+	}
+	if status, message := check(id); status != http.StatusBadRequest || message != "request does not need reconciliation" {
+		t.Fatal(status, message)
+	}
+}
