@@ -4,7 +4,7 @@
       "project": "bug-bot",
       "command": "bbb",
       "version": "0.5.0",
-      "source_commit": "27d7f36edc5cfd7c9dd4a341fbd7f3b0fe4b3feb"
+      "source_commit": "a8c97c43834f3905e7b56bc927e20225ed0b8e49"
     },
     "feature": {
       "project": "feature-bot",
