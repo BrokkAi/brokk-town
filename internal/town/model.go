@@ -129,6 +129,9 @@ type Config struct {
 	// in one accounting period. Nil leaves automation bounded only by capacity
 	// and the existing per-task attempt limits.
 	Budget *Budget `json:"budget,omitempty"`
+	// QuietHours are this town's weekly quiet windows. Nil follows the
+	// service default; an empty list opts this town out of it.
+	QuietHours *[]QuietWindow `json:"quiet_hours,omitempty"`
 }
 
 // BotAgentConfig is a complete private selection. Omitted roles inherit the town
@@ -251,6 +254,11 @@ func (c Config) Validate() error {
 	if err := c.Budget.Validate(); err != nil {
 		return err
 	}
+	if c.QuietHours != nil {
+		if err := ValidateQuietHours(*c.QuietHours); err != nil {
+			return err
+		}
+	}
 	if err := c.Funnels.Validate(); err != nil {
 		return err
 	}
@@ -276,6 +284,9 @@ type PublicConfig struct {
 	ReviewCloseSeverity string            `json:"review_close_severity"`
 	Budget              *Budget           `json:"budget,omitempty"`
 	WorkPolicies        []PublicBotPolicy `json:"work_policies"`
+	// QuietHours is the town's own schedule: null follows the service
+	// default, and an empty list opts out of it.
+	QuietHours *[]QuietWindow `json:"quiet_hours"`
 }
 
 type PublicBotAgentConfig struct {
@@ -563,10 +574,14 @@ type Town struct {
 	// Health is what Repo Bot last reported about the branch this town covers.
 	Health *BranchHealth `json:"health,omitempty"`
 	// Budget is the measured agent spend for the accounting period in progress.
-	Budget      *BudgetLedger `json:"budget_ledger,omitempty"`
-	LastSync    time.Time     `json:"last_sync"`
-	LastRelease string        `json:"last_release"`
-	Error       string        `json:"error,omitempty"`
+	Budget *BudgetLedger `json:"budget_ledger,omitempty"`
+	// Quiet records that the scheduler last saw this town inside its quiet
+	// hours, so entering and leaving them is announced once. The dispatch
+	// gate reads the clock, never this flag.
+	Quiet       bool      `json:"quiet,omitempty"`
+	LastSync    time.Time `json:"last_sync"`
+	LastRelease string    `json:"last_release"`
+	Error       string    `json:"error,omitempty"`
 }
 
 // BranchHealth is Repo Bot's report on the branch this town covers: the checks
@@ -611,13 +626,15 @@ const MaximumMaxWorkers = 64
 
 type ServiceConfig struct {
 	MaxWorkers int `json:"max_workers"`
+	// QuietHours is the default quiet schedule for towns that set none.
+	QuietHours []QuietWindow `json:"quiet_hours,omitempty"`
 }
 
 func (c ServiceConfig) Validate() error {
 	if c.MaxWorkers < 1 || c.MaxWorkers > MaximumMaxWorkers {
 		return fmt.Errorf("max_workers must be between 1 and %d", MaximumMaxWorkers)
 	}
-	return nil
+	return ValidateQuietHours(c.QuietHours)
 }
 
 type Capacity struct {
@@ -768,6 +785,11 @@ func (s State) PublicAt(now time.Time) map[string]any {
 		}
 		public["towns"].(map[string]any)[id].(map[string]any)["config"] = t.PublicConfig()
 		public["towns"].(map[string]any)[id].(map[string]any)["budget"] = t.BudgetState(now)
+		quiet := t.QuietState(now, s.ServiceConfig.QuietHours)
+		public["towns"].(map[string]any)[id].(map[string]any)["quiet_hours"] = quiet
+		if quiet.Active {
+			t.markQuiet(public["towns"].(map[string]any)[id].(map[string]any))
+		}
 		t.markFiltered(public["towns"].(map[string]any)[id].(map[string]any))
 	}
 	events := []Event{}
@@ -802,5 +824,5 @@ func (c Config) Public() PublicConfig {
 	for _, funnel := range c.Funnels {
 		funnels = append(funnels, funnel.Public())
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies()}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies(), QuietHours: c.QuietHours}
 }

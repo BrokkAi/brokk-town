@@ -218,7 +218,7 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 		var capacity town.Capacity
-		if err := request(ctx, conn, "POST", "/api/capacity", town.ServiceConfig{MaxWorkers: *maxWorkers}, &capacity); err != nil {
+		if err := request(ctx, conn, "POST", "/api/capacity", map[string]int{"max_workers": *maxWorkers}, &capacity); err != nil {
 			return err
 		}
 		fmt.Printf("Capacity: %d active · limit %d\n", capacity.Active, capacity.Limit)
@@ -301,8 +301,13 @@ func run(ctx context.Context, args []string) error {
 		var result any
 		return request(ctx, conn, "POST", "/api/towns", map[string]any{"repo": *repo, "agent": agent}, &result)
 	case "settings":
+		quietSet := false
+		fs.Visit(func(f *flag.Flag) { quietSet = quietSet || f.Name == "quiet-hours" })
 		if *repo == "" {
-			return errors.New("--repo OWNER/REPO is required")
+			if !quietSet {
+				return errors.New("--repo OWNER/REPO is required")
+			}
+			return setServiceQuietHours(ctx, conn, fs, *fl.quietHours)
 		}
 		var result any
 		settingsRole := ""
@@ -345,6 +350,16 @@ func run(ctx context.Context, args []string) error {
 				}
 				payload["budget"] = map[string]any{"budget": map[string]any{"period": period, "max_attempts": *fl.budgetAttempts, "max_agent_minutes": *fl.budgetMinutes}}
 			}
+		}
+		if quietSet {
+			if settingsRole != "" {
+				return errors.New("quiet hours are a town setting; omit --role")
+			}
+			edit, err := quietHoursEdit(*fl.quietHours, true)
+			if err != nil {
+				return err
+			}
+			payload["quiet_hours"] = edit
 		}
 		policy, edited, err := workPolicyEdit(fl, fs)
 		if err != nil {
@@ -436,6 +451,55 @@ func run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
 	}
+}
+
+// quietHoursEdit turns --quiet-hours into the settings edit: a schedule, none
+// for no quiet hours, or, for a town, default to follow the service default.
+func quietHoursEdit(value string, forTown bool) (map[string]any, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "none":
+		return map[string]any{"windows": []town.QuietWindow{}}, nil
+	case "default":
+		if !forTown {
+			return nil, errors.New("--quiet-hours default applies to a town; the service default is a schedule or none")
+		}
+		return map[string]any{"windows": nil}, nil
+	case "":
+		return nil, errors.New("--quiet-hours needs windows such as \"mon-fri 18:00-08:00\", none, or default")
+	}
+	windows, err := town.ParseQuietHours(value)
+	if err != nil {
+		return nil, fmt.Errorf("--quiet-hours: %w", err)
+	}
+	return map[string]any{"windows": windows}, nil
+}
+
+// setServiceQuietHours edits the service default quiet hours. It is the only
+// setting bt settings takes without --repo.
+func setServiceQuietHours(ctx context.Context, conn connection, fs *flag.FlagSet, value string) error {
+	var other []string
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name != "quiet-hours" && !isGlobalFlag(f.Name) {
+			other = append(other, "--"+f.Name)
+		}
+	})
+	if len(other) > 0 {
+		return fmt.Errorf("without --repo, settings edits only the service default --quiet-hours; %s needs --repo", strings.Join(other, ", "))
+	}
+	edit, err := quietHoursEdit(value, false)
+	if err != nil {
+		return err
+	}
+	var saved town.ServiceConfig
+	if err := request(ctx, conn, "POST", "/api/quiet-hours", edit, &saved); err != nil {
+		return err
+	}
+	if len(saved.QuietHours) == 0 {
+		fmt.Println("Service default quiet hours: none")
+	} else {
+		fmt.Println("Service default quiet hours:", town.FormatQuietHours(saved.QuietHours))
+	}
+	return nil
 }
 
 // deferUntil reads a resume time as an RFC 3339 timestamp or as a delay from
@@ -551,7 +615,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		if e != nil {
 			return e
 		}
-		configs, maxWorkers, e := decodeConfigFile(data)
+		configs, service, e := decodeConfigFile(data)
 		if e != nil {
 			return e
 		}
@@ -561,12 +625,20 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		var restored []string
 		if e = store.Update(func(s *town.State) error {
 			restored = nil
-			if maxWorkers != nil {
-				cfg := town.ServiceConfig{MaxWorkers: *maxWorkers}
-				if err := cfg.Validate(); err != nil {
+			if service.MaxWorkers != nil {
+				if err := (town.ServiceConfig{MaxWorkers: *service.MaxWorkers}).Validate(); err != nil {
 					return err
 				}
-				s.ServiceConfig = cfg
+				s.ServiceConfig.MaxWorkers = *service.MaxWorkers
+			}
+			if service.QuietHours != nil {
+				if err := town.ValidateQuietHours(*service.QuietHours); err != nil {
+					return err
+				}
+				s.ServiceConfig.QuietHours = nil
+				if len(*service.QuietHours) > 0 {
+					s.ServiceConfig.QuietHours = *service.QuietHours
+				}
 			}
 			for _, entry := range configs {
 				cfg := entry.Config
@@ -755,46 +827,72 @@ func decodeTowns(raw []byte) ([]townEntry, error) {
 	return entries, nil
 }
 
-func decodeConfigFile(data []byte) ([]townEntry, *int, error) {
+// fileService is what the object form says about the whole service. A nil
+// field was absent, and leaves the saved setting as it was.
+type fileService struct {
+	MaxWorkers *int
+	// QuietHours replaces the service default quiet hours; an empty list
+	// removes them.
+	QuietHours *[]town.QuietWindow
+}
+
+func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
+	var none fileService
 	trimmed := strings.TrimSpace(string(data))
 	if strings.HasPrefix(trimmed, "[") {
 		entries, err := decodeTowns([]byte(trimmed))
-		return entries, nil, err
+		return entries, none, err
 	}
 	var file struct {
 		MaxWorkers json.RawMessage `json:"max_workers"`
+		QuietHours json.RawMessage `json:"quiet_hours"`
 		Towns      json.RawMessage `json:"towns"`
 	}
 	d := json.NewDecoder(strings.NewReader(trimmed))
 	d.DisallowUnknownFields()
 	if err := d.Decode(&file); err != nil {
-		return nil, nil, err
+		return nil, none, err
 	}
 	if d.Decode(new(any)) != io.EOF {
-		return nil, nil, errors.New("expected one config object")
+		return nil, none, errors.New("expected one config object")
 	}
 	if len(file.Towns) == 0 || string(file.Towns) == "null" {
-		return nil, nil, errors.New("config object requires a towns array")
+		return nil, none, errors.New("config object requires a towns array")
 	}
 	towns, err := decodeTowns(file.Towns)
 	if err != nil {
-		return nil, nil, err
+		return nil, none, err
 	}
-	var limit *int
+	var service fileService
 	if len(file.MaxWorkers) > 0 {
 		if string(file.MaxWorkers) == "null" {
-			return nil, nil, errors.New("max_workers cannot be null")
+			return nil, none, errors.New("max_workers cannot be null")
 		}
 		var value int
 		if err := json.Unmarshal(file.MaxWorkers, &value); err != nil {
-			return nil, nil, errors.New("max_workers must be an integer")
+			return nil, none, errors.New("max_workers must be an integer")
 		}
 		if err := (town.ServiceConfig{MaxWorkers: value}).Validate(); err != nil {
-			return nil, nil, err
+			return nil, none, err
 		}
-		limit = &value
+		service.MaxWorkers = &value
 	}
-	return towns, limit, nil
+	if len(file.QuietHours) > 0 {
+		if string(file.QuietHours) == "null" {
+			return nil, none, errors.New("quiet_hours cannot be null; use [] for no service default")
+		}
+		windows := []town.QuietWindow{}
+		qd := json.NewDecoder(bytes.NewReader(file.QuietHours))
+		qd.DisallowUnknownFields()
+		if err := qd.Decode(&windows); err != nil {
+			return nil, none, fmt.Errorf("quiet_hours must be a list of {days, start, end} windows: %w", err)
+		}
+		if err := town.ValidateQuietHours(windows); err != nil {
+			return nil, none, err
+		}
+		service.QuietHours = &windows
+	}
+	return towns, service, nil
 }
 
 // policyFlagNames are the settings flags that build a bot's work policy. They

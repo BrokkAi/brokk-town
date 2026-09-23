@@ -287,6 +287,14 @@ type BudgetEdit struct {
 	Budget *Budget `json:"budget"`
 }
 
+// QuietHoursEdit distinguishes leaving a town's quiet hours alone from
+// changing them: a nil *QuietHoursEdit preserves them. Inside it, nil Windows
+// makes the town follow the service default again, and an empty list opts the
+// town out of quiet hours altogether.
+type QuietHoursEdit struct {
+	Windows *[]QuietWindow `json:"windows"`
+}
+
 // PolicyEdit distinguishes leaving a house's work policy alone from clearing
 // it: a nil *PolicyEdit preserves the saved policy, and one holding a nil or
 // empty Policy removes it.
@@ -297,10 +305,11 @@ type PolicyEdit struct {
 // TownSettings are the town-wide edits one submission may carry alongside an
 // agent profile. A nil field leaves that setting as it was saved.
 type TownSettings struct {
-	MergePolicy    *string     `json:"merge_policy,omitempty"`
-	SimplifierMode *string     `json:"simplifier_mode,omitempty"`
-	CloseSeverity  *string     `json:"review_close_severity,omitempty"`
-	Budget         *BudgetEdit `json:"budget,omitempty"`
+	MergePolicy    *string         `json:"merge_policy,omitempty"`
+	SimplifierMode *string         `json:"simplifier_mode,omitempty"`
+	CloseSeverity  *string         `json:"review_close_severity,omitempty"`
+	Budget         *BudgetEdit     `json:"budget,omitempty"`
+	QuietHours     *QuietHoursEdit `json:"quiet_hours,omitempty"`
 	// WorkPolicy edits the policy of the role this submission names. It needs
 	// a role: a work policy always belongs to one house.
 	WorkPolicy *PolicyEdit `json:"work_policy,omitempty"`
@@ -330,6 +339,11 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 	}
 	if edits.Budget != nil {
 		if err := edits.Budget.Budget.Validate(); err != nil {
+			return err
+		}
+	}
+	if edits.QuietHours != nil && edits.QuietHours.Windows != nil {
+		if err := ValidateQuietHours(*edits.QuietHours.Windows); err != nil {
 			return err
 		}
 	}
@@ -366,6 +380,13 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 			// A changed period starts a fresh window rather than carrying an
 			// old one's spend into a differently sized one.
 			t.rollBudget(s.now())
+		}
+		if edits.QuietHours != nil {
+			t.Config.QuietHours = nil
+			if w := edits.QuietHours.Windows; w != nil {
+				windows := append([]QuietWindow{}, (*w)...)
+				t.Config.QuietHours = &windows
+			}
 		}
 		if edits.WorkPolicy != nil {
 			if edits.WorkPolicy.Policy.Empty() {

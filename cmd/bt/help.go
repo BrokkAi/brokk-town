@@ -40,6 +40,7 @@ type cliFlags struct {
 	budgetPeriod         *string
 	budgetAttempts       *int
 	budgetMinutes        *int
+	quietHours           *string
 	labels               *string
 	excludeLabels        *string
 	only                 *int
@@ -92,6 +93,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.budgetPeriod = fs.String("budget-period", "", "accounting period for this town's agent budget: day, week, month, or none to remove it (settings)")
 	fl.budgetAttempts = fs.Int("budget-attempts", 0, "agent attempts allowed per period; 0 leaves attempts uncapped (settings)")
 	fl.budgetMinutes = fs.Int("budget-agent-minutes", 0, "agent minutes allowed per period; 0 leaves time uncapped (settings)")
+	fl.quietHours = fs.String("quiet-hours", "", "weekly windows when Town starts no new agent work or GitHub writes, as \"DAYS HH:MM-HH:MM\" joined by ';' (mon-fri 18:00-08:00; weekends 00:00-24:00); none for no quiet hours, default to follow the service default; omit --repo to set the service default (settings)")
 	fl.labels = fs.String("labels", "", "comma-separated labels this bot's work must carry (settings --role BOT)")
 	fl.excludeLabels = fs.String("exclude-labels", "", "comma-separated labels that exclude work from this bot (settings --role issue|review)")
 	fl.only = fs.Int("only", 0, "restrict this bot to one issue (--role issue) or pull request (--role review) number (settings)")
@@ -148,7 +150,8 @@ var cliCommands = []commandInfo{
 	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog.", args: "[flags]", flags: []string{"refresh"}},
 	{name: "settings", short: "Configure a town or bot", long: "Configure a town's defaults or one bot house. Omit --role to edit town defaults.\n\n" +
 		"A budget bounds agent attempts and agent minutes per accounting period. Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol.\n\n" +
-		"With --role, the work-policy flags choose what that bot takes on: label filters, one selected issue or pull request, a discovery focus, per-run limits, attempts, and its own verification command. Each flag is refused by a bot that cannot honour it.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "attempts", "budget-agent-minutes", "budget-attempts", "budget-period", "clear-policy", "effort", "exclude-labels", "focus", "harness", "harness-version", "inherit", "labels", "limit", "merge-policy", "model", "only", "release-burst", "release-burst-window-seconds", "release-daily-seconds", "release-minimum-gap-seconds", "release-assets", "release-preflight", "release-quiet-seconds", "release-triage", "release-verification-timeout-seconds", "release-workflows", "repo", "review-close-severity", "role", "verify"}},
+		"Quiet hours are weekly windows on this machine's local clock in which Town starts no new agent work and makes none of its own GitHub writes; running work finishes and the repository is still watched. A window ending at or before its start runs past midnight. Without --repo, --quiet-hours sets the default every town follows unless it sets its own.\n\n" +
+		"With --role, the work-policy flags choose what that bot takes on: label filters, one selected issue or pull request, a discovery focus, per-run limits, attempts, and its own verification command. Each flag is refused by a bot that cannot honour it.", args: "[--repo OWNER/REPO] [flags]", flags: []string{"agent-command", "attempts", "budget-agent-minutes", "budget-attempts", "budget-period", "clear-policy", "effort", "exclude-labels", "focus", "harness", "harness-version", "inherit", "labels", "limit", "merge-policy", "model", "only", "release-burst", "release-burst-window-seconds", "release-daily-seconds", "release-minimum-gap-seconds", "release-assets", "release-preflight", "release-quiet-seconds", "release-triage", "release-verification-timeout-seconds", "release-workflows", "quiet-hours", "repo", "review-close-severity", "role", "verify"}},
 	{name: "request", short: "Submit a GitHub issue request", long: "Submit a GitHub issue as work for a town.", args: "--repo OWNER/REPO --title TITLE --body-file FILE [flags]", flags: []string{"body-file", "kind", "repo", "request-id", "title"}},
 	{name: "check-request", short: "Check a submitted request", long: "Check the status of a submitted request.", args: "--repo OWNER/REPO --request-id ID [flags]", flags: []string{"repo", "request-id"}},
 	{name: "start", short: "Start a town or bot house", long: "Start a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},

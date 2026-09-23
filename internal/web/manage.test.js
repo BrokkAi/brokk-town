@@ -140,6 +140,7 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
     merge_policy: "bot",
     simplifier_mode: "suggest",
     review_close_severity: "P2",
+    quiet_hours: { windows: null },
   });
   assert.equal(elements["settings-dialog"].open, true);
   assert.match(elements["settings-success"].textContent, /Review Bot saved/);
@@ -152,6 +153,35 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
   assert.equal(app.saves()[1].body.agent.version, "1.0");
 });
 
+
+test("quiet hours follow the default, opt out, or save the town's own windows", async () => {
+  const app = fixture();
+  await open();
+  assert.equal(elements["settings-quiet-mode"].value, "default");
+  assert.equal(elements["settings-quiet-hours"].hidden, true);
+  edit("settings-quiet-mode", "own", "onchange");
+  assert.equal(elements["settings-quiet-hours"].hidden, false);
+  elements["settings-quiet-hours"].value = "weekdays 18:00-08:00; weekends 00:00-24:00";
+  await save();
+  assert.deepEqual(app.saves()[0].body.quiet_hours, {
+    windows: [
+      { days: ["mon", "tue", "wed", "thu", "fri"], start: "18:00", end: "08:00" },
+      { days: ["sat", "sun"], start: "00:00", end: "24:00" },
+    ],
+  });
+  elements["settings-quiet-hours"].value = "mon 25:00-01:00";
+  await save();
+  assert.equal(app.saves().length, 1, "an invalid window never reaches the service");
+  assert.match(elements["settings-error"].textContent, /start "25:00" must be HH:MM/);
+  edit("settings-quiet-mode", "none", "onchange");
+  await save();
+  assert.deepEqual(app.saves()[1].body.quiet_hours, { windows: [] });
+  // A town that saved its own windows reopens showing them.
+  app.town.config.quiet_hours = [{ days: ["sat", "sun"], start: "00:00", end: "24:00" }];
+  await open();
+  assert.equal(elements["settings-quiet-mode"].value, "own");
+  assert.equal(elements["settings-quiet-hours"].value, "sat,sun 00:00-24:00");
+});
 
 test("Repo Bot exposes and saves its repair agent profile", async () => {
   const app = fixture();

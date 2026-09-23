@@ -210,7 +210,10 @@ func TestExampleConfigValidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the documented example does not decode: %v", err)
 	}
-	if limit == nil || len(entries) == 0 {
+	if limit.QuietHours == nil || len(*limit.QuietHours) == 0 {
+		t.Fatal("the example no longer documents service quiet hours")
+	}
+	if limit.MaxWorkers == nil || len(entries) == 0 {
 		t.Fatalf("example config produced %d towns and limit %v", len(entries), limit)
 	}
 	for _, entry := range entries {

@@ -441,6 +441,19 @@ export function townControls(town) {
     : "Bug Bot, Feature Bot, Issue Bot, Review Bot, Simplifier Bot, Mayor Bot, and Release Bot";
   if (!awake)
     return { status: "Paused", statusClass: "paused", primary: { action: "start", label: `▶ Wake the town (${agents.length})` }, secondary: null, detail: `Starts ${names}. Repo Bot already watches the repository.` };
+  // Quiet hours are a scheduled pause: the houses stay awake and resume on
+  // their own, so the actions are those of an awake town.
+  if (town?.quiet_hours?.active) {
+    const until = town.quiet_hours.until ? ` · until ${quietTime(town.quiet_hours.until)}` : "";
+    const full = awake === agents.length;
+    return {
+      status: `Quiet hours${until}`,
+      statusClass: "quiet",
+      primary: full ? { action: "pause", label: "Ⅱ Pause the town" } : { action: "start", label: "▶ Wake the rest" },
+      secondary: full ? null : { action: "pause", label: "Ⅱ Pause all" },
+      detail: quietNote(town),
+    };
+  }
   if (awake === agents.length)
     return { status: `Awake · ${awake} agent${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Ⅱ Pause the town" }, secondary: null, detail: "" };
   return {
@@ -479,6 +492,7 @@ export function scheduleLabel(worker, now = Date.now()) {
   if (worker?.recovery) return "Recovery required";
   if (!worker?.enabled) return "Paused";
   if (worker?.agent) return "After current run";
+  if (worker?.status === "quiet") return "Quiet hours";
   const next = Date.parse(worker?.next || "");
   if (!Number.isFinite(next)) return "Waiting for assignment";
   if (next <= now) return "Due now";
@@ -610,6 +624,84 @@ export function profileSummary(profile) {
         : "Set for this house only",
     ].join("\n"),
   };
+}
+
+// Quiet hours are weekly windows on the service's local clock in which Town
+// starts no new agent work and makes none of its own GitHub writes. The
+// compact form is what bt settings --quiet-hours takes: windows joined by ";",
+// each "DAYS HH:MM-HH:MM". The service validates again and has the last word.
+const quietWeek = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const quietAliases = { daily: "mon-sun", weekdays: "mon-fri", weekends: "sat,sun" };
+
+function quietMinutes(value, end) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const hours = Number(match[1]), minutes = Number(match[2]);
+  if (minutes > 59) return null;
+  if (end && hours === 24 && minutes === 0) return 1440;
+  return hours > 23 ? null : hours * 60 + minutes;
+}
+
+function quietDays(value, index) {
+  const days = [];
+  for (const item of (quietAliases[value.toLowerCase()] || value.toLowerCase()).split(",")) {
+    const [from, to] = item.split("-");
+    const a = quietWeek.indexOf(from);
+    if (a < 0) throw new Error(`Quiet window ${index}: "${from}" is not one of mon, tue, wed, thu, fri, sat, sun.`);
+    if (to === undefined) {
+      if (!days.includes(from)) days.push(from);
+      continue;
+    }
+    const b = quietWeek.indexOf(to);
+    if (b < 0) throw new Error(`Quiet window ${index}: "${to}" is not one of mon, tue, wed, thu, fri, sat, sun.`);
+    for (let i = a; ; i = (i + 1) % 7) {
+      if (!days.includes(quietWeek[i])) days.push(quietWeek[i]);
+      if (i === b) break;
+    }
+  }
+  return days;
+}
+
+export function parseQuietHours(spec) {
+  const windows = [];
+  String(spec || "").split(";").map((part) => part.trim()).filter(Boolean).forEach((part, i) => {
+    const index = i + 1;
+    const fields = part.split(/\s+/);
+    if (fields.length !== 2)
+      throw new Error(`Quiet window ${index}: write DAYS HH:MM-HH:MM, such as mon-fri 18:00-08:00.`);
+    const days = quietDays(fields[0], index);
+    const [start, end, extra] = fields[1].split("-");
+    if (end === undefined || extra !== undefined)
+      throw new Error(`Quiet window ${index}: "${fields[1]}" must be HH:MM-HH:MM.`);
+    const from = quietMinutes(start, false), to = quietMinutes(end, true);
+    if (from === null) throw new Error(`Quiet window ${index}: start "${start}" must be HH:MM from 00:00 to 23:59.`);
+    if (to === null) throw new Error(`Quiet window ${index}: end "${end}" must be HH:MM from 00:00 to 24:00.`);
+    if (from === to) throw new Error(`Quiet window ${index}: start and end are both ${start}; use 00:00-24:00 for a whole day.`);
+    windows.push({ days, start, end });
+  });
+  return windows;
+}
+
+export function formatQuietHours(windows) {
+  return (windows || []).map((w) => `${(w.days || []).join(",")} ${w.start}-${w.end}`).join("; ");
+}
+
+function quietTime(value) {
+  const at = new Date(value);
+  return at.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// quietNote is one line on a town's quiet hours: why work is held and until
+// when, or when the next window begins. Empty when no quiet hours apply.
+export function quietNote(town) {
+  const quiet = town?.quiet_hours;
+  if (!quiet?.source) return "";
+  const from = quiet.source === "service" ? " (service default)" : "";
+  if (quiet.active) {
+    const until = quiet.until ? `until ${quietTime(quiet.until)}` : "all week";
+    return `Quiet hours ${until}${from}: no new agent work or GitHub writes by Town; running work finishes and the repository is still watched.`;
+  }
+  return quiet.next ? `Quiet hours${from} next begin ${quietTime(quiet.next)}.` : "";
 }
 
 // A snooze is the operator's own hold on one task, set with a resume time.

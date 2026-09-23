@@ -37,6 +37,9 @@ import {
   attentionGuidance,
   ago,
   profileSummary,
+  quietNote,
+  parseQuietHours,
+  formatQuietHours,
 } from "./town.js";
 import { management } from "./manage.js";
 import { easeDelivery } from "./scenery.js";
@@ -348,6 +351,16 @@ function policyBlock(t, house) {
   return `<h3>WORK POLICY</h3><p class="queue-summary">${esc(policy.summary)}${esc(excluded)}</p>`;
 }
 
+// quietBlock says whether quiet hours hold this town's new work, and where the
+// schedule comes from. It is a scheduled pause, not a failure.
+function quietBlock(t) {
+  const note = quietNote(t);
+  const held = t?.quiet_hours?.active;
+  const body = note
+    ? `<p class="${held ? "quiet-held" : "muted"}">${esc(note)}</p>`
+    : '<p class="muted">No quiet hours. Set weekly windows in Town settings, or a service default under Capacity.</p>';
+  return `<h2>Quiet hours</h2>${body}`;
+}
 function budgetBlock(t) {
   const budget = t?.budget;
   if (!budget) return "";
@@ -602,7 +615,7 @@ function renderCompact() {
       return `<article class="compact-town"><div class="compact-title"><h2>${esc(repo)}</h2><span>${item.active} active · ${item.attention} attention</span></div><div class="compact-workers">${item.workers
         .map(
           (worker) =>
-            `<button class="compact-worker" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(worker.role)}"><i class="dot ${worker.active ? "active" : worker.status === "failed" ? "blocked" : "waiting"}"></i><strong>${esc(worker.role)}</strong><small>${esc(worker.status)}</small><small>${profileChips(worker.profile, worker.role)}</small><small>${esc(scheduleLabel(worker))}</small></button>`,
+            `<button class="compact-worker" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(worker.role)}"><i class="dot ${worker.active ? "active" : worker.status === "failed" ? "blocked" : worker.status === "quiet" ? "quiet" : "waiting"}"></i><strong>${esc(worker.role)}</strong><small>${esc(worker.status)}</small><small>${profileChips(worker.profile, worker.role)}</small><small>${esc(scheduleLabel(worker))}</small></button>`,
         )
         .join("")}</div><div class="compact-tasks">${item.tasks
         .map(
@@ -804,7 +817,33 @@ document.querySelectorAll("#view-switcher [data-view]").forEach((button) => {
 $("#capacity-settings").onclick = () => {
   renderCapacity();
   $("#capacity-error").textContent = "";
+  $("#service-quiet-error").textContent = "";
+  $("#service-quiet-success").textContent = "";
+  $("#service-quiet-input").value = formatQuietHours(state?.service_config?.quiet_hours);
   $("#capacity-dialog").showModal();
+};
+$("#service-quiet-form").onsubmit = async (event) => {
+  event.preventDefault();
+  let windows;
+  try {
+    windows = parseQuietHours($("#service-quiet-input").value);
+  } catch (error) {
+    $("#service-quiet-error").textContent = error.message;
+    return;
+  }
+  const submit = event.submitter;
+  submit.disabled = true;
+  $("#service-quiet-error").textContent = "";
+  $("#service-quiet-success").textContent = "";
+  try {
+    await api("/api/quiet-hours", { windows });
+    $("#service-quiet-success").textContent = windows.length ? "Quiet hours saved." : "Service default removed.";
+    await refreshState();
+  } catch (error) {
+    $("#service-quiet-error").textContent = error.message;
+  } finally {
+    submit.disabled = false;
+  }
 };
 $("#cancel-capacity").onclick = () => $("#capacity-dialog").close();
 $("#capacity-form").onsubmit = async (event) => {
@@ -851,7 +890,9 @@ function renderHouses() {
             ? "active"
             : status === "blocked" || status === "failed"
               ? "blocked"
-              : "waiting";
+              : status === "quiet"
+                ? "quiet"
+                : "waiting";
       // The label has room for two lines above the road, and the second one
       // now carries the dispatch profile: the status word moves onto the dot
       // the legend already explains, and into the label's tooltip.
@@ -1010,7 +1051,7 @@ function renderInspection() {
       mayorControls = workerControls(mayor);
     const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : projectedMayor.status === "failed" ? "blocked" : "waiting"}"></i>Mayor Bot ${esc(projectedMayor.status)}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${mayorControls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${mayorControls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${mayorControls.stop ? "" : " disabled"}>■ Stop</button></div><p class="muted">${mayor?.enabled ? "Mayor Bot judges each arrival below as it comes in, with its reason kept on the task, and writes the bulletin when work merges." : "Start Mayor Bot to have it judge arrivals for you and write the bulletin. Until then, decisions wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
     const bulletinRows = (t.bulletins || []).slice().reverse().slice(0, 20).map((b) => `<article class="bulletin"><h4>${esc(b.title)}</h4><p class="muted">${esc(new Date(b.since).toLocaleString())} – ${esc(new Date(b.until).toLocaleString())} · ${(b.pulls || []).length} merged</p><p>${esc(b.summary)}</p>${(b.items || []).map((item) => `<div class="bulletin-item"><span class="status-chip status-${esc(item.kind)}">${esc(item.kind)}</span> <strong>${esc(item.title)}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${(item.pulls || []).map((n) => `PR #${n}`).join(", ")}${(item.issues || []).length ? ` · ${item.issues.map((n) => `issue #${n}`).join(", ")}` : ""}</small></div>`).join("")}</article>`).join("");
-    if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}${overrulableBlock}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${budgetBlock(t)}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
+    if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}${overrulableBlock}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${quietBlock(t)}${budgetBlock(t)}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
@@ -1066,7 +1107,7 @@ function renderInspection() {
   const healthNote = selectedHouse === "repo" ? branchHealthNote(t.health) : "";
   const healthDetails = healthNote ? `<p class="muted">${esc(healthNote)}</p>` : "";
   const agentDetails = `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${selectedHouse === "repo" ? "Inventory runs without an agent. The configured agent starts only to repair a failing branch." : agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this house only" : "Inherited from this town's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
-  if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline(selectedHouse, faction))}</p><h2>${esc(houseLabel)}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : "waiting"}"></i>${esc(projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div><div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${workloadChips(houseWorkload(t, selectedHouse))}${policyBlock(t, selectedHouse)}<h3>${esc(activeSkin.queueHeading(queue.length))}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
+  if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline(selectedHouse, faction))}</p><h2>${esc(houseLabel)}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : projectedWorker.status === "quiet" ? "quiet" : "waiting"}"></i>${esc(projectedWorker.status === "quiet" ? "quiet hours" : projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div>${projectedWorker.status === "quiet" ? `<p class="quiet-held">${esc(quietNote(t))}</p>` : ""}<div class="inspector-actions"><button class="primary" data-action="start"${controls.start ? "" : " disabled"}>▶ Start</button><button data-action="pause"${controls.pause ? "" : " disabled"}>Ⅱ Pause</button><button data-action="stop"${controls.stop ? "" : " disabled"}>■ Stop</button></div>${workloadChips(houseWorkload(t, selectedHouse))}${policyBlock(t, selectedHouse)}<h3>${esc(activeSkin.queueHeading(queue.length))}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
 
     queue
       .map(
