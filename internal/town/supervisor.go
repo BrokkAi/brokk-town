@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BrokkAi/brokk-town/internal/harness"
 )
@@ -1439,19 +1440,37 @@ type workerLog struct {
 func (l *workerLog) Enabled(context.Context, slog.Level) bool { return true }
 func (l *workerLog) Handle(_ context.Context, r slog.Record) error {
 	text := r.Message
-	appendAttr := func(a slog.Attr) {
+	// Groups and LogValuers are resolved and walked, so a sensitive key nested
+	// inside one is dropped like a top-level one instead of being printed as
+	// part of the group's rendering.
+	var appendAttr func(prefix string, a slog.Attr)
+	appendAttr = func(prefix string, a slog.Attr) {
 		key := strings.ToLower(a.Key)
 		if strings.Contains(key, "token") || strings.Contains(key, "secret") || key == "environment" || key == "command" {
 			return
 		}
-		text += " · " + a.Key + "=" + a.Value.String()
+		v := a.Value.Resolve()
+		if v.Kind() == slog.KindGroup {
+			if a.Key != "" {
+				prefix += a.Key + "."
+			}
+			for _, member := range v.Group() {
+				appendAttr(prefix, member)
+			}
+			return
+		}
+		text += " · " + prefix + a.Key + "=" + v.String()
 	}
 	for _, a := range l.attrs {
-		appendAttr(a)
+		appendAttr("", a)
 	}
-	r.Attrs(func(a slog.Attr) bool { appendAttr(a); return true })
+	r.Attrs(func(a slog.Attr) bool { appendAttr("", a); return true })
 	if len(text) > 4000 {
-		text = text[:4000] + "…"
+		cut := 4000
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + "…"
 	}
 	entry := Log{l.now(), r.Level.String(), text}
 	select {
