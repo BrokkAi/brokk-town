@@ -726,6 +726,26 @@
   Other phases pass through unchanged. An untyped error is never read as an
   agent rejection.
 
+## bug-bot workspace setup command (#96)
+
+- Optional `setup` argument array in the `--config` file (default none; `null`
+  in the example). A present value needs a non-blank executable; `[]`, blank
+  executables and non-string arrays are rejected before scanning. No worker
+  protocol change.
+- `step` runs it after preparing the worktree and counting the attempt, before
+  loading issue history or any agent: once per attempt, including attempts that
+  resume pending review, never per review batch or ACP startup retry. It runs
+  through `osrun.StartCommand` in the scan worktree with `BUG_COMMIT`, under the
+  attempt timeout (process-group kill on timeout/cancel), keeping a 16 KiB tail
+  of combined output for the error. `checkout.verify` then requires unchanged
+  HEAD and tracked source; untracked and ignored files are allowed.
+- Failures are plain errors (not `runner.SetupError`), so they consume the
+  attempt, keep pending findings, save a `workspace setup` failure and set the
+  retry delay from failure completion. Reconciliation-only completion, waiting
+  polls, `status` and `report` never reach it; dry runs do. Progress reports
+  `preparing` / "Running workspace setup".
+- `bundle.json` moves bug-bot to 0.6.0 at the final feature commit.
+
 ## release-bot outcome notifications (#109)
 
 - Optional `notify` argument array and required positive `notify_timeout` in

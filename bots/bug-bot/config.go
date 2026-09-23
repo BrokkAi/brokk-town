@@ -61,6 +61,9 @@ type Config struct {
 	OnlyOnChange bool     `json:"only_on_change"`
 	Focus        string   `json:"focus,omitempty"`
 	Verify       []string `json:"verify,omitempty"`
+	// Setup optionally prepares each scan attempt's worktree before any agent
+	// runs. Nil runs nothing; a present command needs a non-blank executable.
+	Setup []string `json:"setup,omitempty"`
 }
 
 func DefaultConfig() Config {
@@ -221,6 +224,9 @@ func (c Config) Validate() error {
 	}
 	if len(c.Verify) > 0 && c.Verify[0] == "" {
 		return errors.New("verify command is empty")
+	}
+	if c.Setup != nil && (len(c.Setup) == 0 || strings.TrimSpace(c.Setup[0]) == "") {
+		return errors.New("setup requires a command executable")
 	}
 	for _, name := range c.InstructionFiles {
 		if !filepath.IsLocal(name) {
