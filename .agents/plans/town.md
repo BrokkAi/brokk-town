@@ -187,3 +187,17 @@
   that lets Town release its own block when the pull request comes back. On
   return the task is queued for a fresh review rather than resuming from the
   discarded audit. Merged and closed tasks are left alone.
+
+## Stale Simplifier results (#95)
+
+- `applySimplification` wrote its assessment to the task unconditionally. Repo
+  Bot can observe a pull request closing while Simplifier is still running, so
+  a late `auto`/`admit` result overwrote a confirmed `closed` with `queued` and
+  handed the closed pull request to Review.
+- The assessment is now bound to the intake it answers: it applies only while
+  the task is still `house=simplifier stage=simplifying`. That also stops a late
+  result from overriding a Mayoral decision taken in the same window, and stops
+  a late failure from charging an attempt or a retry delay against work that
+  already left intake.
+- A discarded assessment records an event, so the operator sees the result was
+  dropped rather than silently lost.
