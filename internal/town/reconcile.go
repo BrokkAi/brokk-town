@@ -87,6 +87,19 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			resume(t, task)
 		}
 	}
+	listed := map[int]bool{}
+	for _, i := range remote.Issues {
+		listed[i.Number] = true
+	}
+	for _, task := range t.Tasks {
+		if task.Kind == "issue" && task.Stage == "closing" && task.MayoralDecision == "" && !listed[task.Number] {
+			// The inventory lists every issue, so one Town was closing that is
+			// gone (deleted or transferred) has nothing left to close. The
+			// claim is released; the decline stands.
+			task.Stage = "declined"
+			task.Updated = now
+		}
+	}
 	for _, p := range remote.Pulls {
 		id := fmt.Sprintf("pr:%d", p.Number)
 		if p.Base.Ref != remote.Branch {

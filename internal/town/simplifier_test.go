@@ -82,8 +82,8 @@ func TestSimplifierAutoDeclineClosesIssue(t *testing.T) {
 	if len(gh.closed) != 1 || gh.closed[0] != 21 {
 		t.Fatalf("auto decline did not close exactly once: %v", gh.closed)
 	}
-	// The claim holds until an inventory confirms the closure.
-	if task := store.Snapshot().Towns[town.ID].Tasks[task.ID]; task.Stage != "closing" || task.Simplification.Decision != "decline" {
+	// GitHub accepted the close, so the claim settles as closed.
+	if task := store.Snapshot().Towns[town.ID].Tasks[task.ID]; task.Stage != "closed" || task.Simplification.Decision != "decline" {
 		t.Fatalf("closure erased simplifier decision: %+v", task)
 	}
 	if err := supervisor.reconcileNow(context.Background(), store.Snapshot().Towns[town.ID]); err != nil {
@@ -143,17 +143,60 @@ func TestClaimedClosureRefusesAdmission(t *testing.T) {
 	}
 }
 
+func TestRejectedCloseReleasesTheClaim(t *testing.T) {
+	store, town, gh, supervisor := autoDeclinedIssue(t)
+	gh.closeError = definiteRejection(errors.New("gh api: exit status 1\ngh: Validation Failed (HTTP 422)"))
+	if err := supervisor.closeDeclinedProposals(context.Background(), store.Snapshot().Towns[town.ID], gh.snapshot); err == nil {
+		t.Fatal("a rejected close was not reported")
+	}
+	if task := store.Snapshot().Towns[town.ID].Tasks["issue:21"]; task.Stage != "declined" {
+		t.Fatalf("a rejected close kept its claim: %+v", task)
+	}
+	if err := supervisor.Control(town.ID, Hall, "admit", "issue:21"); err != nil {
+		t.Fatalf("the Mayor could not admit after GitHub refused the close: %v", err)
+	}
+}
+
+func TestDefiniteRejectionOnlyForRefusals(t *testing.T) {
+	for text, want := range map[string]bool{
+		"gh: Not Found (HTTP 404)":                                true,
+		"gh: Resource not accessible by integration (HTTP 403)":   true,
+		"gh: Issue is gone (HTTP 410)":                            true,
+		"gh: Validation Failed (HTTP 422)":                        true,
+		"gh: You have exceeded a secondary rate limit (HTTP 403)": false,
+		"gh: API rate limit exceeded (HTTP 429)":                  false,
+		"gh: Bad Gateway (HTTP 502)":                              false,
+		"context deadline exceeded":                               false,
+		"dial tcp: connection reset by peer":                      false,
+	} {
+		var rejected *RejectedError
+		if got := errors.As(definiteRejection(errors.New(text)), &rejected); got != want {
+			t.Errorf("%q: rejected=%v, want %v", text, got, want)
+		}
+	}
+}
+
+func TestVanishedClosingIssueIsSettled(t *testing.T) {
+	state, town := reopenTown(t, "auto")
+	town.Initialized = true
+	task := &Task{ID: "issue:21", Kind: "issue", Number: 21, Title: "Speculative matrix", Stage: "closing", House: Hall, External: true, Simplification: &Simplification{Mode: "auto", Decision: "decline", Detail: "No callers."}, Updated: time.Now()}
+	town.Tasks[task.ID] = task
+	reconcileIssues(t, state, town)
+	if task.Stage != "declined" {
+		t.Fatalf("a closing issue the inventory no longer lists kept its claim: %+v", task)
+	}
+}
+
 func TestReopeningAnAutoClosedIssueAppealsToTheMayor(t *testing.T) {
 	store, town, gh, supervisor := autoDeclinedIssue(t)
 	ctx := context.Background()
-	for i := 0; i < 2; i++ { // close, then observe the closure
-		if err := supervisor.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
-			t.Fatal(err)
-		}
+	if err := supervisor.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
 	}
 	if task := store.Snapshot().Towns[town.ID].Tasks["issue:21"]; task.Stage != "closed" {
 		t.Fatalf("auto-declined issue was not closed: %+v", task)
 	}
+	// Someone reopens it before any inventory has seen the closure.
 	gh.snapshot.Issues[0].State = "open"
 	if err := supervisor.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
 		t.Fatal(err)

@@ -229,8 +229,13 @@
   confirmation.
 - The declined-issue closer claims each issue under the store just before the
   GitHub write: it rechecks the decline, and an auto-declined issue moves to
-  `closing`, which admission refuses, until an inventory confirms the closure.
-  An admission that lands first makes the closer skip the issue.
+  `closing`, which admission refuses. An accepted close settles it `closed`
+  (so a reopen before the next inventory is an appeal, not a close to retry),
+  a definite 4xx rejection (`RejectedError`; not 408/429/rate limits) releases
+  it to `declined`, and only an uncertain outcome keeps `closing`. A `closing`
+  issue the full inventory no longer lists (deleted or transferred) is released
+  to `declined`. The browser treats a `closing` issue as settled work. An
+  admission that lands first makes the closer skip the issue.
 - Someone reopening an issue Town closed on Simplifier's decline is an appeal:
   the issue waits for the Mayor with Simplifier's assessment attached, and the
   closer leaves it alone. Reopening neither re-closes it nor admits it, so no

@@ -204,6 +204,9 @@ test("inbox gathers decisions and stuck work from every town, longest wait first
   assert.deepEqual(inbox(null), { decisions: [], attention: [], towns: {}, total: 0 });
   const offBranch = inbox({ towns: { "acme/x": { id: "acme/x", config: { repo: "acme/x" }, tasks: { "pr:5": { id: "pr:5", kind: "pr", number: 5, house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", blocked: true } } } } });
   assert.equal(offBranch.towns["acme/x"].decisions, 0, "a blocked decision is not one to decide, as Mayor Bot skips it");
+  const closingTown = { tasks: { "issue:7": { id: "issue:7", kind: "issue", number: 7, house: "hall", stage: "closing" }, "pr:8": { id: "pr:8", kind: "pr", number: 8, house: "hall", stage: "closing" } }, workers: {} };
+  assert.deepEqual(queueFor(closingTown, "hall").map((t) => t.id), ["pr:8"], "an issue Town is closing is not open work; a pull request it is closing still is");
+  assert.equal(townSummary(closingTown).queued, 1);
   assert.equal(decisionReason({ external: true, audit: { verdict: "changes_needed" } }), "Town review asked for changes");
   const now = Date.parse("2026-09-15T12:00:00Z");
   assert.equal(ago("2026-09-15T11:59:40Z", now), "just now");

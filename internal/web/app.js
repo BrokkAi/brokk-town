@@ -5,6 +5,7 @@ import {
   houseShortcuts,
   routePosition,
   queueFor,
+  settled,
   issueJobDetails,
   taskRetryEligible,
   visibleEvents,
@@ -488,7 +489,7 @@ function profileChips(profile, role = "", extra = "") {
   return summaryChips(profileSummary(profile), extra);
 }
 function queuedProfileText(task) {
-  if (["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(task.stage)) return "";
+  if (settled(task)) return "";
   return `<span class="profile-lead">${task.profile?.source === "active" ? "Running profile" : "Next profile"}</span>${profileChips(task.profile, task.house)}`;
 }
 function captureBoardViewport(board) {

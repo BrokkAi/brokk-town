@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -258,7 +260,38 @@ func (g GitHubClient) Merge(ctx context.Context, repo string, n int, sha string)
 // GitHub accepts a repeated close, so an uncertain response is safe to retry on
 // the next inventory.
 func (g GitHubClient) CloseIssue(ctx context.Context, repo string, n int) error {
-	return g.api(ctx, "PATCH", fmt.Sprintf("repos/%s/issues/%d", repo, n), map[string]string{"state": "closed", "state_reason": "not_planned"}, nil)
+	if err := g.api(ctx, "PATCH", fmt.Sprintf("repos/%s/issues/%d", repo, n), map[string]string{"state": "closed", "state_reason": "not_planned"}, nil); err != nil {
+		return definiteRejection(err)
+	}
+	return nil
+}
+
+// RejectedError is a GitHub write the API definitively refused: a 4xx answer
+// that says the write did not happen and will not on retry. Timeouts,
+// transport failures, 5xx and rate limits stay plain errors, whose outcome is
+// uncertain.
+type RejectedError struct {
+	Status int
+	Err    error
+}
+
+func (e *RejectedError) Error() string { return e.Err.Error() }
+func (e *RejectedError) Unwrap() error { return e.Err }
+
+var ghHTTPStatus = regexp.MustCompile(`HTTP (\d{3})`)
+
+// definiteRejection classifies a gh api failure, which reports the response
+// status as "(HTTP 404)" on stderr.
+func definiteRejection(err error) error {
+	m := ghHTTPStatus.FindStringSubmatch(err.Error())
+	if m == nil {
+		return err
+	}
+	status, _ := strconv.Atoi(m[1])
+	if status < 400 || status >= 500 || status == 408 || status == 429 || strings.Contains(strings.ToLower(err.Error()), "rate limit") {
+		return err
+	}
+	return &RejectedError{Status: status, Err: err}
 }
 func (g GitHubClient) ClosePull(ctx context.Context, repo string, n int) error {
 	return g.api(ctx, "PATCH", fmt.Sprintf("repos/%s/pulls/%d", repo, n), map[string]string{"state": "closed"}, nil)
