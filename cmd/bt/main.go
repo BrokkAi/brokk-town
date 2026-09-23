@@ -455,6 +455,9 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		return describeLock(dir, err)
 	}
 	defer store.Close()
+	if notice := store.Notice(); notice != "" {
+		fmt.Fprintf(os.Stderr, "bt: %s\n", notice)
+	}
 	if configFile != "" {
 		data, e := os.ReadFile(configFile)
 		if e != nil {

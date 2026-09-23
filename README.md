@@ -4,6 +4,13 @@ Brokk Town is a local service that coordinates independent repository bots throu
 private worker processes. Use the browser to watch and control work, or the CLI
 for scripts. Everything runs on your machine.
 
+The browser has two themes. The default is the town; Frontline draws every
+repository as a base flying one of three armies — humans, humanoid aliens or a
+swarm — and every committed delivery as a strike between its installations. The
+theme is a look, not a lever: it reads the same snapshot, keeps the theme and
+the base's faction in that browser, and never changes what Town does or writes
+to GitHub.
+
 ## Build and run
 
 ```sh

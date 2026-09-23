@@ -202,6 +202,58 @@
 - A discarded assessment records an event, so the operator sees the result was
   dropped rather than silently lost.
 
+## Frontline theme (browser, presentation only)
+
+- Added `internal/web/skins.js` as the single surface both themes answer
+  (landscape, structure, occupants, strike, impact, labels, faction, noun
+  rewrite) and `internal/web/frontline.js` for the war art: three armies, a
+  per-army name and tagline for all eight installations, terrain seeded by the
+  repository, a structure per role, patrolling garrisons, strike craft carrying
+  the real issue or pull request number, and impact bursts. No new image assets.
+- Every themed string is wired through `data-skin-text`, so a theme is added by
+  supplying strings and art, not by threading conditionals through render code.
+  `index.html` carries the theme button, the faction picker and a note that the
+  theme is a look rather than a lever.
+- A base's faction derives from its repository name and can be pinned per base
+  in `localStorage`; `?skin=frontline` opens the theme from a link. Nothing on
+  this path touches town state, commands, the worker protocol or GitHub, and
+  the delivered animation still follows committed events and reduced motion.
+- 8 new module tests plus 2 app tests drive the real handlers (43 → 53 browser
+  tests); `npm run check` covers both new files. Both themes were rendered in a
+  headless browser against a stubbed snapshot to check the art and labels.
+
+## Demo state recovery
+
+- `bt --demo` refused to start with "read town state: missing worker" against a
+  demo state written on 2026-09-16, before the Clarifier house and Mayor Bot
+  existed. Demo state is disposable, so `Open` now sets an unreadable demo state
+  aside as `state.rejected-<timestamp>.json`, keeps every byte at 0600, records
+  a one-time `Store.Notice()` that `bt` prints, and starts an empty demo state
+  that `town.Demo` seeds again.
+- Only a state that parsed and reports `Demo: true` is replaced, and only for a
+  store opened in demo mode. Real state — including real state left in the demo
+  directory — is still refused and left exactly as it was, and a file Town
+  cannot parse is never assumed to be disposable: that error now says where the
+  demo keeps its state and how to start over.
+- `validateState` now names the town and the missing house, so the failure that
+  began this ("missing worker") can be diagnosed from the message alone.
+- Verified against the real stale file: the demo started, the 50608-byte state
+  was preserved as `state.rejected-20260923-071158.json`, and the seeded villages
+  came back. Five store tests cover the reset, the protection of non-demo state,
+  an unparseable file, a usable demo state, and the reseeding.
+
+## PR #114 review fixes
+
+- Demo recovery now reads the `demo` marker from the saved JSON itself. A file
+  with no marker cannot open as demo or be set aside, even though the store's
+  initial in-memory state is demo; regression tests cover both valid and stale
+  files without the marker.
+- Frontline keeps faction overrides in memory for the browser session. A denied
+  `localStorage` write no longer resets the picker, and canvas redraws no
+  longer read or parse browser storage. A browser test exercises both cases.
+- Root `go test -race ./...`, `go vet ./...`, browser syntax and 54 browser
+  tests pass. The fixes landed in PR #114 through follow-up PR #116.
+
 ## issue-bot --once after a reconciliation (#104)
 
 - `step` reconciled a saved job's pull request and then fell through to fetch
@@ -216,8 +268,36 @@
 - Regression tests cover the restart path (a lost PR response reconciled on
   the next step), a PR found while fetching, and a later job's retained status
   comment; each failed before its fix.
-- Not changed here: a reconciliation error still aborts the whole step (#105).
+- A reconciliation error still aborted the whole step; see #105 below.
 - `bundle.json` moves issue-bot to 0.5.8 at the final fix commit.
+
+## issue-bot reconciliation failures (#105)
+
+- `step` returned on the first saved-job lookup error, before fetching issues,
+  so one issue branch holding a PR the bot could not prove it owned (missing
+  marker, several PRs) stopped every other issue on every poll.
+- Ownership failures are now sentinels. `lookup` records an `inspect branch`
+  failure on the job, leaves its status, tries and URL alone, and the step
+  skips that job for the rest of the scan, so it is never attempted or
+  published again until its lookup succeeds. A later successful lookup
+  reconciles it and clears the failure.
+- Such failures are returned joined with the step's result. Any other error
+  (network, auth, cancellation, state writes) still aborts the step. A status
+  comment that fails after a saved reconciliation aborts too, since it cannot
+  be told apart from a GitHub-wide failure; the job is already submitted, so
+  the next step retries the comment and moves on.
+- If the state write after a status comment fails, the job's comment stays
+  pending in memory as well as on disk, so the running process retries it.
+- A lookup that later finds no PR clears the stale `inspect branch` failure
+  so it does not reach the next agent prompt.
+- The daemon logs issue-only failures and keeps draining the queue; `--once`
+  (Town's exact-issue worker) still does one unit of work and exits with the
+  error, and the job summary carries the recorded failure.
+- Regression tests cover repeated polls, restart from saved state, eventual
+  reconciliation, a fresh job whose lookup fails, a global lookup failure,
+  comment and state-write failures after a reconciliation, and the daemon
+  and `--once` handling of issue-only failures.
+- `bundle.json` moves issue-bot to 0.5.9 at the final fix commit.
 
 ## release-bot triage after a remote advance (#111)
 
