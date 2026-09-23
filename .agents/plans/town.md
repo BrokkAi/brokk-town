@@ -613,6 +613,34 @@
   the issue), so the setting applies only to config-file runs.
 - `bundle.json` moves release-bot to 0.7.0 at the final feature commit.
 
+## Test coverage for GitHub, repair and result routing (#26)
+
+- `github_client_test.go`: a recording fake `gh` on PATH (canned output per
+  argv prefix, request bodies captured, unrouted calls fail) covers Pull,
+  Actor, Discussion pagination and partial-read refusal, `pages` on a path
+  with a query, Gate parsing, Merge with `merged:false` or no commit, the
+  close/comment/create writes, DeleteBranch validation and "Reference does
+  not exist", and Contains statuses and refusals.
+- `repair_guard_test.go`: every repair guard driven to failure (dirty tree,
+  left branch, amend, reset, no commit, empty and reverted commits, verify
+  failing/committing/dirtying, redirected push remote), `checkRepairRef`,
+  and `resumeRepair` against a bare remote whose pre-receive hook rejects
+  the first push, including its saved-commit, dirty, verify and moved-PR
+  refusals.
+- `execute_routing_test.go`: table test of `execute` result routing.
+- `worker_log_test.go`: redaction, bounding and drop-oldest behaviour.
+- Fixed: `workerLog` printed grouped and `LogValuer` attributes whole, so a
+  `token` nested in a group reached persisted logs; it now resolves and walks
+  groups. Its 4000-byte cut could split a UTF-8 character; it now cuts on a
+  rune boundary. Key-based redaction cannot see inside values passed with
+  `slog.Any` (structs, maps, errors, slices), so every formatted line is also
+  scrubbed of credential-shaped text (GitHub tokens, `x-access-token:` URLs,
+  Anthropic keys, bearer values); a secret with no recognizable shape inside
+  such a value is still printed.
+- Git fixtures set `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`,
+  so a developer's hooksPath or gpgsign cannot break them.
+- internal/town coverage 74.4% -> 76.7%.
+
 ## feature-bot completed-workspace pruning (#101)
 
 - `engine.finish` appends `completed_workspaces` (directory, scanned commit,
