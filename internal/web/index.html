@@ -139,6 +139,11 @@
               ><span id="legend-blocked" data-skin-text="legend-blocked"
                 >Needs attention</span
               ></span
+            ><span
+              ><i class="dot quiet"></i
+              ><span id="legend-quiet" data-skin-text="legend-quiet"
+                >Quiet hours</span
+              ></span
             >
           </div>
           <div id="empty" hidden>
@@ -243,6 +248,18 @@
           <button type="submit" class="primary">Save capacity</button>
         </div>
       </form>
+      <form id="service-quiet-form">
+        <h2>Quiet hours</h2>
+        <p class="muted">Weekly windows, on the clock of the machine running Town, in which no new agent work starts and Town makes none of its own GitHub writes. Running work finishes, the repository is still watched, and work resumes on its own when a window ends. Every town follows this default unless its settings choose otherwise.</p>
+        <label for="service-quiet-input">Service default (empty for none)</label>
+        <input id="service-quiet-input" class="quiet-hours-input" type="text" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" />
+        <p class="muted">Write each window as DAYS HH:MM-HH:MM and join windows with “;”. Days are mon…sun, ranges such as mon-fri, or daily, weekdays, weekends. An end at or before the start runs past midnight; 24:00 ends at midnight.</p>
+        <div id="service-quiet-error" class="form-error" role="alert"></div>
+        <div id="service-quiet-success" role="status"></div>
+        <div class="dialog-actions">
+          <button type="submit" class="primary">Save quiet hours</button>
+        </div>
+      </form>
     </dialog>
     <dialog id="snooze-dialog" aria-labelledby="snooze-heading">
       <form id="snooze-form">
@@ -294,6 +311,14 @@
             <option value="P3">Any finding</option>
           </select>
           <p class="muted">Every pull request gets one fix round. If the second review still finds work at or above this severity, Town closes the pull request and starts the issue over from the current branch. Anything below it is filed as a follow-up issue and the pull request merges.</p>
+          <label for="settings-quiet-mode">Quiet hours</label>
+          <select id="settings-quiet-mode">
+            <option value="default">Follow the service default</option>
+            <option value="own">Use this town's own windows</option>
+            <option value="none">No quiet hours for this town</option>
+          </select>
+          <input id="settings-quiet-hours" class="quiet-hours-input" type="text" aria-label="This town's quiet windows" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" aria-describedby="settings-quiet-note" />
+          <p id="settings-quiet-note" class="muted"></p>
         </section>
         <div class="agent-profile">
           <label for="agent-role">Configure agent for</label>

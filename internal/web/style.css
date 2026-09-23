@@ -138,6 +138,11 @@ header {
 .dot.blocked {
   background: #f1a775;
 }
+/* Quiet hours are a scheduled pause: calm, apart from failure and from the
+   operator's own Pause. */
+.dot.quiet {
+  background: #a89fd6;
+}
 .header-space {
   flex: 1;
 }
@@ -1763,6 +1768,22 @@ textarea {
   border-left: 3px solid var(--green);
   background: var(--panel);
   border-radius: 4px;
+}
+
+.quiet-held {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid #a89fd6;
+  background: var(--panel);
+  border-radius: 4px;
+}
+.status-chip.status-quiet {
+  border-color: #6f6899;
+  color: #cfc8f2;
+}
+.quiet-hours-input {
+  width: 100%;
+  font: 12px var(--mono);
 }
 
 /* Work a filter holds back stays listed: hiding it would leave an operator

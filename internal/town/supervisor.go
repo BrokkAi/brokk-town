@@ -153,6 +153,10 @@ func (s *Supervisor) schedule(ctx context.Context) {
 		s.update(func(st *State) error { expireDeferrals(st, now); return nil })
 		state = s.Store.Snapshot()
 	}
+	if now := s.now(); quietTransitionDue(state, now) {
+		s.update(func(st *State) error { recordQuietTransitions(st, now); return nil })
+		state = s.Store.Snapshot()
+	}
 	for _, t := range state.Towns {
 		if t.Deleted {
 			continue
@@ -237,6 +241,10 @@ func (s *Supervisor) claimRepair(id string) bool {
 	if s.Store.budgetExhausted(id, s.now()) {
 		return false
 	}
+	// A repair pushes to the branch, so quiet hours hold it too.
+	if s.Store.quietActive(id, s.now()) {
+		return false
+	}
 	if s.repairing == nil {
 		s.repairing = map[string]bool{}
 	}
@@ -268,12 +276,11 @@ func (s *Supervisor) releaseWorker(key string) {
 // SetCapacity commits before waking scheduling. Existing runs keep their slots
 // until cleanup finishes even if the new limit is lower than current usage.
 func (s *Supervisor) SetCapacity(limit int) error {
-	cfg := ServiceConfig{MaxWorkers: limit}
-	if err := cfg.Validate(); err != nil {
+	if err := (ServiceConfig{MaxWorkers: limit}).Validate(); err != nil {
 		return err
 	}
 	s.mu.Lock()
-	err := s.Store.Update(func(st *State) error { st.ServiceConfig = cfg; return nil })
+	err := s.Store.Update(func(st *State) error { st.ServiceConfig.MaxWorkers = limit; return nil })
 	s.mu.Unlock()
 	if err == nil {
 		s.notifyScheduler()
@@ -912,6 +919,13 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 			return fmt.Errorf("preserve issue-bot jobs after inventory: %w", err)
 		}
 	}
+	// Closing declined issues and retired pull requests and filing follow-ups
+	// are Town's own GitHub writes. Quiet hours leave them for the first
+	// inventory after the window; each is idempotent or committed step by
+	// step, so waiting loses nothing.
+	if s.Store.quietActive(t.ID, s.now()) {
+		return nil
+	}
 	current := s.Store.Snapshot().Towns[t.ID]
 	err = errors.Join(s.closeDeclinedProposals(ctx, current, remote), s.closeRetiredPulls(ctx, current, remote))
 	return errors.Join(err, s.fileFollowUps(ctx, s.Store.Snapshot().Towns[t.ID]))
@@ -1420,6 +1434,11 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 		}
 		if fresh.Head.SHA != p.Head.SHA || fresh.Base.SHA != p.Base.SHA || description(fresh) != description(p) || fresh.State != "open" || fresh.Draft || fresh.Locked {
 			continue
+		}
+		// Quiet hours may have begun since this review dispatch started. The
+		// merge is the write they exist to hold, so check again just before it.
+		if s.Store.quietActive(t.ID, s.now()) {
+			return true, nil
 		}
 		if err = s.Store.Update(func(st *State) error {
 			st.Towns[t.ID].Intents[n] = &Intent{Kind: "merge", PR: n, Base: p.Base.SHA, Head: p.Head.SHA, Status: "uncertain", At: s.now()}

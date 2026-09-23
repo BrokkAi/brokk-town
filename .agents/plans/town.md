@@ -672,3 +672,40 @@
   (`osrun.RunWithout`). Git 2.36+ is required for `worktree list -z`.
 - Town and the worker protocol are unchanged; ported from the unmerged
   BrokkAi/feature-bot#17. `bundle.json` moves feature-bot to 0.3.0.
+
+## Quiet hours (#50)
+
+- `QuietWindow{days, start, end}`: days name the start day (mon..sun); times
+  are HH:MM on the service's local wall clock, `24:00` only as an end, and an
+  end at or before the start crosses midnight. Validation refuses no day, an
+  unknown or repeated day, a malformed time, start equal to end, and more than
+  32 windows. Overlapping or touching windows merge.
+- `ServiceConfig.QuietHours` is the default; `Config.QuietHours *[]QuietWindow`
+  is a town's own: nil follows the default, an empty list opts out. `SetCapacity`
+  now edits only `max_workers`, and `/api/capacity` takes only that field.
+- `Town.QuietState(now, service)` is derived, never stored: source, windows,
+  active, `until` (merged end) or `next` (next start), reason. Membership is by
+  wall-clock week minute, so DST skipped hours are never quiet and repeated
+  hours are quiet twice.
+- Gates: `dispatchEligibility` holds every agent-slot house beside the budget
+  hold; `claimRepair` holds branch repairs; the inventory still runs, but
+  `reconcile` skips `closeDeclinedProposals`, `closeRetiredPulls` and
+  `fileFollowUps` until the window ends. Merges run inside Review dispatch, so
+  they wait too. Operator-submitted issues and source lifecycle actions are
+  not held. Running work finishes.
+- `Town.Quiet` records the last seen state so "Quiet hours began/ended" is
+  announced once, including across restarts; the gate reads the clock.
+- Projection: towns carry `quiet_hours`; `PublicConfig.quiet_hours` is the
+  town's own setting (null inherits); enabled waiting agent houses show status
+  `quiet`, distinct from paused, working, failed. Paused state is `Enabled`,
+  unchanged, so both survive restart.
+- Editing: `/api/settings` `quiet_hours: {windows}` (null = default, [] =
+  none); `/api/quiet-hours {windows}` for the default; `bt settings
+  [--repo] --quiet-hours SPEC|none|default`; config file `quiet_hours` at top
+  level and per town. Browser: Town settings (follow default / own / none) and
+  the Capacity dialog; header chip, house dot and Town Hall explain the hold.
+- Review follow-ups: HH:MM refuses signs; an empty schedule must be sent
+  as `none` or an explicit `[]` (`/api/quiet-hours` requires `windows`);
+  `until`/`next` across DST resolve to the real instant the clock reaches
+  (the jump past a skipped reading, the repeated reading still ahead);
+  `mergeReady` rechecks quiet hours just before writing its intent.

@@ -43,6 +43,9 @@ import {
   snoozeLabel,
   snoozeRequest,
   defaultSnoozeUntil,
+  parseQuietHours,
+  formatQuietHours,
+  quietNote,
 } from "./town.js";
 import { registerTownTools } from "./tools.js";
 test("deliveries resume after cursor and stay in their repository", () => {
@@ -652,4 +655,50 @@ test("snooze requests are checked before they are sent", () => {
   assert.match(snoozeRequest("2026-09-24T08:00:00Z", "🙂".repeat(201), now).error, /200 characters/);
   const suggested = Date.parse(defaultSnoozeUntil(now));
   assert.ok(suggested > now + 86400000 - 1 && suggested <= now + 86400000 + 3600000, "suggests about a day ahead");
+});
+
+test("quiet hours parse the compact form and reject bad shapes with the service's wording", () => {
+  assert.deepEqual(parseQuietHours("weekdays 18:00-08:00; fri-mon 12:00-13:00;"), [
+    { days: ["mon", "tue", "wed", "thu", "fri"], start: "18:00", end: "08:00" },
+    { days: ["fri", "sat", "sun", "mon"], start: "12:00", end: "13:00" },
+  ]);
+  assert.deepEqual(parseQuietHours("  "), []);
+  assert.equal(parseQuietHours("DAILY 00:00-24:00")[0].days.length, 7);
+  assert.equal(formatQuietHours([{ days: ["sat", "sun"], start: "00:00", end: "24:00" }]), "sat,sun 00:00-24:00");
+  for (const [spec, message] of [
+    ["mon", /write DAYS HH:MM-HH:MM/],
+    ["someday 01:00-02:00", /"someday" is not one of/],
+    ["mon 1:00-02:00", /start "1:00" must be HH:MM/],
+    ["mon 24:00-02:00", /start "24:00"/],
+    ["mon 01:00-24:30", /end "24:30"/],
+    ["mon 09:00-09:00", /start and end are both 09:00/],
+    ["mon 01:00-02:00; tue 03:00", /Quiet window 2/],
+    [";", /No quiet windows given/],
+    ["mon +1:00-02:00", /start "\+1:00"/],
+  ])
+    assert.throws(() => parseQuietHours(spec), message, spec);
+});
+
+test("quiet hours read as a scheduled pause, apart from paused, working and failed", () => {
+  const agents = Object.fromEntries(
+    ["bug", "feature", "issue", "review", "release", "simplifier"].map((role) => [role, { role, enabled: true, status: "quiet" }]),
+  );
+  const town = {
+    workers: agents,
+    quiet_hours: { source: "service", active: true, until: "2026-09-22T08:00:00Z", windows: [] },
+  };
+  const controls = townControls(town);
+  assert.match(controls.status, /^Quiet hours · until /);
+  assert.equal(controls.statusClass, "quiet");
+  assert.deepEqual(controls.primary, { action: "pause", label: "Ⅱ Pause the town" });
+  assert.match(controls.detail, /service default.*running work finishes/);
+  assert.equal(scheduleLabel({ enabled: true, status: "quiet" }), "Quiet hours");
+  assert.equal(scheduleLabel({ enabled: false, status: "paused" }), "Paused", "an operator's pause is not a quiet hour");
+  assert.equal(workerControls({ enabled: true, status: "quiet" }).start, false, "a quiet house is already awake");
+  // A paused town stays paused whatever the clock says.
+  const paused = { ...town, workers: Object.fromEntries(Object.entries(agents).map(([r, w]) => [r, { ...w, enabled: false, status: "paused" }])) };
+  assert.equal(townControls(paused).status, "Paused");
+  assert.match(quietNote({ quiet_hours: { source: "town", active: false, next: "2026-09-21T18:00:00Z" } }), /^Quiet hours next begin /);
+  assert.equal(quietNote({ quiet_hours: { source: "", active: false } }), "");
+  assert.match(quietNote({ quiet_hours: { source: "town", active: true } }), /all week/);
 });

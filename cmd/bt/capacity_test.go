@@ -57,11 +57,11 @@ func TestCapacityCLIPostsRequiredBoundedLimit(t *testing.T) {
 
 func TestDecodeConfigFileSupportsCapacityObjectAndLegacyArray(t *testing.T) {
 	configs, limit, err := decodeConfigFile([]byte(`{"max_workers":9,"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]}`))
-	if err != nil || len(configs) != 1 || limit == nil || *limit != 9 {
+	if err != nil || len(configs) != 1 || limit.MaxWorkers == nil || *limit.MaxWorkers != 9 {
 		t.Fatalf("object config: configs=%d limit=%v err=%v", len(configs), limit, err)
 	}
 	configs, limit, err = decodeConfigFile([]byte(`[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]`))
-	if err != nil || len(configs) != 1 || limit != nil {
+	if err != nil || len(configs) != 1 || limit.MaxWorkers != nil || limit.QuietHours != nil {
 		t.Fatalf("legacy config: configs=%d limit=%v err=%v", len(configs), limit, err)
 	}
 	for _, raw := range []string{

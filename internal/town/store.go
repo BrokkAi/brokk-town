@@ -358,6 +358,11 @@ func (s *Store) dispatchEligibility(id string, role Role, now time.Time) (bool, 
 	if OccupiesAgentSlot(role) && t.BudgetState(now).Exhausted {
 		return false, s.state.ServiceConfig.MaxWorkers
 	}
+	// Quiet hours hold new agent work the same way, and for the same reason
+	// leave the inventory running.
+	if OccupiesAgentSlot(role) && t.QuietState(now, s.state.ServiceConfig.QuietHours).Active {
+		return false, s.state.ServiceConfig.MaxWorkers
+	}
 	w := t.Workers[role]
 	return w != nil && w.Enabled && w.Run == nil && w.Recovery == nil && !w.Next.After(now), s.state.ServiceConfig.MaxWorkers
 }

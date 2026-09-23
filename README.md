@@ -186,6 +186,51 @@ what it enforces. Where usage or cost is missing, Town Hall prints "not
 reported"; it never shows absent telemetry as zero. Attempts whose elapsed time
 never arrived are counted and reported separately rather than billed as free.
 
+### Quiet hours
+
+Quiet hours are weekly windows in which Town starts no new agent work and
+makes none of its own GitHub writes: no filing, repairing, reviewing, merging
+or releasing. Set a default for every town, give one town its own windows, or
+opt one town out:
+
+```sh
+# Service default: weeknights and weekends.
+./bin/bt settings --quiet-hours "mon-fri 19:00-07:00; weekends 00:00-24:00"
+./bin/bt settings --quiet-hours none            # remove the service default
+# One town's own windows, none at all, or back to the service default.
+./bin/bt settings --repo BrokkAi/my-project --quiet-hours "daily 12:00-13:00"
+./bin/bt settings --repo BrokkAi/my-project --quiet-hours none
+./bin/bt settings --repo BrokkAi/my-project --quiet-hours default
+```
+
+Each window is `DAYS HH:MM-HH:MM`, joined with `;`. Days are `mon` through
+`sun`, ranges such as `mon-fri` or `fri-mon`, or `daily`, `weekdays` and
+`weekends`, and name the day a window starts. An end at or before the start runs
+past midnight into the next day, and `24:00` ends a window at midnight.
+Overlapping windows count as one. A window with no day, an unknown day, a time
+that is not `HH:MM`, or the same start and end is refused with the reason. The
+browser edits the same schedules: the service default under Capacity, and a
+town's own in Town settings. Config files take `"quiet_hours": [{"days":
+["mon"], "start": "19:00", "end": "07:00"}]` at the top level for the default
+and in a town entry for its own, where `[]` opts the town out.
+
+Windows are read on the local clock of the machine running Town, by the clock
+on the wall: a window holds through a daylight-saving change, an hour the clock
+skips is never quiet, and an hour it repeats is quiet both times.
+
+Inside a window, work already running finishes as it would after Pause, and
+the repository inventory keeps running so uncertain writes are still
+reconciled. Town leaves closing declined issues and retired pull requests and
+filing review follow-ups for the first inventory after the window. Issues you
+submit yourself are still posted. Houses stay awake: the browser shows them as
+*quiet* rather than paused, the town header reads "Quiet hours · until …",
+Town Hall explains the hold, and `bt status` carries the same `quiet_hours`
+state for each town. When the window ends, scheduling resumes on its own with
+each house's usual cadence; nothing missed is replayed. Pause and quiet hours
+are independent and both survive a restart: a paused house stays paused after
+the window, and a woken one resumes. Release Bot's own release quiet period
+(`--release-quiet-seconds`) is unrelated and keeps working as before.
+
 For each profile, select any agent from the
 [official ACP registry](https://agentclientprotocol.com/get-started/registry),
 plus **Anvil**, **Muse ACP**, **Draupnir**, or a custom ACP command. The full

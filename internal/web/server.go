@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/towns", s.add)
 	mux.HandleFunc("POST /api/settings", s.settings)
 	mux.HandleFunc("POST /api/capacity", s.capacity)
+	mux.HandleFunc("POST /api/quiet-hours", s.quietHours)
 	mux.HandleFunc("POST /api/choices", s.choices)
 	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
 	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
@@ -347,6 +348,10 @@ type settingsInput struct {
 	// WorkPolicy is present only when the submission edits the named role's
 	// work selection. Its inner policy is null to remove it.
 	WorkPolicy *town.PolicyEdit `json:"work_policy,omitempty"`
+	// QuietHours is present only when the submission edits the town's quiet
+	// windows. Its inner windows are null to follow the service default and
+	// an empty list to opt the town out.
+	QuietHours *town.QuietHoursEdit `json:"quiet_hours,omitempty"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -355,7 +360,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
-	edits := town.TownSettings{MergePolicy: input.MergePolicy, SimplifierMode: input.SimplifierMode, CloseSeverity: input.ReviewCloseSeverity, Budget: input.Budget, WorkPolicy: input.WorkPolicy}
+	edits := town.TownSettings{MergePolicy: input.MergePolicy, SimplifierMode: input.SimplifierMode, CloseSeverity: input.ReviewCloseSeverity, Budget: input.Budget, WorkPolicy: input.WorkPolicy, QuietHours: input.QuietHours}
 	if err := s.Supervisor.ApplySettings(input.Town, input.Role, input.Agent, edits); err != nil {
 		problem(w, err.Error(), 400)
 		return
@@ -499,7 +504,9 @@ func (s *Server) checkRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
-	var input town.ServiceConfig
+	var input struct {
+		MaxWorkers int `json:"max_workers"`
+	}
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
 		return
@@ -509,4 +516,27 @@ func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, s.Store.Snapshot().Capacity)
+}
+
+// quietHours replaces the service default quiet windows. Only an explicit
+// empty list removes the default; a missing or null list is refused so a
+// truncated request cannot clear it. Towns with their own windows are
+// unaffected.
+func (s *Server) quietHours(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Windows *[]town.QuietWindow `json:"windows"`
+	}
+	if err := decode(w, r, &input); err != nil {
+		rejectInput(w, err)
+		return
+	}
+	if input.Windows == nil {
+		problem(w, "windows is required; send [] to remove the service default", 400)
+		return
+	}
+	if err := s.Supervisor.SetQuietHours(*input.Windows); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	respond(w, s.Store.Snapshot().ServiceConfig)
 }
