@@ -244,6 +244,15 @@
 
 ## Frontline theme (browser, presentation only)
 
+- 2026-09-23 visual refresh: four original transparent image atlases replace
+  the flat canvas silhouettes when loaded: eight isometric buildings for each
+  of the three factions and a matching three-craft strip. Canvas silhouettes
+  remain a loading fallback. The map and HUD received a dark metal treatment;
+  events, commands, faction choices, and Town art are unchanged. Verified with
+  55 browser tests, frontend syntax checks, `go vet ./...`, and
+  `go test -race ./...` (the race suite needed localhost access outside the
+  sandbox for its `httptest` servers).
+
 - Added `internal/web/skins.js` as the single surface both themes answer
   (landscape, structure, occupants, strike, impact, labels, faction, noun
   rewrite) and `internal/web/frontline.js` for the war art: three armies, a
