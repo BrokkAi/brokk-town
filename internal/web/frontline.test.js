@@ -4,6 +4,7 @@ import {
   factionIds,
   factions,
   factionFor,
+  assignFactions,
   factionOf,
   factionName,
   rivalFaction,
@@ -59,7 +60,7 @@ function installCanvas() {
   return ops;
 }
 
-test("a base keeps one army across sessions and every army is reachable", () => {
+test("a repository has a stable faction preference and every faction is reachable", () => {
   assert.deepEqual(
     Array.from({ length: 5 }, () => factionFor("BrokkAi/brokk-town")),
     Array(5).fill(factionFor("BrokkAi/brokk-town")),
@@ -83,6 +84,22 @@ test("a base keeps one army across sessions and every army is reachable", () => 
   for (const faction of factionIds)
     assert.notEqual(rivalFaction(faction), faction, `${faction} raids as someone else`);
   assert.equal(new Set(factionIds.map(rivalFaction)).size, factionIds.length);
+});
+
+test("automatic towns take different factions until all three are claimed", () => {
+  const ids = ["acme/repo-0", "acme/repo-3", "acme/repo-5", "acme/repo-6"];
+  assert.equal(new Set(ids.slice(0, 3).map(factionFor)).size, 1,
+    "this roster starts with a real hash collision");
+  const roster = assignFactions(ids.slice(0, 3));
+  assert.equal(new Set(Object.values(roster)).size, 3);
+  assert.deepEqual(roster, assignFactions([...ids.slice(0, 3)].reverse()),
+    "the same roster looks the same in every browser");
+  const pinned = assignFactions(ids.slice(0, 3), { [ids[2]]: "hive" });
+  assert.equal(pinned[ids[2]], "hive");
+  assert.equal(new Set(Object.values(pinned)).size, 3,
+    "automatic bases leave room for a pinned faction");
+  assert.equal(Object.keys(assignFactions(ids.slice(0, 4))).length, 4,
+    "a fourth base still receives a faction");
 });
 
 test("every army names all eight installations and shortens them for the journal", () => {

@@ -73,11 +73,18 @@ per faction, outside the draw loop. Committed deliveries, animation timing,
 reduced motion, and all service commands are unchanged. The Frontline CSS adds
 metal-framed map and HUD surfaces. The Town skin still uses its original art.
 
-The theme is presentation only. A base's faction comes from the repository name
-and can be pinned per base in the browser; `?skin=frontline` opens the theme for
+The theme is presentation only. A base's automatic faction starts from its
+repository name; the browser resolves collisions across the visible towns so
+the first three fly different factions. A faction can be pinned per base in the
+browser, including a choice that repeats another base's faction. Adding or
+removing a town can change an unpinned default. `?skin=frontline` opens the theme for
 whoever the link is sent to. Strikes still follow committed events, the motion
 toggle and the operating system's reduced-motion setting, and the theme never
 writes to GitHub or changes what a delivery means.
+
+The all-base overview now uses each faction's existing building atlas for its
+card art, with a matching color and explicit faction label. The sidebar also
+labels each base's faction. The Town theme retains its original cottage strip.
 
 ## Frontline attacks and defenders (2026-09-23)
 

@@ -1842,17 +1842,69 @@ body[data-skin="frontline"] .world-legend {
   background: linear-gradient(180deg, #273944, #13232d);
 }
 
-/* The overview strip shows the town's own cottages. A war theme has no
-   cottages, so the strip becomes a claimed-ground band rather than a row of
-   buildings that do not exist in the theme. */
-body[data-skin="frontline"] .town-card-houses {
-  background:
-    repeating-linear-gradient(90deg, #f2c14e22 0 10px, transparent 10px 34px),
-    linear-gradient(180deg, #101c24, #0a1116);
-  border-top: 1px solid #2b4050;
-  border-bottom: 1px solid #2b4050;
-  height: 78px;
+/* Frontline cards show the actual faction atlas used on each base map. */
+body[data-skin="frontline"] [data-faction="vanguard"] {
+  --faction-accent: #8fd0ff;
+  --faction-atlas: url("/assets/frontline-vanguard.png");
+}
+body[data-skin="frontline"] [data-faction="ascendancy"] {
+  --faction-accent: #d9a6ff;
+  --faction-atlas: url("/assets/frontline-ascendancy.png");
+}
+body[data-skin="frontline"] [data-faction="hive"] {
+  --faction-accent: #c8f45f;
+  --faction-atlas: url("/assets/frontline-hive.png");
+}
+body[data-skin="frontline"] .town-card[data-faction] {
+  border-color: var(--faction-accent);
+  background: linear-gradient(145deg, #1d2c33, #0b151b 75%);
+}
+body[data-skin="frontline"] .town-card[data-faction]:hover {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--faction-accent) 25%, transparent);
+}
+body[data-skin="frontline"] .town-link[data-faction] {
+  border-left: 3px solid var(--faction-accent);
+}
+body[data-skin="frontline"] .faction-badge {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  color: var(--faction-accent);
+  border: 1px solid var(--faction-accent);
+  border-radius: 2px;
+  font: 11px var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+body[data-skin="frontline"] .frontline-card-art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  height: 120px;
+  margin: 10px auto;
+  padding: 0 4px 10px;
+  background: radial-gradient(ellipse at 50% 100%,
+    color-mix(in srgb, var(--faction-accent) 22%, #14212a), #091116 76%);
+  border-top: 1px solid var(--faction-accent);
+  border-bottom: 1px solid #46535a;
   opacity: 1;
+}
+body[data-skin="frontline"] .frontline-card-art .base-mini {
+  display: block;
+  flex: 0 0 30%;
+  aspect-ratio: 1;
+  background-image: var(--faction-atlas);
+  background-size: 400% 200%;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 5px 4px #000a);
+}
+body[data-skin="frontline"] [data-faction="hive"] .base-mini {
+  flex-basis: 25%;
+  aspect-ratio: 3/4;
+}
+body[data-skin="frontline"] .base-mini.hall { background-position: 0 0; }
+body[data-skin="frontline"] .base-mini.bug { background-position: 66.667% 0; }
+body[data-skin="frontline"] .base-mini.release { background-position: 66.667% 100%; }
 }
 
 /* The faction picker states which army a base flies. It only appears for a

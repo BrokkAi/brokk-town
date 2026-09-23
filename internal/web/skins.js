@@ -3,6 +3,7 @@ import { landscape, drawWorking } from "./scenery.js";
 import {
   factions,
   factionIds,
+  assignFactions,
   factionOf,
   factionName,
   rivalFaction,
@@ -257,7 +258,7 @@ export const skins = {
   },
 };
 
-export { factionIds, factions };
+export { factionIds, factions, assignFactions };
 
 export function skinFor(value) {
   return skins[normalizeSkin(value)];
