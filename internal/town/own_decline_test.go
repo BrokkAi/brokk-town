@@ -452,3 +452,42 @@ func TestRefusedBranchDeleteHoldsTheIssueUntilTheBranchIsGone(t *testing.T) {
 		t.Fatalf("closed again: %v", gh.closedPulls)
 	}
 }
+
+func TestClosingAnOldPullKeepsTheBranchANewerOneUses(t *testing.T) {
+	store, town, gh, sup := ownPullTown(t, "suggest")
+	update(t, store, func(st *State) {
+		x := st.Towns[town.ID]
+		applySimplification(st, x, x.Tasks["pr:5"], &Simplification{Mode: "suggest", Decision: "decline", Detail: "A registry for one caller."}, nil, time.Now())
+	})
+	if err := sup.Control(town.ID, Hall, "decline", "pr:5"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if len(gh.deleted) != 1 {
+		t.Fatalf("first close did not delete the branch: %v", gh.deleted)
+	}
+	// Issue Bot's fresh attempt, #7, reuses the issue's branch name. Then
+	// someone reopens #5, which Town closes again.
+	fresh := pull(7)
+	fresh.Head.Ref = pull(5).Head.Ref
+	update(t, store, func(st *State) {
+		st.Towns[town.ID].Owned[7] = Ownership{Branch: fresh.Head.Ref, Issue: 3}
+	})
+	gh.p.State = "open"
+	gh.snapshot.Pulls = []Pull{gh.p, fresh}
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if len(gh.closedPulls) != 2 || task(store, town, "pr:5").Stage != "closed" {
+		t.Fatalf("reopened PR was not closed again: %v", gh.closedPulls)
+	}
+	if len(gh.deleted) != 1 || task(store, town, "pr:5").BranchKept {
+		t.Fatalf("closing #5 deleted the branch #7 uses: %v", gh.deleted)
+	}
+	if pr := task(store, town, "pr:7"); pr == nil || pr.Stage == "closed" {
+		t.Fatalf("newer PR was disturbed: %+v", pr)
+	}
+}

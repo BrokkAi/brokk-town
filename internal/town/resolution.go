@@ -352,7 +352,7 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 			}
 		}
 		kept := ""
-		if owned.Branch != "" {
+		if owned.Branch != "" && !branchInUse(t, n, owned.Branch) {
 			err := s.GitHub.DeleteBranch(ctx, t.Config.Repo, owned.Branch)
 			var rejected *RejectedError
 			if errors.As(err, &rejected) {
@@ -378,11 +378,28 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 	return failures
 }
 
+// branchInUse reports whether another of Town's open pull requests has the
+// same head branch. Issue Bot reuses one branch name per issue, so the branch
+// of an old pull request can now carry a newer one; deleting it would make
+// GitHub close that pull request. The old pull request's branch is then
+// treated as gone.
+func branchInUse(t *Town, n int, branch string) bool {
+	for m, other := range t.Owned {
+		if m == n || other.Branch != branch {
+			continue
+		}
+		if pr := t.Tasks[fmt.Sprintf("pr:%d", m)]; pr != nil && pr.Stage != "merged" && pr.Stage != "closed" {
+			return true
+		}
+	}
+	return false
+}
+
 // retryKeptBranch tries again to delete the branch of a pull request Town
 // closed, and starts its issue over once the branch is gone. A repeated
 // refusal is expected until someone removes the branch, so it is not reported.
 func (s *Supervisor) retryKeptBranch(ctx context.Context, t *Town, task *Task, owned Ownership) error {
-	if owned.Branch != "" {
+	if owned.Branch != "" && !branchInUse(t, task.Number, owned.Branch) {
 		err := s.GitHub.DeleteBranch(ctx, t.Config.Repo, owned.Branch)
 		var rejected *RejectedError
 		if errors.As(err, &rejected) {
