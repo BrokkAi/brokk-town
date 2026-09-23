@@ -237,3 +237,4 @@
   error, and the job summary carries the recorded failure.
 - Regression tests cover repeated polls, restart from saved state, eventual
   reconciliation, a fresh job whose lookup fails, and a global lookup failure.
+- `bundle.json` moves issue-bot to 0.5.9 at the fix commit.
