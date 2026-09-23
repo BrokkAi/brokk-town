@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- Start a fresh demo when the demo's saved state was written by an older Town
+  and no longer validates, instead of refusing to start. The unreadable file is
+  kept beside it as `state.rejected-<timestamp>.json`, a one-line notice says
+  what happened, and the demo seeds its two towns again. Only a file that
+  parses and says it is demo state is replaced: real state, including real
+  state in the demo directory, is still refused and left untouched.
+- Name the town and the house in the state error for a missing worker, and say
+  where the demo keeps its state when that file cannot be parsed at all.
+
+- Add a Frontline theme to the browser. Each repository becomes a base flying
+  one of three armies — humans, humanoid aliens or a swarm — with its own
+  installation names, and each committed delivery is drawn as a strike run with
+  a target marker and an impact instead of a cart. The theme and a base's
+  faction are remembered per browser, `?skin=frontline` opens the theme from a
+  link, and every label a theme renames is declared in one place.
+- Treat both themes as presentation only: they read the same snapshot, follow
+  the same committed events and reduced-motion setting, and never send a
+  command or write to GitHub.
+
 ## 0.6.2 — 2026-09-22
 
 - Give each bot house its own work policy: label filters, one selected issue or

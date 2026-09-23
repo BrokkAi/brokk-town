@@ -192,6 +192,10 @@ function installFixture() {
     const opening = html.slice(html.lastIndexOf("<", at), html.indexOf(">", at) + 1);
     element.tagName = opening.match(/^<([a-z]+)/i)?.[1]?.toUpperCase() || "DIV";
     element.className = opening.match(/class="([^"]*)"/)?.[1] || "";
+    // A themed label carries the key its string is swapped by; the fixture
+    // keeps it so a skin test can assert on what the page actually shows.
+    const skinKey = opening.match(/data-skin-text="([^"]+)"/)?.[1];
+    if (skinKey) element.dataset.skinText = skinKey;
     elements[id] = element;
   }
   // The inspector heading spans a line break in the source HTML; retain it as
@@ -811,4 +815,108 @@ test("a house shows its work policy and marks the inventory that policy holds ba
   const eligible = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5");
   assert.ok(eligible, "eligible work is still queued");
   assert.doesNotMatch(eligible.textContent, /held by this house/, "eligible work is not marked as filtered");
+});
+
+// The Frontline skin is a theme: it repaints labels and the map, keeps a
+// per-browser choice, and never edits the snapshot it is drawn from.
+async function openFrontline({ search = "" } = {}) {
+  const elements = installFixture();
+  document.body = document.createElement("body");
+  const stored = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (stored.has(key) ? stored.get(key) : null),
+    setItem: (key, value) => stored.set(key, String(value)),
+  };
+  // The token decides whether the client streams at all, so the fixture keeps
+  // the one installFixture hands to the other tests.
+  globalThis.location = { hash: "#token=test-key", pathname: "/", search };
+  const live = structuredClone(baseState);
+  live.demo = false;
+  const message = `data: ${JSON.stringify(live)}\n\n`;
+  let served = false;
+  globalThis.fetch = async (url) => {
+    if (url === "/api/events")
+      return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(message), done: false }) : { done: true }) }) } };
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?frontline=${search}-${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  return { elements, stored, live };
+}
+
+test("the frontline skin relabels the town, holds its own faction, and leaves state alone", async () => {
+  const { elements, stored, live } = await openFrontline();
+  assert.equal(document.body.dataset.skin, "town");
+  assert.equal(elements["legend-active"].textContent, "Working");
+  assert.equal(elements["activity-heading"].textContent, "Along the way");
+  assert.equal(elements["faction-picker"].hidden, true, "the town skin has no armies");
+  assert.equal(elements["skin-note"].hidden, true);
+
+  const before = JSON.stringify(live);
+  elements.skin.click();
+  assert.equal(document.body.dataset.skin, "frontline");
+  assert.equal(stored.get("brokk-town-skin"), "frontline", "the chosen theme is remembered");
+  assert.equal(elements["legend-active"].textContent, "Engaged");
+  assert.equal(elements["legend-blocked"].textContent, "Needs support");
+  assert.equal(elements["activity-heading"].textContent, "Along the front");
+  assert.equal(elements["all-towns"].textContent, "▧ All bases");
+  assert.equal(elements["clock-eyebrow"].textContent, "CAMPAIGN CLOCK");
+  assert.match(elements["clock-note"].textContent, /strike/);
+  assert.equal(elements["faction-picker"].hidden, false, "a base flies an army");
+  assert.equal(elements["skin-note"].hidden, false);
+  assert.match(elements["skin-note"].textContent, /nothing here writes to GitHub/);
+  assert.match(elements["town-meta"].textContent, /base · sector \d+/);
+
+  const options = elements["faction-select"].children;
+  assert.equal(options.length, 4, "auto plus one option per army");
+  assert.match(options[0].textContent, /^Auto · /);
+
+  // A base names its own structures; the town's names are gone.
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  assert.match(elements.inspection.textContent, /Muster Yard|Weaver Ring|Brood Vault/);
+  assert.doesNotMatch(elements.inspection.textContent, /THE WORKSHOP/);
+
+  elements["faction-select"].value = "hive";
+  elements["faction-select"].onchange();
+  assert.equal(
+    stored.get("brokk-town-factions"),
+    JSON.stringify({ "acme/project": "hive" }),
+    "the banner a player picks is saved",
+  );
+  assert.match(elements["town-meta"].textContent, /Hive base · sector \d+/);
+  assert.equal(JSON.stringify(live), before, "the theme never edits town state");
+
+  elements.skin.click();
+  assert.equal(document.body.dataset.skin, "town");
+  assert.equal(elements["legend-active"].textContent, "Working");
+  assert.equal(elements["faction-picker"].hidden, true);
+  assert.match(elements.inspection.textContent, /THE WORKSHOP/, "the town names come back");
+});
+
+test("?skin=frontline opens the war map for whoever the link is sent to", async () => {
+  const { elements } = await openFrontline({ search: "?skin=frontline" });
+  assert.equal(document.body.dataset.skin, "frontline");
+  assert.equal(elements["activity-eyebrow"].textContent, "LIVE FIELD JOURNAL");
+  assert.equal(elements["skin"].textContent, "Theme: Frontline");
+  assert.equal(elements["skin"].title, "Switch back to the Brokk Town neighbourhood");
+});
+
+test("a faction choice survives blocked browser storage for the session", async () => {
+  const { elements } = await openFrontline({ search: "?skin=frontline" });
+  let reads = 0;
+  localStorage.getItem = () => { reads++; return null; };
+  localStorage.setItem = () => { throw new Error("storage unavailable"); };
+
+  elements["faction-select"].value = "hive";
+  elements["faction-select"].onchange();
+  assert.equal(elements["faction-select"].value, "hive");
+  assert.match(elements["town-meta"].textContent, /Hive base/);
+
+  elements.skin.click();
+  elements.skin.click();
+  assert.equal(elements["faction-select"].value, "hive", "the choice lasts through redraws");
+  assert.equal(reads, 0, "redraws do not read browser storage");
 });

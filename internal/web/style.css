@@ -1771,3 +1771,79 @@ textarea {
   opacity: 0.55;
   border-style: dashed;
 }
+
+/* Frontline is a theme: it repaints the chrome and the field, and nothing
+   else. The base palette below is the only thing a skin may change here, so a
+   new theme never has to touch layout or state. */
+body[data-skin="frontline"] {
+  --green: #9de3ff;
+  --line: #2b4050;
+  --panel: #0d1a22;
+  --muted: #93a9b6;
+  background: #070d12;
+}
+body[data-skin="frontline"] header {
+  background: #0f1b24;
+  border-bottom-color: #2b4050;
+}
+body[data-skin="frontline"] .sidebar {
+  background: #0b151d;
+}
+body[data-skin="frontline"] .primary {
+  color: #05141b;
+}
+body[data-skin="frontline"] .world-legend {
+  color: #9dc6dc;
+}
+.skin-toggle[data-skin="frontline"] {
+  color: #9de3ff;
+  border-color: #2b4050;
+}
+
+/* The overview strip shows the town's own cottages. A war theme has no
+   cottages, so the strip becomes a claimed-ground band rather than a row of
+   buildings that do not exist in the theme. */
+body[data-skin="frontline"] .town-card-houses {
+  background:
+    repeating-linear-gradient(90deg, #f2c14e22 0 10px, transparent 10px 34px),
+    linear-gradient(180deg, #101c24, #0a1116);
+  border-top: 1px solid #2b4050;
+  border-bottom: 1px solid #2b4050;
+  height: 78px;
+  opacity: 1;
+}
+
+/* The faction picker states which army a base flies. It only appears for a
+   skin that has factions, and it never changes what the base does. */
+.faction-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 11px var(--mono);
+  color: #9dc6dc;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.faction-picker[hidden] {
+  display: none;
+}
+.faction-picker select {
+  background: #0d1a22;
+  color: #dbe6ec;
+  border: 1px solid #2b4050;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: 12px var(--mono);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* A themed map still has to say what it is showing and that it is only a
+   look, so the note sits under the base's name rather than over the art. */
+.skin-note {
+  max-width: 68ch;
+  margin: 8px 0 0;
+  font: 11px var(--mono);
+  color: #8fb4c6;
+  line-height: 1.5;
+}

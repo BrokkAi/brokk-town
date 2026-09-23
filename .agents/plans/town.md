@@ -202,6 +202,58 @@
 - A discarded assessment records an event, so the operator sees the result was
   dropped rather than silently lost.
 
+## Frontline theme (browser, presentation only)
+
+- Added `internal/web/skins.js` as the single surface both themes answer
+  (landscape, structure, occupants, strike, impact, labels, faction, noun
+  rewrite) and `internal/web/frontline.js` for the war art: three armies, a
+  per-army name and tagline for all eight installations, terrain seeded by the
+  repository, a structure per role, patrolling garrisons, strike craft carrying
+  the real issue or pull request number, and impact bursts. No new image assets.
+- Every themed string is wired through `data-skin-text`, so a theme is added by
+  supplying strings and art, not by threading conditionals through render code.
+  `index.html` carries the theme button, the faction picker and a note that the
+  theme is a look rather than a lever.
+- A base's faction derives from its repository name and can be pinned per base
+  in `localStorage`; `?skin=frontline` opens the theme from a link. Nothing on
+  this path touches town state, commands, the worker protocol or GitHub, and
+  the delivered animation still follows committed events and reduced motion.
+- 8 new module tests plus 2 app tests drive the real handlers (43 → 53 browser
+  tests); `npm run check` covers both new files. Both themes were rendered in a
+  headless browser against a stubbed snapshot to check the art and labels.
+
+## Demo state recovery
+
+- `bt --demo` refused to start with "read town state: missing worker" against a
+  demo state written on 2026-09-16, before the Clarifier house and Mayor Bot
+  existed. Demo state is disposable, so `Open` now sets an unreadable demo state
+  aside as `state.rejected-<timestamp>.json`, keeps every byte at 0600, records
+  a one-time `Store.Notice()` that `bt` prints, and starts an empty demo state
+  that `town.Demo` seeds again.
+- Only a state that parsed and reports `Demo: true` is replaced, and only for a
+  store opened in demo mode. Real state — including real state left in the demo
+  directory — is still refused and left exactly as it was, and a file Town
+  cannot parse is never assumed to be disposable: that error now says where the
+  demo keeps its state and how to start over.
+- `validateState` now names the town and the missing house, so the failure that
+  began this ("missing worker") can be diagnosed from the message alone.
+- Verified against the real stale file: the demo started, the 50608-byte state
+  was preserved as `state.rejected-20260923-071158.json`, and the seeded villages
+  came back. Five store tests cover the reset, the protection of non-demo state,
+  an unparseable file, a usable demo state, and the reseeding.
+
+## PR #114 review fixes
+
+- Demo recovery now reads the `demo` marker from the saved JSON itself. A file
+  with no marker cannot open as demo or be set aside, even though the store's
+  initial in-memory state is demo; regression tests cover both valid and stale
+  files without the marker.
+- Frontline keeps faction overrides in memory for the browser session. A denied
+  `localStorage` write no longer resets the picker, and canvas redraws no
+  longer read or parse browser storage. A browser test exercises both cases.
+- Root `go test -race ./...`, `go vet ./...`, browser syntax and 54 browser
+  tests pass. The fixes landed in PR #114 through follow-up PR #116.
+
 ## issue-bot --once after a reconciliation (#104)
 
 - `step` reconciled a saved job's pull request and then fell through to fetch

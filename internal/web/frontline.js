@@ -1,0 +1,690 @@
+import { positions, roadSegments } from "./town.js";
+import { seededRandom, workerPose } from "./scenery.js";
+
+// Frontline is a look, not a lever. Every strike it draws is one delivery Town
+// already committed: the same task moving between the same two houses. It
+// reads a snapshot and paints it; it never writes to GitHub or changes what a
+// delivery means, so the theme can never move work by itself.
+
+const palettes = {
+  vanguard: {
+    id: "vanguard",
+    name: "Vanguard",
+    species: "Humans",
+    motto: "Hold the line, then take theirs.",
+    armor: "#a8bccb",
+    mid: "#3f7196",
+    dark: "#152738",
+    accent: "#8fd0ff",
+    glow: "#e9f7ff",
+    ground: "#1d2a33",
+    hazard: "#f2c14e",
+  },
+  ascendancy: {
+    id: "ascendancy",
+    name: "Ascendancy",
+    species: "Humanoid aliens",
+    motto: "We have already won, in a longer frame.",
+    armor: "#c9b6f2",
+    mid: "#6a4fbd",
+    dark: "#241a3f",
+    accent: "#d9a6ff",
+    glow: "#f6ecff",
+    ground: "#2a2440",
+    hazard: "#ffd27a",
+  },
+  hive: {
+    id: "hive",
+    name: "Hive",
+    species: "Swarm of bugs",
+    motto: "One mind, ten thousand mouths.",
+    armor: "#c9d98a",
+    mid: "#5c7a2e",
+    dark: "#1e2a12",
+    accent: "#c8f45f",
+    glow: "#eaffc0",
+    ground: "#2a3320",
+    hazard: "#ff9d4d",
+  },
+};
+
+export const factionIds = ["vanguard", "ascendancy", "hive"];
+export const factions = factionIds.map((id) => palettes[id]);
+export const installationRoles = [
+  "hall",
+  "repo",
+  "bug",
+  "feature",
+  "issue",
+  "review",
+  "release",
+  "simplifier",
+];
+
+// Each base names its own installations. The first name is what a player
+// reads on the map, the second is the compact form the journal has room for,
+// and the third is the inspector's eyebrow.
+const installationTables = {
+  vanguard: {
+    hall: ["Command Post", "Command", "THE COMMAND POST"],
+    repo: ["Watchtower", "Tower", "THE WATCHTOWER"],
+    bug: ["Interceptor Bay", "Bay", "THE INTERCEPTOR BAY"],
+    feature: ["Prototype Works", "Works", "THE PROTOTYPE WORKS"],
+    issue: ["Muster Yard", "Yard", "THE MUSTER YARD"],
+    review: ["Sentry Line", "Sentry", "THE SENTRY LINE"],
+    release: ["Launch Pad", "Pad", "THE LAUNCH PAD"],
+    simplifier: ["Salvage Depot", "Depot", "THE SALVAGE DEPOT"],
+  },
+  ascendancy: {
+    hall: ["Nexus Spire", "Nexus", "THE NEXUS SPIRE"],
+    repo: ["Oculus Array", "Oculus", "THE OCULUS ARRAY"],
+    bug: ["Stalker Roost", "Roost", "THE STALKER ROOST"],
+    feature: ["Genesis Vault", "Vault", "THE GENESIS VAULT"],
+    issue: ["Weaver Ring", "Ring", "THE WEAVER RING"],
+    review: ["Warden Lattice", "Lattice", "THE WARDEN LATTICE"],
+    release: ["Rift Gate", "Gate", "THE RIFT GATE"],
+    simplifier: ["Refinery Choir", "Choir", "THE REFINERY CHOIR"],
+  },
+  hive: {
+    hall: ["Queen's Chamber", "Queen", "THE QUEEN'S CHAMBER"],
+    repo: ["Antenna Mound", "Mound", "THE ANTENNA MOUND"],
+    bug: ["Hunter Warren", "Warren", "THE HUNTER WARREN"],
+    feature: ["Hatchery", "Hatchery", "THE HATCHERY"],
+    issue: ["Brood Vault", "Brood", "THE BROOD VAULT"],
+    review: ["Sentinel Nest", "Nest", "THE SENTINEL NEST"],
+    release: ["Spore Cannon", "Cannon", "THE SPORE CANNON"],
+    simplifier: ["Digester", "Digester", "THE DIGESTER"],
+  },
+};
+
+function hash(value) {
+  let n = 2166136261;
+  for (const c of String(value ?? "")) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
+  return Math.abs(n >>> 0);
+}
+
+// A base keeps its faction between restarts and machines: the assignment is a
+// pure function of the repository, so two people looking at the same town see
+// the same war.
+export function factionFor(townId) {
+  return factionIds[hash(townId) % factionIds.length];
+}
+
+// factionOf honors a player's choice and falls back to the derived base
+// faction for anything else, so a stale saved value can never blank the map.
+export function factionOf(townId, override) {
+  return factionIds.includes(override) ? override : factionFor(townId);
+}
+
+export function paletteFor(factionId) {
+  return palettes[factionId] || palettes.vanguard;
+}
+
+export function factionName(factionId) {
+  return paletteFor(factionId).name;
+}
+
+// A raid that arrives from outside the map belongs to the next faction in the
+// cycle: the invader is never the base it is hitting.
+export function rivalFaction(factionId) {
+  const index = factionIds.indexOf(factionId);
+  return factionIds[(index + 1) % factionIds.length];
+}
+
+export function sectorNumber(townId) {
+  return (hash(townId) % 89) + 10;
+}
+
+export function sectorLabel(townId, factionId) {
+  return `${factionName(factionId)} base · sector ${sectorNumber(townId)}`;
+}
+
+// Status strings the service already writes ("Town is paused", "the house is
+// waiting") carry the town's nouns. The skin renames the noun and leaves the
+// meaning alone, so the header never claims anything the service did not say.
+const wordMap = {
+  town: "base",
+  towns: "bases",
+  house: "structure",
+  houses: "structures",
+  delivery: "strike",
+  deliveries: "strikes",
+  neighborhood: "base",
+  neighborhoods: "bases",
+};
+
+export function frontlineWords(text) {
+  return String(text ?? "").replace(
+    /\b(town|towns|house|houses|delivery|deliveries|neighborhood|neighborhoods)\b/gi,
+    (word) => {
+      const replacement = wordMap[word.toLowerCase()];
+      if (!replacement) return word;
+      return word[0] === word[0].toUpperCase()
+        ? replacement[0].toUpperCase() + replacement.slice(1)
+        : replacement;
+    },
+  );
+}
+
+function tableFor(factionId) {
+  return installationTables[factionId] || installationTables.vanguard;
+}
+
+export function installationName(role, factionId) {
+  return (tableFor(factionId)[role] || [`Bastion`, `Bastion`, `THE BASTION`])[0];
+}
+
+export function installationShortName(role, factionId) {
+  return (tableFor(factionId)[role] || [`Bastion`, `Bastion`, `THE BASTION`])[1];
+}
+
+export function installationTagline(role, factionId) {
+  return (tableFor(factionId)[role] || [`Bastion`, `Bastion`, `THE BASTION`])[2];
+}
+
+// The canvas carries the real identifier a player would type into a bug
+// report; the strike frame puts a target marker in front of it.
+export function targetLabel(cargo) {
+  const text = String(cargo ?? "").replace("issue:", "#").replace("pr:", "PR #");
+  return text ? `▸ ${text.slice(0, 12)}` : "▸ strike";
+}
+
+function poly(c, points, fill) {
+  c.fillStyle = fill;
+  c.beginPath();
+  points.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+  c.closePath();
+  c.fill();
+}
+
+function bar(c, x, y, w, h, fill) {
+  c.fillStyle = fill;
+  c.fillRect(x, y, w, h);
+}
+
+function ring(c, x, y, rx, ry, color, width = 2) {
+  c.strokeStyle = color;
+  c.lineWidth = width;
+  c.beginPath();
+  c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  c.stroke();
+}
+
+function circle(c, x, y, r, color) {
+  c.fillStyle = color;
+  c.beginPath();
+  c.ellipse(x, y, r, r, 0, 0, Math.PI * 2);
+  c.fill();
+}
+
+function plate(c, p, x, y) {
+  c.save();
+  c.translate(x, y);
+  poly(c, [[-84, 0], [-60, -26], [60, -26], [84, 0], [60, 26], [-60, 26]], p.dark);
+  poly(c, [[-70, 0], [-52, -18], [52, -18], [70, 0], [52, 18], [-52, 18]], p.ground);
+  c.strokeStyle = p.accent;
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(-70, 0);
+  c.lineTo(-52, -18);
+  c.lineTo(52, -18);
+  c.lineTo(70, 0);
+  c.stroke();
+  // Hazard chevrons mark every base as claimed ground.
+  for (let i = 0; i < 5; i++) {
+    poly(
+      c,
+      [
+        [-30 + i * 14, 14],
+        [-22 + i * 14, 14],
+        [-28 + i * 14, 22],
+        [-36 + i * 14, 22],
+      ],
+      i % 2 ? p.hazard : p.mid,
+    );
+  }
+  c.restore();
+}
+
+function banner(c, x, y, p, height, motion, now) {
+  bar(c, x, y - height, 3, height, p.armor);
+  const wave = motion ? Math.sin(now / 260 + x) * 3 : 0;
+  poly(
+    c,
+    [
+      [x + 3, y - height],
+      [x + 3, y - height + 20],
+      [x + 26 + wave, y - height + 10],
+      [x + 3, y - height],
+    ],
+    p.accent,
+  );
+  poly(
+    c,
+    [
+      [x + 3, y - height],
+      [x + 3, y - height + 20],
+      [x + 16 + wave / 2, y - height + 12],
+    ],
+    p.mid,
+  );
+}
+
+// Every installation is built from the same base plate and faction palette so
+// a base reads as one army, while the silhouette says which job it does.
+const shapes = {
+  hall(c, p, now, motion) {
+    bar(c, -46, -22, 92, 24, p.mid);
+    bar(c, -26, -112, 52, 92, p.dark);
+    bar(c, -26, -112, 52, 7, p.armor);
+    for (let i = 0; i < 4; i++)
+      bar(c, -16, -100 + i * 21, 32, 8, i % 2 ? p.accent : p.glow);
+    circle(c, 0, -132, 21, p.mid);
+    circle(c, 0, -134, 15, p.dark);
+    circle(c, 0, -136, 9, p.accent);
+    bar(c, -2, -186, 4, 40, p.armor);
+    circle(c, 0, -190, 4 + (motion ? Math.abs(Math.sin(now / 420)) * 3 : 0), p.glow);
+    banner(c, 30, -26, p, 74, motion, now);
+    banner(c, -34, -26, p, 60, motion, now + 90);
+  },
+  repo(c, p, now, motion) {
+    bar(c, -30, -30, 60, 32, p.dark);
+    poly(c, [[-30, -30], [0, -68], [30, -30]], p.mid);
+    bar(c, -5, -150, 10, 86, p.armor);
+    for (let i = 0; i < 4; i++) {
+      const y = -64 - i * 22;
+      bar(c, -34, y, 68, 4, p.armor);
+    }
+    // The sweep is animation only: it never implies a scan Town did not run.
+    const angle = motion ? (now / 1400) % (Math.PI * 2) : -0.4;
+    c.save();
+    c.translate(0, -150);
+    c.rotate(angle);
+    poly(c, [[0, 0], [58, -13], [58, 6]], p.accent);
+    c.restore();
+    ring(c, 0, -150, 22, 8, p.glow, 3);
+    circle(c, 0, -150, 7, p.glow);
+  },
+  bug(c, p, now, motion) {
+    poly(c, [[-52, 0], [-38, -40], [38, -40], [52, 0]], p.dark);
+    poly(c, [[-38, -40], [-20, -66], [20, -66], [38, -40]], p.mid);
+    bar(c, -20, -70, 40, 8, p.armor);
+    for (const side of [-1, 1]) {
+      c.save();
+      c.translate(side * 22, -66);
+      c.rotate(side * 0.42);
+      bar(c, -4, -62, 8, 62, p.armor);
+      bar(c, -4, -62, 4, 62, p.glow);
+      c.restore();
+      const kick = motion ? Math.sin(now / 90 + side) * 3 : 0;
+      circle(c, side * 40, -116 + kick, 6, p.hazard);
+    }
+    circle(c, 0, -78, 9, p.accent);
+  },
+  feature(c, p, now, motion) {
+    bar(c, -50, -46, 100, 48, p.dark);
+    bar(c, -50, -46, 100, 8, p.mid);
+    bar(c, 14, -122, 20, 78, p.armor);
+    bar(c, 14, -122, 20, 8, p.mid);
+    for (let i = 0; i < 3; i++) {
+      const drift = motion ? ((now / 900 + i / 3) % 1) : i / 3;
+      circle(c, 24 + drift * 8, -132 - drift * 34, 7 + drift * 9, `rgba(233,247,255,${(1 - drift) * 0.35})`);
+    }
+    bar(c, -40, -34, 34, 30, p.dark);
+    bar(c, -36, -30, 26, 22, p.hazard);
+    bar(c, -36, -30, 26, 6, p.glow);
+    banner(c, -52, -46, p, 58, motion, now);
+  },
+  issue(c, p, now, motion) {
+    bar(c, -56, -44, 58, 46, p.dark);
+    bar(c, -56, -44, 58, 7, p.armor);
+    bar(c, 6, -36, 50, 38, p.mid);
+    bar(c, 6, -36, 50, 6, p.armor);
+    for (let i = 0; i < 3; i++) bar(c, -48 + i * 18, -34, 10, 14, p.glow);
+    for (let i = 0; i < 2; i++) bar(c, 16 + i * 20, -28, 10, 12, p.glow);
+    banner(c, -40, -46, p, 84, motion, now);
+    banner(c, 40, -38, p, 66, motion, now + 140);
+    poly(c, [[-70, 2], [-58, -12], [-46, 2]], p.hazard);
+  },
+  review(c, p, now, motion) {
+    bar(c, -62, -54, 124, 56, p.dark);
+    bar(c, -62, -54, 124, 9, p.armor);
+    for (let i = 0; i < 5; i++) bar(c, -56 + i * 24, -66, 14, 14, p.mid);
+    for (let i = 0; i < 5; i++) bar(c, -50 + i * 24, -40, 8, 20, p.glow);
+    poly(c, [[-34, -54], [0, -96], [34, -54]], p.mid);
+    poly(c, [[-22, -54], [0, -82], [22, -54]], p.accent);
+    const pulse = motion ? 0.55 + Math.abs(Math.sin(now / 700)) * 0.35 : 0.7;
+    c.globalAlpha = pulse;
+    bar(c, -3, -76, 6, 22, p.glow);
+    c.globalAlpha = 1;
+    banner(c, 58, -54, p, 70, motion, now);
+  },
+  release(c, p, now, motion) {
+    bar(c, -40, -20, 80, 22, p.mid);
+    bar(c, -26, -122, 52, 102, p.dark);
+    bar(c, -26, -122, 52, 8, p.armor);
+    bar(c, -14, -112, 28, 84, p.ground);
+    for (let i = 0; i < 5; i++)
+      poly(
+        c,
+        [
+          [-40 + i * 16, -12],
+          [-32 + i * 16, -12],
+          [-38 + i * 16, -2],
+          [-46 + i * 16, -2],
+        ],
+        i % 2 ? p.hazard : p.mid,
+      );
+    bar(c, -52, -140, 6, 60, p.armor);
+    bar(c, 46, -140, 6, 60, p.armor);
+    bar(c, -52, -140, 104, 6, p.armor);
+    const lift = motion ? Math.abs(Math.sin(now / 620)) : 0.4;
+    poly(
+      c,
+      [
+        [-12, -126],
+        [12, -126],
+        [4 + lift * 3, -150],
+        [-4 - lift * 3, -150],
+      ],
+      p.glow,
+    );
+    circle(c, 0, -126, 6 + lift * 4, `rgba(255,255,255,${0.25 + lift * 0.4})`);
+  },
+  simplifier(c, p, now, motion) {
+    for (let i = 0; i < 3; i++) {
+      const x = -54 + i * 38;
+      bar(c, x, -92, 30, 92, p.dark);
+      bar(c, x, -92, 30, 7, p.armor);
+      circle(c, x + 15, -92, 15, p.mid);
+      bar(c, x + 4, -70, 22, 8, p.accent);
+      bar(c, x + 4, -46, 22, 8, p.accent);
+    }
+    bar(c, -66, -30, 132, 8, p.armor);
+    for (let i = 0; i < 3; i++) bar(c, -34 + i * 38, -128, 6, 36, p.armor);
+    bar(c, 42, -150, 10, 66, p.mid);
+    const flare = motion ? 0.4 + Math.abs(Math.sin(now / 300)) * 0.6 : 0.6;
+    poly(
+      c,
+      [
+        [36, -152],
+        [58, -152],
+        [47 + (motion ? Math.sin(now / 220) * 4 : 0), -176 - flare * 12],
+      ],
+      p.hazard,
+    );
+  },
+};
+
+export function paintInstallation(c, { role, x, y, faction, now = 0, motion = true }) {
+  const p = paletteFor(faction),
+    shape = shapes[role] || shapes.hall;
+  plate(c, p, x, y + 52);
+  c.save();
+  c.translate(x, y + 52);
+  // Beams and domes read as one army without hiding what an installation does.
+  shape(c, p, now, motion);
+  c.restore();
+}
+
+// Garrisons stand in for the walking workers of the town skin: same committed
+// status, drawn as a patrol around the installation that is working.
+function craft(c, p, { x, y, direction = 1, scale = 1, now = 0, motion = true, faction }) {
+  c.save();
+  c.translate(x, y);
+  c.scale(direction * scale, scale);
+  const flick = motion ? Math.sin(now / 70) * 1.4 : 0;
+  if (faction === "ascendancy") {
+    poly(c, [[0, -9], [30, -3], [36, 6], [-8, 6]], p.armor);
+    poly(c, [[0, -9], [18, -1], [4, 5]], p.accent);
+    ring(c, 8, 0, 26, 8, p.mid, 2);
+    circle(c, -10, 1, 4 + flick * 0.4, p.glow);
+  } else if (faction === "hive") {
+    circle(c, 0, 0, 12, p.mid);
+    poly(c, [[-2, -6], [-34, -20], [-12, 2]], p.armor);
+    poly(c, [[-2, 6], [-34, 22], [-12, 0]], p.armor);
+    poly(c, [[6, -5], [30, -16], [25, 2]], p.accent);
+    poly(c, [[6, 5], [30, 16], [25, -2]], p.accent);
+    circle(c, 9, 0, 6, p.glow);
+    circle(c, -13, 0, 4 + flick * 0.3, p.hazard);
+  } else {
+    poly(c, [[-24, -11], [22, -4], [30, 0], [22, 4], [-24, 11]], p.armor);
+    poly(c, [[-6, -8], [16, -2], [16, 2], [-6, 8]], p.accent);
+    poly(c, [[-24, -11], [-34, -18], [-16, -4]], p.mid);
+    poly(c, [[-24, 11], [-34, 18], [-16, 4]], p.mid);
+    circle(c, -26, 0, 5 + flick * 0.35, p.glow);
+  }
+  c.restore();
+}
+
+export function drawGarrison(c, { role, x, y, faction, now, motion = true }) {
+  const p = paletteFor(faction),
+    pose = workerPose(role, now, motion),
+    t = pose.phase;
+  for (let i = 0; i < 3; i++) {
+    const angle = motion ? t * 0.42 + i * 2.1 : i * 2.1,
+      rx = 62 + Math.sin(angle * 1.7) * 8,
+      cx = x + Math.cos(angle) * rx,
+      cy = y + 46 + Math.sin(angle) * 17;
+    c.fillStyle = "#0d151b70";
+    c.beginPath();
+    c.ellipse(cx + 3, cy + 16, 17, 5, 0, 0, Math.PI * 2);
+    c.fill();
+    craft(c, p, {
+      faction,
+      x: cx,
+      y: cy,
+      direction: Math.cos(angle) >= 0 ? 1 : -1,
+      scale: 0.55,
+      now: now + i * 120,
+      motion,
+    });
+    if (motion && pose.working) {
+      const muzzle = (t * 1.4 + i / 3) % 1;
+      c.fillStyle = `rgba(255,236,180,${(1 - muzzle) * 0.8})`;
+      c.fillRect(cx + 16, cy - 3 - muzzle * 12, 3, 3);
+    }
+  }
+}
+
+// A strike is one committed delivery drawn as an attack run: a faction craft
+// crossing the base, a target marker carrying the real issue or PR number, and
+// an impact burst where the work actually arrived.
+export function drawStrike(c, { x, y, cargo, faction, now, progress = 0, direction = 1, motion = true }) {
+  const p = paletteFor(faction),
+    lift = motion ? Math.sin(now / 110) * 2.4 : 0,
+    bob = y + lift;
+  // A halo keeps a craft legible over its own faction's dark ground.
+  c.fillStyle = `${p.accent}22`;
+  c.beginPath();
+  c.ellipse(x, bob, 40, 22, 0, 0, Math.PI * 2);
+  c.fill();
+  c.fillStyle = "#0b1216a0";
+  c.beginPath();
+  c.ellipse(x + 4, y + 26, 30, 8, 0, 0, Math.PI * 2);
+  c.fill();
+  for (let i = 1; i <= 4; i++) {
+    const trail = i * 13;
+    c.fillStyle = `rgba(255,255,255,${0.22 - i * 0.045})`;
+    c.beginPath();
+    c.ellipse(x - direction * trail, bob + Math.sin(now / 90 + i) * 1.6, 9 - i * 1.4, 4 - i * 0.5, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+  for (let i = 0; i < 3; i++) {
+    const dust = motion ? (now / 420 + i / 3) % 1 : i / 3;
+    c.fillStyle = `rgba(206,222,214,${(1 - dust) * 0.22})`;
+    c.beginPath();
+    c.ellipse(x - direction * (26 + dust * 30), y + 20 - dust * 6, 2 + dust * 5, 2 + dust * 2, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+  craft(c, p, { faction, x, y: bob, direction, scale: 1.2, now, motion });
+  const pulse = 1 + (motion ? Math.sin(now / 160) * 0.08 : 0);
+  ring(c, x, bob, 30 * pulse, 30 * pulse, `${p.accent}bb`, 2);
+  c.strokeStyle = `${p.glow}55`;
+  c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(x - 46, bob);
+  c.lineTo(x - 24, bob);
+  c.moveTo(x + 24, bob);
+  c.lineTo(x + 46, bob);
+  c.stroke();
+  const label = targetLabel(cargo);
+  c.font = "11px ui-monospace, monospace";
+  c.textAlign = "center";
+  c.fillStyle = "#0b1216cc";
+  c.fillRect(x - 46, bob - 52, 92, 18);
+  c.fillStyle = p.accent;
+  c.fillText(label, x, bob - 39);
+  // The progress bar makes the run legible even with motion turned off.
+  c.fillStyle = "#0b1216aa";
+  c.fillRect(x - 30, bob + 30, 60, 4);
+  c.fillStyle = p.accent;
+  c.fillRect(x - 30, bob + 30, 60 * Math.max(0, Math.min(1, progress)), 4);
+}
+
+export function drawImpact(c, { x, y, faction, age = 0 }) {
+  const p = paletteFor(faction),
+    t = Math.max(0, Math.min(1, age)),
+    radius = 16 + t * 74;
+  c.fillStyle = `rgba(255,247,224,${(1 - t) * 0.5})`;
+  c.beginPath();
+  c.ellipse(x, y, 26 * (1 - t) + 8, 20 * (1 - t) + 6, 0, 0, Math.PI * 2);
+  c.fill();
+  ring(c, x, y, radius, radius * 0.42, `${p.accent}${t > 0.6 ? "55" : "cc"}`, 3 - t * 2);
+  ring(c, x, y, radius * 0.62, radius * 0.26, `${p.glow}77`, 2);
+  for (let i = 0; i < 9; i++) {
+    const angle = (i / 9) * Math.PI * 2 + t * 0.6,
+      distance = radius * (0.7 + (i % 3) * 0.12);
+    c.fillStyle = i % 2 ? p.hazard : p.armor;
+    c.fillRect(x + Math.cos(angle) * distance - 2, y + Math.sin(angle) * distance * 0.46 - 2, 4 - t * 2, 4 - t * 2);
+  }
+  c.fillStyle = `rgba(24,18,12,${(1 - t) * 0.4})`;
+  c.beginPath();
+  c.ellipse(x, y + 6, 40 * (1 - t) + 12, 15 * (1 - t) + 5, 0, 0, Math.PI * 2);
+  c.fill();
+}
+
+// The map itself: ashen ground, craters, armored trackways between the
+// installations, and a scarred no-man's-land band across the middle. Every
+// value comes from the base's own seed, so a base's terrain never moves.
+export function frontlineLandscape(seed, faction) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1120;
+  canvas.height = 680;
+  const c = canvas.getContext("2d"),
+    p = paletteFor(faction),
+    rand = seededRandom(`${seed}:${faction}`),
+    ground = c.createLinearGradient(0, 0, 900, 680);
+  ground.addColorStop(0, p.dark);
+  ground.addColorStop(0.55, "#12161c");
+  ground.addColorStop(1, "#0a0e12");
+  c.fillStyle = ground;
+  c.fillRect(0, 0, 1120, 680);
+  for (let i = 0; i < 70; i++) {
+    const x = rand() * 1120,
+      y = rand() * 680;
+    circle(c, x, y, 24 + rand() * 70, i % 2 ? "#1b2430" : "#0e1218");
+  }
+  for (let i = 0; i < 2400; i++) {
+    const x = rand() * 1120,
+      y = rand() * 680;
+    c.fillStyle = ["#2a3644", "#161d25", "#3b4a58", "#0f141a"][i % 4];
+    c.fillRect(x, y, 1 + rand() * 3, 1 + rand() * 2);
+  }
+  // Craters: a lit rim on the far side and a shadow inside.
+  for (let i = 0; i < 22; i++) {
+    const x = 40 + rand() * 1040,
+      y = 40 + rand() * 600,
+      r = 12 + rand() * 46;
+    ring(c, x, y, r, r * 0.5, "#46576755", 3);
+    ring(c, x, y, r * 0.72, r * 0.36, "#05090e88", 6);
+    arcRim(c, x, y, r, p.armor);
+  }
+  // No-man's-land: a diagonal scarred band that crosses the delivery routes.
+  c.save();
+  c.globalAlpha = 0.5;
+  poly(c, [[0, 300], [1120, 240], [1120, 320], [0, 380]], "#0a0d11");
+  c.globalAlpha = 1;
+  for (let i = 0; i < 26; i++) {
+    const x = rand() * 1120,
+      y = 300 + (x / 1120) * -60 + rand() * 70;
+    bar(c, x, y, 6 + rand() * 20, 3 + rand() * 5, i % 3 ? "#2b2118" : "#3d4a3a");
+  }
+  c.restore();
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  // Armored trackways follow the same geometry the deliveries travel.
+  for (const [a, b] of roadSegments) {
+    c.beginPath();
+    c.moveTo(...a);
+    c.lineTo(...b);
+    c.strokeStyle = "#05090dcc";
+    c.lineWidth = 44;
+    c.stroke();
+    c.strokeStyle = "#33404d";
+    c.lineWidth = 34;
+    c.stroke();
+    c.strokeStyle = `${p.mid}77`;
+    c.lineWidth = 26;
+    c.stroke();
+  }
+  c.setLineDash([16, 18]);
+  for (const [a, b] of roadSegments) {
+    c.beginPath();
+    c.moveTo(...a);
+    c.lineTo(...b);
+    c.strokeStyle = `${p.hazard}66`;
+    c.lineWidth = 3;
+    c.stroke();
+  }
+  c.setLineDash([]);
+  for (const [role, [x, y]] of Object.entries(positions)) {
+    if (role === "outside") continue;
+    oval(c, x, y + 70, 118, 34, `${p.dark}bb`);
+    oval(c, x - 6, y + 64, 104, 26, `${p.ground}cc`);
+  }
+  // Barricades, wreckage and spent shells break up the open ground.
+  for (const [x, y, rotation] of [
+    [168, 262, 0.1],
+    [520, 246, -0.2],
+    [884, 268, 0.15],
+    [236, 596, -0.1],
+    [768, 612, 0.2],
+    [1046, 372, -0.12],
+  ]) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rotation);
+    bar(c, -46, -6, 92, 12, "#2f3a44");
+    bar(c, -46, -6, 92, 4, "#4d5b66");
+    for (let i = 0; i < 4; i++) poly(c, [[-40 + i * 24, -14], [-24 + i * 24, -14], [-36 + i * 24, 2], [-52 + i * 24, 2]], i % 2 ? p.hazard : "#2f3a44");
+    c.restore();
+  }
+  for (let i = 0; i < 14; i++) {
+    const x = rand() * 1120,
+      y = rand() * 680;
+    poly(c, [[x, y], [x + 22, y - 8], [x + 30, y + 6], [x + 8, y + 14]], "#243039");
+    bar(c, x + 4, y + 2, 18, 3, `${p.armor}66`);
+  }
+  const shade = c.createRadialGradient(560, 320, 180, 560, 360, 690);
+  shade.addColorStop(0, "#00000000");
+  shade.addColorStop(1, "#00000088");
+  c.fillStyle = shade;
+  c.fillRect(0, 0, 1120, 680);
+  return canvas;
+}
+
+function arcRim(c, x, y, r, color) {
+  c.strokeStyle = `${color}44`;
+  c.lineWidth = 2;
+  c.beginPath();
+  c.ellipse(x, y - r * 0.18, r, r * 0.5, 0, Math.PI, Math.PI * 2);
+  c.stroke();
+}
+
+function oval(c, x, y, rx, ry, color) {
+  c.fillStyle = color;
+  c.beginPath();
+  c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  c.fill();
+}
