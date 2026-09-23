@@ -153,12 +153,39 @@ type GitHub interface {
 	Contains(context.Context, string, string, string) (bool, error)
 }
 
-type GitHubClient struct{}
+type GitHubClient struct {
+	// Timeout bounds each gh invocation; zero means DefaultGitHubTimeout.
+	// Town's own GitHub reads and writes, such as the merge gate, run outside
+	// any worker attempt, so without it a stalled gh would hold a house
+	// indefinitely.
+	Timeout time.Duration
+}
+
+// DefaultGitHubTimeout bounds one gh invocation when GitHubClient.Timeout is
+// unset.
+const DefaultGitHubTimeout = time.Minute
+
+// gh runs one bounded gh command. When the bound expires, the error says so
+// instead of reporting only the killed process.
+func (g GitHubClient) gh(ctx context.Context, args ...string) (string, error) {
+	timeout := g.Timeout
+	if timeout <= 0 {
+		timeout = DefaultGitHubTimeout
+	}
+	bounded, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	text, err := osrun.Run(bounded, "", nil, append([]string{"gh"}, args...)...)
+	if err != nil && bounded.Err() != nil {
+		if ctx.Err() != nil {
+			return text, fmt.Errorf("gh %s stopped: %w", args[0], errors.Join(ctx.Err(), err))
+		}
+		return text, fmt.Errorf("gh %s timed out after %s: %w", args[0], timeout, errors.Join(context.DeadlineExceeded, err))
+	}
+	return text, err
+}
 
 func (g GitHubClient) api(ctx context.Context, method, path string, body any, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	args := []string{"gh", "api", "--hostname", "github.com", "--method", method, path}
+	args := []string{"api", "--hostname", "github.com", "--method", method, path}
 	if body != nil {
 		f, err := os.CreateTemp("", "brokk-town-request-*.json")
 		if err != nil {
@@ -174,7 +201,7 @@ func (g GitHubClient) api(ctx context.Context, method, path string, body any, ou
 		}
 		args = append(args, "--input", f.Name())
 	}
-	text, err := osrun.Run(ctx, "", nil, args...)
+	text, err := g.gh(ctx, args...)
 	if err != nil {
 		return err
 	}
@@ -233,7 +260,7 @@ func (g GitHubClient) Discussion(ctx context.Context, repo string, n int) ([]Dis
 }
 func (g GitHubClient) Gate(ctx context.Context, repo string, n int) (MergeGate, error) {
 	var gate MergeGate
-	raw, err := osrun.Run(ctx, "", nil, "gh", "pr", "view", fmt.Sprint(n), "--repo", repo, "--json", "headRefOid,baseRefOid,baseRefName,isDraft,state,mergeable,mergeStateStatus,reviewDecision")
+	raw, err := g.gh(ctx, "pr", "view", fmt.Sprint(n), "--repo", repo, "--json", "headRefOid,baseRefOid,baseRefName,isDraft,state,mergeable,mergeStateStatus,reviewDecision")
 	if err != nil {
 		return gate, err
 	}

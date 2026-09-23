@@ -435,6 +435,23 @@
   the legacy `thought_level` effort (fails with plain `SetEffort`).
 - `bundle.json` moves review-bot to the next patch at the upgrade commit.
 
+## Documentation drift (#29)
+
+- `GitHubClient.Gate` and `api()` share one bounded `gh` runner
+  (`GitHubClient.Timeout`, default one minute), so a stalled `gh pr view`
+  cannot hold the review house's merge pass. An expired bound reports
+  "gh ... timed out after 1m0s" rather than a killed process; a caller's own
+  cancellation is reported as that. Worker jobs keep the two-hour
+  `workerDeadline`.
+- `bt settings --merge-policy bot|manual|all` sets the town policy through the
+  existing settings API; it refuses `--role`.
+- README states that config-file entries get no defaults, that a release retry
+  starts a paused release house (a task retry does not), and what each
+  deadline covers.
+- Demo paper-trail opens with its own report instead of orchard's.
+- The README keyboard map no longer exists; the browser help dialog lists the
+  current 0–8 shortcuts. Release docs agree on 0.6.2.
+
 ## Reopened intake (#94)
 
 - Reconcile sent every reopened or unlocked issue to `queued` without changing
