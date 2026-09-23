@@ -291,8 +291,16 @@ func validatePublished(c Config, j *Job, r *RemoteReview) error {
 		return errors.New("published review does not match saved publication intent")
 	}
 	u, err := url.Parse(r.URL)
-	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, c.GitHub.Host) || u.User != nil || u.RawQuery != "" || u.RawPath != "" || u.Path != fmt.Sprintf("/%s/pull/%d", c.GitHubRepo(), j.PR.Number) || u.Fragment != fmt.Sprintf("pullrequestreview-%d", r.ID) {
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, c.GitHub.Host) || u.User != nil || u.RawQuery != "" || u.RawPath != "" || u.Fragment != fmt.Sprintf("pullrequestreview-%d", r.ID) {
+		return errors.New("published review URL does not match target PR")
+	}
+	repo, suffixed := strings.CutSuffix(u.Path, fmt.Sprintf("/pull/%d", j.PR.Number))
+	repo, prefixed := strings.CutPrefix(repo, "/")
+	if !suffixed || !prefixed || !sameRepo(repo, c.GitHubRepo()) {
 		return errors.New("published review URL does not match target PR")
 	}
 	return nil
 }
+
+// sameRepo compares owner/repository slugs as GitHub does: ASCII case-insensitively.
+func sameRepo(a, b string) bool { return slug.MatchString(a) && strings.EqualFold(a, b) }
