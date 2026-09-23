@@ -3,8 +3,8 @@
     "bug": {
       "project": "bug-bot",
       "command": "bbb",
-      "version": "0.5.0",
-      "source_commit": "a8c97c43834f3905e7b56bc927e20225ed0b8e49"
+      "version": "0.6.0",
+      "source_commit": "29d20411d60b0eab94910346efef28d42c9c66ac"
     },
     "feature": {
       "project": "feature-bot",
@@ -27,8 +27,8 @@
     "release": {
       "project": "release-bot",
       "command": "brb",
-      "version": "0.7.0",
-      "source_commit": "3ee33fa8e56c2d6b5858bc9b375a0e2f319ac011"
+      "version": "0.8.0",
+      "source_commit": "328694104cb6ce20d8276a79a517ff75809a12e8"
     },
     "repo": {
       "project": "repo-bot",
