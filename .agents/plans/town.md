@@ -202,6 +202,24 @@
 - A discarded assessment records an event, so the operator sees the result was
   dropped rather than silently lost.
 
+## Reopened intake (#94)
+
+- Reconcile sent every reopened or unlocked issue to `queued` without changing
+  its house, so an issue closed before Simplifier or the Mayor handled it was
+  left `simplifier/queued` or `hall/queued`, which no worker selects. A pull
+  request reopened from Simplifier or Mayoral intake skipped intake and went
+  straight to Review.
+- `resume` now derives where the task returns from its house: Simplifier →
+  `simplifying`, Town Hall → `awaiting_mayor` with a pending decision (issues
+  and outside pull requests), a Simplifier auto-decline stays `declined`, and
+  work past intake returns to Issue or Review as before. A reopened pull request
+  resumes before draft or lock state applies, so a later revision cannot carry
+  it out of intake.
+- Closure clears only a pending decision (the invariant keeps pending in Town
+  Hall); admitted and declined decisions survive it, and a declined pull request
+  stays declined like a declined issue. An issue already stranded `queued`
+  outside Issue is healed on the next inventory.
+
 ## Frontline theme (browser, presentation only)
 
 - Added `internal/web/skins.js` as the single surface both themes answer
