@@ -196,16 +196,27 @@ const standaloneBuildings = { feature: featureStudy, simplifier: simplifierClari
 // all rather than which sheet it was painted on.
 const isHouse = (role) =>
   indices[role] !== undefined || standaloneBuildings[role] !== undefined;
+// A write that gets no answer is not a failed write: Town may have applied it
+// before the connection stalled. The message says so rather than inviting a
+// blind retry.
+const writeTimeoutMs = 30000;
+const writeTimeoutMessage = `Town did not answer within ${writeTimeoutMs / 1000} seconds. The request may still have been applied; check its state before trying again.`;
 async function api(path, body, signal) {
-  const response = await fetch(path, {
-    method: body ? "POST" : "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    signal,
-  });
+  let response;
+  try {
+    response = await fetch(path, {
+      method: body ? "POST" : "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted && signal.reason?.name === "TimeoutError") throw new Error(writeTimeoutMessage);
+    throw error;
+  }
   if (!response.ok) {
     const error = await response
       .json()
@@ -736,9 +747,9 @@ function renderTownControls(t) {
   pauseAll.hidden = !controls.secondary;
   if (controls.secondary)
     pauseAll.textContent = activeSkin.rewrite(controls.secondary.label);
-  const townBusy = (action) => pendingWrites.has(writeKey("control", t.id, "all", action, ""));
-  toggle.disabled = townBusy(controls.primary.action);
-  pauseAll.disabled = townBusy("pause");
+  const townBusy = pendingWrites.has(commandKey(t.id, "all", "", ""));
+  toggle.disabled = townBusy;
+  pauseAll.disabled = townBusy;
   toggle.setAttribute("aria-busy", String(toggle.disabled));
   pauseAll.setAttribute("aria-busy", String(pauseAll.disabled));
 }
@@ -1001,7 +1012,7 @@ function writeInspection(out, html) {
 }
 function workerButtons(controls, role) {
   const button = (action, label, primary) => {
-    const pending = busy(writeKey("control", selectedTown, role, action, ""));
+    const pending = busy(commandKey(selectedTown, role, action, ""));
     return `<button${primary ? ' class="primary"' : ""} data-action="${action}"${pending || (controls[action] ? "" : " disabled")}>${label}</button>`;
   };
   return `<div class="inspector-actions">${button("start", "▶ Start", true)}${button("pause", "Ⅱ Pause")}${button("stop", "■ Stop")}</div>`;
@@ -1026,7 +1037,7 @@ function renderInspection() {
     const source = task.source,
       provenance = source?.provenance,
       sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
-    const taskBusy = (action, role) => busy(writeKey("control", selectedTown, role, action, selectedTask));
+    const taskBusy = (action, role) => busy(commandKey(selectedTown, role, action, selectedTask));
     const mayorActions = simplifierDeclined(task)
       ? `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>Admit anyway</button></div><p class="muted">Simplifier declined this. Admitting overrules it and sends it to ${task.kind === "issue" ? "Issue Bot" : "Review Bot"}.</p>`
       : task.mayoral_decision !== "pending"
@@ -1145,9 +1156,9 @@ function renderInspection() {
         const explanation = globalThis.prompt("Explain this usefulness judgment:");
         if (!explanation?.trim()) return;
         const townId = selectedTown;
-        await trackWrite(writeKey("judgment", townId, button.dataset.outcome), async () => {
+        await trackWrite(writeKey("judgment", townId, button.dataset.outcome), async (signal) => {
           try {
-            await api("/api/outcomes/judgment", { town: townId, outcome: button.dataset.outcome, value: button.dataset.judgment, explanation: explanation.trim() });
+            await api("/api/outcomes/judgment", { town: townId, outcome: button.dataset.outcome, value: button.dataset.judgment, explanation: explanation.trim() }, signal);
             await refreshState();
           } catch (error) { showError(error.message); }
         });
@@ -1283,13 +1294,22 @@ const writeKey = (...parts) => parts.join("\u0000");
 function busy(key) {
   return pendingWrites.has(key) ? ' disabled aria-busy="true"' : "";
 }
-async function trackWrite(key, write) {
+// Each tracked write gets a deadline. Its request is aborted then, and the
+// control is released even if something after the request (a state refresh)
+// is still stuck, so one lost response never disables a button until reload.
+async function trackWrite(key, write, report = showError) {
   if (pendingWrites.has(key)) return;
   const focus = focusIdentity(document.activeElement);
+  const signal = AbortSignal.timeout(writeTimeoutMs);
+  const expired = new Promise((resolve) =>
+    signal.addEventListener("abort", () => resolve(expiredWrite), { once: true }),
+  );
   pendingWrites.add(key);
   if (state) render();
   try {
-    return await write();
+    const result = await Promise.race([write(signal), expired]);
+    if (result === expiredWrite) report(writeTimeoutMessage);
+    return result === expiredWrite ? undefined : result;
   } finally {
     pendingWrites.delete(key);
     if (state) {
@@ -1299,10 +1319,20 @@ async function trackWrite(key, write) {
     }
   }
 }
+const expiredWrite = Symbol("expired write");
+// Which pending write a command belongs to. Admit and decline are one decision
+// per task, and the header's wake and pause act on the whole town, so each
+// pair shares a key and blocks its partner while either is out.
+function commandKey(townId, role, action, task) {
+  if (role === "hall" && task && (action === "admit" || action === "decline"))
+    return writeKey("decide", townId, task);
+  if (role === "all" && !task) return writeKey("town", townId);
+  return writeKey("control", townId, role, action, task);
+}
 async function command(action, role = "all", task = "", townId = selectedTown) {
-  return trackWrite(writeKey("control", townId, role, action, task), async () => {
+  return trackWrite(commandKey(townId, role, action, task), async (signal) => {
     try {
-      await api("/api/control", { town: townId, role, action, task });
+      await api("/api/control", { town: townId, role, action, task }, signal);
       showError("");
     } catch (e) {
       showError(e.message);
@@ -1340,11 +1370,7 @@ function renderInbox(needs = inbox(state)) {
   const openButton = (item, label, primary) =>
     `<button class="${primary ? "primary" : ""}" data-inbox-key="open:${esc(item.task || item.house)}" data-inbox-town="${esc(item.town)}" data-inbox-house="${esc(item.house)}" data-inbox-task="${esc(item.task)}" data-inbox-open="1">${label}</button>`;
   // One decision per task at a time, whichever of its two buttons was pressed.
-  const deciding = (item) =>
-    pendingWrites.has(writeKey("control", item.town, "hall", "admit", item.task)) ||
-    pendingWrites.has(writeKey("control", item.town, "hall", "decline", item.task))
-      ? ' disabled aria-busy="true"'
-      : "";
+  const deciding = (item) => busy(commandKey(item.town, "hall", "admit", item.task));
   const decisionCard = (item) =>
     `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · admitting sends it to ${item.kind === "issue" ? "Issue Bot" : "Review Bot"}</small></div><div class="inbox-actions">${openButton(item, "Open in Town Hall", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit"${deciding(item)}>${item.reviewAgain ? "Review again" : "Admit"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline"${deciding(item)}>Decline</button></div></article>`;
   const expanded = new Set([...$("#inbox-list").querySelectorAll("[data-inbox-detail]")]
@@ -1412,17 +1438,18 @@ function openInboxItem(id, house, task) {
   inspectOperation(id, isHouse(house) ? house : "hall", task);
 }
 async function decideFromInbox(id, task, action) {
-  const other = action === "admit" ? "decline" : "admit";
-  if (pendingWrites.has(writeKey("control", id, "hall", other, task))) return;
+  const key = commandKey(id, "hall", action, task);
+  if (pendingWrites.has(key)) return;
   $("#inbox-error").textContent = "";
-  await trackWrite(writeKey("control", id, "hall", action, task), async () => {
+  const report = (message) => ($("#inbox-error").textContent = message);
+  await trackWrite(key, async (signal) => {
     try {
-      await api("/api/control", { town: id, role: "hall", action, task });
+      await api("/api/control", { town: id, role: "hall", action, task }, signal);
       await refreshState();
     } catch (error) {
-      $("#inbox-error").textContent = error.message;
+      report(error.message);
     }
-  });
+  }, report);
 }
 function openInbox() {
   if (!state) return;

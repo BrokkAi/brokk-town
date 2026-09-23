@@ -302,3 +302,47 @@ test("a failed save from a closed dialog cannot affect a reopened profile", asyn
   assert.equal(elements["settings-error"].textContent, "");
   assert.equal(elements["model-input"].disabled, false);
 });
+
+test("a receipt check stays disabled across redraws and is released when it times out", async () => {
+  const deadlines = [];
+  const timeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => {
+    const controller = new AbortController();
+    deadlines.push({ ms, controller });
+    return controller.signal;
+  };
+  try {
+    const checks = [];
+    const { town } = fixture(async (url, body, signal) => {
+      if (url !== "/api/requests/check") return {};
+      checks.push({ body, signal });
+      return new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("no answer"))));
+    });
+    town.requests = { r1: { id: "r1", title: "Flaky export", kind: "bug", status: "uncertain", created: "2026-09-01T00:00:00Z" } };
+    // The page's request history holds one button per uncertain submission.
+    const history = elements["request-history"];
+    Object.defineProperty(history, "innerHTML", {
+      set(html) {
+        this._html = html;
+        this.children = [...html.matchAll(/data-recheck="([^"]+)"([^>]*)>/g)].map(([, id, rest]) =>
+          Object.assign(new Element("button"), { dataset: { recheck: id }, disabled: /\bdisabled\b/.test(rest) }));
+      },
+      get() { return this._html; },
+    });
+    history.querySelectorAll = () => history.children;
+    elements["new-request"].onclick();
+    history.children[0].onclick();
+    assert.equal(checks.length, 1);
+    assert.equal(deadlines.at(-1).ms, 30000, "the check has a deadline");
+    assert.equal(checks[0].signal, deadlines.at(-1).controller.signal);
+    assert.equal(history.children[0].disabled, true, "the redrawn button stays disabled while the check is out");
+    history.children[0].onclick();
+    assert.equal(checks.length, 1, "a second press sends nothing");
+    deadlines.at(-1).controller.abort();
+    await tick();
+    assert.equal(history.children[0].disabled, false, "the deadline releases the button");
+    assert.equal(elements["request-error"].textContent, "no answer");
+  } finally {
+    AbortSignal.timeout = timeout;
+  }
+});

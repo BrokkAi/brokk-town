@@ -1174,3 +1174,77 @@ test("a write in flight stays disabled across snapshot redraws and focus returns
   await deciding;
   assert.doesNotMatch(elements["inbox-list"].innerHTML, /aria-busy/);
 });
+
+test("a write that never answers is released at its deadline, and paired controls block each other", async () => {
+  const elements = installFixture();
+  const live = structuredClone(state);
+  live.demo = false;
+  const deadlines = [];
+  const timeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => {
+    const controller = new AbortController();
+    deadlines.push({ ms, controller });
+    return controller.signal;
+  };
+  const controls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (url === "/api/events") {
+      let sent = false;
+      return { ok: true, body: { getReader: () => ({ read: async () => (!sent ? ((sent = true), { value: new TextEncoder().encode(`data: ${JSON.stringify(live)}\n\n`), done: false }) : new Promise(() => {})) }) } };
+    }
+    if (url === "/api/control") {
+      const body = JSON.parse(options.body);
+      controls.push({ body, signal: options.signal });
+      // The inbox decision's request ignores its signal, as a stuck refresh
+      // would: the deadline must release the control regardless.
+      if (body.action === "decline") return new Promise(() => {});
+      return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason)));
+    }
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/task-detail") return { ok: false, json: async () => ({ error: "offline" }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  try {
+    await import(`./app.js?deadline=${Date.now()}-${Math.random()}`);
+    await flush();
+    elements.towns.querySelectorAll("[data-town]")[0].onclick();
+
+    // Town-wide wake and pause share one pending write for the town.
+    const waking = elements["town-toggle"].onclick();
+    assert.equal(controls.at(-1).body.role, "all");
+    assert.equal(elements["town-toggle"].disabled, true);
+    assert.equal(elements["pause-all"].disabled, true, "pause waits for the wake to settle");
+    elements["pause-all"].onclick();
+    assert.equal(controls.length, 1, "pausing the town while it wakes sends nothing");
+    assert.equal(deadlines.at(-1).ms, 30000);
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await waking;
+    assert.equal(elements["town-toggle"].disabled, false, "the deadline releases the town controls");
+    assert.match(elements.error.textContent, /may still have been applied/, "a lost answer is reported as uncertain, not failed");
+
+    // The inspector's Admit and Decline are one decision.
+    elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+    elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
+    const find = (id) => elements.inspection.querySelectorAll("button").find((button) => button.id === id);
+    const admitting = find("admit-task").onclick();
+    assert.match(elements.inspection.innerHTML, /id="admit-task" class="primary" disabled aria-busy="true"/);
+    assert.match(elements.inspection.innerHTML, /id="decline-task" class="danger" disabled aria-busy="true"/);
+    const before = controls.length;
+    find("decline-task").onclick();
+    assert.equal(controls.length, before, "declining while admitting sends nothing");
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await admitting;
+    assert.doesNotMatch(elements.inspection.innerHTML, /aria-busy/);
+
+    // A request that ignores its signal is still released at the deadline.
+    const declining = elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxDecide === "decline").onclick();
+    assert.match(elements["inbox-list"].innerHTML, /data-inbox-decide="decline" disabled/);
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await declining;
+    assert.doesNotMatch(elements["inbox-list"].innerHTML, /aria-busy/);
+    assert.match(elements["inbox-error"].textContent, /may still have been applied/);
+  } finally {
+    AbortSignal.timeout = timeout;
+  }
+});

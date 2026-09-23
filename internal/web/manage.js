@@ -590,10 +590,11 @@ export function management({ api, getTown, getState, refresh }) {
           rechecking.add(key);
           renderRequests();
           try {
+            // A stalled check must not hold the button until reload.
             await api("/api/requests/check", {
               town,
               id: b.dataset.recheck,
-            });
+            }, AbortSignal.timeout(30000));
             $("#request-success").textContent =
               "Receipt check queued. This only reads GitHub.";
           } catch (e) {
