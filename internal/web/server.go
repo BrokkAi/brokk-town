@@ -273,16 +273,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		problem(w, "Use a live service to add real repositories", 400)
 		return
 	}
-	cfg := town.DefaultConfig(input.Repo)
-	if input.MergePolicy != "" {
-		cfg.MergePolicy = input.MergePolicy
-	}
-	cfg, err := s.Supervisor.Prepare(cfg, input.Agent)
-	if err != nil {
-		problem(w, err.Error(), 400)
-		return
-	}
-	id, err := s.Supervisor.Add(cfg)
+	id, err := s.Supervisor.AddRepo(input.Repo, input.MergePolicy, input.Agent)
 	if err != nil {
 		problem(w, err.Error(), 400)
 		return

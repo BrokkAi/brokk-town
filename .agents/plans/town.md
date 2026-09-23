@@ -372,3 +372,18 @@
   differing capitalization (each with exactly one POST), plus the URL fields
   that must still be rejected.
 - `bundle.json` moves review-bot to 0.2.7 at the fix commit.
+
+## Restoring deleted towns (#24)
+
+- `Town.Restore` revives a deleted town under a complete, validated config;
+  tasks, ownership, intents and recovery holds are kept, a branch change on an
+  initialized town is refused, only the reporter is re-enabled and every
+  worker's `Next` is cleared. The event says the town was restored.
+- The add request (web, `bt add`) goes through `Supervisor.AddRepo`: a deleted
+  town's kept config is the base, and only a non-empty merge policy and the
+  agent settings are applied over it, so budget, policies, bot profiles,
+  funnels (and their intents) and branch survive.
+- `serve --config` restores a listed deleted town with the file's config (the
+  same replacement a live town gets); `serve --repo` restores it with its kept
+  config. Both print a notice.
+- Deleting a deleted town returns `unknown town` and appends no event.
