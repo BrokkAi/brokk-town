@@ -287,11 +287,14 @@ func runACPWireFixture(t *testing.T, scenario string) {
 // An unoffered review selection is an actionable setup failure naming the
 // review setting, and no prompt reaches the agent.
 func TestACPReviewSelectionUnavailable(t *testing.T) {
-	for _, tc := range []struct{ scenario, model, want string }{
-		{"model-unavailable", "unoffered-model", `review model "unoffered-model" was not accepted by the ACP adapter; choose a value it offers with --review-model or review_model: unknown model "unoffered-model"; available values: test-model`},
-		{"effort-unavailable", "test-model", `review effort "high" was not accepted by the ACP adapter; choose a value it offers with --review-effort or review_effort`},
-		{"effort-wrong-category", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent does not advertise ACP reasoning effort selection`},
-		{"effort-unconfirmed", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent did not confirm effort`},
+	for _, tc := range []struct {
+		scenario, model, want string
+		phase                 runner.Phase
+	}{
+		{"model-unavailable", "unoffered-model", `review model "unoffered-model" was not accepted by the ACP adapter; choose a value it offers with --review-model or review_model: unknown model "unoffered-model"; available values: test-model`, runner.PhaseSelectModel},
+		{"effort-unavailable", "test-model", `review effort "high" was not accepted by the ACP adapter; choose a value it offers with --review-effort or review_effort`, runner.PhaseSelectEffort},
+		{"effort-wrong-category", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent does not advertise ACP reasoning effort selection`, runner.PhaseSelectEffort},
+		{"effort-unconfirmed", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent did not confirm effort`, runner.PhaseSelectEffort},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			state := t.TempDir()
@@ -304,7 +307,7 @@ func TestACPReviewSelectionUnavailable(t *testing.T) {
 			defer cancel()
 			answer, err := a.Execute(ctx, "review this proposal")
 			var setup *runner.SetupError
-			if answer != "" || !errors.As(err, &setup) || !strings.Contains(err.Error(), tc.want) {
+			if answer != "" || !errors.As(err, &setup) || setup.Phase != tc.phase || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("answer=%q, err=%v", answer, err)
 			}
 			files, _ := filepath.Glob(filepath.Join(state, "sessions", "session-*.jsonl"))

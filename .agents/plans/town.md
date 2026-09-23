@@ -710,11 +710,18 @@
 
 - An acp-go upgrade adopts the released API as is: no copied upstream code or
   compatibility shims without a demonstrated loss. Town, review-bot and
-  feature-bot call acp-go's `SetEffort` (Town and review-bot through
-  `runner.Execute`); the copied runner lifecycles in Town and review-bot and
-  the `setEffort`/`setAgentEffort` shims are removed.
+  feature-bot all run agents through acp-go's `runner.Runner.Execute` and
+  select effort with its `SetEffort`. No copied runner lifecycle remains in
+  Town or any bot, and the `setEffort`/`setAgentEffort` shims are removed.
 - v0.1.0's uncategorized `thought_level` effort fallback is gone. An agent
   that advertises effort only that way gets a setup error when an effort is
   configured, and Town's choices list no efforts for it.
-- feature-bot keeps its own `agentProcess` lifecycle for stage-specific
-  selection errors (`selectionError`), which `runner.Execute` cannot report.
+- feature-bot is on acp-go v0.10.0, whose typed setup errors replace the
+  lifecycle it had copied from v0.7.0. `selectionError` reads
+  `runner.SetupError.Phase`: in `select model`/`select effort`, an
+  `acp.UnknownSelectionError` (value not offered) is reported as not
+  accepted, naming the stage setting to change; any other failure there,
+  including `acp.UnsupportedSelectionError` and untyped errors such as an
+  unconfirmed selection, is a failure to select naming the same setting.
+  Other phases pass through unchanged. An untyped error is never read as an
+  agent rejection.
