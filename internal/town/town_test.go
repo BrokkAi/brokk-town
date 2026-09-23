@@ -258,8 +258,9 @@ type fakeGH struct {
 	fileError   error
 	// Failures for DeleteBranch, and for comments on one issue or pull
 	// request by number.
-	deleteError   error
-	commentErrors map[int]error
+	deleteError        error
+	commentErrors      map[int]error
+	issueCommentsError error
 }
 
 func newGH(n int) *fakeGH {
@@ -327,6 +328,9 @@ func (f *fakeGH) Comment(_ context.Context, _ string, n int, body string) error 
 func (f *fakeGH) IssueComments(_ context.Context, _ string, n int) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.issueCommentsError != nil {
+		return nil, f.issueCommentsError
+	}
 	prefix := fmt.Sprintf("#%d: ", n)
 	bodies := []string{}
 	for _, c := range f.comments {

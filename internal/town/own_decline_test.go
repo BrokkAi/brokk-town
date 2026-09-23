@@ -251,18 +251,20 @@ func TestMayorDeclinedOwnPullIsClosedAndStaysDeclined(t *testing.T) {
 	if len(gh.closedPulls) != 1 || pr.Stage != "closed" || pr.MayoralDecision != "declined" || issue.Stage != "queued" || issue.Requeue != 5 {
 		t.Fatalf("Mayor-declined own PR: closed=%v pr=%+v issue=%+v", gh.closedPulls, pr, issue)
 	}
-	// Issue Bot has moved on: a fresh attempt is running and no longer
-	// tied to #5.
+	// Issue Bot has moved on: its fresh attempt is pull request #7, and the
+	// requeue marker is spent (SyncIssues clears it once the job moves on).
+	fresh := pull(7)
+	fresh.Head.Ref = "issue-3-retry"
 	update(t, store, func(st *State) {
-		issue := st.Towns[town.ID].Tasks["issue:3"]
-		issue.Requeue = 0
-		issue.Stage = "implemented"
-		issue.IssueJob = &IssueJob{Status: "working"}
+		x := st.Towns[town.ID]
+		x.Owned[7] = Ownership{Branch: fresh.Head.Ref, Issue: 3}
+		x.Tasks["issue:3"].Requeue = 0
+		x.Tasks["issue:3"].IssueJob = &IssueJob{Status: "submitted"}
 	})
 	// A reopen does not undo the Mayor's decline: Town closes it again, but
 	// leaves the issue's new attempt alone.
 	gh.p.State = "open"
-	gh.snapshot.Pulls = []Pull{gh.p}
+	gh.snapshot.Pulls = []Pull{gh.p, fresh}
 	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +274,7 @@ func TestMayorDeclinedOwnPullIsClosedAndStaysDeclined(t *testing.T) {
 	if issue := task(store, town, "issue:3"); issue.Requeue != 0 || issue.IssueJob == nil || issue.Stage != "implemented" {
 		t.Fatalf("second close reset an issue that moved on: %+v", issue)
 	}
-	if len(gh.comments) != 3 || strings.Contains(gh.comments[2], "queued for a fresh attempt") || !strings.HasPrefix(gh.comments[2], "#5: ") {
+	if len(gh.comments) != 3 || strings.Contains(gh.comments[2], "starts issue #3 over") || !strings.HasPrefix(gh.comments[2], "#5: ") {
 		t.Fatalf("second close commented on the issue or promised a requeue: %v", gh.comments)
 	}
 }
@@ -281,7 +283,7 @@ func TestRequeueCommentIsNotRepeated(t *testing.T) {
 	store, town, gh, sup := ownPullTown(t, "auto")
 	declineOwnPull(t, store, town)
 	// An earlier attempt posted the issue comment but its outcome was lost.
-	gh.comments = []string{"#3: earlier\n\n" + requeueMarker(5)}
+	gh.comments = []string{"#3: earlier\n\n" + requeueMarker(&Task{Number: 5, Closes: 1})}
 	if err := sup.reconcileNow(context.Background(), store.Snapshot().Towns[town.ID]); err != nil {
 		t.Fatal(err)
 	}
@@ -299,9 +301,9 @@ func TestRefusedStepAfterCloseFinishesTheClose(t *testing.T) {
 		setup func(*fakeGH)
 		note  string
 	}{
-		{name: "protected branch", setup: func(gh *fakeGH) {
-			gh.deleteError = definiteRejection(errors.New("gh: Reference update failed (HTTP 422)"))
-		}, note: "delete branch issue-5 of PR #5 (HTTP 422)"},
+		{name: "issue comments unreadable", setup: func(gh *fakeGH) {
+			gh.issueCommentsError = definiteRejection(errors.New("gh: Resource not accessible by integration (HTTP 403)"))
+		}, note: "explain requeue of issue #3 (HTTP 403)"},
 		{name: "issue gone", setup: func(gh *fakeGH) {
 			gh.commentErrors = map[int]error{3: definiteRejection(errors.New("gh: Not Found (HTTP 404)"))}
 		}, note: "explain requeue of issue #3 (HTTP 404)"},
@@ -351,5 +353,102 @@ func TestBlockedDeclinedOwnPullIsNotClaimed(t *testing.T) {
 	})
 	if pr := task(store, town, "pr:5"); pr.Stage != "declined" {
 		t.Fatalf("blocked PR was claimed: %+v", pr)
+	}
+}
+
+func TestReopenedOwnPullFailingReviewAgainRequeuesItsIssue(t *testing.T) {
+	store, town, gh, sup := ownPullTown(t, "auto")
+	ctx := context.Background()
+	failReview := func() {
+		t.Helper()
+		update(t, store, func(st *State) {
+			x := st.Towns[town.ID]
+			markClosing(st, x, x.Tasks["pr:5"], "The second review still found blocking work.", time.Now())
+		})
+	}
+	update(t, store, func(st *State) {
+		x := st.Towns[town.ID]
+		applySimplification(st, x, x.Tasks["pr:5"], &Simplification{Mode: "auto", Decision: "admit", Detail: "Proportionate."}, nil, time.Now())
+	})
+	failReview()
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if issue := task(store, town, "issue:3"); issue.Stage != "queued" || issue.Requeue != 5 {
+		t.Fatalf("first close did not requeue: %+v", issue)
+	}
+	// Issue Bot starts over, which spends the requeue marker.
+	root := t.TempDir()
+	writeIssueBotState(t, root, store.Snapshot().Towns[town.ID], map[int]*issueJobSummary{3: {Branch: "issue-5", Status: "pending"}})
+	workers := &BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)}
+	if err := workers.SyncIssues(store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	// Someone reopens the pull request; reconcile ties the issue to it again
+	// and it goes back to Review.
+	gh.p.State = "open"
+	gh.snapshot.Pulls = []Pull{gh.p}
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if issue, pr := task(store, town, "issue:3"), task(store, town, "pr:5"); issue.Stage != "implemented" || issue.Requeue != 0 || pr.House != Review {
+		t.Fatalf("reopen: issue=%+v pr=%s/%s", issue, pr.House, pr.Stage)
+	}
+	failReview()
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if issue := task(store, town, "issue:3"); len(gh.closedPulls) != 2 || issue.Stage != "queued" || issue.Requeue != 5 {
+		t.Fatalf("second close stranded the issue: closed=%v issue=%+v", gh.closedPulls, issue)
+	}
+	issueComments := []string{}
+	for _, c := range gh.comments {
+		if strings.HasPrefix(c, "#3: ") {
+			issueComments = append(issueComments, c)
+		}
+	}
+	if len(issueComments) != 2 || !strings.Contains(issueComments[1], "close=2") {
+		t.Fatalf("second requeue was not explained on the issue: %v", issueComments)
+	}
+}
+
+func TestRefusedBranchDeleteHoldsTheIssueUntilTheBranchIsGone(t *testing.T) {
+	store, town, gh, sup := ownPullTown(t, "auto")
+	declineOwnPull(t, store, town)
+	ctx := context.Background()
+	gh.deleteError = definiteRejection(errors.New("gh: Reference update failed (HTTP 422)"))
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err == nil {
+		t.Fatal("a refused branch delete was not reported")
+	}
+	pr, issue := task(store, town, "pr:5"), task(store, town, "issue:3")
+	if pr.Stage != "closed" || !pr.BranchKept || !strings.Contains(pr.Detail, "HTTP 422") {
+		t.Fatalf("close was not finished with the branch kept: %+v", pr)
+	}
+	if issue.Stage != "implemented" || issue.Requeue != 0 || !strings.Contains(issue.Detail, "delete issue-5 on GitHub by hand") {
+		t.Fatalf("issue was requeued onto a branch Issue Bot cannot push: %+v", issue)
+	}
+	// The pull request is explained (its comment precedes the delete); the
+	// issue is not told it was requeued.
+	if len(gh.comments) != 1 || !strings.HasPrefix(gh.comments[0], "#5: ") {
+		t.Fatalf("the issue was told it was requeued: %v", gh.comments)
+	}
+	// Still refused: nothing changes and nothing new is reported.
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if issue := task(store, town, "issue:3"); issue.Stage != "implemented" {
+		t.Fatalf("issue requeued while the branch remains: %+v", issue)
+	}
+	// Someone removes the branch; the next inventory starts the issue over.
+	gh.deleteError = nil
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	pr, issue = task(store, town, "pr:5"), task(store, town, "issue:3")
+	if pr.BranchKept || issue.Stage != "queued" || issue.Requeue != 5 || len(gh.comments) != 2 || !strings.HasPrefix(gh.comments[1], "#3: ") {
+		t.Fatalf("issue did not start over once the branch was gone: pr=%+v issue=%+v comments=%v", pr, issue, gh.comments)
+	}
+	if len(gh.closedPulls) != 1 {
+		t.Fatalf("closed again: %v", gh.closedPulls)
 	}
 }

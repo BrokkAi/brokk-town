@@ -477,6 +477,13 @@ type Task struct {
 	// Requeue names the pull request Town closed after review. Issue-bot's
 	// next run on this issue starts over and never counts that PR again.
 	Requeue int `json:"requeue,omitempty"`
+	// Closes counts the times Town decided to close this pull request; it
+	// tells one requeue comment from the next when a reopened pull request
+	// is closed again.
+	Closes int `json:"closes,omitempty"`
+	// BranchKept marks a pull request Town closed whose branch GitHub refused
+	// to delete. Its issue waits until the branch is gone.
+	BranchKept bool `json:"branch_kept,omitempty"`
 	// Retired marks an external pull request whose review attempts on the
 	// current revision were exhausted; the Mayor decides whether to try again.
 	Retired bool `json:"retired,omitempty"`

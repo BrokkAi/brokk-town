@@ -66,6 +66,8 @@ func markClosing(st *State, t *Town, task *Task, reason string, now time.Time) {
 	task.Blocked = false
 	task.MayoralDecision = ""
 	task.Detail = reason
+	task.Closes++
+	task.BranchKept = false
 	st.Move(t, task, "closing", Hall, "Closing after review: "+task.Title, now)
 	if w := t.Workers[Repo]; w != nil {
 		w.Next = time.Time{}
@@ -103,6 +105,8 @@ func claimDeclinedPulls(st *State, t *Town, now time.Time) {
 		task.RetryAt = time.Time{}
 		task.Blocked = false
 		task.Detail = declineCloseReason(task)
+		task.Closes++
+		task.BranchKept = false
 		st.Move(t, task, "closing", Hall, "Closing declined PR: "+task.Title, now)
 	}
 }
@@ -208,32 +212,42 @@ func firstLine(text string) string {
 func closingComment(task *Task, requeued int) string {
 	body := "## Brokk Town\n\n" + task.Detail
 	if requeued > 0 {
-		body += fmt.Sprintf("\n\nIssue #%d is queued for a fresh attempt from the current base branch.", requeued)
+		body += fmt.Sprintf("\n\nTown starts issue #%d over from the current base branch.", requeued)
 	}
 	return body + "\n\n<!-- brokk-town:closed-after-review -->"
 }
 
-func requeueMarker(pr int) string { return fmt.Sprintf("<!-- brokk-town:requeued pr=%d -->", pr) }
+// requeueMarker identifies one requeue comment: the pull request and which of
+// Town's closes of it the comment explains. A pull request reopened and
+// closed again legitimately requeues its issue a second time, and that second
+// comment must not be mistaken for the first.
+func requeueMarker(task *Task) string {
+	return fmt.Sprintf("<!-- brokk-town:requeued pr=%d close=%d -->", task.Number, task.Closes)
+}
 
-func requeueComment(task *Task, pr int) string {
-	return fmt.Sprintf("## Brokk Town\n\nPull request #%d was closed after %s. The next attempt starts over from the current base branch and should address the reason:\n\n%s\n\n%s", pr, closedCause(task), task.Detail, requeueMarker(pr))
+func requeueComment(task *Task) string {
+	return fmt.Sprintf("## Brokk Town\n\nPull request #%d was closed after %s. The next attempt starts over from the current base branch and should address the reason:\n\n%s\n\n%s", task.Number, closedCause(task), task.Detail, requeueMarker(task))
 }
 
 // requeuedIssue returns the issue closing this pull request starts over, or
-// nil when the issue is no longer tied to it: Town already closed this pull
-// request once (someone reopened it and it was closed again), so the issue has
-// moved on, or the issue is closed, locked or declined.
+// nil when the live state says the issue is not waiting on it: the issue is
+// closed, locked or declined, it is not implemented (Issue Bot is already on
+// a fresh attempt, or Town already requeued it for this pull request), or
+// another of Town's open pull requests implements it.
 func requeuedIssue(t *Town, task *Task) *Task {
 	owned := t.Owned[task.Number]
 	if owned.Issue <= 0 {
 		return nil
 	}
 	issue := t.Tasks[fmt.Sprintf("issue:%d", owned.Issue)]
-	if issue == nil || issue.Stage == "closed" || issue.Stage == "locked" || issue.MayoralDecision == "declined" || issue.Requeue == task.Number {
+	if issue == nil || issue.Stage != "implemented" || issue.MayoralDecision == "declined" || issue.Requeue == task.Number {
 		return nil
 	}
-	for _, o := range t.Outcomes {
-		if o.Kind == "closed" && o.TaskID == task.ID {
+	for m, other := range t.Owned {
+		if m == task.Number || other.Issue != owned.Issue {
+			continue
+		}
+		if pr := t.Tasks[fmt.Sprintf("pr:%d", m)]; pr != nil && pr.Stage != "merged" && pr.Stage != "closed" {
 			return nil
 		}
 	}
@@ -241,9 +255,9 @@ func requeuedIssue(t *Town, task *Task) *Task {
 }
 
 // postClose runs one step owed after GitHub closed the pull request. A
-// definite rejection cannot succeed on retry (a protected branch, an issue
-// that is gone or not writable), so it is noted and the close is finished
-// anyway; any other failure keeps the claim for the next inventory.
+// definite rejection cannot succeed on retry (an issue that is gone or not
+// writable), so it is noted and the close is finished anyway; any other
+// failure keeps the claim for the next inventory.
 func postClose(failures *error, skipped *[]string, what string, err error) bool {
 	if err == nil {
 		return true
@@ -257,25 +271,31 @@ func postClose(failures *error, skipped *[]string, what string, err error) bool 
 	return false
 }
 
-// requeueCommented reports whether the issue already has this pull request's
-// requeue comment, so an uncertain post is not repeated.
-func (s *Supervisor) requeueCommented(ctx context.Context, repo string, issue, pr int) (bool, error) {
+// explainRequeue posts the issue's requeue comment unless GitHub already has
+// it, so an uncertain post is not repeated.
+func (s *Supervisor) explainRequeue(ctx context.Context, repo string, issue int, task *Task) error {
 	comments, err := s.GitHub.IssueComments(ctx, repo, issue)
 	if err != nil {
-		return false, err
+		return err
 	}
 	for _, body := range comments {
-		if strings.Contains(body, requeueMarker(pr)) {
-			return true, nil
+		if strings.Contains(body, requeueMarker(task)) {
+			return nil
 		}
 	}
-	return false, nil
+	return s.GitHub.Comment(ctx, repo, issue, requeueComment(task))
 }
 
 // closeRetiredPulls performs the GitHub side of a closing decision: close the
 // pull request, delete Town's branch, tell the issue why, then queue the issue
 // again. Each step is idempotent, so a failed step is retried by the next
 // inventory without repeating the ones that succeeded.
+//
+// Issue Bot pushes its fresh attempt to the same branch name without force, so
+// a branch GitHub refused to delete (a protected branch) holds the issue: the
+// pull request is recorded closed with BranchKept, the issue says why, and
+// every inventory tries the delete again. Once the branch is gone, whoever
+// removed it, the issue starts over.
 func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote RepoSnapshot) error {
 	if t == nil || t.Deleted {
 		return nil
@@ -286,7 +306,7 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 	}
 	numbers := []int{}
 	for _, task := range t.Tasks {
-		if task.Kind == "pr" && task.Stage == "closing" {
+		if task.Kind == "pr" && (task.Stage == "closing" || (task.Stage == "closed" && task.BranchKept)) {
 			numbers = append(numbers, task.Number)
 		}
 	}
@@ -294,10 +314,16 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 	var failures error
 	for _, n := range numbers {
 		task := t.Tasks[fmt.Sprintf("pr:%d", n)]
+		owned := t.Owned[n]
+		if task.Stage == "closed" {
+			if err := s.retryKeptBranch(ctx, t, task, owned); err != nil {
+				failures = errors.Join(failures, err)
+			}
+			continue
+		}
 		if p, known := pulls[n]; known && p.MergedAt != nil {
 			continue // The inventory records the merge; there is nothing to close.
 		}
-		owned := t.Owned[n]
 		requeued := 0
 		if issue := requeuedIssue(t, task); issue != nil {
 			requeued = issue.Number
@@ -325,32 +351,70 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 				continue
 			}
 		}
+		kept := ""
 		if owned.Branch != "" {
 			err := s.GitHub.DeleteBranch(ctx, t.Config.Repo, owned.Branch)
-			if !postClose(&failures, &skipped, fmt.Sprintf("delete branch %s of PR #%d", owned.Branch, n), err) {
+			var rejected *RejectedError
+			if errors.As(err, &rejected) {
+				failures = errors.Join(failures, fmt.Errorf("delete branch %s of PR #%d: %w", owned.Branch, n, err))
+				kept = fmt.Sprintf("GitHub refused to delete branch %s (HTTP %d).", owned.Branch, rejected.Status)
+			} else if err != nil {
+				failures = errors.Join(failures, fmt.Errorf("delete branch %s of PR #%d: %w", owned.Branch, n, err))
 				continue
 			}
 		}
-		if requeued > 0 {
-			what := fmt.Sprintf("explain requeue of issue #%d", requeued)
-			posted, err := s.requeueCommented(ctx, t.Config.Repo, requeued, n)
-			if !postClose(&failures, &skipped, what, err) {
+		if requeued > 0 && kept == "" {
+			if !postClose(&failures, &skipped, fmt.Sprintf("explain requeue of issue #%d", requeued), s.explainRequeue(ctx, t.Config.Repo, requeued, task)) {
 				continue
-			}
-			if err == nil && !posted {
-				if !postClose(&failures, &skipped, what, s.GitHub.Comment(ctx, t.Config.Repo, requeued, requeueComment(task, n))) {
-					continue
-				}
 			}
 		}
 		if err := s.Store.Update(func(st *State) error {
-			finalizeClosedPull(st, st.Towns[t.ID], n, skipped, s.now())
+			finalizeClosedPull(st, st.Towns[t.ID], n, skipped, kept, s.now())
 			return nil
 		}); err != nil {
 			return errors.Join(failures, err)
 		}
 	}
 	return failures
+}
+
+// retryKeptBranch tries again to delete the branch of a pull request Town
+// closed, and starts its issue over once the branch is gone. A repeated
+// refusal is expected until someone removes the branch, so it is not reported.
+func (s *Supervisor) retryKeptBranch(ctx context.Context, t *Town, task *Task, owned Ownership) error {
+	if owned.Branch != "" {
+		err := s.GitHub.DeleteBranch(ctx, t.Config.Repo, owned.Branch)
+		var rejected *RejectedError
+		if errors.As(err, &rejected) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("delete branch %s of PR #%d: %w", owned.Branch, task.Number, err)
+		}
+	}
+	if issue := requeuedIssue(t, task); issue != nil {
+		if err := s.explainRequeue(ctx, t.Config.Repo, issue.Number, task); err != nil {
+			var rejected *RejectedError
+			if !errors.As(err, &rejected) {
+				return fmt.Errorf("explain requeue of issue #%d: %w", issue.Number, err)
+			}
+		}
+	}
+	return s.Store.Update(func(st *State) error {
+		current := st.Towns[t.ID]
+		if current == nil {
+			return nil
+		}
+		x := current.Tasks[task.ID]
+		if x == nil || x.Stage != "closed" || !x.BranchKept {
+			return nil
+		}
+		x.BranchKept = false
+		x.Updated = s.now()
+		st.Event(t.ID, "delivery", "hall", "outside", x.ID, "Branch removed: "+x.Title, s.now())
+		requeueAfterClose(st, current, x, s.now())
+		return nil
+	})
 }
 
 // releaseDeclinedPull returns an auto-declined pull request GitHub refused to
@@ -370,8 +434,9 @@ func releaseDeclinedPull(st *State, t *Town, n int, status int, now time.Time) {
 }
 
 // finalizeClosedPull records the closed pull request and queues its issue for a
-// fresh attempt that starts over rather than on top of the closed work.
-func finalizeClosedPull(st *State, t *Town, n int, skipped []string, now time.Time) {
+// fresh attempt that starts over rather than on top of the closed work. When
+// its branch was kept, the issue is held with an explanation instead.
+func finalizeClosedPull(st *State, t *Town, n int, skipped []string, kept string, now time.Time) {
 	if t == nil {
 		return
 	}
@@ -384,8 +449,6 @@ func finalizeClosedPull(st *State, t *Town, n int, skipped []string, now time.Ti
 	if owned.Issue > 0 {
 		related = fmt.Sprintf("issue:%d", owned.Issue)
 	}
-	// Decided before the close outcome below is recorded, which it reads.
-	issue := requeuedIssue(t, task)
 	if len(skipped) > 0 {
 		task.Detail += "\n\nGitHub refused, so Town did not: " + strings.Join(skipped, "; ") + "."
 		st.Event(t.ID, "error", string(Repo), "hall", task.ID, "Closed with steps GitHub refused: "+task.Title, now)
@@ -400,9 +463,27 @@ func finalizeClosedPull(st *State, t *Town, n int, skipped []string, now time.Ti
 	task.Updated = now
 	t.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("closed:%s:%s", task.ID, task.Head), At: now, Class: "outcome", Kind: "closed", Status: "confirmed", Role: Review, TaskID: task.ID, RelatedTaskID: related, Revision: task.Head, URL: task.URL, Detail: task.Detail})
 	st.Event(t.ID, "delivery", "hall", "outside", task.ID, "Closed after "+closedCause(task)+": "+task.Title, now)
+	if kept == "" {
+		requeueAfterClose(st, t, task, now)
+		return
+	}
+	task.BranchKept = true
+	task.Detail += "\n\n" + kept + " Town retries the delete at each inventory."
+	st.Event(t.ID, "error", string(Repo), "hall", task.ID, "Branch kept after close: "+task.Title, now)
+	if issue := requeuedIssue(t, task); issue != nil {
+		issue.Detail = fmt.Sprintf("PR #%d was closed after %s, but %s Issue Bot pushes its next attempt to that branch name, so delete %s on GitHub by hand; Town then starts this issue over.", n, closedCause(task), kept, owned.Branch)
+		issue.Updated = now
+	}
+}
+
+// requeueAfterClose queues the closed pull request's issue for a fresh attempt
+// when the issue is still waiting on it.
+func requeueAfterClose(st *State, t *Town, task *Task, now time.Time) {
+	issue := requeuedIssue(t, task)
 	if issue == nil {
 		return
 	}
+	n := task.Number
 	issue.Requeue = n
 	issue.Attempts = 0
 	issue.RetryAt = time.Time{}

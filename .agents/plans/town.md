@@ -774,15 +774,23 @@
 - Reopen: Town's own pull request closed on Simplifier's decline is an appeal
   and waits for the Mayor with the assessment kept; one the Mayor declined is
   closed again, as a Mayor-declined proposal issue is.
-- Review follow-ups: the issue is commented on and requeued only while it is
-  still tied to the pull request (`requeuedIssue`: not already requeued for it
-  and no earlier `closed` outcome for it), so a second close leaves an issue
-  that moved on alone and the PR comment no longer promises a requeue. The
-  issue comment is skipped when GitHub already has its `brokk-town:requeued
-  pr=N` marker (`IssueComments`). After GitHub closed the pull request, a
-  definite rejection of a later step (PR comment, branch delete, issue
-  comment) is noted on the task and the close is finished; other failures
-  keep the claim. `ClosePull`, `Comment` and `DeleteBranch` now classify
+- Review follow-ups: the issue is commented on and requeued only while live
+  state ties it to the pull request (`requeuedIssue`: the issue is
+  `implemented`, not already requeued for it, and no other open Town pull
+  request implements it). History is not consulted, so a reopened pull
+  request that fails review again requeues its issue again, while one closed
+  after Issue Bot opened a new pull request leaves the issue alone. The
+  requeue marker is `brokk-town:requeued pr=N close=K`, where `Task.Closes`
+  counts Town's close decisions, so a legitimate second requeue is explained
+  and an uncertain post of the same one is not repeated (`IssueComments`).
+  After GitHub closed the pull request, a definite rejection of the PR or
+  issue comment is noted on the task and the close is finished; other
+  failures keep the claim. A refused branch delete finishes the close but
+  holds the issue, because Issue Bot pushes its next attempt to the same
+  branch name without force: the pull request is `closed` with `BranchKept`,
+  the issue explains the branch must be deleted by hand, and each inventory
+  retries the delete; once it succeeds (or the branch is gone) the issue is
+  requeued. `ClosePull`, `Comment` and `DeleteBranch` now classify
   refusals as `RejectedError`, as `CloseIssue` does. The claim skips blocked
   (including off-branch) pull requests, and validation allows a Mayoral
   `declined` at `closing` only on Town's own pull request.
