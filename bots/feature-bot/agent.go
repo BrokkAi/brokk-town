@@ -51,8 +51,7 @@ func (a agentProcess) selectionError(kind, value string, err error) error {
 
 // Execute follows acp-go v0.7.0 runner/runner.go (Apache-2.0,
 // Copyright 2026 Brokk.ai and contributors; originally part of
-// BrokkAi/release-bot). Keep the lifecycle aligned with that runner while
-// applying the legacy effort selector fallback after model selection.
+// BrokkAi/release-bot), adding stage-specific selection errors.
 func (a agentProcess) Execute(ctx context.Context, prompt string) (result string, runErr error) {
 	if a.log == nil {
 		a.log = slog.Default()
@@ -157,7 +156,7 @@ func (a agentProcess) Execute(ctx context.Context, prompt string) (result string
 	}
 	if a.config.Agent.Effort != "" {
 		phase = "select effort"
-		if err := setAgentEffort(ctx, connection, &session, a.config.Agent.Effort); err != nil {
+		if err := connection.SetEffort(ctx, &session, a.config.Agent.Effort); err != nil {
 			return result, a.selectionError("effort", a.config.Agent.Effort, err)
 		}
 		a.log.Info("Using reasoning effort", "effort", a.config.Agent.Effort)
@@ -183,32 +182,4 @@ func (a agentProcess) Execute(ctx context.Context, prompt string) (result string
 		return "", errors.New("agent answer exceeded 2 MiB")
 	}
 	return text, nil
-}
-
-// setAgentEffort restores v0.1.0's category-less thought_level fallback.
-// Explicit thought_level categories take priority; otherwise the legacy ID
-// precedes reasoning_effort. The upstream selector still validates advertised
-// values and requires acknowledgement using the original wire config ID.
-func setAgentEffort(ctx context.Context, connection *acp.Connection, session *acp.Session, effort string) error {
-	category := schema.SessionConfigOptionCategoryThoughtLevel
-	for _, option := range session.ConfigOptions {
-		if option.Select != nil && option.Category != nil && *option.Category == category {
-			return connection.SetEffort(ctx, session, effort)
-		}
-	}
-	// Normalize a copy so the compatibility hint never changes advertised data.
-	compatible := *session
-	compatible.ConfigOptions = append([]schema.SessionConfigOption(nil), session.ConfigOptions...)
-	for i := range compatible.ConfigOptions {
-		option := &compatible.ConfigOptions[i]
-		if option.Select != nil && option.Category == nil && option.ID == "thought_level" {
-			option.Category = &category
-			err := connection.SetEffort(ctx, &compatible, effort)
-			if err == nil {
-				session.ConfigOptions = compatible.ConfigOptions
-			}
-			return err
-		}
-	}
-	return connection.SetEffort(ctx, session, effort)
 }

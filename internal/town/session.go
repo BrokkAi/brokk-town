@@ -96,7 +96,7 @@ func (b *BotWorkers) runAgent(ctx context.Context, t *Town, tree sessionTree, ro
 	if err != nil {
 		return "", err
 	}
-	return executeACP(ctx, runner.Config{Directory: tree.dir, StateDirectory: filepath.Dir(tree.repository), Agent: agent, AutoApprove: true, ClientInfo: acp.ClientInfo{Name: "brokk-town-" + role, Version: "dev"}}, log, prompt)
+	return (runner.Runner{Config: runner.Config{Directory: tree.dir, StateDirectory: filepath.Dir(tree.repository), Agent: agent, AutoApprove: true, ClientInfo: acp.ClientInfo{Name: "brokk-town-" + role, Version: "dev"}}, Log: log}).Execute(ctx, prompt)
 }
 func receipt(text, prefix string, out any) error {
 	lines := strings.Split(strings.TrimSpace(text), "\n")

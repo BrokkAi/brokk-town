@@ -18,7 +18,7 @@ import (
 // Exercise the bot's real subprocess adapter against independent JSON wire
 // fixtures, so schema or client-host migrations cannot be hidden by a mock Agent.
 func TestACPAgentProcess(t *testing.T) {
-	for _, scenario := range []string{"success", "thought-level-id", "reasoning-effort-id", "category-priority", "legacy-priority", "effort-unavailable", "effort-unconfirmed", "effort-wrong-category", "setup-error", "cancel"} {
+	for _, scenario := range []string{"success", "reasoning-effort-id", "category-priority", "effort-unavailable", "effort-unconfirmed", "effort-wrong-category", "setup-error", "cancel"} {
 		t.Run(scenario, func(t *testing.T) {
 			workspace, state := t.TempDir(), t.TempDir()
 			a := agentProcess{config: Config{Directory: workspace, StateDirectory: state, Agent: AgentConfig{
@@ -51,14 +51,14 @@ func TestACPAgentProcess(t *testing.T) {
 			answer, err := a.Execute(ctx, "research this repository")
 			var setup *runner.SetupError
 			switch scenario {
-			case "success", "thought-level-id", "reasoning-effort-id", "category-priority", "legacy-priority":
+			case "success", "reasoning-effort-id", "category-priority":
 				if err != nil || answer != "first second" {
 					t.Fatalf("answer=%q, err=%v", answer, err)
 				}
 			case "effort-unavailable", "effort-unconfirmed", "effort-wrong-category":
 				want := map[string]string{
-					"effort-unavailable":    "unknown thought_level",
-					"effort-unconfirmed":    "agent did not confirm thought_level",
+					"effort-unavailable":    "unknown effort",
+					"effort-unconfirmed":    "agent did not confirm effort",
 					"effort-wrong-category": "agent does not advertise ACP reasoning effort selection",
 				}[scenario]
 				if answer != "" || !errors.As(err, &setup) || !strings.Contains(err.Error(), want) {
@@ -193,9 +193,7 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	}
 	model := option("model", "model", "test-model")
 	effortID := "effort"
-	if scenario == "thought-level-id" || scenario == "legacy-priority" || strings.HasPrefix(scenario, "effort-") {
-		effortID = "thought_level"
-	} else if scenario == "reasoning-effort-id" {
+	if scenario == "reasoning-effort-id" {
 		effortID = "reasoning_effort"
 	}
 	effort := option(effortID, "thought_level", "high")
@@ -220,16 +218,13 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	require(selection.Params["value"], "test-model")
 	// Effort becomes available only after the model selection is acknowledged.
 	options := []any{model, effort}
-	if scenario == "category-priority" || scenario == "legacy-priority" {
-		legacy := option("thought_level", "", "high")
-		delete(legacy, "category")
+	if scenario == "category-priority" {
+		// A thought_level category outranks uncategorized IDs.
+		bare := option("thought_level", "", "high")
+		delete(bare, "category")
 		reasoning := option("reasoning_effort", "", "high")
 		delete(reasoning, "category")
-		if scenario == "category-priority" {
-			options = []any{reasoning, legacy, model, effort}
-		} else {
-			options = []any{reasoning, model, effort}
-		}
+		options = []any{reasoning, bare, model, effort}
 	}
 	if scenario == "effort-unavailable" {
 		effort["options"] = []any{map[string]any{"value": "low", "name": "low"}}
@@ -296,7 +291,7 @@ func TestACPReviewSelectionUnavailable(t *testing.T) {
 		{"model-unavailable", "unoffered-model", `review model "unoffered-model" was not accepted by the ACP adapter; choose a value it offers with --review-model or review_model: unknown model "unoffered-model"; available values: test-model`},
 		{"effort-unavailable", "test-model", `review effort "high" was not accepted by the ACP adapter; choose a value it offers with --review-effort or review_effort`},
 		{"effort-wrong-category", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent does not advertise ACP reasoning effort selection`},
-		{"effort-unconfirmed", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent did not confirm thought_level`},
+		{"effort-unconfirmed", "test-model", `failed to select review effort "high" (set with --review-effort or review_effort): agent did not confirm effort`},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			state := t.TempDir()

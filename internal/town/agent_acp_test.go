@@ -176,45 +176,6 @@ func TestACPCancellationStopsAPromptInFlight(t *testing.T) {
 	}
 }
 
-func TestLegacyThoughtLevelEffortIsListedAndSelected(t *testing.T) {
-	// acp-go v0.8.1 SetEffort dropped v0.1.0's fallback to an uncategorized
-	// thought_level option. Town restores it, and the probe and a run agree.
-	run := runSimulatedACP(t, context.Background(), t.TempDir(), "legacy-effort", runner.AgentConfig{Effort: "xhigh"})
-	if run.err != nil {
-		t.Fatalf("a legacy thought_level effort was not selectable: %v", run.err)
-	}
-	selected := false
-	for _, line := range strings.Split(strings.TrimSpace(run.state), "\n") {
-		var call struct {
-			Method string            `json:"method"`
-			Params map[string]string `json:"params"`
-		}
-		if json.Unmarshal([]byte(line), &call) == nil && call.Method == "session/set_config_option" &&
-			call.Params["configId"] == "thought_level" && call.Params["value"] == "xhigh" {
-			selected = true
-		}
-	}
-	if !selected {
-		t.Fatalf("effort was not sent to the thought_level option:\n%s", run.state)
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := DefaultConfig("acme/orchard")
-	c.Agent = runner.AgentConfig{Command: []string{exe, "-test.run=^TestACPAgentHelper$"},
-		Environment: map[string]string{"BROKK_ACP_HELPER": "legacy-effort", "BROKK_ACP_RECORD": filepath.Join(t.TempDir(), "calls.jsonl")}}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	listed, err := ProbeAgent(ctx, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(listed.Efforts) != 2 || listed.Efforts[1].Value != "xhigh" {
-		t.Fatalf("probe listed %+v, not the thought_level values a run selects", listed.Efforts)
-	}
-}
-
 func TestChoicesMatchTheSelectorsARunUses(t *testing.T) {
 	var session acp.Session
 	body := `{"sessionId":"s","configOptions":[
@@ -223,6 +184,7 @@ func TestChoicesMatchTheSelectorsARunUses(t *testing.T) {
 			{"group":"fast","name":"Fast","options":[{"value":"a","name":"A"}]},
 			{"group":"deep","name":"Deep","options":[{"value":"b","name":"B","description":"slow"}]}]},
 		{"id":"reasoning_effort","name":"Effort","type":"select","currentValue":"low","options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]},
+		{"id":"thought_level","name":"Thought","type":"select","currentValue":"t","options":[{"value":"t","name":"T"}]},
 		{"id":"effort_hint","name":"Hint","category":"reasoning_effort","type":"select","currentValue":"h","options":[{"value":"h","name":"H"}]},
 		{"id":"verbose","name":"Verbose","type":"boolean","currentValue":true}]}`
 	if err := json.Unmarshal([]byte(body), &session); err != nil {
@@ -233,8 +195,9 @@ func TestChoicesMatchTheSelectorsARunUses(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(got)
-	// v0.1.0 order: a reasoning_effort category outranks the bare ID.
-	want := `{"models":[{"value":"a","name":"A"},{"value":"b","name":"B"}],"efforts":[{"value":"h","name":"H"}]}`
+	// As acp-go's SetEffort: neither an uncategorized thought_level ID nor a
+	// reasoning_effort category is an effort selector.
+	want := `{"models":[{"value":"a","name":"A"},{"value":"b","name":"B"}],"efforts":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]}`
 	if string(encoded) != want {
 		t.Fatalf("choices = %s, want %s", encoded, want)
 	}
@@ -269,21 +232,11 @@ func TestACPAgentHelper(t *testing.T) {
 			"sessionId": "fixture", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "messageId": messageID,
 				"content": map[string]string{"type": "text", "text": text}}}})
 	}
-	current := map[string]string{"model": "fast", "reasoning_effort": "low", "thought_level": "low"}
+	current := map[string]string{"model": "fast", "reasoning_effort": "low"}
 	value := func(v, name string) map[string]string { return map[string]string{"value": v, "name": name} }
 	selectors := func() []any {
 		model := map[string]any{"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": current["model"],
 			"options": []any{value("fast", "Fast"), value("careful", "Careful")}}
-		if script == "legacy-effort" {
-			// Uncategorized selectors only: acp-go v0.1.0 chose thought_level
-			// over reasoning_effort; v0.8.1 SetEffort sees only the latter.
-			return []any{model,
-				map[string]any{"id": "reasoning_effort", "name": "Codex effort", "type": "select", "currentValue": current["reasoning_effort"],
-					"options": []any{value("low", "Low"), value("high", "High")}},
-				map[string]any{"id": "thought_level", "name": "Thought level", "type": "select", "currentValue": current["thought_level"],
-					"options": []any{value("low", "Low"), value("xhigh", "Extra high")}},
-			}
-		}
 		return []any{model,
 			map[string]any{"id": "reasoning_effort", "name": "Effort", "category": "thought_level", "type": "select", "currentValue": current["reasoning_effort"],
 				"options": []any{value("low", "Low"), value("xhigh", "Extra high")}},
@@ -330,7 +283,7 @@ func TestACPAgentHelper(t *testing.T) {
 		case "session/prompt":
 			prompt = message.ID
 			switch script {
-			case "commentary", "legacy-effort":
+			case "commentary":
 				chunk("m1", "The review is complete.")
 				chunk("m2", reviewReceipt)
 				reply(message.ID, map[string]string{"stopReason": "end_turn"})
