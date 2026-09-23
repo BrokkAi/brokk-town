@@ -178,22 +178,38 @@
   release and the version issue-bot runs. v0.9.0 is tagged without a release
   and only changes the draft-v2 packages and `clienthost` tool-call titles.
 - `runner.AgentConfig` keeps its JSON tags, so saved town state loads
-  unchanged. `runner.Runner`, `Config` and `Execute` needed no changes.
+  unchanged.
+- acp-go v0.8.1 `SetEffort` dropped v0.1.0's fallback order (thought_level
+  category, uncategorized `thought_level` ID, reasoning_effort category,
+  uncategorized `reasoning_effort` ID); it sees only the thought_level
+  category and the `reasoning_effort` ID. A harness using the others would
+  lose its effort choices and a saved effort would fail every run.
+  `runner.Execute` has no hook between session setup and the prompt, so
+  `runAgent` now calls `executeACP` (`internal/town/agent_run.go`), a copy of
+  the v0.8.1 runner lifecycle like feature-bot's `agentProcess`, whose
+  `setEffort` finds the option in v0.1.0 order and tags a copy so acp-go
+  still validates and confirms the value. Keep it aligned with the upstream
+  runner on later upgrades.
 - The harness choice probe spoke the v0.1.0 hand-written types. It now reads
-  generated `schema.SessionConfigOption`s through the same lookup as
-  `SetModel`/`SetEffort` (a category match, else an uncategorized `model` or
-  `reasoning_effort` ID), flattens grouped values, and maps them to Town's own
-  `ChoiceValue`, so `/api/choices` keeps its `{value, name}` shape. It also
-  advertises session config options, as the runner does, so the probe and a
-  run see the same selectors.
+  generated `schema.SessionConfigOption`s through the same `modelOption` and
+  `effortOption` lookups a run uses, flattens grouped values the way acp-go
+  does (the first entry decides), and maps them to Town's own `ChoiceValue`,
+  so `/api/choices` keeps its `{value, name}` shape. It advertises session
+  config options, as a run does, so both see the same selectors.
+- Accepted behaviour changes from acp-go: `SetMode` now requires the mode to
+  be advertised (in `modes`, or a mode config option) and fails the run
+  otherwise, where v0.1.0 sent `session/set_mode` blindly. `session/new` now
+  fails when an agent advertises a config option of an unknown type, where
+  v0.1.0 kept it. Both surface as setup errors naming the cause.
 - Licence review: LICENSE byte-identical, NOTICE new in v0.8.1. Both recorded
   in `licenses/policy.json`; notices regenerated.
 - Added `internal/town/agent_acp_test.go`: a credential-free simulated ACP
-  agent from the test binary, driving `runAgent` through the real runner.
-  Covers startup, model/effort selection before the prompt, permission
-  auto-approval, transcripts, a rejected model as a setup error, and
-  cancellation of a prompt in flight. The commentary-then-receipt case fails
-  on v0.1.0 and passes on v0.8.1.
+  agent from the test binary, driving `runAgent` over stdio. Covers startup,
+  model/effort selection before the prompt, permission auto-approval,
+  transcripts, a rejected model as a setup error, cancellation of a prompt in
+  flight, and the legacy `thought_level` effort in both the probe and a run.
+  The commentary-then-receipt case fails on v0.1.0 and the legacy effort case
+  fails with plain acp-go `SetEffort`; both pass here.
 - Bots keep their own pins; review-bot's upgrade is #107.
 
 ## Retargeted pull requests (#9)
