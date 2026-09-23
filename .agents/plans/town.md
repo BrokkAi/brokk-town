@@ -172,6 +172,46 @@
 - Remaining: a Town release publishes this to users. RELEASING.md requires an
   explicit request for that.
 
+## Town on acp-go 0.8.1 (fixes #59)
+
+- The root module moved from acp-go v0.1.0 to v0.8.1, the latest GitHub
+  release and the version issue-bot runs. v0.9.0 is tagged without a release
+  and only changes the draft-v2 packages and `clienthost` tool-call titles.
+- `runner.AgentConfig` keeps its JSON tags, so saved town state loads
+  unchanged.
+- acp-go v0.8.1 `SetEffort` dropped v0.1.0's fallback order (thought_level
+  category, uncategorized `thought_level` ID, reasoning_effort category,
+  uncategorized `reasoning_effort` ID); it sees only the thought_level
+  category and the `reasoning_effort` ID. A harness using the others would
+  lose its effort choices and a saved effort would fail every run.
+  `runner.Execute` has no hook between session setup and the prompt, so
+  `runAgent` now calls `executeACP` (`internal/town/agent_run.go`), a copy of
+  the v0.8.1 runner lifecycle like feature-bot's `agentProcess`, whose
+  `setEffort` finds the option in v0.1.0 order and tags a copy so acp-go
+  still validates and confirms the value. Keep it aligned with the upstream
+  runner on later upgrades.
+- The harness choice probe spoke the v0.1.0 hand-written types. It now reads
+  generated `schema.SessionConfigOption`s through the same `modelOption` and
+  `effortOption` lookups a run uses, flattens grouped values the way acp-go
+  does (the first entry decides), and maps them to Town's own `ChoiceValue`,
+  so `/api/choices` keeps its `{value, name}` shape. It advertises session
+  config options, as a run does, so both see the same selectors.
+- Accepted behaviour changes from acp-go: `SetMode` now requires the mode to
+  be advertised (in `modes`, or a mode config option) and fails the run
+  otherwise, where v0.1.0 sent `session/set_mode` blindly. `session/new` now
+  fails when an agent advertises a config option of an unknown type, where
+  v0.1.0 kept it. Both surface as setup errors naming the cause.
+- Licence review: LICENSE byte-identical, NOTICE new in v0.8.1. Both recorded
+  in `licenses/policy.json`; notices regenerated.
+- Added `internal/town/agent_acp_test.go`: a credential-free simulated ACP
+  agent from the test binary, driving `runAgent` over stdio. Covers startup,
+  model/effort selection before the prompt, permission auto-approval,
+  transcripts, a rejected model as a setup error, cancellation of a prompt in
+  flight, and the legacy `thought_level` effort in both the probe and a run.
+  The commentary-then-receipt case fails on v0.1.0 and the legacy effort case
+  fails with plain acp-go `SetEffort`; both pass here.
+- Bots keep their own pins; review-bot's upgrade is #107.
+
 ## Retargeted pull requests (#9)
 
 - A pull request retargeted to another branch keeps its head and base commits,
@@ -256,6 +296,15 @@
 
 ## Frontline theme (browser, presentation only)
 
+- 2026-09-23 visual refresh: four original transparent image atlases replace
+  the flat canvas silhouettes when loaded: eight isometric buildings for each
+  of the three factions and a matching three-craft strip. Canvas silhouettes
+  remain a loading fallback. The map and HUD received a dark metal treatment;
+  events, commands, faction choices, and Town art are unchanged. Verified with
+  55 browser tests, frontend syntax checks, `go vet ./...`, and
+  `go test -race ./...` (the race suite needed localhost access outside the
+  sandbox for its `httptest` servers).
+
 - Added `internal/web/skins.js` as the single surface both themes answer
   (landscape, structure, occupants, strike, impact, labels, faction, noun
   rewrite) and `internal/web/frontline.js` for the war art: three armies, a
@@ -320,5 +369,120 @@
 - Regression tests cover the restart path (a lost PR response reconciled on
   the next step), a PR found while fetching, and a later job's retained status
   comment; each failed before its fix.
-- Not changed here: a reconciliation error still aborts the whole step (#105).
+- A reconciliation error still aborted the whole step; see #105 below.
 - `bundle.json` moves issue-bot to 0.5.8 at the final fix commit.
+
+## issue-bot reconciliation failures (#105)
+
+- `step` returned on the first saved-job lookup error, before fetching issues,
+  so one issue branch holding a PR the bot could not prove it owned (missing
+  marker, several PRs) stopped every other issue on every poll.
+- Ownership failures are now sentinels. `lookup` records an `inspect branch`
+  failure on the job, leaves its status, tries and URL alone, and the step
+  skips that job for the rest of the scan, so it is never attempted or
+  published again until its lookup succeeds. A later successful lookup
+  reconciles it and clears the failure.
+- Such failures are returned joined with the step's result. Any other error
+  (network, auth, cancellation, state writes) still aborts the step. A status
+  comment that fails after a saved reconciliation aborts too, since it cannot
+  be told apart from a GitHub-wide failure; the job is already submitted, so
+  the next step retries the comment and moves on.
+- If the state write after a status comment fails, the job's comment stays
+  pending in memory as well as on disk, so the running process retries it.
+- A lookup that later finds no PR clears the stale `inspect branch` failure
+  so it does not reach the next agent prompt.
+- The daemon logs issue-only failures and keeps draining the queue; `--once`
+  (Town's exact-issue worker) still does one unit of work and exits with the
+  error, and the job summary carries the recorded failure.
+- Regression tests cover repeated polls, restart from saved state, eventual
+  reconciliation, a fresh job whose lookup fails, a global lookup failure,
+  comment and state-write failures after a reconciliation, and the daemon
+  and `--once` handling of issue-only failures.
+- `bundle.json` moves issue-bot to 0.5.9 at the final fix commit.
+
+## release-bot triage after a remote advance (#111)
+
+- Triage cached its decision by the release head and released baseline only.
+  When the bot's checkout holds unpushed commits, `releaseHead` is the local
+  HEAD, so a new commit on the watched remote branch changed neither key and a
+  cached `wait` hid it until the daily deadline.
+- `TriageRecord` now also keys on the remote branch head, and the triage prompt
+  and skill give the agent both heads so it inspects both histories. Ported
+  from the unmerged upstream release-bot PR #18.
+- Saved records from before the change have no remote head and are
+  reassessed once rather than reused.
+- A regression test (with and without a quiet period) failed before the fix.
+- `bundle.json` moves release-bot to 0.6.4 at the fix commit.
+
+## review-bot repository capitalization (#108)
+
+- PR eligibility and state keys already treated `github.repo` case-insensitively,
+  but `validatePublished` compared the review URL path byte-for-byte. With
+  `github.repo: O/R` and GitHub's canonical `/o/r/pull/1`, a posted review
+  stayed `posting` forever and every reconciliation reported it as uncertain.
+- The URL check now compares only the owner/repository segment ASCII
+  case-insensitively (it must still be a valid slug); scheme, host,
+  credentials, query, raw path encoding, `/pull/<n>` and the review anchor
+  stay exact.
+- `ReadState` compares the saved repository the same way, and the saved host
+  case-insensitively like the URL and lock checks, so restarting with a
+  differently capitalized `github.repo` or `github.host` keeps the saved jobs
+  and reconciles them instead of refusing the state. The loaded state takes
+  the configured spelling, so `brv status` and the next save match the config.
+- Tests cover ordinary success, lost-response recovery and restart with
+  differing capitalization (each with exactly one POST), plus the URL fields
+  that must still be rejected.
+- `bundle.json` moves review-bot to 0.2.7 at the fix commit.
+
+## Restoring deleted towns (#24)
+
+- `Town.Restore` revives a deleted town under a complete, validated config;
+  tasks, ownership, intents and recovery holds are kept, a branch change on an
+  initialized town is refused, only the reporter is re-enabled and every
+  worker's `Next` is cleared. The event says the town was restored.
+- The add request (web, `bt add`) goes through `Supervisor.AddRepo`: a deleted
+  town's kept config is the base, and only a non-empty merge policy and the
+  agent settings are applied over it, so budget, policies, bot profiles,
+  funnels (and their intents) and branch survive.
+- `serve --config` restores a listed deleted town with the file's config (the
+  same replacement a live town gets); `serve --repo` restores it with its kept
+  config. Both print a notice.
+- Deleting a deleted town returns `unknown town` and appends no event.
+
+## CLI polish (#28)
+
+- `bt request` encodes without HTML escaping, so `<`, `>` and `&` no longer
+  inflate sixfold and push a valid body past the service's 64 KiB limit. An
+  oversized body now gets 413 and "request body exceeds the 64 KiB limit"
+  instead of a decoder error.
+- The browser link carries the access key, so `serve` and `bt -d` print it only
+  when stdout is a terminal. The detached service's log and redirected output
+  get "run bt web for the link"; `bt web` still prints the key on request.
+- Earlier versions wrote the key into `logs/serve.log`, and the key persists
+  across restarts. Opening the service log redacts any `#token=<key>` link in
+  place; a log over 8 MiB is truncated instead of read.
+- `check-request` on an unknown ID returns "unknown request" (404) rather than
+  "does not need reconciliation".
+- The stale `connection.json` PID was already handled by `processAlive`.
+
+## review-bot on acp-go 0.8.1 (fixes #107)
+
+- review-bot moved from acp-go v0.1.0 to v0.8.1, matching issue-bot and Town.
+- Town passes its harness's effort to review-bot through the worker request,
+  and Town lists an uncategorized `thought_level` option as the effort
+  selector. Plain v0.8.1 `SetEffort` would miss it and fail every review with
+  that effort, so `agentProcess.Execute` now follows the v0.8.1 runner
+  lifecycle and restores the v0.1.0 effort order with the same
+  `selectOption`/`effortOption`/`setEffort` as Town's `executeACP`. Keep it
+  aligned with the upstream runner on later upgrades.
+- Accepted as in Town: `SetMode` requires an advertised mode, and an unknown
+  config option type fails `session/new`; both are setup errors.
+- Licence review: LICENSE byte-identical, NOTICE new in v0.8.1; both recorded
+  in `licenses/policy.json` and notices regenerated.
+- Added `bots/review-bot/agent_acp_test.go`: a credential-free simulated ACP
+  agent from the test binary driving `agentProcess` over stdio. Covers
+  startup, model/effort selection before the prompt, permission
+  auto-approval, transcripts, commentary-then-receipt, a rejected model and a
+  missing command as setup errors, cancellation of a prompt in flight, and
+  the legacy `thought_level` effort (fails with plain `SetEffort`).
+- `bundle.json` moves review-bot to the next patch at the upgrade commit.

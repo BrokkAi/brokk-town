@@ -20,7 +20,9 @@ make build
 ./bin/bt web --demo
 ```
 
-Bare `bt` runs in the foreground and prints its browser URL. Ctrl+C, SIGTERM or
+Bare `bt` runs in the foreground and prints its browser URL. The URL carries the
+access key, so it is printed only to a terminal; redirected output and the
+background service's log point to `bt web` instead. Ctrl+C, SIGTERM or
 SIGHUP stops Town, its bots and their agent processes. Closing the browser does
 not stop the service. Demo mode is isolated and never invokes bots, agents or GitHub.
 
@@ -280,8 +282,14 @@ To remove a town, choose **Settings → Delete town** and confirm, or run:
 Deletion cancels its workers, cancels queued issue submissions, and removes it
 from the browser and terminal. GitHub repositories, issues, and PRs are preserved.
 Local history, uncertain writes, and private worktrees remain as recovery records.
-Adding the same repository again restores that history and its previous settings,
-with automation paused and the reporter enabled. Wait for stopping workers to
+Adding the same repository again restores that history and its previous
+settings, with automation paused and the reporter enabled. A merge policy or
+harness/agent choice given with the add replaces the previous one; budgets, work
+policies, bot profiles, funnels and the branch are kept. A deleted town listed in
+`bt serve --config` is restored with the file's settings, and one named by
+`bt serve --repo` with its previous settings; `bt serve` prints a notice. A town
+that already worked on one branch cannot be restored onto another. Deleting a
+town that is already deleted reports `unknown town`. Wait for stopping workers to
 finish before restoring a town.
 
 ## How work moves
