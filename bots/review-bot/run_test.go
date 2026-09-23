@@ -429,3 +429,42 @@ func TestKnownRejectionCanRetryAndExhaustionIsVisible(t *testing.T) {
 		t.Fatal("known rejection could not recover")
 	}
 }
+func TestRepositoryCapitalizationStillReconcilesPublishedReviews(t *testing.T) {
+	e, _, f, _, _ := fixture(t)
+	e.config.GitHub.Repo = "O/R"
+	if err := e.config.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	s := newState(e.config)
+	if err := e.step(context.Background(), s); err != nil || s.Jobs[0].Status != "submitted" {
+		t.Fatalf("canonical o/r publication rejected for O/R: %v", err)
+	}
+	if err := e.step(context.Background(), s); err != nil || f.creates != 1 {
+		t.Fatalf("reconcile failed or reposted: %v creates %d", err, f.creates)
+	}
+
+	e, _, f, _, _ = fixture(t)
+	e.config.GitHub.Repo = "O/R"
+	s = newState(e.config)
+	f.lost = true
+	if e.step(context.Background(), s) == nil || s.Jobs[0].Status != "posting" {
+		t.Fatal("unknown response was not retained")
+	}
+	if err := e.step(context.Background(), s); err != nil || s.Jobs[0].Status != "submitted" || f.creates != 1 {
+		t.Fatalf("lost response not recovered once: %v creates %d", err, f.creates)
+	}
+
+	e, s, f, _, _ = fixture(t)
+	f.lost = true
+	if e.step(context.Background(), s) == nil || s.Jobs[0].Status != "posting" {
+		t.Fatal("unknown response was not retained")
+	}
+	e.config.GitHub.Repo = "O/R"
+	saved, err := ReadState(e.config)
+	if err != nil {
+		t.Fatalf("restart with differing capitalization rejected state: %v", err)
+	}
+	if err = e.step(context.Background(), saved); err != nil || saved.Jobs[0].Status != "submitted" || f.creates != 1 {
+		t.Fatalf("restart did not reconcile once: %v creates %d", err, f.creates)
+	}
+}

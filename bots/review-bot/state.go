@@ -63,7 +63,7 @@ func ReadState(c Config) (*State, error) {
 	if err = json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("invalid saved state: %w", err)
 	}
-	if s.Format != 1 || s.Remote != c.Remote || s.Branch != c.Branch || s.Directory != c.Directory || s.Repo != c.GitHubRepo() || s.Host != c.GitHub.Host {
+	if s.Format != 1 || s.Remote != c.Remote || s.Branch != c.Branch || s.Directory != c.Directory || !sameRepo(s.Repo, c.GitHubRepo()) || s.Host != c.GitHub.Host {
 		return nil, errors.New("state version or repository identity differs from configuration")
 	}
 	seen := map[string]bool{}

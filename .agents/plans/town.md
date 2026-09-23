@@ -218,3 +218,21 @@
   comment; each failed before its fix.
 - Not changed here: a reconciliation error still aborts the whole step (#105).
 - `bundle.json` moves issue-bot to 0.5.8 at the final fix commit.
+
+## review-bot repository capitalization (#108)
+
+- PR eligibility and state keys already treated `github.repo` case-insensitively,
+  but `validatePublished` compared the review URL path byte-for-byte. With
+  `github.repo: O/R` and GitHub's canonical `/o/r/pull/1`, a posted review
+  stayed `posting` forever and every reconciliation reported it as uncertain.
+- The URL check now compares only the owner/repository segment ASCII
+  case-insensitively (it must still be a valid slug); scheme, host,
+  credentials, query, raw path encoding, `/pull/<n>` and the review anchor
+  stay exact.
+- `ReadState` compares the saved repository the same way, so restarting with
+  a differently capitalized `github.repo` keeps the saved jobs and reconciles
+  them instead of refusing the state.
+- Tests cover ordinary success, lost-response recovery and restart with
+  differing capitalization (each with exactly one POST), plus the URL fields
+  that must still be rejected.
+- `bundle.json` moves review-bot to 0.2.7 at the fix commit.
