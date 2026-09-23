@@ -217,4 +217,4 @@
   the next step), a PR found while fetching, and a later job's retained status
   comment; each failed before its fix.
 - Not changed here: a reconciliation error still aborts the whole step (#105).
-- `bundle.json` moves issue-bot to 0.5.8 at the fix commit.
+- `bundle.json` moves issue-bot to 0.5.8 at the final fix commit.
