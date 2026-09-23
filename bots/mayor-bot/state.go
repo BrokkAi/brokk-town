@@ -32,6 +32,10 @@ type BulletinRecord struct {
 	Title string    `json:"title"`
 	Items int       `json:"items"`
 	Pulls []int     `json:"pulls,omitempty"`
+	// Summary and Entries keep what the bulletin said, for the dashboard and
+	// status output.
+	Summary string         `json:"summary,omitempty"`
+	Entries []BulletinItem `json:"entries,omitempty"`
 }
 
 const maxBulletinRecords = 200

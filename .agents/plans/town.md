@@ -216,5 +216,10 @@
   `bmb` writes a bulletin each interval from where the last recorded one ended,
   and adds `bulletin --since` and `judge --issue|--pr`; it still never writes to
   GitHub. Mayor and Repo configs gain a `poll` setting (24h and 15m).
-- The worker protocol is unchanged. The three have console output only; they do
-  not yet have the terminal dashboard the other five have.
+- The worker protocol is unchanged.
+- All eight bots have the terminal dashboard: overview, item browser with detail,
+  activity, the same keys, `--plain`/`--json`, `NO_COLOR`, and an exit summary.
+  Simplifier browses saved proposals; Mayor browses recorded bulletins, whose
+  state now keeps each summary and item; Repo browses its last 100 standalone
+  observations, saved in its state. Worker runs still report only phase and
+  task. The PTY lifecycle tests pass for the three in a Linux container.

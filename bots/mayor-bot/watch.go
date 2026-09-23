@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
@@ -19,11 +20,32 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 	if err := prepareConfig(&cfg); err != nil {
 		return err
 	}
-	for {
+	// Duties report their phase alone; the display also needs the history.
+	outer := observe(ctx)
+	var mu sync.Mutex
+	var saved *State
+	var wake time.Time
+	report := func(p Progress) {
+		mu.Lock()
+		p = history(saved, p)
+		p.WakeAt = wake
+		mu.Unlock()
+		outer(p)
+	}
+	ctx = WithProgress(ctx, report)
+	load := func() (*State, error) {
 		s, err := ReadState(cfg)
-		if err != nil {
-			return err
-		}
+		mu.Lock()
+		saved = s
+		mu.Unlock()
+		return s, err
+	}
+	s, err := load()
+	if err != nil {
+		return err
+	}
+	report(Progress{Phase: "starting", Task: "Loading recorded bulletins"})
+	for {
 		since := time.Now().Add(-time.Duration(cfg.Poll))
 		if s != nil {
 			if last := latestUntil(s); !last.IsZero() {
@@ -31,25 +53,47 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 			}
 		}
 		if wait := time.Until(since.Add(time.Duration(cfg.Poll))); !once && wait > 0 {
+			mu.Lock()
+			wake = since.Add(time.Duration(cfg.Poll))
+			mu.Unlock()
+			report(Progress{Phase: "waiting", Task: "Next bulletin"})
 			if err := pause(ctx, wait); err != nil {
 				return err
 			}
-			continue
+		} else {
+			result, err := WriteBulletin(ctx, cfg, Window{Since: since, Until: time.Now()}, log)
+			if err == nil {
+				logBulletin(log, result)
+			}
+			if _, loadErr := load(); loadErr != nil && err == nil {
+				err = loadErr
+			}
+			if err == nil {
+				report(Progress{Phase: "complete", Task: result.Title})
+			}
+			var startup *runner.SetupError
+			if once || errors.As(err, &startup) || ctx.Err() != nil {
+				return err
+			}
+			if err != nil {
+				log.Error("Bulletin paused", "error", err)
+				mu.Lock()
+				wake = time.Now().Add(time.Duration(cfg.Poll))
+				mu.Unlock()
+				report(Progress{Phase: "paused", Task: err.Error()})
+			} else {
+				// A window with nothing merged records no bulletin, so the next
+				// one still starts where the last recorded bulletin ended.
+				mu.Lock()
+				wake = time.Now().Add(time.Duration(cfg.Poll))
+				mu.Unlock()
+				report(Progress{Phase: "waiting", Task: "Next bulletin"})
+			}
+			if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
+				return err
+			}
 		}
-		report, err := WriteBulletin(ctx, cfg, Window{Since: since, Until: time.Now()}, log)
-		if err == nil {
-			logBulletin(log, report)
-		}
-		var startup *runner.SetupError
-		if once || errors.As(err, &startup) || ctx.Err() != nil {
-			return err
-		}
-		if err != nil {
-			log.Error("Bulletin paused", "error", err)
-		}
-		// A window with nothing merged records no bulletin, so the next one
-		// still starts where the last recorded bulletin ended.
-		if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
+		if s, err = load(); err != nil {
 			return err
 		}
 	}

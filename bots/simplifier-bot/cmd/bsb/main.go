@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	bot "github.com/BrokkAi/simplifier-bot"
+	"golang.org/x/term"
 )
 
 // version is replaced with the release tag when building published binaries.
@@ -77,8 +78,8 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run runFu
 	maxProposals := fs.Int("max-proposals", 3, "maximum new proposals per scan (1-20)")
 	dryRun := fs.Bool("dry-run", false, "find proposals without creating issues")
 	once := fs.Bool("once", mode == "once", "run one scan, then exit")
-	jsonOutput := fs.Bool("json", false, "structured logs")
-	plain := fs.Bool("plain", false, "scrolling console output (the default)")
+	jsonOutput := fs.Bool("json", false, "structured logs (disables the dashboard)")
+	plain := fs.Bool("plain", false, "scrolling console output (disables the dashboard)")
 	poll := fs.Duration("poll", 0, "poll interval, e.g. 30m")
 	timeout := fs.Duration("timeout", 0, "budget for each agent run, e.g. 2h")
 	var labels, agentArgs []string
@@ -172,6 +173,9 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run runFu
 			return err
 		}
 		return writeJSON(stdout, assessment)
+	}
+	if ownOutput && dashboardEnabled(*plain, *jsonOutput, term.IsTerminal(int(os.Stdin.Fd())), term.IsTerminal(int(os.Stderr.Fd())), os.Getenv("TERM")) {
+		return runDashboard(ctx, cfg, *once, run, os.Stdin, os.Stderr)
 	}
 	log.Info("Scanning for simplifications", "repository", cfg.GitHubRepo(), "branch", cfg.Branch, "checkout", cfg.Directory, "state", cfg.StateDirectory)
 	return run(ctx, cfg, log, *once)

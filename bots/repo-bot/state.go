@@ -28,7 +28,28 @@ type State struct {
 	// way forever, so it is not asked again for the same tag.
 	VainCompare string    `json:"vain_compare,omitempty"`
 	Updated     time.Time `json:"updated,omitempty"`
+	// History is the latest standalone observations, oldest first, for the
+	// dashboard and status output. Town keeps its own record of worker runs.
+	History []Observation `json:"history,omitempty"`
 }
+
+// Observation summarizes one standalone run.
+type Observation struct {
+	At         time.Time `json:"at"`
+	Head       string    `json:"head,omitempty"`
+	Health     string    `json:"health,omitempty"`
+	Failing    []string  `json:"failing,omitempty"`
+	Pushed     string    `json:"pushed,omitempty"`
+	Attempts   int       `json:"attempts,omitempty"`
+	Detail     string    `json:"detail,omitempty"`
+	OpenIssues int       `json:"open_issues"`
+	OpenPulls  int       `json:"open_pulls"`
+	Releases   int       `json:"releases"`
+	NewCommits int       `json:"new_commits,omitempty"`
+	Error      string    `json:"error,omitempty"`
+}
+
+const maxHistory = 100
 
 func statePath(cfg Config) string { return filepath.Join(cfg.StateDirectory, "repo-bot.json") }
 

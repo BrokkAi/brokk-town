@@ -17,6 +17,7 @@ import (
 	"time"
 
 	bot "github.com/BrokkAi/mayor-bot"
+	"golang.org/x/term"
 )
 
 // version is replaced with the release tag when building published binaries.
@@ -33,9 +34,11 @@ func execute(ctx context.Context, args []string, log *slog.Logger) error {
 	return executeWith(ctx, args, log, commands{watch: bot.Watch, judge: bot.Judge, bulletin: bot.WriteBulletin}, os.Stdout)
 }
 
+type runFunc func(context.Context, bot.Config, *slog.Logger, bool) error
+
 // commands are the Mayor's duties, replaceable in tests.
 type commands struct {
-	watch    func(context.Context, bot.Config, *slog.Logger, bool) error
+	watch    runFunc
 	judge    func(context.Context, bot.Config, bot.JudgeRequest, *slog.Logger) (bot.Judgment, error)
 	bulletin func(context.Context, bot.Config, bot.Window, *slog.Logger) (bot.Report, error)
 }
@@ -83,8 +86,8 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run comma
 	effort := fs.String("effort", "", "reasoning effort")
 	maxItems := fs.Int("max-items", 40, "maximum items in one bulletin (1-200)")
 	once := fs.Bool("once", mode == "once", "write one bulletin, then exit")
-	jsonOutput := fs.Bool("json", false, "structured logs")
-	plain := fs.Bool("plain", false, "scrolling console output (the default)")
+	jsonOutput := fs.Bool("json", false, "structured logs (disables the dashboard)")
+	plain := fs.Bool("plain", false, "scrolling console output (disables the dashboard)")
 	poll := fs.Duration("poll", 0, "bulletin interval, e.g. 24h")
 	timeout := fs.Duration("timeout", 0, "budget for each agent run, e.g. 1h")
 	var agentArgs []string
@@ -192,6 +195,9 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run comma
 			return err
 		}
 		return writeJSON(stdout, report)
+	}
+	if ownOutput && dashboardEnabled(*plain, *jsonOutput, term.IsTerminal(int(os.Stdin.Fd())), term.IsTerminal(int(os.Stderr.Fd())), os.Getenv("TERM")) {
+		return runDashboard(ctx, cfg, *once, run.watch, os.Stdin, os.Stderr)
 	}
 	log.Info("Writing bulletins", "repository", cfg.GitHubRepo(), "branch", cfg.Branch, "checkout", cfg.Directory, "state", cfg.StateDirectory)
 	return run.watch(ctx, cfg, log, *once)

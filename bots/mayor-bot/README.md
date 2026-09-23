@@ -42,13 +42,41 @@ default branch, and keeps its own checkout and state under
 
 Every bot shares these options: `--config`, `--branch`, `--agent`,
 `--agent-arg` (repeatable), `--model`, `--effort`, `--poll`, `--timeout`,
-`--once`, `--json` (structured logs) and `--plain` (scrolling console output,
-the default here). `status` prints the saved state; `version` prints the
-release.
+`--once`, `--json` (structured logs) and `--plain` (scrolling console output).
+`status` prints the saved state; `version` prints the release.
 
 Bot options: `--max-items`, and `--since` for `bulletin`. The watching bulletin
 starts where the last recorded bulletin ended. Standalone, the Mayor still never
 writes to GitHub.
+
+## Terminal dashboard
+
+Interactive runs show a live dashboard by default. It fits the current terminal
+or tmux pane and adjusts when the pane is resized.
+
+```sh
+bmb /path/to/repo           # live dashboard in an interactive terminal
+bmb /path/to/repo --plain   # scrolling console output and agent transcript
+bmb /path/to/repo --json    # structured logs for tools and log collectors
+```
+
+The overview shows the repository and branch, stage, active tool, uptime, and
+the countdown to the next bulletin; larger panes add the model, reasoning effort
+and bulletin interval. **Recorded** counts every bulletin in the workspace state,
+its items and the pull requests it covered. The bulletin browser shows each
+window's summary and classified items with the pull requests and issues they
+cite. On exit, bulletins written during the run stay in the terminal.
+
+- `1`, `2`, `3` or `Tab`: switch between overview, bulletins, and activity.
+- `↑` / `↓` or `k` / `j`: browse bulletins or scroll activity.
+- `Enter`: inspect the selected bulletin. `Esc` returns; `Page Up` / `Page Down` scroll.
+- `g` / `G`: jump to the start/end; `G` resumes following live activity.
+- `q` or `Ctrl+C`: stop the bot and its active agent, then restore the terminal.
+
+Piped input, redirected stderr, and `TERM=dumb` use scrolling output
+automatically. `--plain` and `--json` disable the dashboard and are mutually
+exclusive. `NO_COLOR` disables dashboard colors. `status`, `judge`, `bulletin`, `version` and help never open the
+dashboard.
 
 ## Worker protocol
 

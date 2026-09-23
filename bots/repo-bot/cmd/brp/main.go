@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	bot "github.com/BrokkAi/repo-bot"
+	"golang.org/x/term"
 )
 
 // version is replaced with the release tag when building published binaries.
@@ -69,8 +70,8 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run runFu
 	maxRepairs := fs.Int("max-repairs", 3, "maximum repair attempts per failing revision (1-10)")
 	dryRun := fs.Bool("dry-run", false, "commit repairs locally without publishing them")
 	once := fs.Bool("once", mode == "once", "observe once, then exit")
-	jsonOutput := fs.Bool("json", false, "structured logs")
-	plain := fs.Bool("plain", false, "scrolling console output (the default)")
+	jsonOutput := fs.Bool("json", false, "structured logs (disables the dashboard)")
+	plain := fs.Bool("plain", false, "scrolling console output (disables the dashboard)")
 	poll := fs.Duration("poll", 0, "poll interval, e.g. 15m")
 	timeout := fs.Duration("timeout", 0, "budget for each repair, e.g. 1h")
 	var agentArgs []string
@@ -159,6 +160,9 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run runFu
 		return errors.New("install GitHub CLI and run gh auth login")
 	}
 	bot.Version = buildVersion()
+	if ownOutput && dashboardEnabled(*plain, *jsonOutput, term.IsTerminal(int(os.Stdin.Fd())), term.IsTerminal(int(os.Stderr.Fd())), os.Getenv("TERM")) {
+		return runDashboard(ctx, cfg, *once, run, os.Stdin, os.Stderr)
+	}
 	log.Info("Watching repository", "repository", cfg.GitHubRepo(), "branch", cfg.Branch, "checkout", cfg.Directory, "state", cfg.StateDirectory)
 	return run(ctx, cfg, log, *once)
 }

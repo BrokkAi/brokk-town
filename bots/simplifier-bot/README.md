@@ -42,13 +42,43 @@ default branch, and keeps its own checkout and state under
 
 Every bot shares these options: `--config`, `--branch`, `--agent`,
 `--agent-arg` (repeatable), `--model`, `--effort`, `--poll`, `--timeout`,
-`--once`, `--json` (structured logs) and `--plain` (scrolling console output,
-the default here). `status` prints the saved state; `version` prints the
-release.
+`--once`, `--json` (structured logs) and `--plain` (scrolling console output).
+`status` prints the saved state; `version` prints the release.
 
 Bot options: `--max-proposals`, `--dry-run`, `--label` (repeatable), and for
 `assess`, `--issue`, `--pr` and `--mode suggest|auto`. Assessments perform no
 GitHub writes.
+
+## Terminal dashboard
+
+Interactive runs show a live dashboard by default. It fits the current terminal
+or tmux pane and adjusts when the pane is resized.
+
+```sh
+bsb /path/to/repo           # live dashboard in an interactive terminal
+bsb /path/to/repo --plain   # scrolling console output and agent transcript
+bsb /path/to/repo --json    # structured logs for tools and log collectors
+```
+
+The overview shows the repository, branch and scanned commit, scan stage,
+active tool, uptime, and the next scan countdown; larger panes add the model and
+reasoning effort. **Saved** counts cover every proposal in the workspace state:
+proposed, filed, pending and dry run. **Run** counters start at zero each run:
+completed scans, agent starts, tools and error log events. The proposal
+browser shows the latest 200 proposals with their concern, simpler alternative,
+subsystems, evidence and issue URL. On exit, new and changed proposals stay in
+the terminal, with full details for dry runs.
+
+- `1`, `2`, `3` or `Tab`: switch between overview, proposals, and activity.
+- `↑` / `↓` or `k` / `j`: browse proposals or scroll activity.
+- `Enter`: inspect the selected proposal. `Esc` returns; `Page Up` / `Page Down` scroll.
+- `g` / `G`: jump to the start/end; `G` resumes following live activity.
+- `q` or `Ctrl+C`: stop the bot and its active agent, then restore the terminal.
+
+Piped input, redirected stderr, and `TERM=dumb` use scrolling output
+automatically. `--plain` and `--json` disable the dashboard and are mutually
+exclusive. `NO_COLOR` disables dashboard colors. `status`, `assess`, `version` and help never open the
+dashboard.
 
 ## Worker protocol
 
