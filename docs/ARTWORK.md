@@ -78,3 +78,21 @@ and can be pinned per base in the browser; `?skin=frontline` opens the theme for
 whoever the link is sent to. Strikes still follow committed events, the motion
 toggle and the operating system's reduced-motion setting, and the theme never
 writes to GitHub or changes what a delivery means.
+
+## Frontline attacks and defenders (2026-09-23)
+
+`frontline-defenders.png` is a new original transparent 3-column by 2-row
+atlas generated with the built-in `image_gen` tool. The top row contains one
+ground defender for each faction (armored human, crystalline alien, chitinous
+swarm); the lower row contains matching defensive emplacements. The final
+prompt asked for six separate isometric game sprites, each centered in its
+cell, with genuine transparency and no text, logos, or copied game units.
+
+Every Frontline installation now holds two ground units and one emplacement.
+They stand still when their worker is idle, patrol lightly when it is working,
+and respond only when a committed delivery approaches. The delivery craft
+fires faction-specific volleys: human tracers and smoke, alien energy lances,
+or arcing swarm spores. Its arrival produces a matching explosion, energy
+burst, or acid splash. These effects derive from the existing event, route,
+faction, and frame time; they do not create commands or events. Image requests
+start when the Frontline skin is selected, outside the canvas draw loop.

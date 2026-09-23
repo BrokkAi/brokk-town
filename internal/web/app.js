@@ -416,6 +416,7 @@ function renderViewSwitcher() {
 // touches no town state, so it is safe to call on any snapshot or redraw.
 function applySkin() {
   activeSkin = skinFor(skin);
+  activeSkin.prepare?.();
   if (document.body) document.body.dataset.skin = activeSkin.id;
   document.querySelectorAll("[data-skin-text]").forEach((element) => {
     const key = element.dataset?.skinText,
@@ -1372,12 +1373,25 @@ function draw(now) {
       else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
     });
     const w = t?.workers[role];
-    if (w?.status === "working" || w?.status === "pausing")
-      activeSkin.paintOccupants(ctx, { role, x, y, faction, now, motion }, (index, px = 0, py = 0, size = 52) =>
+    const working = w?.status === "working" || w?.status === "pausing";
+    if (working || activeSkin.showIdleOccupants) {
+      let threat = null;
+      if (motion && activeSkin.showIdleOccupants)
+        for (const m of moving) {
+          const elapsed = now - m.start;
+          if (m.town !== selectedTown || m.to !== role ||
+              elapsed < activeSkin.travelMs * 0.68 ||
+              elapsed >= activeSkin.travelMs + activeSkin.impactMs) continue;
+          const p = routePosition(m.from, m.to,
+            easeDelivery(Math.min(1, elapsed / activeSkin.travelMs)));
+          if (Math.hypot(p.x - x, p.y - (y + 60)) < 190) threat = p;
+        }
+      activeSkin.paintOccupants(ctx, { role, x, y, faction, now, motion, working, threat }, (index, px = 0, py = 0, size = 52) =>
         index === "feature"
           ? singleSprite(featureReader, px, py, 58)
           : sprite(actors, index, px, py, size),
       );
+    }
   }
 
   const travel = activeSkin.travelMs;

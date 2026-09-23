@@ -16,6 +16,7 @@ import {
   drawImpact as drawFrontlineImpact,
   frontlineLandscape,
   frontlineWords,
+  preloadFrontlineArt,
 } from "./frontline.js";
 
 // A skin is presentation only. Both skins read the same snapshot, draw the
@@ -205,6 +206,8 @@ export const skins = {
     switchLabel: "Theme: Frontline",
     switchTitle: "Switch back to the Brokk Town neighbourhood",
     note: "Frontline is a look, not a lever: every strike animates a delivery Town already committed, and nothing here writes to GitHub.",
+    prepare: preloadFrontlineArt,
+    showIdleOccupants: true,
     supportsFactions: true,
     travelMs: 6500,
     impactMs: 900,
@@ -217,8 +220,8 @@ export const skins = {
     paintInstallation(c, { role, x, y, faction, now, motion }) {
       paintFrontlineInstallation(c, { role, x, y, faction, now, motion });
     },
-    paintOccupants(c, { role, x, y, faction, now, motion }) {
-      drawGarrison(c, { role, x, y, faction, now, motion });
+    paintOccupants(c, { role, x, y, faction, now, motion, working, threat }) {
+      drawGarrison(c, { role, x, y, faction, now, motion, working, threat });
     },
     drawStrike(c, strike) {
       drawFrontlineStrike(c, {
@@ -230,6 +233,7 @@ export const skins = {
         progress: strike.progress,
         direction: strike.direction,
         motion: strike.motion,
+        to: strike.to,
       });
     },
     drawImpact(c, { x, y, faction, age }) {

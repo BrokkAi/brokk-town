@@ -19,6 +19,7 @@ import {
   drawGarrison,
   drawStrike,
   drawImpact,
+  preloadFrontlineArt,
 } from "./frontline.js";
 import { skins, skinIds, normalizeSkin, skinFor, skinTextKeys } from "./skins.js";
 
@@ -158,26 +159,64 @@ test("installations and garrisons draw for every army without a browser", () => 
     }
 });
 
-test("loaded faction atlases paint the matching structures and craft", () => {
+test("loaded faction atlases paint the matching structures and craft", async () => {
   const loaded = [];
   globalThis.Image = class {
     complete = true;
     naturalWidth = 1774;
     naturalHeight = 887;
-    set src(value) { loaded.push(value); }
+    set src(value) {
+      loaded.push(value);
+      if (value.includes("defenders")) {
+        this.naturalWidth = 1536;
+        this.naturalHeight = 1024;
+      }
+    }
   };
   try {
     const { ctx, ops } = recording();
+    preloadFrontlineArt();
+    assert.equal(loaded.length, 0, "image requests stay off the theme input handler");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(loaded.length, 5, "all art starts loading when the skin is selected");
     paintInstallation(ctx, { role: "feature", x: 300, y: 200, faction: "ascendancy" });
     assert.ok(loaded.includes("/assets/frontline-ascendancy.png"));
     assert.ok(ops.some((op) => op[0] === "drawImage" && op[2] === 3 * 1774 / 4));
     ops.length = 0;
-    drawGarrison(ctx, { role: "feature", x: 300, y: 200, faction: "ascendancy", now: 0 });
+    drawGarrison(ctx, { role: "feature", x: 300, y: 200, faction: "ascendancy", now: 0, working: false });
+    assert.ok(loaded.includes("/assets/frontline-defenders.png"));
+    assert.equal(ops.filter((op) => op[0] === "drawImage").length, 3,
+      "idle bases keep two ground units and an emplacement");
+    ops.length = 0;
+    drawStrike(ctx, { x: 300, y: 200, cargo: "issue:9", faction: "ascendancy",
+      to: "feature", now: 900, progress: 0.8 });
     assert.ok(loaded.includes("/assets/frontline-craft.png"));
     assert.ok(ops.some((op) => op[0] === "drawImage"));
+    assert.equal(loaded.length, 5, "draw calls never start image requests");
   } finally {
     delete globalThis.Image;
   }
+});
+
+test("the three factions fire and land visibly different attacks", () => {
+  const { ctx, ops } = recording();
+  const strikes = factionIds.map((faction) => {
+    drawStrike(ctx, { x: 400, y: 300, cargo: "pr:12", faction, to: "review",
+      now: 1700, progress: 0.8, direction: 1 });
+    return ops.splice(0);
+  });
+  assert.notDeepEqual(strikes[0], strikes[1]);
+  assert.notDeepEqual(strikes[1], strikes[2]);
+  assert.ok(strikes[1].some((op) => op[0] === "quadraticCurveTo"),
+    "alien craft project a curved energy lance");
+  assert.ok(strikes[2].filter((op) => op[0] === "quadraticCurveTo").length >= 4,
+    "swarm craft launch arcing spores");
+  const impacts = factionIds.map((faction) => {
+    drawImpact(ctx, { x: 400, y: 300, faction, age: 0.35 });
+    return ops.splice(0);
+  });
+  assert.notDeepEqual(impacts[0], impacts[1]);
+  assert.notDeepEqual(impacts[1], impacts[2]);
 });
 
 test("a strike frame names its target and repeats exactly for the same event", () => {
