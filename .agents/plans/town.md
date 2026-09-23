@@ -298,3 +298,17 @@
   comment and state-write failures after a reconciliation, and the daemon
   and `--once` handling of issue-only failures.
 - `bundle.json` moves issue-bot to 0.5.9 at the final fix commit.
+
+## release-bot triage after a remote advance (#111)
+
+- Triage cached its decision by the release head and released baseline only.
+  When the bot's checkout holds unpushed commits, `releaseHead` is the local
+  HEAD, so a new commit on the watched remote branch changed neither key and a
+  cached `wait` hid it until the daily deadline.
+- `TriageRecord` now also keys on the remote branch head, and the triage prompt
+  and skill give the agent both heads so it inspects both histories. Ported
+  from the unmerged upstream release-bot PR #18.
+- Saved records from before the change have no remote head and are
+  reassessed once rather than reused.
+- A regression test (with and without a quiet period) failed before the fix.
+- `bundle.json` moves release-bot to 0.6.4 at the fix commit.
