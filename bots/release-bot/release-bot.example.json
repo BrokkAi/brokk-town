@@ -24,5 +24,7 @@
   "attempts": 3,
   "triage": true,
   "triage_timeout": "10m",
-  "release_trigger_ignore": []
+  "release_trigger_ignore": [],
+  "notify": [],
+  "notify_timeout": "30s"
 }

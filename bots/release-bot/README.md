@@ -209,6 +209,29 @@ Restarting immediately resumes a pending job, even if its saved retry timer has 
 
 Agent setup failures (including an unknown model or unsupported effort) exit immediately before any prompt and do not consume release attempts or impose a retry delay. Correct the command-line/config setting and restart normally; the new invocation supplies the agent settings. Setup errors are recorded separately from release failures. For state saved by older versions, startup recognizes the old unknown-model/effort error and refunds that last setup attempt once, allowing corrected settings to run even if the saved budget was exhausted. Earlier release failures remain counted.
 
+## Outcome notifications
+
+An optional `notify` command lets an unattended daemon tell an existing desktop notifier or monitoring script when a release is verified or automatic retries have stopped. It is disabled by default and is read only from a configuration file; Brokk Town does not pass it to the worker. `notify_timeout` is required with a command and must be positive.
+
+```json
+"notify": ["/opt/release-checks/notify", "--channel", "releases"],
+"notify_timeout": "30s"
+```
+
+The command runs directly as an argument array, with no shell expansion, in `state_directory` (outside the managed checkout), with the bot account's OS permissions and environment. It is not a sandbox. A relative command path resolves from `state_directory`; prefer an absolute path. Each invocation receives one JSON object on stdin:
+
+```json
+{"version":1,"event":"verified","time":"2026-09-23T12:00:00Z","repository":"org/repo","branch":"master","job":"job:brb/release-abc:0123…","release":"release:v1.2.0","target":"0123…","commit":"4567…","tag":"v1.2.0","attempts":1,"max_attempts":3}
+```
+
+- `verified` is sent once, after the verified receipt and new baseline are saved, whether the release was just published or reconciled later (including at startup). The hook can read the updated receipt with `brb history --config … --json` or from `state.json` in its working directory. Partial publication sends nothing.
+- `exhausted` is sent once per `run` or `once` invocation, just before the daemon exits because the attempt budget is spent: after the final failed attempt or on startup with an already exhausted pending job whose publication evidence still fails verification. It carries the target commit and, when a plan exists, the prepared commit and tag.
+- Retry backoff, ordinary failures, agent setup errors and Ctrl+C/SIGTERM send nothing.
+
+`repository` is present for GitHub repositories. `job` is stable for a pending release across restarts. The payload omits failure text, command output, transcripts, environment values, configuration and local paths; use `status` or the logs for details.
+
+Delivery is best effort. There is no queue or replay: an event is lost if the daemon crashes or is stopped before the command runs, and restarting an exhausted job without `retry` sends `exhausted` again. Deduplicate on `event` and `job`. A missing executable, nonzero exit or timeout is logged as a warning with bounded stderr and never changes the release baseline, attempts, retry timing or exit status, and never causes republication. On timeout, the command's whole process group is killed. Stdout is discarded.
+
 ## Publishability before publication
 
 A new release starts with a separate preparation session using the embedded [preflight skill](skills/preflight.md). That session can prepare code and validation infrastructure, but its instructions prohibit tags, public releases and registry uploads. It must enumerate every intended publication destination and return a plan containing:
