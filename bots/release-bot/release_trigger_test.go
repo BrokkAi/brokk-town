@@ -306,7 +306,7 @@ func TestTriggerInspectionFailureIsVisible(t *testing.T) {
 
 func TestChangedPathsListBothSidesOfRenames(t *testing.T) {
 	tf := newTriggerFixture(t, 0)
-	tf.push(t, map[string]string{"docs/internal/guide.md": "guide text", " spaced name": "x"})
+	tf.push(t, map[string]string{"docs/internal/guide.md": "guide text", " spaced name": "x", "line\nbreak": "x", "docs/ünïcødé.md": "x"})
 	before := localGit(t, tf.source, "rev-parse", "HEAD")
 	localGit(t, tf.source, "mv", "docs/internal/guide.md", "docs/guide.md")
 	localGit(t, tf.source, "commit", "-q", "-m", "move")
@@ -320,10 +320,41 @@ func TestChangedPathsListBothSidesOfRenames(t *testing.T) {
 		t.Fatalf("rename paths: %q %v", paths, err)
 	}
 	paths, err = tf.engine.git.changedPaths(context.Background(), tf.head, before)
-	if err != nil || len(paths) != 2 || paths[0] != " spaced name" {
+	if err != nil || strings.Join(paths, "|") != " spaced name|docs/internal/guide.md|docs/ünïcødé.md|line\nbreak" {
 		t.Fatalf("unusual path names: %q %v", paths, err)
 	}
 	if _, err := tf.engine.git.changedPaths(context.Background(), tf.head, strings.Repeat("0", 40)); err == nil {
 		t.Fatal("missing commit compared as unchanged")
+	}
+}
+
+func TestSubmoduleBumpIsReleaseRelevantDespiteIgnoreSubmodulesConfig(t *testing.T) {
+	tf := newTriggerFixture(t, 48*time.Hour)
+	link := func(commit string) {
+		localGit(t, tf.source, "update-index", "--add", "--cacheinfo", "160000,"+commit+",vendor/sub")
+	}
+	link(strings.Repeat("1", 40))
+	localGit(t, tf.source, "commit", "-q", "-m", "add submodule")
+	localGit(t, tf.source, "push", "-q", "origin", "master")
+	state := fixtureState(t, tf.fixture)
+	state.Released = localGit(t, tf.source, "rev-parse", "HEAD")
+	if err := writeState(tf.engine.config, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := tf.engine.git.open(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// An operator setting must not hide the bump from the comparison.
+	localGit(t, tf.engine.git.repositoryDirectory(), "config", "diff.ignoreSubmodules", "all")
+	if err := os.MkdirAll(filepath.Join(tf.source, "docs/internal"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(tf.source, "docs/internal/plan.md"), "notes")
+	localGit(t, tf.source, "add", "docs/internal/plan.md")
+	link(strings.Repeat("2", 40))
+	localGit(t, tf.source, "commit", "-q", "-m", "docs and submodule bump")
+	localGit(t, tf.source, "push", "-q", "origin", "master")
+	if tf.deferred(t, false) {
+		t.Fatal("submodule bump was hidden by diff.ignoreSubmodules")
 	}
 }

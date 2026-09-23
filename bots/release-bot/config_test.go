@@ -28,6 +28,8 @@ func TestConfiguration(t *testing.T) {
 		{`{"remote":"git@github.com:org/repo.git","release_trigger_ignore":[""]}`, false},
 		{`{"remote":"git@github.com:org/repo.git","release_trigger_ignore":["/"]}`, false},
 		{`{"remote":"git@github.com:org/repo.git","release_trigger_ignore":["docs/*.md"]}`, false},
+		{`{"remote":"git@github.com:org/repo.git","release_trigger_ignore":[" docs/"]}`, false},
+		{`{"remote":"git@github.com:org/repo.git","release_trigger_ignore":["NOTES.md "]}`, false},
 		{`{"remote":"git@github.com:org/repo.git","release_trigger_ignore":["docs\\internal"]}`, false},
 	} {
 		dir := t.TempDir()
@@ -65,7 +67,7 @@ func TestTriggerIgnoreMatching(t *testing.T) {
 	cfg := Config{ReleaseTriggerIgnore: []string{"docs/internal/", "NOTES.md"}}
 	for path, ignored := range map[string]bool{
 		"docs/internal/a.md": true, "docs/internal/deep/b.md": true, "NOTES.md": true,
-		"docs/internal": false, "docs/internal-api/a.md": false, "docs/NOTES.md": false, "NOTES.md.bak": false, "src/main.go": false,
+		"docs/internal": false, "docs/internal-api/a.md": false, "docs/NOTES.md": false, "NOTES.md.bak": false, "notes.md": false, "Docs/internal/a.md": false, "src/main.go": false,
 	} {
 		if cfg.triggerIgnored(path) != ignored {
 			t.Errorf("%s: ignored = %v", path, !ignored)

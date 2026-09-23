@@ -257,9 +257,10 @@ func (g checkout) changes(ctx context.Context, base, head string, since time.Tim
 // changedPaths lists every path whose content differs between base and tip.
 // Renames are split into their deleted and added paths, so a move across a
 // directory boundary reports both sides. NUL-separated status records keep
-// unusual file names exact.
+// unusual file names exact. Submodule bumps are reported as the submodule's
+// path whatever diff.ignoreSubmodules says.
 func (g checkout) changedPaths(ctx context.Context, base, tip string) ([]string, error) {
-	out, err := g.git(ctx, "diff", "--no-ext-diff", "--no-renames", "--name-status", "-z", base, tip, "--")
+	out, err := g.git(ctx, "diff", "--no-ext-diff", "--no-renames", "--ignore-submodules=none", "--name-status", "-z", base, tip, "--")
 	if err != nil {
 		return nil, err
 	}

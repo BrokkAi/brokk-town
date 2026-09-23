@@ -212,11 +212,12 @@ func (c Config) Validate() error {
 
 // validTriggerIgnore accepts a literal repository-relative file path, or a
 // directory prefix with a trailing slash. Globs, backslashes, absolute paths,
-// and empty, "." or ".." segments are refused rather than reinterpreted.
+// surrounding whitespace, and empty, "." or ".." segments are refused rather
+// than reinterpreted.
 func validTriggerIgnore(entry string) error {
 	invalid := fmt.Errorf("release_trigger_ignore entry %q must be a repository-relative file, or directory ending in /, without globs or . and .. segments", entry)
 	name := strings.TrimSuffix(entry, "/")
-	if name == "" || strings.ContainsAny(entry, "*?[\\") {
+	if name == "" || strings.TrimSpace(entry) != entry || strings.ContainsAny(entry, "*?[\\") {
 		return invalid
 	}
 	for _, segment := range strings.Split(name, "/") {
@@ -229,6 +230,8 @@ func validTriggerIgnore(entry string) error {
 
 // triggerIgnored reports whether a changed repository path is excluded from
 // starting a release: an exact file entry, or a path under a directory entry.
+// Matching is byte-exact and case-sensitive. A submodule is reported as its
+// bare path, so only a file entry such as "vendor/sub" ignores its bumps.
 func (c Config) triggerIgnored(path string) bool {
 	for _, entry := range c.ReleaseTriggerIgnore {
 		if path == entry || strings.HasSuffix(entry, "/") && strings.HasPrefix(path, entry) {
