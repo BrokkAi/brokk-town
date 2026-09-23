@@ -75,13 +75,25 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 	observe, _ := ctx.Value(progressKey{}).(func(Progress))
 	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config, stage string) Agent { return agentProcess{c, log.With("stage", stage)} }, now: time.Now, sleep: pause, observe: observe}
 	e.report(s, "starting", "Loading saved scan")
+	return e.loop(ctx, s, once)
+}
+
+// loop runs scans until once completes, setup fails or ctx ends.
+func (e engine) loop(ctx context.Context, s *State, once bool) error {
+	cfg, log := e.config, e.log
 	for {
 		err := e.step(ctx, s, once)
+		unchanged := errors.Is(err, errUnchanged)
+		if unchanged {
+			err = nil
+		}
 		var setup *runner.SetupError
 		if once || errors.As(err, &setup) || ctx.Err() != nil {
 			return err
 		}
-		if err != nil {
+		if unchanged {
+			e.report(s, "waiting", "Branch unchanged since the last completed scan")
+		} else if err != nil {
 			log.Error("Bug scan paused", "error", err)
 			phase := "paused"
 			if s.Scan != nil {
@@ -100,11 +112,15 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		} else {
 			e.report(s, "waiting", "Next scan")
 		}
-		if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
+		if err := e.sleep(ctx, time.Duration(cfg.Poll)); err != nil {
 			return err
 		}
 	}
 }
+
+// errUnchanged tells the daemon loop that a poll found the last completed revision.
+var errUnchanged = errors.New("branch unchanged since the last completed scan")
+
 func pause(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -217,6 +233,10 @@ func (e engine) step(ctx context.Context, s *State, force bool) error {
 		if !force && s.Scan.RetryAt.After(e.now()) {
 			return nil
 		}
+	}
+	if s.Scan == nil && !force && e.config.OnlyOnChange && s.LastCompleted != nil && *s.LastCompleted == (LastCompleted{Commit: head, DryRun: e.config.DryRun}) {
+		e.log.Debug("Branch unchanged since the last completed scan; waiting for a new commit", "commit", head, "next_check", e.now().Add(time.Duration(e.config.Poll)))
+		return errUnchanged
 	}
 	if s.Scan == nil {
 		var id [12]byte
@@ -503,6 +523,16 @@ func (e engine) finish(s *State) error {
 		if c.Status == "stale" {
 			phase = "discarded"
 		}
+	}
+	if phase == "complete" {
+		// A revision published only in dry-run mode remains eligible for publication.
+		done := LastCompleted{Commit: s.Scan.Commit, DryRun: e.config.DryRun}
+		for _, c := range s.Scan.Candidates {
+			if c.Status == "dry_run" {
+				done.DryRun = true
+			}
+		}
+		s.LastCompleted = &done
 	}
 	s.History = append(s.History, s.Scan.Commit+": "+s.Scan.Summary)
 	if len(s.History) > 20 {

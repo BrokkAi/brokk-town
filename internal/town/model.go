@@ -473,7 +473,15 @@ type Task struct {
 	// not cover. It blocks the task, and is the record that lets Town release
 	// its own block if the pull request is retargeted back.
 	Offbranch bool `json:"offbranch,omitempty"`
+	// DeferredUntil is an operator's snooze: before then Town starts no new
+	// agent run and makes no merge for this task. DeferReason says why.
+	// Both are operator state; nothing Town observes on GitHub changes them.
+	DeferredUntil time.Time `json:"deferred_until,omitzero"`
+	DeferReason   string    `json:"defer_reason,omitempty"`
 }
+
+// Deferred reports whether the operator's snooze still holds at now.
+func (t *Task) Deferred(now time.Time) bool { return t.DeferredUntil.After(now) }
 
 // IssueJob is the public scheduling outcome from issue-bot durable state.
 type IssueJob struct {

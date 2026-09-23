@@ -543,6 +543,76 @@
   dashboard shows both. Town and the worker protocol are unchanged.
 - `bundle.json` moves feature-bot to 0.2.0 at the feature commit.
 
+## Snooze one task (#62)
+
+- `Task.DeferredUntil` and `Task.DeferReason` are operator state, published as
+  `deferred_until` and `defer_reason`. Reconcile and funnel sync update tasks in
+  place and never touch them; state validation rejects a reason over 200
+  characters or a reason without a time.
+- `Supervisor.Defer` sets or clears the snooze through one store update and
+  wakes the scheduler. `/api/control` takes `action: "defer"` with an RFC 3339
+  `until` and optional `reason`; `undefer` goes through `Control`. Refused: a
+  past time, more than 366 days ahead, a multi-line or long reason, a commit or
+  source task, a merged, closed, closing, declined or implemented task, and
+  clearing a task that is not snoozed.
+- Selection gates beside Blocked/RetryAt: `nextIssue`, `nextTask` (review,
+  simplifier intake, repair "fixes"), `nextJudgment` and `mergeReady`. These
+  take the clock explicitly so tests use fake time. A snooze stops new agent
+  dispatch and merges for that task only; a running attempt finishes, and the
+  Mayor's own admit/decline is not gated.
+- Expiry: the scheduler's one-second pass clears ended snoozes, wakes the
+  task's house (`Next` zero) and records "Snooze ended". Demo runs the same
+  sweep on its own ticker, and the demo board seeds a snoozed `issue:707`.
+  Selection ignores an ended snooze even before the sweep runs.
+- Clients: `taskSnooze`/`taskStatus` show "Snoozed" (outranking blocked and
+  failed, not a running attempt) until the resume time; snoozed work is not an
+  attention item. The inspector offers **Snooze…** (dialog with local
+  datetime and reason) and **Resume now**. CLI: `bt defer --until --reason`,
+  `bt undefer`.
+- Review follow-ups: an issue run's attempt and cost go to the issue it
+  reports (the fallback skips snoozed issues); the reason limit counts
+  characters on both service and browser; a snooze that ends on finished work
+  is dropped silently; the inspector says retry keeps a snooze.
+
+## bug-bot only-on-change polling (#98)
+
+- Optional `only_on_change` (`--only-on-change`, default false). In daemon mode
+  each poll still fetches; with no active scan left after reconciliation,
+  pending retries and exhausted-revision checks, a fetched commit equal to the
+  last completed scan for the same dry-run setting starts no investigation, no
+  worktree and no history entry. `once` (and so Town's worker) always runs.
+- State gains `last_completed {commit, dry_run}`, validated on read. Only a
+  discovered scan that finishes without stale findings sets it, zero findings
+  included. A scan with any `dry_run` finding records `dry_run: true`, so real
+  publication can rescan that commit. Legacy state without it scans once.
+- An unchanged poll reports `waiting` with an "unchanged" task; the dashboard
+  shows it beside the next-check countdown without counting a completed scan.
+- `bundle.json` moves bug-bot to 0.5.0 at the final feature commit.
+
+## release-bot release_trigger_ignore (#110)
+
+- Optional `release_trigger_ignore` config: repository-relative literal files
+  and directory prefixes ending in `/`; empty by default. Absolute paths,
+  backslashes, globs, surrounding whitespace, empty entries and empty, `.` or
+  `..` segments are rejected. Matching is case-sensitive; a submodule is its
+  bare path, so only a file entry ignores its bumps.
+- Before a new automatic job (after pending-job recovery, before cadence and
+  triage), `git diff --no-renames --ignore-submodules=none --name-status -z`
+  (immune to `diff.ignoreSubmodules`) compares the released
+  commit with the watched branch head and, when different, the local release
+  head. A nonempty union of paths that are all ignored keeps monitoring with a
+  "waiting" progress task that names the policy; no triage or preparation runs.
+  Renames count both paths, deletions count, a net-empty diff and a release
+  without a recorded time (first release, `initial_ref`) keep existing
+  behavior, and a Git failure is returned as an error.
+- The decision is recomputed from Git every cycle; nothing is saved, so the
+  baseline never moves and a restart reaches the same answer. Commit counts,
+  quiet period, publication and verification are unchanged. `--once --force`
+  bypasses the policy.
+- Town is unchanged: the worker protocol carries no such field (a non-goal of
+  the issue), so the setting applies only to config-file runs.
+- `bundle.json` moves release-bot to 0.7.0 at the final feature commit.
+
 ## feature-bot completed-workspace pruning (#101)
 
 - `engine.finish` appends `completed_workspaces` (directory, scanned commit,

@@ -36,7 +36,7 @@ func TestExhaustedReviewRefreshesInventoryWithoutStallingOtherPRs(t *testing.T) 
 	if !got.Workers[Review].Next.Equal(at.Add(time.Duration(got.Config.PollSeconds) * time.Second)) {
 		t.Fatal("failed PR delayed entire house")
 	}
-	if next := nextTask(got, Review, "queued"); next == nil || next.Number != 2 {
+	if next := nextTask(got, Review, "queued", time.Now()); next == nil || next.Number != 2 {
 		t.Fatal("unrelated review cannot proceed")
 	}
 }
