@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Give the merge gate's `gh pr view` the same one-minute timeout as Town's
+  other GitHub calls, so a stalled `gh` cannot hold the review house.
+- Add `bt settings --merge-policy bot|manual|all`.
+- Seed the demo's paper-trail town with its own opening report.
+
 - Start a fresh demo when the demo's saved state was written by an older Town
   and no longer validates, instead of refusing to start. The unreadable file is
   kept beside it as `state.rejected-<timestamp>.json`, a one-line notice says

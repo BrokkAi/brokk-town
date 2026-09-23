@@ -244,6 +244,15 @@
 
 ## Frontline theme (browser, presentation only)
 
+- 2026-09-23 visual refresh: four original transparent image atlases replace
+  the flat canvas silhouettes when loaded: eight isometric buildings for each
+  of the three factions and a matching three-craft strip. Canvas silhouettes
+  remain a loading fallback. The map and HUD received a dark metal treatment;
+  events, commands, faction choices, and Town art are unchanged. Verified with
+  55 browser tests, frontend syntax checks, `go vet ./...`, and
+  `go test -race ./...` (the race suite needed localhost access outside the
+  sandbox for its `httptest` servers).
+
 - Added `internal/web/skins.js` as the single surface both themes answer
   (landscape, structure, occupants, strike, impact, labels, faction, noun
   rewrite) and `internal/web/frontline.js` for the war art: three armies, a
@@ -387,6 +396,113 @@
   same replacement a live town gets); `serve --repo` restores it with its kept
   config. Both print a notice.
 - Deleting a deleted town returns `unknown town` and appends no event.
+
+## CLI polish (#28)
+
+- `bt request` encodes without HTML escaping, so `<`, `>` and `&` no longer
+  inflate sixfold and push a valid body past the service's 64 KiB limit. An
+  oversized body now gets 413 and "request body exceeds the 64 KiB limit"
+  instead of a decoder error.
+- The browser link carries the access key, so `serve` and `bt -d` print it only
+  when stdout is a terminal. The detached service's log and redirected output
+  get "run bt web for the link"; `bt web` still prints the key on request.
+- Earlier versions wrote the key into `logs/serve.log`, and the key persists
+  across restarts. Opening the service log redacts any `#token=<key>` link in
+  place; a log over 8 MiB is truncated instead of read.
+- `check-request` on an unknown ID returns "unknown request" (404) rather than
+  "does not need reconciliation".
+- The stale `connection.json` PID was already handled by `processAlive`.
+
+## review-bot on acp-go 0.8.1 (fixes #107)
+
+- review-bot moved from acp-go v0.1.0 to v0.8.1, matching issue-bot and Town.
+- Town passes its harness's effort to review-bot through the worker request,
+  and Town lists an uncategorized `thought_level` option as the effort
+  selector. Plain v0.8.1 `SetEffort` would miss it and fail every review with
+  that effort, so `agentProcess.Execute` now follows the v0.8.1 runner
+  lifecycle and restores the v0.1.0 effort order with the same
+  `selectOption`/`effortOption`/`setEffort` as Town's `executeACP`. Keep it
+  aligned with the upstream runner on later upgrades.
+- Accepted as in Town: `SetMode` requires an advertised mode, and an unknown
+  config option type fails `session/new`; both are setup errors.
+- Licence review: LICENSE byte-identical, NOTICE new in v0.8.1; both recorded
+  in `licenses/policy.json` and notices regenerated.
+- Added `bots/review-bot/agent_acp_test.go`: a credential-free simulated ACP
+  agent from the test binary driving `agentProcess` over stdio. Covers
+  startup, model/effort selection before the prompt, permission
+  auto-approval, transcripts, commentary-then-receipt, a rejected model and a
+  missing command as setup errors, cancellation of a prompt in flight, and
+  the legacy `thought_level` effort (fails with plain `SetEffort`).
+- `bundle.json` moves review-bot to the next patch at the upgrade commit.
+
+## Documentation drift (#29)
+
+- `GitHubClient.Gate` and `api()` share one bounded `gh` runner
+  (`GitHubClient.Timeout`, default one minute), so a stalled `gh pr view`
+  cannot hold the review house's merge pass. An expired bound reports
+  "gh ... timed out after 1m0s" rather than a killed process; a caller's own
+  cancellation is reported as that. Worker jobs keep the two-hour
+  `workerDeadline`.
+- `bt settings --merge-policy bot|manual|all` sets the town policy through the
+  existing settings API; it refuses `--role`.
+- README states that config-file entries get no defaults, that a release retry
+  starts a paused release house (a task retry does not), and what each
+  deadline covers.
+- Demo paper-trail opens with its own report instead of orchard's.
+- The README keyboard map no longer exists; the browser help dialog lists the
+  current 0–8 shortcuts. Release docs agree on 0.6.2.
+
+## Reopened intake (#94)
+
+- Reconcile sent every reopened or unlocked issue to `queued` without changing
+  its house, so an issue closed before Simplifier or the Mayor handled it was
+  left `simplifier/queued` or `hall/queued`, which no worker selects. A pull
+  request reopened from Simplifier or Mayoral intake skipped intake and went
+  straight to Review.
+- `resume` now derives where the task returns from its house: Simplifier →
+  `simplifying`, Town Hall → `awaiting_mayor` with a pending decision (issues
+  and outside pull requests), a Mayoral or Simplifier decline stays `declined`,
+  and work past intake returns to Issue or Review as before. It wakes the house
+  that selects the task. A reopened pull request resumes before draft or lock
+  state applies, so a later revision cannot carry it out of intake. `Blocked`,
+  `Attempts` and `RetryAt` are left as they were, so a decision whose Mayor Bot
+  attempts are exhausted still waits for the operator.
+- A Simplifier auto-decline no longer yields to repository metadata: a new
+  revision or a draft change no longer moves it to Review (`holdsIntake`). The
+  Mayor (not Mayor Bot) can admit it anyway through the usual admit command
+  (`bt admit`, or "Admit anyway" from Town Hall's "Declined by Simplifier"
+  list), which clears the decline. A Mayoral decline stays final. Older state
+  where a revision already carried the decline out of Town Hall (including a
+  retired or reviewed pull request) has the stale decline cleared on the next
+  inventory. Town's own pull request declined by Simplifier is never closed and
+  strands its issue; tracked separately in #126. "Admit anyway" asks for
+  confirmation.
+- The declined-issue closer claims each issue under the store just before the
+  GitHub write: it rechecks the decline, and an auto-declined issue moves to
+  `closing`, which admission refuses. An accepted close settles it `closed`
+  (so a reopen before the next inventory is an appeal, not a close to retry),
+  a definite 4xx rejection (`RejectedError`; not 408/429/rate limits) releases
+  it to `declined`, and only an uncertain outcome keeps `closing`. A `closing`
+  issue the full inventory no longer lists (deleted or transferred) is released
+  to `declined`. The browser treats a `closing` issue as settled work. An
+  admission that lands first makes the closer skip the issue.
+- Someone reopening an issue Town closed on Simplifier's decline is an appeal:
+  the issue waits for the Mayor with Simplifier's assessment attached, and the
+  closer leaves it alone. Reopening neither re-closes it nor admits it, so no
+  decision is made for the Mayor.
+- Mayor Bot skips blocked decisions, as other selectors do, so it does not
+  judge a pull request retargeted off this town's branch; the browser's "to
+  decide" counts skip them too.
+- Reconcile treats an explicit `"pull_request": null` in the issue inventory as
+  an issue rather than a pull request.
+- A pull request returning from another base branch resumes its intake or
+  decline instead of going to Review; a pending one used to fail state
+  validation there.
+- Closure clears only a pending decision (the invariant keeps pending in Town
+  Hall). A declined pull request its author closed is stored `closed` with its
+  decline kept, so it is not counted as open or retired off-branch, and resume
+  restores `declined` on reopen. An issue already stranded `queued` outside
+  Issue is healed on the next inventory.
 
 ## bug-bot review model and effort (#97)
 

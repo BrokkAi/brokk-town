@@ -319,6 +319,12 @@ func run(ctx context.Context, args []string) error {
 			}
 			payload["review_close_severity"] = strings.ToUpper(*fl.closeSeverity)
 		}
+		if *fl.mergePolicy != "" {
+			if settingsRole != "" {
+				return errors.New("--merge-policy is a town setting; omit --role")
+			}
+			payload["merge_policy"] = strings.ToLower(*fl.mergePolicy)
+		}
 		budgetEdited := *fl.budgetPeriod != "" || *fl.budgetAttempts != 0 || *fl.budgetMinutes != 0
 		if budgetEdited {
 			if settingsRole != "" {
@@ -407,6 +413,35 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
 	}
 }
+
+// browserLink returns the browser address with its access key only when
+// stdout is an interactive terminal. Redirected output, such as the background
+// service's log, gets a pointer to bt web so the key never lands in a file.
+func browserLink(conn connection, demo bool) string {
+	if stdoutIsTerminal() {
+		return conn.URL + "/#token=" + conn.Token
+	}
+	if demo {
+		return "run bt web --demo for the link"
+	}
+	return "run bt web for the link"
+}
+
+var stdoutIsTerminal = func() bool {
+	info, err := os.Stdout.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// serveBanner is what the foreground service prints once it is listening.
+func serveBanner(conn connection, demo bool) string {
+	return fmt.Sprintf("Brokk Town %s\nBrowser: %s\n", buildVersion(), browserLink(conn, demo))
+}
+
+// backgroundBanner is what bt -d prints once the detached service is ready.
+func backgroundBanner(conn connection, demo bool, logs string) string {
+	return fmt.Sprintf("Town running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo), logs)
+}
+
 func readConnection(dir string) (connection, error) {
 	var c connection
 	b, err := os.ReadFile(filepath.Join(dir, "connection.json"))
@@ -419,8 +454,15 @@ func readConnection(dir string) (connection, error) {
 func request(ctx context.Context, c connection, method, path string, body, out any) error {
 	var input io.Reader
 	if body != nil {
-		b, _ := json.Marshal(body)
-		input = strings.NewReader(string(b))
+		// Send text as written: HTML escaping would inflate <, > and & sixfold
+		// and push a valid body past the service's request size limit.
+		var b bytes.Buffer
+		encoder := json.NewEncoder(&b)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(body); err != nil {
+			return err
+		}
+		input = &b
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, input)
 	if err != nil {
@@ -588,7 +630,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	} else {
 		go func() { results <- supervisor.Run(ctx) }()
 	}
-	fmt.Printf("Brokk Town %s\nBrowser: %s/#token=%s\n", buildVersion(), conn.URL, conn.Token)
+	fmt.Print(serveBanner(conn, demo))
 	if demo {
 		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
 	}
