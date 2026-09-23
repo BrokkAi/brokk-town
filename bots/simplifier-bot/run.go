@@ -207,7 +207,10 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 	if err := e.save(s); err != nil {
 		return err
 	}
-	if !force && !time.Now().Before(s.NextScan) {
+	// Scan only once the saved interval has passed; a fresh state has no next
+	// scan and is due at once.
+	if !force && time.Now().Before(s.NextScan) {
+		e.log.Info("Next simplification scan is not due yet", "next", s.NextScan.Local().Format(time.RFC3339))
 		return nil
 	}
 	e.report(s, "loading", "Refreshing repository and issue history")
@@ -231,7 +234,13 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 	if err != nil {
 		return err
 	}
-	instructions, err := instructionFiles(ctx, e.config)
+	// The clone's own working tree stays at its first checkout; the scan reads
+	// a detached worktree at the exact fetched head instead.
+	worktree, err := base.itemWorktree(ctx, "scan", commit)
+	if err != nil {
+		return err
+	}
+	instructions, err := instructionFiles(ctx, worktree.config)
 	if err != nil {
 		return err
 	}
@@ -242,11 +251,11 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 	if len(snapshotText) > 512<<10 {
 		snapshotText = strings.ToValidUTF8(snapshotText[:512<<10], "�") + "\n…issue history truncated by simplifier-bot…"
 	}
-	text, err := e.execute(ctx, agentProcess{e.config, e.log}, instructions+scanPrompt(snapshotText, e.config.MaxProposals))
+	text, err := e.execute(ctx, e.agent(worktree.config), instructions+scanPrompt(snapshotText, e.config.MaxProposals))
 	if err != nil {
 		return err
 	}
-	if err = base.verify(ctx, commit); err != nil {
+	if err = worktree.verify(ctx, commit); err != nil {
 		return err
 	}
 	proposals, summary, err := parseScan(text, e.config.MaxProposals)

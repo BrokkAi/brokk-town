@@ -223,3 +223,10 @@
   state now keeps each summary and item; Repo browses its last 100 standalone
   observations, saved in its state. Worker runs still report only phase and
   task. The PTY lifecycle tests pass for the three in a Linux container.
+- Review of #120 found two simplifier scan bugs that made standalone `bsb`
+  useless: the schedule check was inverted (a fresh workspace never scanned,
+  a scanned one rescanned regardless of interval), and scans ran in the base
+  clone, whose working tree never left its first checkout, so a scan after the
+  branch advanced read stale code and failed its own revision check. Scans now
+  run when due in a detached worktree at the fetched head. Town dispatches only
+  item assessments, so its behavior is unchanged.
