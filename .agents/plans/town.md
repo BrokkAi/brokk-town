@@ -245,4 +245,4 @@
   reconciliation, a fresh job whose lookup fails, a global lookup failure,
   comment and state-write failures after a reconciliation, and the daemon
   and `--once` handling of issue-only failures.
-- `bundle.json` moves issue-bot to 0.5.9 at the fix commit.
+- `bundle.json` moves issue-bot to 0.5.9 at the final fix commit.
