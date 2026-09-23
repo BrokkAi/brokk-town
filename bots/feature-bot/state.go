@@ -12,12 +12,21 @@ import (
 	"time"
 )
 
-// ReviewCheckpoint is scoped to the exact candidate and source revision. Batch
-// hashes attest all text, including each fragment of a split issue.
+// ReviewCheckpoint is scoped to the exact candidate, source revision and
+// effective review selection. Batch hashes attest all text, including each
+// fragment of a split issue. A checkpoint without a reviewer predates review
+// selection and is never trusted.
 type ReviewCheckpoint struct {
 	Context   string          `json:"context"`
+	Reviewer  *Reviewer       `json:"reviewer,omitempty"`
 	Validated bool            `json:"validated"`
 	Batches   map[string]bool `json:"batches"`
+}
+
+// Reviewer is the effective review model and effort; empty means the adapter default.
+type Reviewer struct {
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 }
 type Candidate struct {
 	Checkpoint *ReviewCheckpoint `json:"review_checkpoint,omitempty"`

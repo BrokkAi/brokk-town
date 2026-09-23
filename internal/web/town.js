@@ -75,13 +75,17 @@ export const roadSegments = [
     [positions[role][0], houseRoad(role)],
   ]),
 ];
+// settled marks a task with no work left. An issue Town is closing counts:
+// only the GitHub write remains, and the decline behind it is final.
+export function settled(task) {
+  return (
+    ["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(task.stage) ||
+    (task.kind === "issue" && task.stage === "closing")
+  );
+}
 export function queueFor(town, role) {
   return Object.values(town.tasks || {})
-    .filter(
-      (t) =>
-        t.house === role &&
-        !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
-    )
+    .filter((t) => t.house === role && !settled(t))
     .sort(
       (a, b) =>
         Number(!!b.blocked) - Number(!!a.blocked) ||
@@ -199,10 +203,8 @@ export function townSummary(town) {
     ).length,
     blocked: tasks.filter((t) => t.blocked).length,
     failed: workers.filter((w) => w.status === "failed").length,
-    queued: tasks.filter(
-      (t) => !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
-    ).length,
-    decisions: tasks.filter((t) => t.mayoral_decision === "pending").length,
+    queued: tasks.filter((t) => !settled(t)).length,
+    decisions: tasks.filter((t) => t.mayoral_decision === "pending" && !t.blocked).length,
     release: town.last_release || "No releases yet",
   };
 }
@@ -281,7 +283,9 @@ export function inbox(state) {
     });
     for (const task of Object.values(town.tasks || {})) {
       if (!task) continue;
-      if (task.mayoral_decision === "pending") {
+      // A blocked decision (a pull request retargeted off the branch) is not
+      // one Mayor Bot takes up either; it shows as blocked instead.
+      if (task.mayoral_decision === "pending" && !task.blocked) {
         counts.decisions++;
         decisions.push({
           ...base(task),
@@ -367,7 +371,7 @@ export const taskStatuses = {
   unreleased: { label: "Unreleased", className: "unreleased" },
   implemented: { label: "Implemented", className: "implemented" },
   complete: { label: "Done", className: "complete" },
-  closing: { label: "Closing after review", className: "closed" },
+  closing: { label: "Closing", className: "closed" },
   closed: { label: "Closed", className: "closed" },
   merged: { label: "Merged", className: "merged" },
   shipped: { label: "Shipped", className: "shipped" },

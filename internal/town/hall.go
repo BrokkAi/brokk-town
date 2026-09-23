@@ -76,7 +76,7 @@ func validBulletin(b Bulletin) bool {
 // pendingDecisions reports whether anything waits on the Mayor.
 func pendingDecisions(t *Town) bool {
 	for _, task := range t.Tasks {
-		if task.MayoralDecision == "pending" && task.Stage == "awaiting_mayor" && task.House == Hall {
+		if task.MayoralDecision == "pending" && task.Stage == "awaiting_mayor" && task.House == Hall && !task.Blocked {
 			return true
 		}
 	}
@@ -84,13 +84,14 @@ func pendingDecisions(t *Town) bool {
 }
 
 // nextJudgment picks the arrival Mayor Bot judges next: the pending decision
-// with the lowest ID that is not waiting out a failed attempt and has not
-// exhausted its attempts. An arrival the operator snoozed waits for a person
-// or for its resume time.
+// with the lowest ID that is not blocked (a pull request retargeted off this
+// town's branch), not waiting out a failed attempt and has not exhausted its
+// attempts. An arrival the operator snoozed waits for a person or for its
+// resume time.
 func nextJudgment(t *Town, now time.Time) *Task {
 	ids := make([]string, 0, len(t.Tasks))
 	for id, task := range t.Tasks {
-		if task.MayoralDecision == "pending" && task.Stage == "awaiting_mayor" && task.House == Hall && task.Attempts < mayorAttempts && !task.RetryAt.After(now) && !task.Deferred(now) {
+		if task.MayoralDecision == "pending" && task.Stage == "awaiting_mayor" && task.House == Hall && !task.Blocked && task.Attempts < mayorAttempts && !task.RetryAt.After(now) && !task.Deferred(now) {
 			ids = append(ids, id)
 		}
 	}
@@ -194,8 +195,13 @@ func applyBulletin(st *State, t *Town, b Bulletin, now time.Time) error {
 // decideTask applies one Mayoral decision. It is the single path for the
 // Mayor's own clicks and for Mayor Bot, so both leave the same state and the
 // same events; only the name in those events differs.
+//
+// The Mayor may also admit work Simplifier declined in auto mode. That decline
+// is otherwise final, so this is the only way back for it; Mayor Bot never
+// reaches it because it judges only pending decisions.
 func (s *State) decideTask(t *Town, task *Task, action, by string, now time.Time) error {
-	if task == nil || task.MayoralDecision != "pending" || task.Stage != "awaiting_mayor" || task.House != Hall {
+	overrule := action == "admit" && task != nil && task.House == Hall && task.Stage == "declined" && task.MayoralDecision == "" && autoDeclined(task)
+	if !overrule && (task == nil || task.MayoralDecision != "pending" || task.Stage != "awaiting_mayor" || task.House != Hall) {
 		return errors.New("task is not awaiting a Mayoral decision")
 	}
 	task.Attempts = 0
@@ -228,13 +234,21 @@ func (s *State) decideTask(t *Town, task *Task, action, by string, now time.Time
 		task.Retired = false
 		task.Updated = now
 		task.Detail = subject + " admitted this work to town."
+		title := by + " admitted: " + task.Title
+		if overrule {
+			// The decline no longer governs the task: resume and the
+			// declined-issue closer both read it.
+			task.Simplification = nil
+			task.Detail = subject + " admitted this work to town over Simplifier's decline."
+			title = by + " admitted over Simplifier's decline: " + task.Title
+		}
 		target := Review
 		if task.Kind == "issue" {
 			target = Issue
 		}
 		task.House = target
 		t.Workers[target].Next = time.Time{}
-		s.Event(t.ID, "decision", "hall", string(target), task.ID, by+" admitted: "+task.Title, now)
+		s.Event(t.ID, "decision", "hall", string(target), task.ID, title, now)
 		return nil
 	}
 	return fmt.Errorf("unknown decision %q", action)
