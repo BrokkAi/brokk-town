@@ -35,6 +35,9 @@ func execute(ctx context.Context, args []string, log *slog.Logger) error {
 
 type runFunc func(context.Context, bot.Config, *slog.Logger, bool) error
 
+// publishProposal is replaced in tests so the CLI can be checked without GitHub or agents.
+var publishProposal = bot.Publish
+
 func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run runFunc) (result error) {
 	ownOutput := log == nil
 	if ownOutput {
@@ -52,17 +55,19 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 			return versionCommand(args[1:], os.Stdout)
 		case "worker":
 			return workerCommand(ctx, args[1:], buildVersion())
-		case "run", "once", "status", "report", "retry", "prune":
+		case "run", "once", "status", "report", "retry", "prune", "publish":
 			mode = args[0]
 			args = args[1:]
 		}
 	}
 	fs := flag.NewFlagSet("bfb", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: bfb [run|once|status|report|retry|prune|worker|version] [repository path or URL] [options]\n\nFind valuable new features and file new GitHub issues without duplicates. No config file is required.")
+		fmt.Fprintln(fs.Output(), "Usage: bfb [run|once|status|report|retry|prune|publish|worker|version] [repository path or URL] [options]\n\nFind valuable new features and file new GitHub issues without duplicates. No config file is required.")
 		fs.PrintDefaults()
 	}
 	file := fs.String("config", "", "optional JSON configuration")
+	proposal := fs.String("proposal", "", "publish only: selector of the saved dry-run proposal to review again and publish")
+	list := fs.Bool("list", false, "publish only: list saved dry-run proposal selectors and eligibility without publishing")
 	olderThan := fs.Duration("older-than", 0, "prune only: required positive age of completed scan workspaces, e.g. 720h")
 	apply := fs.Bool("apply", false, "prune only: remove eligible worktrees, including untracked and ignored research artifacts")
 	reportStatus := fs.String("status", "", "report only: filter by saved candidate status (e.g. dry_run)")
@@ -108,6 +113,28 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 		fs.Visit(func(f *flag.Flag) {
 			if f.Name == "status" {
 				result = errors.New("--status is only supported by report")
+			}
+		})
+		if result != nil {
+			return result
+		}
+	}
+	if mode == "publish" {
+		if (*proposal == "") == !*list {
+			return errors.New("publish requires exactly one of --proposal SELECTOR or --list")
+		}
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "dry-run" {
+				result = errors.New("publish creates an issue; use --list to inspect proposals without publishing")
+			}
+		})
+		if result != nil {
+			return result
+		}
+	} else {
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "proposal" || f.Name == "list" {
+				result = errors.New("--proposal and --list are only supported by publish")
 			}
 		})
 		if result != nil {
@@ -196,13 +223,16 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	if mode == "prune" {
 		return bot.Prune(ctx, cfg, *olderThan, *apply, os.Stdout)
 	}
-	if mode == "status" || mode == "report" {
+	if mode == "status" || mode == "report" || *list {
 		s, err := bot.ReadState(cfg)
 		if err != nil {
 			return err
 		}
 		if mode == "report" {
 			return bot.WriteReport(os.Stdout, cfg, s, *reportStatus)
+		}
+		if *list {
+			return bot.WriteProposalList(os.Stdout, s)
 		}
 		e := json.NewEncoder(os.Stdout)
 		e.SetIndent("", "  ")
@@ -213,6 +243,10 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	}
 	if _, err := exec.LookPath("gh"); err != nil {
 		return errors.New("install GitHub CLI and run gh auth login")
+	}
+	if mode == "publish" {
+		log.Info("Publishing saved proposal", "repository", cfg.GitHubRepo(), "branch", cfg.Branch, "proposal", *proposal)
+		return publishProposal(ctx, cfg, log, *proposal, os.Stdout)
 	}
 	if mode == "retry" {
 		if err := bot.Retry(cfg); err != nil {
