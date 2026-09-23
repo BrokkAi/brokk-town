@@ -51,6 +51,7 @@ make build
 ./bin/bbb once /path/to/your-repo --focus "parser and input validation"
 ./bin/bbb /path/to/your-repo --max-issues 2 --label bug
 ./bin/bbb /path/to/your-repo --model YOUR_MODEL_ID --effort low
+./bin/bbb /path/to/your-repo --model SCAN_MODEL_ID --review-model REVIEW_MODEL_ID --review-effort high
 ./bin/bbb status /path/to/your-repo
 ./bin/bbb report /path/to/your-repo --status dry_run > findings.md
 ./bin/bbb version
@@ -87,7 +88,8 @@ bbb /path/to/repo --json    # structured logs for tools and log collectors
 
 The overview shows the repository, branch and commit, scan stage, active tool,
 uptime, attempt budget, and next check or retry countdown. Larger panes also
-show the selected model, reasoning effort, and investigation focus.
+show the discovery and review model and reasoning effort, and the investigation
+focus.
 
 **Saved** counts cover findings in the configured repository/branch state,
 including the current scan: found, filed, duplicate, pending, dry run, and skipped
@@ -229,7 +231,8 @@ See [bug-bot.example.json](bug-bot.example.json).
   "focus": "",
   "labels": [],
   "dry_run": false,
-  "agent": {"command": ["codex-acp"]}
+  "agent": {"command": ["codex-acp"], "effort": "medium"},
+  "review_effort": "high"
 }
 ```
 
@@ -238,6 +241,18 @@ Use labels that already exist in the target repository. `github.host` supports
 Enterprise, and `github.repo` (`OWNER/REPO`) identifies a local mirror's GitHub
 repository. `agent` also supports `environment`, `auth_method`, `mode`, `model`,
 and `effort`, with selection handled by the shared ACP runner.
+
+Discovery uses `agent.model` and `agent.effort` (`--model`, `--effort`). Evidence
+validation and every duplicate-review batch, including reviews after issue
+history changes and reviews of pending findings resumed from a saved scan, use
+`review_model` and `review_effort` (`--review-model`, `--review-effort`). Each
+omitted review setting inherits the discovery setting; CLI flags override JSON,
+and blank values are rejected. Review runs with the same agent command,
+environment, workspace, retries, timeout, and publication gates. A review model
+or effort the adapter does not offer stops the scan with a setup error before any
+review prompt; pending findings stay pending and never fall back to the discovery
+selection. Progress logs carry `stage=discovery` or `stage=review` with the
+effective model and effort.
 
 `verify` accepts an argument array, such as `["/opt/checks/verify-bug"]`, executed
 in the scan worktree with `BUG_COMMIT` and JSON `BUG_FINDING` in its environment.
