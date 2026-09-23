@@ -199,7 +199,9 @@ func TestSetupTimeoutAndCancellation(t *testing.T) {
 			defer cancel()
 			want := context.Canceled
 			if mode == "timeout" {
-				e.config.Timeout = Duration(3 * time.Second)
+				// Leave the fetch and worktree steps ample time under -race
+				// on a busy host; setup itself would sleep for a minute.
+				e.config.Timeout = Duration(10 * time.Second)
 				want = context.DeadlineExceeded
 			} else {
 				go func() {
@@ -219,9 +221,11 @@ func TestSetupTimeoutAndCancellation(t *testing.T) {
 			if a.scans != 0 || a.reviews != 0 {
 				t.Fatal("agent ran after setup was stopped")
 			}
+			// The child records its PID before setup can be stopped; a missing or
+			// partial file means the attempt ended before setup began.
 			raw, err := os.ReadFile(pidfile)
-			if err != nil {
-				t.Fatal(err)
+			if err != nil || !strings.HasSuffix(string(raw), "\n") {
+				t.Fatalf("setup did not start its child before stopping: %q, %v", raw, err)
 			}
 			pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
 			if err != nil {
@@ -244,6 +248,9 @@ func TestSetupSourceChangesRefused(t *testing.T) {
 		"commit": "git -c user.name=Fixture -c user.email=fixture@example.com commit -q --allow-empty -m moved",
 	} {
 		t.Run(mode, func(t *testing.T) {
+			// Keep the operator's git configuration out of the setup commit.
+			t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+			t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 			e, s, f, a, _ := fixture(t)
 			setupCounter(t, &e, script)
 			err := e.step(context.Background(), s, true)

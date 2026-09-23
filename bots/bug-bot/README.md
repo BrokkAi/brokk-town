@@ -276,7 +276,8 @@ Keep operator verifiers outside the writable worktree. A nonzero exit blocks fil
 
 `setup` (default: none; set it in the `--config` file) accepts an argument array, such as
 `["/opt/checks/install-deps", "--frozen"]`, for preparing test prerequisites. It
-runs in the detached scan worktree with `BUG_COMMIT` set to its HEAD, once at the
+runs in the detached scan worktree with `bbb`'s environment, like `verify`, plus
+`BUG_COMMIT` set to its HEAD, once at the
 start of every counted scan attempt before any agent runs, including attempts
 that resume review of pending findings. It does not repeat for review batches or
 agent startup retries, so a later attempt runs it again: keep it idempotent and
