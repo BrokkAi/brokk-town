@@ -734,6 +734,18 @@
 - Reopen: Town's own pull request closed on Simplifier's decline is an appeal
   and waits for the Mayor with the assessment kept; one the Mayor declined is
   closed again, as a Mayor-declined proposal issue is.
+- Review follow-ups: the issue is commented on and requeued only while it is
+  still tied to the pull request (`requeuedIssue`: not already requeued for it
+  and no earlier `closed` outcome for it), so a second close leaves an issue
+  that moved on alone and the PR comment no longer promises a requeue. The
+  issue comment is skipped when GitHub already has its `brokk-town:requeued
+  pr=N` marker (`IssueComments`). After GitHub closed the pull request, a
+  definite rejection of a later step (PR comment, branch delete, issue
+  comment) is noted on the task and the close is finished; other failures
+  keep the claim. `ClosePull`, `Comment` and `DeleteBranch` now classify
+  refusals as `RejectedError`, as `CloseIssue` does. The claim skips blocked
+  (including off-branch) pull requests, and validation allows a Mayoral
+  `declined` at `closing` only on Town's own pull request.
 
 ## acp-go upgrade policy
 

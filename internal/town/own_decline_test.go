@@ -251,7 +251,16 @@ func TestMayorDeclinedOwnPullIsClosedAndStaysDeclined(t *testing.T) {
 	if len(gh.closedPulls) != 1 || pr.Stage != "closed" || pr.MayoralDecision != "declined" || issue.Stage != "queued" || issue.Requeue != 5 {
 		t.Fatalf("Mayor-declined own PR: closed=%v pr=%+v issue=%+v", gh.closedPulls, pr, issue)
 	}
-	// A reopen does not undo the Mayor's decline: Town closes it again.
+	// Issue Bot has moved on: a fresh attempt is running and no longer
+	// tied to #5.
+	update(t, store, func(st *State) {
+		issue := st.Towns[town.ID].Tasks["issue:3"]
+		issue.Requeue = 0
+		issue.Stage = "implemented"
+		issue.IssueJob = &IssueJob{Status: "working"}
+	})
+	// A reopen does not undo the Mayor's decline: Town closes it again, but
+	// leaves the issue's new attempt alone.
 	gh.p.State = "open"
 	gh.snapshot.Pulls = []Pull{gh.p}
 	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
@@ -259,5 +268,88 @@ func TestMayorDeclinedOwnPullIsClosedAndStaysDeclined(t *testing.T) {
 	}
 	if len(gh.closedPulls) != 2 || task(store, town, "pr:5").MayoralDecision != "declined" {
 		t.Fatalf("reopened Mayor-declined PR: closed=%v %+v", gh.closedPulls, task(store, town, "pr:5"))
+	}
+	if issue := task(store, town, "issue:3"); issue.Requeue != 0 || issue.IssueJob == nil || issue.Stage != "implemented" {
+		t.Fatalf("second close reset an issue that moved on: %+v", issue)
+	}
+	if len(gh.comments) != 3 || strings.Contains(gh.comments[2], "queued for a fresh attempt") || !strings.HasPrefix(gh.comments[2], "#5: ") {
+		t.Fatalf("second close commented on the issue or promised a requeue: %v", gh.comments)
+	}
+}
+
+func TestRequeueCommentIsNotRepeated(t *testing.T) {
+	store, town, gh, sup := ownPullTown(t, "auto")
+	declineOwnPull(t, store, town)
+	// An earlier attempt posted the issue comment but its outcome was lost.
+	gh.comments = []string{"#3: earlier\n\n" + requeueMarker(5)}
+	if err := sup.reconcileNow(context.Background(), store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if len(gh.comments) != 2 || !strings.HasPrefix(gh.comments[1], "#5: ") {
+		t.Fatalf("requeue comment repeated: %v", gh.comments)
+	}
+	if issue := task(store, town, "issue:3"); issue.Requeue != 5 || issue.Stage != "queued" {
+		t.Fatalf("issue not requeued: %+v", issue)
+	}
+}
+
+func TestRefusedStepAfterCloseFinishesTheClose(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		setup func(*fakeGH)
+		note  string
+	}{
+		{name: "protected branch", setup: func(gh *fakeGH) {
+			gh.deleteError = definiteRejection(errors.New("gh: Reference update failed (HTTP 422)"))
+		}, note: "delete branch issue-5 of PR #5 (HTTP 422)"},
+		{name: "issue gone", setup: func(gh *fakeGH) {
+			gh.commentErrors = map[int]error{3: definiteRejection(errors.New("gh: Not Found (HTTP 404)"))}
+		}, note: "explain requeue of issue #3 (HTTP 404)"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store, town, gh, sup := ownPullTown(t, "auto")
+			declineOwnPull(t, store, town)
+			test.setup(gh)
+			if err := sup.reconcileNow(context.Background(), store.Snapshot().Towns[town.ID]); err == nil {
+				t.Fatal("a refused step was not reported")
+			}
+			pr, issue := task(store, town, "pr:5"), task(store, town, "issue:3")
+			if pr.Stage != "closed" || !strings.Contains(pr.Detail, test.note) || issue.Stage != "queued" || issue.Requeue != 5 {
+				t.Fatalf("refused step stranded the close: pr=%+v issue=%+v", pr, issue)
+			}
+		})
+	}
+}
+
+func TestUncertainStepAfterCloseKeepsTheClaim(t *testing.T) {
+	store, town, gh, sup := ownPullTown(t, "auto")
+	declineOwnPull(t, store, town)
+	gh.deleteError = errors.New("connection reset")
+	ctx := context.Background()
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err == nil {
+		t.Fatal("a failed step was not reported")
+	}
+	if pr := task(store, town, "pr:5"); pr.Stage != "closing" {
+		t.Fatalf("uncertain step released the claim: %+v", pr)
+	}
+	gh.deleteError = nil
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if pr, issue := task(store, town, "pr:5"), task(store, town, "issue:3"); pr.Stage != "closed" || issue.Requeue != 5 || len(gh.closedPulls) != 1 {
+		t.Fatalf("retry did not finish the close: pr=%+v issue=%+v closed=%v", pr, issue, gh.closedPulls)
+	}
+}
+
+func TestBlockedDeclinedOwnPullIsNotClaimed(t *testing.T) {
+	store, town, _, _ := ownPullTown(t, "auto")
+	declineOwnPull(t, store, town)
+	update(t, store, func(st *State) {
+		x := st.Towns[town.ID]
+		x.Tasks["pr:5"].Blocked = true
+		claimDeclinedPulls(st, x, time.Now())
+	})
+	if pr := task(store, town, "pr:5"); pr.Stage != "declined" {
+		t.Fatalf("blocked PR was claimed: %+v", pr)
 	}
 }

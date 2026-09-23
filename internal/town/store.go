@@ -216,7 +216,7 @@ func validateState(s State, demo bool) error {
 			}
 			// A declined pull request its author closed keeps the decline, as
 			// does Town's own declined pull request while Town closes it.
-			if task.MayoralDecision == "declined" && (task.House != Hall || (task.Stage != "declined" && ((task.Stage != "closed" && task.Stage != "closing") || task.Kind != "pr"))) {
+			if task.MayoralDecision == "declined" && (task.House != Hall || (task.Stage != "declined" && (task.Kind != "pr" || (task.Stage != "closed" && (task.Stage != "closing" || task.External))))) {
 				return errors.New("declined Mayoral decision is not final")
 			}
 			if task.Stage == "simplifying" && (task.House != Simplifier || (task.Kind != "issue" && task.Kind != "pr")) {

@@ -87,14 +87,16 @@ func declinedOwnPull(task *Task) bool {
 // over. It runs under the store right before that closer, and only outside
 // quiet hours, so until then the Mayor can still admit an auto-declined pull
 // request; once claimed as "closing", admission refuses it. A snoozed pull
-// request waits for its snooze. The decline itself is kept, so a reopen is
+// request waits for its snooze, and a blocked one (as when it is retargeted off
+// this town's branch) waits like other blocked work; Mayor Bot and the
+// selectors skip blocked tasks too. The decline itself is kept, so a reopen is
 // judged by it.
 func claimDeclinedPulls(st *State, t *Town, now time.Time) {
 	if t == nil || t.Deleted {
 		return
 	}
 	for _, task := range t.Tasks {
-		if !declinedOwnPull(task) || task.Deferred(now) {
+		if !declinedOwnPull(task) || task.Deferred(now) || task.Blocked || task.Offbranch {
 			continue
 		}
 		task.Attempts = 0
@@ -203,16 +205,71 @@ func firstLine(text string) string {
 	return line
 }
 
-func closingComment(task *Task, owned Ownership) string {
+func closingComment(task *Task, requeued int) string {
 	body := "## Brokk Town\n\n" + task.Detail
-	if owned.Issue > 0 {
-		body += fmt.Sprintf("\n\nIssue #%d is queued for a fresh attempt from the current base branch.", owned.Issue)
+	if requeued > 0 {
+		body += fmt.Sprintf("\n\nIssue #%d is queued for a fresh attempt from the current base branch.", requeued)
 	}
 	return body + "\n\n<!-- brokk-town:closed-after-review -->"
 }
 
+func requeueMarker(pr int) string { return fmt.Sprintf("<!-- brokk-town:requeued pr=%d -->", pr) }
+
 func requeueComment(task *Task, pr int) string {
-	return fmt.Sprintf("## Brokk Town\n\nPull request #%d was closed after %s. The next attempt starts over from the current base branch and should address the reason:\n\n%s\n\n<!-- brokk-town:requeued pr=%d -->", pr, closedCause(task), task.Detail, pr)
+	return fmt.Sprintf("## Brokk Town\n\nPull request #%d was closed after %s. The next attempt starts over from the current base branch and should address the reason:\n\n%s\n\n%s", pr, closedCause(task), task.Detail, requeueMarker(pr))
+}
+
+// requeuedIssue returns the issue closing this pull request starts over, or
+// nil when the issue is no longer tied to it: Town already closed this pull
+// request once (someone reopened it and it was closed again), so the issue has
+// moved on, or the issue is closed, locked or declined.
+func requeuedIssue(t *Town, task *Task) *Task {
+	owned := t.Owned[task.Number]
+	if owned.Issue <= 0 {
+		return nil
+	}
+	issue := t.Tasks[fmt.Sprintf("issue:%d", owned.Issue)]
+	if issue == nil || issue.Stage == "closed" || issue.Stage == "locked" || issue.MayoralDecision == "declined" || issue.Requeue == task.Number {
+		return nil
+	}
+	for _, o := range t.Outcomes {
+		if o.Kind == "closed" && o.TaskID == task.ID {
+			return nil
+		}
+	}
+	return issue
+}
+
+// postClose runs one step owed after GitHub closed the pull request. A
+// definite rejection cannot succeed on retry (a protected branch, an issue
+// that is gone or not writable), so it is noted and the close is finished
+// anyway; any other failure keeps the claim for the next inventory.
+func postClose(failures *error, skipped *[]string, what string, err error) bool {
+	if err == nil {
+		return true
+	}
+	*failures = errors.Join(*failures, fmt.Errorf("%s: %w", what, err))
+	var rejected *RejectedError
+	if errors.As(err, &rejected) {
+		*skipped = append(*skipped, fmt.Sprintf("%s (HTTP %d)", what, rejected.Status))
+		return true
+	}
+	return false
+}
+
+// requeueCommented reports whether the issue already has this pull request's
+// requeue comment, so an uncertain post is not repeated.
+func (s *Supervisor) requeueCommented(ctx context.Context, repo string, issue, pr int) (bool, error) {
+	comments, err := s.GitHub.IssueComments(ctx, repo, issue)
+	if err != nil {
+		return false, err
+	}
+	for _, body := range comments {
+		if strings.Contains(body, requeueMarker(pr)) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // closeRetiredPulls performs the GitHub side of a closing decision: close the
@@ -241,6 +298,11 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 			continue // The inventory records the merge; there is nothing to close.
 		}
 		owned := t.Owned[n]
+		requeued := 0
+		if issue := requeuedIssue(t, task); issue != nil {
+			requeued = issue.Number
+		}
+		skipped := []string{}
 		if p, known := pulls[n]; !known || p.State == "open" {
 			if err := s.GitHub.ClosePull(ctx, t.Config.Repo, n); err != nil {
 				failures = errors.Join(failures, fmt.Errorf("close PR #%d: %w", n, err))
@@ -258,25 +320,31 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 				}
 				continue
 			}
-			if err := s.GitHub.Comment(ctx, t.Config.Repo, n, closingComment(task, owned)); err != nil {
-				failures = errors.Join(failures, fmt.Errorf("explain closing PR #%d: %w", n, err))
+			err := s.GitHub.Comment(ctx, t.Config.Repo, n, closingComment(task, requeued))
+			if !postClose(&failures, &skipped, fmt.Sprintf("explain closing PR #%d", n), err) {
 				continue
 			}
 		}
 		if owned.Branch != "" {
-			if err := s.GitHub.DeleteBranch(ctx, t.Config.Repo, owned.Branch); err != nil {
-				failures = errors.Join(failures, fmt.Errorf("delete branch %s of PR #%d: %w", owned.Branch, n, err))
+			err := s.GitHub.DeleteBranch(ctx, t.Config.Repo, owned.Branch)
+			if !postClose(&failures, &skipped, fmt.Sprintf("delete branch %s of PR #%d", owned.Branch, n), err) {
 				continue
 			}
-			if owned.Issue > 0 {
-				if err := s.GitHub.Comment(ctx, t.Config.Repo, owned.Issue, requeueComment(task, n)); err != nil {
-					failures = errors.Join(failures, fmt.Errorf("explain requeue of issue #%d: %w", owned.Issue, err))
+		}
+		if requeued > 0 {
+			what := fmt.Sprintf("explain requeue of issue #%d", requeued)
+			posted, err := s.requeueCommented(ctx, t.Config.Repo, requeued, n)
+			if !postClose(&failures, &skipped, what, err) {
+				continue
+			}
+			if err == nil && !posted {
+				if !postClose(&failures, &skipped, what, s.GitHub.Comment(ctx, t.Config.Repo, requeued, requeueComment(task, n))) {
 					continue
 				}
 			}
 		}
 		if err := s.Store.Update(func(st *State) error {
-			finalizeClosedPull(st, st.Towns[t.ID], n, s.now())
+			finalizeClosedPull(st, st.Towns[t.ID], n, skipped, s.now())
 			return nil
 		}); err != nil {
 			return errors.Join(failures, err)
@@ -303,7 +371,7 @@ func releaseDeclinedPull(st *State, t *Town, n int, status int, now time.Time) {
 
 // finalizeClosedPull records the closed pull request and queues its issue for a
 // fresh attempt that starts over rather than on top of the closed work.
-func finalizeClosedPull(st *State, t *Town, n int, now time.Time) {
+func finalizeClosedPull(st *State, t *Town, n int, skipped []string, now time.Time) {
 	if t == nil {
 		return
 	}
@@ -316,6 +384,12 @@ func finalizeClosedPull(st *State, t *Town, n int, now time.Time) {
 	if owned.Issue > 0 {
 		related = fmt.Sprintf("issue:%d", owned.Issue)
 	}
+	// Decided before the close outcome below is recorded, which it reads.
+	issue := requeuedIssue(t, task)
+	if len(skipped) > 0 {
+		task.Detail += "\n\nGitHub refused, so Town did not: " + strings.Join(skipped, "; ") + "."
+		st.Event(t.ID, "error", string(Repo), "hall", task.ID, "Closed with steps GitHub refused: "+task.Title, now)
+	}
 	task.Stage = "closed"
 	task.House = Hall
 	if task.MayoralDecision != "declined" {
@@ -326,11 +400,7 @@ func finalizeClosedPull(st *State, t *Town, n int, now time.Time) {
 	task.Updated = now
 	t.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("closed:%s:%s", task.ID, task.Head), At: now, Class: "outcome", Kind: "closed", Status: "confirmed", Role: Review, TaskID: task.ID, RelatedTaskID: related, Revision: task.Head, URL: task.URL, Detail: task.Detail})
 	st.Event(t.ID, "delivery", "hall", "outside", task.ID, "Closed after "+closedCause(task)+": "+task.Title, now)
-	if related == "" {
-		return
-	}
-	issue := t.Tasks[related]
-	if issue == nil || issue.Stage == "closed" || issue.Stage == "locked" || issue.MayoralDecision == "declined" {
+	if issue == nil {
 		return
 	}
 	issue.Requeue = n
