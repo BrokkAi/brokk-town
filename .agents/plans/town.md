@@ -705,6 +705,46 @@
   (the jump past a skipped reading, the repeated reading still ahead);
   `mergeReady` rechecks quiet hours just before writing its intent.
 
+## acp-go upgrade policy
+
+- An acp-go upgrade adopts the released API as is: no copied upstream code or
+  compatibility shims without a demonstrated loss. Town, review-bot and
+  feature-bot all run agents through acp-go's `runner.Runner.Execute` and
+  select effort with its `SetEffort`. No copied runner lifecycle remains in
+  Town or any bot, and the `setEffort`/`setAgentEffort` shims are removed.
+- v0.1.0's uncategorized `thought_level` effort fallback is gone. An agent
+  that advertises effort only that way gets a setup error when an effort is
+  configured, and Town's choices list no efforts for it.
+- feature-bot is on acp-go v0.10.0, whose typed setup errors replace the
+  lifecycle it had copied from v0.7.0. `selectionError` reads
+  `runner.SetupError.Phase`: in `select model`/`select effort`, an
+  `acp.UnknownSelectionError` (value not offered) is reported as not
+  accepted, naming the stage setting to change; any other failure there,
+  including `acp.UnsupportedSelectionError` and untyped errors such as an
+  unconfirmed selection, is a failure to select naming the same setting.
+  Other phases pass through unchanged. An untyped error is never read as an
+  agent rejection.
+
+## bug-bot workspace setup command (#96)
+
+- Optional `setup` argument array in the `--config` file (default none; `null`
+  in the example). A present value needs a non-blank executable; `[]`, blank
+  executables and non-string arrays are rejected before scanning. No worker
+  protocol change.
+- `step` runs it after preparing the worktree and counting the attempt, before
+  loading issue history or any agent: once per attempt, including attempts that
+  resume pending review, never per review batch or ACP startup retry. It runs
+  through `osrun.StartCommand` in the scan worktree with `BUG_COMMIT`, under the
+  attempt timeout (process-group kill on timeout/cancel), keeping a 16 KiB tail
+  of combined output for the error. `checkout.verify` then requires unchanged
+  HEAD and tracked source; untracked and ignored files are allowed.
+- Failures are plain errors (not `runner.SetupError`), so they consume the
+  attempt, keep pending findings, save a `workspace setup` failure and set the
+  retry delay from failure completion. Reconciliation-only completion, waiting
+  polls, `status` and `report` never reach it; dry runs do. Progress reports
+  `preparing` / "Running workspace setup".
+- `bundle.json` moves bug-bot to 0.6.0 at the final feature commit.
+
 ## Declined own pull requests (#126)
 
 - A declined Town-owned pull request stayed open with nothing selecting it,
@@ -746,43 +786,3 @@
   refusals as `RejectedError`, as `CloseIssue` does. The claim skips blocked
   (including off-branch) pull requests, and validation allows a Mayoral
   `declined` at `closing` only on Town's own pull request.
-
-## acp-go upgrade policy
-
-- An acp-go upgrade adopts the released API as is: no copied upstream code or
-  compatibility shims without a demonstrated loss. Town, review-bot and
-  feature-bot all run agents through acp-go's `runner.Runner.Execute` and
-  select effort with its `SetEffort`. No copied runner lifecycle remains in
-  Town or any bot, and the `setEffort`/`setAgentEffort` shims are removed.
-- v0.1.0's uncategorized `thought_level` effort fallback is gone. An agent
-  that advertises effort only that way gets a setup error when an effort is
-  configured, and Town's choices list no efforts for it.
-- feature-bot is on acp-go v0.10.0, whose typed setup errors replace the
-  lifecycle it had copied from v0.7.0. `selectionError` reads
-  `runner.SetupError.Phase`: in `select model`/`select effort`, an
-  `acp.UnknownSelectionError` (value not offered) is reported as not
-  accepted, naming the stage setting to change; any other failure there,
-  including `acp.UnsupportedSelectionError` and untyped errors such as an
-  unconfirmed selection, is a failure to select naming the same setting.
-  Other phases pass through unchanged. An untyped error is never read as an
-  agent rejection.
-
-## bug-bot workspace setup command (#96)
-
-- Optional `setup` argument array in the `--config` file (default none; `null`
-  in the example). A present value needs a non-blank executable; `[]`, blank
-  executables and non-string arrays are rejected before scanning. No worker
-  protocol change.
-- `step` runs it after preparing the worktree and counting the attempt, before
-  loading issue history or any agent: once per attempt, including attempts that
-  resume pending review, never per review batch or ACP startup retry. It runs
-  through `osrun.StartCommand` in the scan worktree with `BUG_COMMIT`, under the
-  attempt timeout (process-group kill on timeout/cancel), keeping a 16 KiB tail
-  of combined output for the error. `checkout.verify` then requires unchanged
-  HEAD and tracked source; untracked and ignored files are allowed.
-- Failures are plain errors (not `runner.SetupError`), so they consume the
-  attempt, keep pending findings, save a `workspace setup` failure and set the
-  retry delay from failure completion. Reconciliation-only completion, waiting
-  polls, `status` and `report` never reach it; dry runs do. Progress reports
-  `preparing` / "Running workspace setup".
-- `bundle.json` moves bug-bot to 0.6.0 at the final feature commit.
