@@ -231,3 +231,4 @@
 - Saved records from before the change have no remote head and are
   reassessed once rather than reused.
 - A regression test (with and without a quiet period) failed before the fix.
+- `bundle.json` moves release-bot to 0.6.4 at the fix commit.
