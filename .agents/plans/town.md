@@ -372,3 +372,25 @@
   differing capitalization (each with exactly one POST), plus the URL fields
   that must still be rejected.
 - `bundle.json` moves review-bot to 0.2.7 at the fix commit.
+
+## review-bot on acp-go 0.8.1 (fixes #107)
+
+- review-bot moved from acp-go v0.1.0 to v0.8.1, matching issue-bot and Town.
+- Town passes its harness's effort to review-bot through the worker request,
+  and Town lists an uncategorized `thought_level` option as the effort
+  selector. Plain v0.8.1 `SetEffort` would miss it and fail every review with
+  that effort, so `agentProcess.Execute` now follows the v0.8.1 runner
+  lifecycle and restores the v0.1.0 effort order with the same
+  `selectOption`/`effortOption`/`setEffort` as Town's `executeACP`. Keep it
+  aligned with the upstream runner on later upgrades.
+- Accepted as in Town: `SetMode` requires an advertised mode, and an unknown
+  config option type fails `session/new`; both are setup errors.
+- Licence review: LICENSE byte-identical, NOTICE new in v0.8.1; both recorded
+  in `licenses/policy.json` and notices regenerated.
+- Added `bots/review-bot/agent_acp_test.go`: a credential-free simulated ACP
+  agent from the test binary driving `agentProcess` over stdio. Covers
+  startup, model/effort selection before the prompt, permission
+  auto-approval, transcripts, commentary-then-receipt, a rejected model and a
+  missing command as setup errors, cancellation of a prompt in flight, and
+  the legacy `thought_level` effort (fails with plain `SetEffort`).
+- `bundle.json` moves review-bot to the next patch at the upgrade commit.
