@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
@@ -48,11 +49,14 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 	e := engine{config: cfg, source: githubClient{cfg}, log: log, now: time.Now, agent: func(c Config) Agent { return agentProcess{c, log} }}
 	e.observe, _ = ctx.Value(progressKey{}).(func(Progress))
 	e.report(state, "starting", "Loading saved issues")
+	return e.run(ctx, state, once)
+}
+func (e engine) run(ctx context.Context, state *State, once bool) error {
 	for {
 		worked, err := e.step(ctx, state)
 		if err != nil && !once && issueOnly(err) {
 			// The failures are retained on their jobs; keep serving the queue.
-			log.Error("Saved issues need inspection; continuing with others", "error", err)
+			e.log.Error("Saved issues need inspection; continuing with others", "error", err)
 			err = nil
 		}
 		if err != nil {
@@ -61,8 +65,8 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 			if once || errors.As(err, &setup) || ctx.Err() != nil {
 				return err
 			}
-			log.Error("Issue scan failed; will retry", "error", err)
-			if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
+			e.log.Error("Issue scan failed; will retry", "error", err)
+			if err := pause(ctx, time.Duration(e.config.Poll)); err != nil {
 				return err
 			}
 			continue
@@ -74,8 +78,8 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 			continue
 		}
 		e.report(state, "waiting", "Waiting for eligible issues")
-		log.Info("Waiting for eligible issues", "poll", time.Duration(cfg.Poll))
-		timer := time.NewTimer(time.Duration(cfg.Poll))
+		e.log.Info("Waiting for eligible issues", "poll", time.Duration(e.config.Poll))
+		timer := time.NewTimer(time.Duration(e.config.Poll))
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -102,7 +106,12 @@ func (e engine) syncClaim(ctx context.Context, s *State, j *Job) error {
 		return err
 	}
 	j.ClaimPending = false
-	return e.save(s)
+	if err := e.save(s); err != nil {
+		// The saved state still has the update pending; retry it in-process too.
+		j.ClaimPending = true
+		return err
+	}
+	return nil
 }
 func (e engine) complete(ctx context.Context, s *State, j *Job, p *PullRequest) error {
 	e.recordPull(j, p)
@@ -118,12 +127,7 @@ func (e engine) complete(ctx context.Context, s *State, j *Job, p *PullRequest) 
 	}
 	e.active = j
 	e.report(s, "reconciled", "Reconciled PR: "+j.Issue.Title)
-	// The reconciliation is durable; a failed status comment stays pending and
-	// the next step retries it.
-	if err := e.syncClaim(ctx, s, j); err != nil {
-		return &issueError{j.Issue.Number, err}
-	}
-	return nil
+	return e.syncClaim(ctx, s, j)
 }
 
 // issueError is a failure specific to one saved job. The job keeps its state
@@ -151,16 +155,27 @@ func issueOnly(err error) bool {
 	return ok
 }
 
+// reconcileFailure prefixes the failure lookup saves on a job.
+const reconcileFailure = "Pull request reconciliation failed; inspect branch "
+
 // lookup finds the job's pull request. An ownership failure is saved on the
 // job and returned as an issueError: the branch may hold this job's published
 // work, so the job must not be attempted again until the lookup succeeds.
 func (e engine) lookup(ctx context.Context, s *State, j *Job) (*PullRequest, error) {
 	pr, err := e.source.pull(ctx, j)
+	if err == nil && pr == nil && strings.HasPrefix(j.Failure, reconcileFailure) {
+		// The branch no longer holds an unowned PR; keep the stale lookup
+		// failure out of the next agent prompt.
+		j.Failure = ""
+		if err := e.save(s); err != nil {
+			return nil, err
+		}
+	}
 	if !errors.Is(err, errPullMismatch) && !errors.Is(err, errMultiplePulls) {
 		return pr, err
 	}
 	e.log.Error("Pull request reconciliation failed; retaining the job", "issue", j.Issue.Number, "branch", j.Branch, "error", err)
-	if failure := "Pull request reconciliation failed; inspect branch " + j.Branch + ": " + err.Error(); j.Failure != failure {
+	if failure := reconcileFailure + j.Branch + ": " + err.Error(); j.Failure != failure {
 		j.Failure = failure
 		if err := e.save(s); err != nil {
 			return nil, err
@@ -208,10 +223,8 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 				return false, abort(err)
 			}
 			if pr != nil {
-				if err := e.complete(ctx, s, j, pr); err != nil && !issueOnly(err) {
+				if err := e.complete(ctx, s, j, pr); err != nil {
 					return false, abort(err)
-				} else if err != nil {
-					failures = append(failures, err)
 				}
 				return true, errors.Join(failures...)
 			}
@@ -244,10 +257,8 @@ func (e engine) step(ctx context.Context, s *State) (bool, error) {
 			return false, abort(err)
 		}
 		if pr != nil {
-			if err := e.complete(ctx, s, j, pr); err != nil && !issueOnly(err) {
+			if err := e.complete(ctx, s, j, pr); err != nil {
 				return false, abort(err)
-			} else if err != nil {
-				failures = append(failures, err)
 			}
 			return true, errors.Join(failures...)
 		}

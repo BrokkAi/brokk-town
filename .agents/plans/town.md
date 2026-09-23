@@ -229,12 +229,20 @@
   skips that job for the rest of the scan, so it is never attempted or
   published again until its lookup succeeds. A later successful lookup
   reconciles it and clears the failure.
-- Such failures, and a failed status comment after a durable reconciliation,
-  are returned joined with the step's result. Any other error (network, auth,
-  cancellation, state writes) still aborts the step.
+- Such failures are returned joined with the step's result. Any other error
+  (network, auth, cancellation, state writes) still aborts the step. A status
+  comment that fails after a saved reconciliation aborts too, since it cannot
+  be told apart from a GitHub-wide failure; the job is already submitted, so
+  the next step retries the comment and moves on.
+- If the state write after a status comment fails, the job's comment stays
+  pending in memory as well as on disk, so the running process retries it.
+- A lookup that later finds no PR clears the stale `inspect branch` failure
+  so it does not reach the next agent prompt.
 - The daemon logs issue-only failures and keeps draining the queue; `--once`
   (Town's exact-issue worker) still does one unit of work and exits with the
   error, and the job summary carries the recorded failure.
 - Regression tests cover repeated polls, restart from saved state, eventual
-  reconciliation, a fresh job whose lookup fails, and a global lookup failure.
+  reconciliation, a fresh job whose lookup fails, a global lookup failure,
+  comment and state-write failures after a reconciliation, and the daemon
+  and `--once` handling of issue-only failures.
 - `bundle.json` moves issue-bot to 0.5.9 at the fix commit.
