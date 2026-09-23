@@ -219,7 +219,11 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	if err := decoder.Decode(v); err != nil {
 		return err
 	}
-	if decoder.Decode(new(any)) != io.EOF {
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return err
+		}
 		return fmt.Errorf("expected one JSON object")
 	}
 	return nil

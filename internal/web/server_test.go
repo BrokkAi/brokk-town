@@ -503,6 +503,15 @@ func TestOversizedBodyIsRejectedAsTooLarge(t *testing.T) {
 	}
 }
 
+func TestTrailingBytesPastTheLimitAreRejectedAsTooLarge(t *testing.T) {
+	_, h := fixture(t)
+	body := `{"town":"acme/managed","role":"issue","action":"start","task":""}` + strings.Repeat(" ", 70<<10) + "{}"
+	r := call(t, h.URL, "POST", "/api/control", body, "test-key", "")
+	if r.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatal(r.Status)
+	}
+}
+
 func TestCheckRequestDistinguishesUnknownFromSettled(t *testing.T) {
 	s, h := fixture(t)
 	s.Supervisor.Publisher = issuePublisher{}
@@ -521,7 +530,7 @@ func TestCheckRequestDistinguishesUnknownFromSettled(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&v)
 		return r.StatusCode, v.Error
 	}
-	if status, message := check("ffffffffffffffffffffffffffffffff"); status != http.StatusNotFound || message != "unknown request" {
+	if status, message := check("ffffffffffffffffffffffffffffffff"); status != http.StatusNotFound || message != `unknown request "ffffffffffffffffffffffffffffffff"` {
 		t.Fatal(status, message)
 	}
 	if status, message := check(id); status != http.StatusBadRequest || message != "request does not need reconciliation" {

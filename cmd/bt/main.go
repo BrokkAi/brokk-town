@@ -408,11 +408,11 @@ func run(ctx context.Context, args []string) error {
 	}
 }
 
-// browserLink returns the browser address with its access key only for an
-// interactive terminal. Redirected output, such as the background service's
-// log, gets a pointer to bt web so the key never lands in a file.
-func browserLink(conn connection, demo, terminal bool) string {
-	if terminal {
+// browserLink returns the browser address with its access key only when
+// stdout is an interactive terminal. Redirected output, such as the background
+// service's log, gets a pointer to bt web so the key never lands in a file.
+func browserLink(conn connection, demo bool) string {
+	if stdoutIsTerminal() {
 		return conn.URL + "/#token=" + conn.Token
 	}
 	if demo {
@@ -424,6 +424,16 @@ func browserLink(conn connection, demo, terminal bool) string {
 var stdoutIsTerminal = func() bool {
 	info, err := os.Stdout.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// serveBanner is what the foreground service prints once it is listening.
+func serveBanner(conn connection, demo bool) string {
+	return fmt.Sprintf("Brokk Town %s\nBrowser: %s\n", buildVersion(), browserLink(conn, demo))
+}
+
+// backgroundBanner is what bt -d prints once the detached service is ready.
+func backgroundBanner(conn connection, demo bool, logs string) string {
+	return fmt.Sprintf("Town running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo), logs)
 }
 
 func readConnection(dir string) (connection, error) {
@@ -583,7 +593,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	} else {
 		go func() { results <- supervisor.Run(ctx) }()
 	}
-	fmt.Printf("Brokk Town %s\nBrowser: %s\n", buildVersion(), browserLink(conn, demo, stdoutIsTerminal()))
+	fmt.Print(serveBanner(conn, demo))
 	if demo {
 		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
 	}

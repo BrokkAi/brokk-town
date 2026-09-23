@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -34,12 +35,17 @@ func logPaths(dir string) (string, string) {
 }
 
 // openLogs creates the log files owner-only before any supervisor writes to
-// them: the service banner includes the local access key.
+// them: service output can name local paths and repository details. The banner
+// no longer carries the access key, but logs from earlier versions did, so the
+// stdout log is scrubbed before it is reopened for appending.
 func openLogs(dir string) (*os.File, *os.File, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0700); err != nil {
 		return nil, nil, err
 	}
 	stdout, stderr := logPaths(dir)
+	if err := scrubAccessKeys(stdout); err != nil {
+		return nil, nil, err
+	}
 	out, err := os.OpenFile(stdout, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, nil, err
@@ -52,6 +58,40 @@ func openLogs(dir string) (*os.File, *os.File, error) {
 	_ = os.Chmod(stdout, 0600)
 	_ = os.Chmod(stderr, 0600)
 	return out, errFile, nil
+}
+
+// maxScrubbedLog bounds the work of scrubbing an old log. A larger log is
+// truncated rather than read into memory.
+const maxScrubbedLog = 8 << 20
+
+var loggedAccessKey = regexp.MustCompile(`#token=[0-9a-f]{64}`)
+
+// scrubAccessKeys redacts browser links written by earlier versions, which
+// printed the long-lived access key into the service log.
+func scrubAccessKeys(path string) error {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Size() > maxScrubbedLog {
+		return os.Truncate(path, 0)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !loggedAccessKey.Match(data) {
+		return nil
+	}
+	data = loggedAccessKey.ReplaceAll(data, []byte("#token=[redacted]"))
+	temp := path + ".scrub"
+	if err = os.WriteFile(temp, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(temp, path)
 }
 
 func processAlive(pid int) bool {
@@ -221,6 +261,6 @@ func startBackground(ctx context.Context, base string, demo bool, listen, config
 		return fmt.Errorf("Town is already running (pid %d)", conn.PID)
 	}
 	_ = cmd.Process.Release()
-	fmt.Printf("Town running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo, stdoutIsTerminal()), filepath.Join(runtimeDir(base, demo), "logs"))
+	fmt.Print(backgroundBanner(conn, demo, filepath.Join(runtimeDir(base, demo), "logs")))
 	return nil
 }

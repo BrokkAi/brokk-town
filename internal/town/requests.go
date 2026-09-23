@@ -144,7 +144,7 @@ func (s *Supervisor) RecheckRequest(id, requestID string) error {
 		}
 		r := t.Requests[requestID]
 		if r == nil {
-			return ErrUnknownRequest
+			return fmt.Errorf("%w %q", ErrUnknownRequest, requestID)
 		}
 		if r.Status != "uncertain" {
 			return errors.New("request does not need reconciliation")
