@@ -7,6 +7,11 @@ import {
   queueFor,
   issueJobDetails,
   taskRetryEligible,
+  taskSnoozable,
+  snoozeLabel,
+  snoozeRequest,
+  defaultSnoozeUntil,
+  localInputValue,
   visibleEvents,
   outcomeReport,
   safeURL,
@@ -943,7 +948,13 @@ function renderInspection() {
       ? `<section class="advisor-note"><strong>Simplifier Bot · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
       : "";
     const detailText = task.detail || (liveCapable ? "" : "Following the next step through town.");
-    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`))
+    const snooze = projected.snooze;
+    const snoozeBlock = snooze
+      ? `<section class="snooze-note" aria-label="Snooze"><strong>${esc(snoozeLabel(task))}</strong>${snooze.reason ? `<p>${esc(snooze.reason)}</p>` : ""}<p class="muted">Resumes ${esc(snooze.until.toLocaleString())} without any action. Its house keeps working the rest of the queue; no agent starts and no merge happens for this task until then.</p><div class="inspector-actions"><button id="snooze-task" type="button">Change snooze…</button><button id="clear-snooze" type="button">Resume now</button></div></section>`
+      : taskSnoozable(task)
+        ? `<div class="inspector-actions"><button id="snooze-task" type="button">Snooze…</button></div>`
+        : "";
+    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}${snoozeBlock}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? '<button id="retry-task" class="primary">Reconcile and retry</button>' : ""}`))
       return;
     $("#back-house").onclick = () => {
       selectedTask = "";
@@ -954,6 +965,10 @@ function renderInspection() {
       $("#retry-task").onclick = () =>
         command("retry", selectedHouse, selectedTask);
     const decisionButtons = [...out.querySelectorAll("button")];
+    const snoozeButton = decisionButtons.find((button) => button.id === "snooze-task"),
+      resumeButton = decisionButtons.find((button) => button.id === "clear-snooze");
+    if (snoozeButton) snoozeButton.onclick = () => openSnooze(task);
+    if (resumeButton) resumeButton.onclick = () => command("undefer", selectedHouse, selectedTask);
     const admit = decisionButtons.find((button) => button.id === "admit-task"),
       decline = decisionButtons.find((button) => button.id === "decline-task");
     if (admit) admit.onclick = () => command("admit", "hall", selectedTask);
@@ -1021,6 +1036,7 @@ function renderInspection() {
     [queue.filter((task) => task.kind === "pr").length, "pull request", "pull requests"],
     [queue.filter((task) => !["issue", "pr"].includes(task.kind)).length, "other item", "other items"],
     [queue.filter((task) => task.blocked).length, "blocked", "blocked"],
+    [queue.filter((task) => projectTask(t, task).snooze).length, "snoozed", "snoozed"],
   ].filter(([count]) => count > 0)
     .map(([count, singular, plural]) => `${count} ${count === 1 ? singular : plural}`).join(" · ");
   const agent = projectedWorker.profile;
@@ -1037,7 +1053,7 @@ function renderInspection() {
     queue
       .map(
         (task) =>
-          `<button class="task-card${task.policy_excluded ? " filtered" : ""}" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectTask(t, task).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}${task.policy_excluded ? " · held by this house\u2019s filter" : ""}</small></button>`,
+          `<button class="task-card${task.policy_excluded ? " filtered" : ""}" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectTask(t, task).snooze ? snoozeLabel(task) : projectTask(t, task).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}${task.policy_excluded ? " · held by this house\u2019s filter" : ""}</small></button>`,
       )
       .join("") || '<p class="muted">Nothing waiting at the door.</p>'
   }</div><h3>LATEST ACTIVITY</h3><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}${agentDetails}${healthDetails}${funnelDetails}<h3>WORKBENCH LOG</h3><div class="worker-logs">${
@@ -1093,6 +1109,43 @@ function renderJournal() {
         }),
     );
 }
+// The snooze dialog edits one task's resume time and reason. It remembers the
+// town and task it opened for, so a snapshot that moves the selection while it
+// is open cannot redirect the request to another task.
+let snoozeTarget = null;
+function openSnooze(task) {
+  snoozeTarget = { town: selectedTown, house: selectedHouse, task: task.id };
+  $("#snooze-title").textContent = task.title || task.id;
+  const current = Date.parse(task.deferred_until || "");
+  $("#snooze-until").value = Number.isFinite(current) && current > Date.now()
+    ? localInputValue(new Date(current))
+    : defaultSnoozeUntil();
+  $("#snooze-reason").value = task.defer_reason || "";
+  $("#snooze-error").textContent = "";
+  $("#snooze-dialog").showModal();
+}
+$("#cancel-snooze").onclick = () => $("#snooze-dialog").close();
+$("#snooze-form").onsubmit = async (event) => {
+  event.preventDefault();
+  if (!snoozeTarget) return;
+  const request = snoozeRequest($("#snooze-until").value, $("#snooze-reason").value);
+  if (request.error) {
+    $("#snooze-error").textContent = request.error;
+    return;
+  }
+  const submit = event.submitter;
+  submit.disabled = true;
+  $("#snooze-error").textContent = "";
+  try {
+    await api("/api/control", { town: snoozeTarget.town, role: snoozeTarget.house || "all", action: "defer", task: snoozeTarget.task, until: request.until, reason: request.reason });
+    $("#snooze-dialog").close();
+    showError("");
+  } catch (error) {
+    $("#snooze-error").textContent = error.message;
+  } finally {
+    submit.disabled = false;
+  }
+};
 async function command(action, role = "all", task = "") {
   try {
     await api("/api/control", { town: selectedTown, role, action, task });

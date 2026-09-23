@@ -147,6 +147,10 @@ func (s *Supervisor) schedule(ctx context.Context) {
 	if state.Demo {
 		return
 	}
+	if now := s.now(); expiredDeferrals(state, now) {
+		s.update(func(st *State) error { expireDeferrals(st, now); return nil })
+		state = s.Store.Snapshot()
+	}
 	for _, t := range state.Towns {
 		if t.Deleted {
 			continue
@@ -970,6 +974,12 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 		}
 		return s.Delete(id)
 	}
+	if action == "undefer" {
+		return s.Defer(id, taskID, time.Time{}, "")
+	}
+	if action == "defer" {
+		return errors.New("a snooze needs a resume time")
+	}
 	decision := action == "admit" || action == "decline"
 	if action != "start" && action != "pause" && action != "stop" && action != "retry" && !decision {
 		return errors.New("unknown action")
@@ -1271,7 +1281,9 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) (bool, error) {
 	numbers := []int{}
 	for _, task := range t.Tasks {
-		if task.Kind == "pr" && task.Stage == "ready" && !task.Blocked && !task.RetryAt.After(s.now()) {
+		// A snoozed pull request is not merged: the operator set it aside,
+		// and a merge is the most consequential write Town makes for it.
+		if task.Kind == "pr" && task.Stage == "ready" && !task.Blocked && !task.RetryAt.After(s.now()) && !task.Deferred(s.now()) {
 			numbers = append(numbers, task.Number)
 		}
 	}

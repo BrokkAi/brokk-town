@@ -920,3 +920,64 @@ test("a faction choice survives blocked browser storage for the session", async 
   assert.equal(elements["faction-select"].value, "hive", "the choice lasts through redraws");
   assert.equal(reads, 0, "redraws do not read browser storage");
 });
+
+test("the task inspector snoozes a task and resumes a snoozed one", async () => {
+  const elements = installFixture();
+  const requests = [];
+  const live = structuredClone({ ...state, seq: 1, demo: false });
+  live.towns["acme/project"].tasks["issue:5"] = { id: "issue:5", kind: "issue", number: 5, title: "Wait for the vendor", house: "issue", stage: "queued", deferred_until: "2999-01-01T09:00:00Z", defer_reason: "vendor API not released" };
+  const message = `data: ${JSON.stringify(live)}\n\n`;
+  let served = false;
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url === "/api/events") {
+      return { ok: true, body: { getReader: () => ({ read: async () => !served ? (served = true, { value: new TextEncoder().encode(message), done: false }) : { done: true } }) } };
+    }
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
+  await import(`./app.js?snooze=${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  assert.match(elements.inspection.textContent, /1 snoozed/, "the house queue counts snoozed work");
+  const snoozedCard = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5");
+  assert.match(snoozedCard.textContent, /Snoozed until/, "the queue card says when the task resumes");
+
+  elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:2").onclick();
+  const snooze = elements.inspection.querySelectorAll("button").find((button) => button.id === "snooze-task");
+  assert.ok(snooze, "a queued task offers a snooze");
+  snooze.onclick();
+  assert.equal(elements["snooze-dialog"].open, true);
+  assert.ok(elements["snooze-until"].value, "the dialog suggests a resume time");
+  elements["snooze-until"].value = "2020-01-01T09:00";
+  await elements["snooze-form"].onsubmit({ preventDefault() {}, submitter: new Element("button") });
+  assert.match(elements["snooze-error"].textContent, /future/, "a past time is refused before it is sent");
+  assert.equal(requests.some((request) => request.url === "/api/control"), false);
+  const soon = new Date(Date.now() + 2 * 86400000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const local = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T09:30`;
+  elements["snooze-until"].value = local;
+  elements["snooze-reason"].value = "  after the release  ";
+  await elements["snooze-form"].onsubmit({ preventDefault() {}, submitter: new Element("button") });
+  const sent = requests.find((request) => request.url === "/api/control");
+  assert.ok(sent, "the snooze is sent through the control API");
+  const body = JSON.parse(sent.options.body);
+  assert.equal(body.action, "defer");
+  assert.equal(body.town, "acme/project");
+  assert.equal(body.task, "issue:2");
+  assert.equal(body.reason, "after the release");
+  assert.equal(body.until, new Date(local).toISOString().replace(/\.\d{3}Z$/, "Z"));
+  assert.equal(elements["snooze-dialog"].open, false);
+
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5").onclick();
+  assert.match(elements.inspection.textContent, /Snoozed until/);
+  assert.match(elements.inspection.textContent, /vendor API not released/);
+  assert.match(elements.inspection.textContent, /Resumes .* without any action/);
+  await elements.inspection.querySelectorAll("button").find((button) => button.id === "clear-snooze").onclick();
+  const cleared = JSON.parse(requests.filter((request) => request.url === "/api/control").at(-1).options.body);
+  assert.equal(cleared.action, "undefer");
+  assert.equal(cleared.task, "issue:5");
+});

@@ -71,6 +71,9 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 			return ctx.Err()
 		case now := <-ticker.C:
 			if err := store.Update(func(s *State) error {
+				// A snooze ends on the demo's own clock, exactly as the live
+				// scheduler ends it, so the resumption is visible in the demo.
+				expireDeferrals(s, now)
 				t := s.Towns["brokkai/orchard"]
 				if t == nil || t.Deleted {
 					return nil
@@ -220,6 +223,7 @@ func seedDemoBoard(s *State, t *Town, now time.Time) {
 	t.Intents[703] = &Intent{Kind: "merge", PR: 703, Base: base, Head: sha("c"), Status: "uncertain", Detail: "Demo merge response was lost; reconcile before retrying.", At: now}
 	t.Tasks["issue:704"] = &Task{ID: "issue:704", Kind: "issue", Number: 704, Title: "Add saved report views", Stage: "queued", House: Issue, Detail: "A queued issue waiting for the workshop.", Updated: now}
 	t.Tasks["pr:705"] = &Task{ID: "pr:705", Kind: "pr", Number: 705, Title: "Make reconnect tests deterministic", Stage: "ready", House: Review, Head: sha("d"), Base: base, Audit: &Audit{Base: base, Head: sha("d"), Verdict: "clean", Complete: true, Summary: "The full change passed the independent review.", Checks: []string{"Reconnect regression tests passed"}, Findings: []Finding{}}, Updated: now}
+	t.Tasks["issue:707"] = &Task{ID: "issue:707", Kind: "issue", Number: 707, Title: "Adopt the vendor's new import API", Stage: "queued", House: Issue, Detail: "Snoozed by the operator; the rest of the workshop queue keeps moving.", DeferredUntil: now.Add(6 * time.Hour).UTC(), DeferReason: "Waiting for the vendor's API release", Updated: now}
 	t.Tasks["commit:"+sha("e")] = &Task{ID: "commit:" + sha("e"), Kind: "commit", Title: "Ship the cursor recovery", Stage: "shipped", House: Release, Head: sha("e"), Updated: now}
 
 	// Active profiles make dispatch provenance visible in the first frame. The

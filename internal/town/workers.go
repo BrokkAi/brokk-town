@@ -113,18 +113,18 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	switch r {
 	case Bug, Feature, Release:
 	case Issue:
-		if task := nextTask(t, Issue, "fixes"); task != nil {
+		if task := nextTask(t, Issue, "fixes", time.Now()); task != nil {
 			result.PR = task.Number
 			return result, b.repair(ctx, t, task, observe, log)
 		}
-		task := nextIssue(t)
+		task := nextIssue(t, time.Now())
 		if task == nil {
 			return result, nil
 		}
 		d.issue = task.Number
 		d.supersededPR = task.Requeue
 	case Review:
-		task := nextTask(t, Review, "queued")
+		task := nextTask(t, Review, "queued", time.Now())
 		if task == nil {
 			return result, nil
 		}
@@ -146,7 +146,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 		}
 		d = dispatch{mode: "bulletin", since: since, until: until}
 	case Simplifier:
-		task := nextTask(t, Simplifier, "simplifying")
+		task := nextTask(t, Simplifier, "simplifying", time.Now())
 		if task == nil {
 			return result, nil
 		}
@@ -478,13 +478,16 @@ func validateWorkerResult(result workerResult, role Role) error {
 	return nil
 }
 
-func nextTask(t *Town, role Role, stage string) *Task {
+// nextTask picks the house's next pull request (or Simplifier intake). A task
+// the operator snoozed is skipped until its resume time, like one waiting out
+// a failed attempt, so the rest of the queue keeps moving.
+func nextTask(t *Town, role Role, stage string, now time.Time) *Task {
 	tasks := []*Task{}
 	for _, task := range t.Tasks {
 		if !t.Config.eligibleUnderPolicy(role, task) {
 			continue
 		}
-		if (task.Kind == "pr" || (role == Simplifier && task.Kind == "issue")) && task.House == role && task.Stage == stage && !task.Blocked && !task.RetryAt.After(time.Now()) {
+		if (task.Kind == "pr" || (role == Simplifier && task.Kind == "issue")) && task.House == role && task.Stage == stage && !task.Blocked && !task.RetryAt.After(now) && !task.Deferred(now) {
 			tasks = append(tasks, task)
 		}
 	}
@@ -503,13 +506,13 @@ func nextTask(t *Town, role Role, stage string) *Task {
 	return nil
 }
 
-func nextIssue(t *Town) *Task {
+func nextIssue(t *Town, now time.Time) *Task {
 	tasks := []*Task{}
 	for _, task := range t.Tasks {
 		if !t.Config.eligibleUnderPolicy(Issue, task) {
 			continue
 		}
-		if task.Kind == "issue" && task.House == Issue && task.Stage == "queued" && !task.Blocked && !task.RetryAt.After(time.Now()) {
+		if task.Kind == "issue" && task.House == Issue && task.Stage == "queued" && !task.Blocked && !task.RetryAt.After(now) && !task.Deferred(now) {
 			tasks = append(tasks, task)
 		}
 	}

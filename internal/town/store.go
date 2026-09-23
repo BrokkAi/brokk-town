@@ -220,6 +220,9 @@ func validateState(s State, demo bool) error {
 			if task.Stage == "simplifying" && (task.House != Simplifier || (task.Kind != "issue" && task.Kind != "pr")) {
 				return errors.New("pending simplifier intake left the clarifier")
 			}
+			if validDeferReason(task.DeferReason) != nil || (task.DeferReason != "" && task.DeferredUntil.IsZero()) {
+				return errors.New("invalid task snooze")
+			}
 			if s := task.Simplification; s != nil {
 				if (s.Mode != "suggest" && s.Mode != "auto") || (s.Decision != "admit" && s.Decision != "decline") || strings.TrimSpace(s.Detail) == "" || len(s.Detail) > 16<<10 || len(s.Summary) > 1024 {
 					return errors.New("invalid simplifier assessment")

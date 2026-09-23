@@ -519,6 +519,33 @@ the same release. Town never edits the bot's private state. The pinned Release
 Bot must advertise the `retry` capability; older pins report that plainly.
 Use `bt status` to inspect saved details and GitHub to resolve conflicts.
 
+### Snoozing one task
+
+To set one issue or pull request aside without pausing its house, snooze it
+until a chosen time. Open the task in the browser and choose **Snooze…**, or:
+
+```sh
+./bin/bt defer --repo BrokkAi/my-project --task pr:123 --until 2d --reason "waiting on the vendor fix"
+./bin/bt defer --repo BrokkAi/my-project --task issue:45 --until 2026-10-01T09:00:00Z
+./bin/bt undefer --repo BrokkAi/my-project --task pr:123
+```
+
+`--until` takes an RFC 3339 time or a delay from now (`90m`, `4h`, `2d`); the
+resume time must be in the future and within 366 days, and the reason is one
+line of at most 200 characters. The house keeps working the rest of its queue.
+Until the resume time, no agent starts for the snoozed task: Issue, Review and
+Simplifier Bots skip it, Mayor Bot does not judge it, and Town does not merge
+it. A run already under way when you snooze finishes. The Mayor can still decide
+a snoozed arrival by hand.
+
+The task shows as **Snoozed** with its reason and resume time in the browser
+and in `bt status` (`deferred_until`, `defer_reason`). Snoozed is distinct from
+blocked and failed, so a snoozed task does not appear in the inbox. At the
+resume time Town clears the snooze, wakes the house and records the event; the
+snooze is saved state, so it survives a restart and repository reconciliation.
+Resume now (`bt undefer`) makes the task eligible immediately. Finished work
+(merged, closed, declined, or an implemented issue) cannot be snoozed.
+
 The HTTP listener accepts loopback IPs only (default `127.0.0.1:8099`). Host,
 origin, and bearer key checks protect the local API. A browser supporting WebMCP
 can list towns and navigate to a house through optional page tools. Unsupported
