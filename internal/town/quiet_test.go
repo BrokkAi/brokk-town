@@ -3,6 +3,7 @@ package town
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -42,6 +43,9 @@ func TestQuietWindowValidationNamesTheProblem(t *testing.T) {
 		{[]QuietWindow{{Days: []string{"mon"}, Start: "24:00", End: "09:00"}}, `start "24:00" must be HH:MM from 00:00 to 23:59`},
 		{[]QuietWindow{{Days: []string{"mon"}, Start: "08:00", End: "25:00"}}, `end "25:00" must be HH:MM`},
 		{[]QuietWindow{{Days: []string{"mon"}, Start: "08:00", End: "08:60"}}, `end "08:60"`},
+		{[]QuietWindow{{Days: []string{"mon"}, Start: "+8:00", End: "09:00"}}, `start "+8:00" must be HH:MM`},
+		{[]QuietWindow{{Days: []string{"mon"}, Start: "08:00", End: "-1:30"}}, `end "-1:30" must be HH:MM`},
+		{[]QuietWindow{{Days: []string{"mon"}, Start: "08:+5", End: "09:00"}}, `start "08:+5"`},
 		{[]QuietWindow{{Days: []string{"mon"}, Start: "08:00", End: "08:00"}}, "start and end are both 08:00"},
 		{append(evenings(), QuietWindow{Days: []string{"sun"}, Start: "xx", End: "01:00"}), "quiet window 2: start"},
 	} {
@@ -102,6 +106,8 @@ func TestParseQuietHoursReadsTheCompactForm(t *testing.T) {
 		"mon 18:00to19:00":    "must be HH:MM-HH:MM",
 		"mon 18:00-18:00":     "start and end are both",
 		"mon-xyz 01:00-02:00": `day "xyz"`,
+		";":                   "no quiet windows given",
+		"  ":                  "no quiet windows given",
 	} {
 		if _, err := ParseQuietHours(spec); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: error %v, want %q", spec, err, want)
@@ -173,6 +179,16 @@ func TestQuietWindowsFollowTheWallClockAcrossDaylightSaving(t *testing.T) {
 	if after := before.Add(time.Minute); quietStateIn(spring, "town", after).Active {
 		t.Fatalf("the window stayed quiet at %s, a wall-clock time after its end", after)
 	}
+	// The reported end is the moment the clock jumps past 02:30, not an
+	// hour later.
+	if q := quietStateIn(spring, "town", before); !q.Until.Equal(before.Add(time.Minute)) {
+		t.Fatalf("spring-forward until = %s, want %s", q.Until, before.Add(time.Minute))
+	}
+	// A window starting in the skipped hour is next due when the clock jumps.
+	skipped := []QuietWindow{{Days: []string{"sun"}, Start: "02:30", End: "04:00"}}
+	if q := quietStateIn(skipped, "town", time.Date(2026, 3, 8, 1, 0, 0, 0, ny)); !q.Next.Equal(before.Add(time.Minute)) {
+		t.Fatalf("spring-forward next = %s, want 03:00 EDT", q.Next)
+	}
 	// 1 November 2026: 01:00-02:00 happens twice.
 	fall := []QuietWindow{{Days: []string{"sun"}, Start: "01:00", End: "01:30"}}
 	first := time.Date(2026, 11, 1, 1, 15, 0, 0, ny)
@@ -187,6 +203,13 @@ func TestQuietWindowsFollowTheWallClockAcrossDaylightSaving(t *testing.T) {
 	}
 	if quietStateIn(fall, "town", first.Add(30*time.Minute)).Active {
 		t.Fatal("quiet past the window's end on the wall clock")
+	}
+	// In the repeated hour the end is the 01:30 still ahead, never the one
+	// already past.
+	for _, at := range []time.Time{first, second} {
+		if q := quietStateIn(fall, "town", at); !q.Until.Equal(at.Add(15 * time.Minute)) {
+			t.Fatalf("fall-back until at %s = %s, want %s", at, q.Until, at.Add(15*time.Minute))
+		}
 	}
 	// A window spanning the change ends at its wall-clock time.
 	night := []QuietWindow{{Days: []string{"sun"}, Start: "00:00", End: "03:00"}}
@@ -494,5 +517,32 @@ func TestQuietHoursSettingsRoundTrip(t *testing.T) {
 	}
 	if err := sup.SetQuietHours(nil); err != nil || s.Snapshot().ServiceConfig.QuietHours != nil {
 		t.Fatalf("clearing the service default: %v %+v", err, s.Snapshot().ServiceConfig)
+	}
+}
+
+// A review dispatch that began before the window must not merge once quiet
+// hours have started: the gate is checked again just before the write.
+func TestMergeWaitsWhenQuietHoursBeginMidDispatch(t *testing.T) {
+	s := testStore(t, false)
+	x := setupPR(t, s, 1)
+	update(t, s, func(st *State) {
+		st.Towns[x.ID].Config.QuietHours = &[]QuietWindow{{Days: []string{"mon"}, Start: "18:00", End: "19:00"}}
+	})
+	gh := newGH(1)
+	sup := NewSupervisor(s, gh, observing{gh: gh})
+	sup.now = func() time.Time { return local(21, 18, 30) }
+	handled, err := sup.mergeReady(context.Background(), s.Snapshot().Towns[x.ID], slog.Default())
+	if err != nil || !handled || gh.merged != 0 {
+		t.Fatalf("merged inside quiet hours: handled=%t merged=%d err=%v", handled, gh.merged, err)
+	}
+	if intent := s.Snapshot().Towns[x.ID].Intents[1]; intent != nil {
+		t.Fatalf("quiet hours left a merge intent: %+v", intent)
+	}
+	sup.now = func() time.Time { return local(21, 19, 30) }
+	if _, err := sup.mergeReady(context.Background(), s.Snapshot().Towns[x.ID], slog.Default()); err != nil {
+		t.Fatal(err)
+	}
+	if gh.merged != 1 {
+		t.Fatalf("the pull request did not merge after the window: merged=%d", gh.merged)
 	}
 }

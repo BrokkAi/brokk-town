@@ -518,17 +518,23 @@ func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
 	respond(w, s.Store.Snapshot().Capacity)
 }
 
-// quietHours replaces the service default quiet windows. An empty or null
-// list removes the default; towns with their own windows are unaffected.
+// quietHours replaces the service default quiet windows. Only an explicit
+// empty list removes the default; a missing or null list is refused so a
+// truncated request cannot clear it. Towns with their own windows are
+// unaffected.
 func (s *Server) quietHours(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Windows []town.QuietWindow `json:"windows"`
+		Windows *[]town.QuietWindow `json:"windows"`
 	}
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
 		return
 	}
-	if err := s.Supervisor.SetQuietHours(input.Windows); err != nil {
+	if input.Windows == nil {
+		problem(w, "windows is required; send [] to remove the service default", 400)
+		return
+	}
+	if err := s.Supervisor.SetQuietHours(*input.Windows); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

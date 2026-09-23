@@ -88,6 +88,8 @@ func TestQuietHoursCLIEditsATownOrTheServiceDefault(t *testing.T) {
 		{append(append([]string{}, town...), "mon 25:00-01:00"), `start "25:00" must be HH:MM`},
 		{append(append([]string{}, town...), "someday 18:00-19:00"), `day "someday"`},
 		{append(append([]string{}, town...), ""), "--quiet-hours needs windows"},
+		{append(append([]string{}, town...), ";"), "no quiet windows given"},
+		{append(append([]string{}, service...), " ; "), "no quiet windows given"},
 		{append(append([]string{}, service...), "default"), "applies to a town"},
 		{append(append([]string{}, service...), "none", "--model", "x"), "--model needs --repo"},
 		{[]string{"settings", "--state-dir", dir, "--repo", "Acme/Team", "--role", "issue", "--quiet-hours", "none"}, "omit --role"},

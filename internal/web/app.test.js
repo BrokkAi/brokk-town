@@ -739,12 +739,16 @@ test("responsive and reduced-motion contracts remain shipped in the stylesheet",
 // openTownHall renders one snapshot and opens the Town Hall inspector. The
 // client keeps its own copy of a delivered snapshot, so a test that needs
 // different town state installs a fresh fixture rather than mutating this one.
-async function openTownHall(budget) {
+async function openTownHall(budget, adjust) {
+  return (await openTownHallPanel(budget, adjust)).textContent;
+}
+async function openTownHallPanel(budget, adjust = () => {}) {
   const elements = installFixture();
   const live = structuredClone(state);
   live.seq = 1;
   live.demo = false;
   live.towns["acme/project"].budget = budget;
+  adjust(live.towns["acme/project"]);
   const message = `data: ${JSON.stringify(live)}\n\n`;
   let served = false;
   globalThis.fetch = async (url) => {
@@ -758,7 +762,7 @@ async function openTownHall(budget) {
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
-  return elements.inspection.textContent;
+  return elements.inspection;
 }
 
 test("an exhausted agent budget explains itself and never renders absent telemetry as zero", async () => {
@@ -791,6 +795,22 @@ test("a town with no budget still reports the agent spend it measured", async ()
   assert.match(text, /3 agent attempts/, "spend is reported without a budget");
   assert.match(text, /No budget set for this town/, "an absent budget is stated plainly");
   assert.doesNotMatch(text, /New agent work resumes/, "an unlimited town is not described as held");
+});
+
+test("Town Hall shows quiet hours as a scheduled pause, with Mayor Bot's quiet dot", async () => {
+  const panel = await openTownHallPanel(null, (town) => {
+    town.quiet_hours = { source: "service", active: true, until: "2026-09-22T08:00:00Z", windows: [], reason: "" };
+    town.workers.hall = { ...(town.workers.hall || {}), role: "hall", enabled: true, status: "quiet" };
+  });
+  assert.match(panel.innerHTML, /<h2>Quiet hours<\/h2><p class="quiet-held">/, "Town Hall explains the hold");
+  assert.match(panel.textContent, /Quiet hours until .*service default.*running work finishes/);
+  assert.match(panel.innerHTML, /dot quiet"><\/i>Mayor Bot quiet hours/, "Mayor Bot's dot and status read as quiet");
+});
+
+test("the world legend explains the quiet dot, and the quiet windows input is labelled", () => {
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  assert.match(html, /<i class="dot quiet"><\/i\s*><span id="legend-quiet" data-skin-text="legend-quiet"/);
+  assert.match(html, /id="settings-quiet-hours"[^>]*aria-label="[^"]+"/, "the town's quiet windows input is labelled");
 });
 
 test("a house shows its work policy and marks the inventory that policy holds back", async () => {

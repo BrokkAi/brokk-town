@@ -673,6 +673,8 @@ test("quiet hours parse the compact form and reject bad shapes with the service'
     ["mon 01:00-24:30", /end "24:30"/],
     ["mon 09:00-09:00", /start and end are both 09:00/],
     ["mon 01:00-02:00; tue 03:00", /Quiet window 2/],
+    [";", /No quiet windows given/],
+    ["mon +1:00-02:00", /start "\+1:00"/],
   ])
     assert.throws(() => parseQuietHours(spec), message, spec);
 });

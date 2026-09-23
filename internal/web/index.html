@@ -139,6 +139,11 @@
               ><span id="legend-blocked" data-skin-text="legend-blocked"
                 >Needs attention</span
               ></span
+            ><span
+              ><i class="dot quiet"></i
+              ><span id="legend-quiet" data-skin-text="legend-quiet"
+                >Quiet hours</span
+              ></span
             >
           </div>
           <div id="empty" hidden>
@@ -312,7 +317,7 @@
             <option value="own">Use this town's own windows</option>
             <option value="none">No quiet hours for this town</option>
           </select>
-          <input id="settings-quiet-hours" class="quiet-hours-input" type="text" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" aria-describedby="settings-quiet-note" />
+          <input id="settings-quiet-hours" class="quiet-hours-input" type="text" aria-label="This town's quiet windows" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" aria-describedby="settings-quiet-note" />
           <p id="settings-quiet-note" class="muted"></p>
         </section>
         <div class="agent-profile">

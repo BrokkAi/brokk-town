@@ -1433,6 +1433,11 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 		if fresh.Head.SHA != p.Head.SHA || fresh.Base.SHA != p.Base.SHA || description(fresh) != description(p) || fresh.State != "open" || fresh.Draft || fresh.Locked {
 			continue
 		}
+		// Quiet hours may have begun since this review dispatch started. The
+		// merge is the write they exist to hold, so check again just before it.
+		if s.Store.quietActive(t.ID, s.now()) {
+			return true, nil
+		}
 		if err = s.Store.Update(func(st *State) error {
 			st.Towns[t.ID].Intents[n] = &Intent{Kind: "merge", PR: n, Base: p.Base.SHA, Head: p.Head.SHA, Status: "uncertain", At: s.now()}
 			return nil

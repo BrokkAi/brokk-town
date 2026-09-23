@@ -20,6 +20,8 @@ func TestQuietHoursAPIsValidatePersistAndProject(t *testing.T) {
 		`{"windows":[{"days":["someday"],"start":"18:00","end":"08:00"}]}`,
 		`{"windows":[{"days":["mon"],"start":"18:00","end":"08:00","tz":"UTC"}]}`,
 		`{"windows":[],"injected":true}`,
+		`{}`,
+		`{"windows":null}`,
 	} {
 		if r := call(t, h.URL, "POST", "/api/quiet-hours", body, "test-key", ""); r.StatusCode != http.StatusBadRequest {
 			t.Fatalf("quiet-hours body %s got %d", body, r.StatusCode)

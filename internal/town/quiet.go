@@ -44,7 +44,9 @@ var quietDays = []string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
 // where end is true.
 func clockMinutes(value string, end bool) (int, bool) {
 	h, m, ok := strings.Cut(value, ":")
-	if !ok || len(h) != 2 || len(m) != 2 {
+	digits := func(s string) bool { return len(s) == 2 && strings.Trim(s, "0123456789") == "" }
+	// Atoi would take a sign; HH:MM is two digits each, nothing else.
+	if !ok || !digits(h) || !digits(m) {
 		return 0, false
 	}
 	hours, err1 := strconv.Atoi(h)
@@ -154,12 +156,45 @@ func weekMinute(t time.Time) int {
 	return int(t.Weekday())*minutesPerDay + t.Hour()*60 + t.Minute()
 }
 
-// wallClockAfter is the instant the wall clock first reads the week-minute
-// that lies delta minutes after t's own minute. Arithmetic is on the wall
-// clock, so a daylight-saving change moves the instant rather than the reading.
+// wallReading is t's wall-clock reading as a zone-free value, so readings in
+// different offsets compare by what the clock showed.
+func wallReading(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
+}
+
+// wallClockAfter is the first instant after t at which the wall clock reads
+// at least the minute lying delta wall-clock minutes after t's own minute.
+// Arithmetic is on the wall clock, so a daylight-saving change moves the
+// instant rather than the reading: a reading the clock skips resolves to the
+// moment it jumps past it, and a reading it repeats to the occurrence still
+// ahead of t.
 func wallClockAfter(t time.Time, delta int) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, t.Hour(), t.Minute()+delta, 0, 0, t.Location())
+	loc := t.Location()
+	target := time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute()+delta, 0, 0, time.UTC)
+	at := time.Date(target.Year(), target.Month(), target.Day(), target.Hour(), target.Minute(), 0, 0, loc)
+	if !wallReading(at).Equal(target) {
+		// The clock skips this reading. The answer is the transition at which
+		// it jumps from before the target to after it.
+		start, end := at.ZoneBounds()
+		for _, edge := range []time.Time{start, end} {
+			if !edge.IsZero() && !wallReading(edge).Before(target) && wallReading(edge.Add(-time.Second)).Before(target) {
+				return edge
+			}
+		}
+		return at
+	}
+	if !at.After(t) {
+		// A repeated reading whose first occurrence is already past: take the
+		// same reading under the offset that follows.
+		if _, end := at.ZoneBounds(); !end.IsZero() {
+			_, offset := end.Zone()
+			later := time.Unix(target.Unix()-int64(offset), 0).In(loc)
+			if later.After(t) && wallReading(later).Equal(target) {
+				return later
+			}
+		}
+	}
+	return at
 }
 
 // QuietState is the operator-facing view of a town's quiet hours. It is
@@ -327,6 +362,11 @@ func ParseQuietHours(spec string) ([]QuietWindow, error) {
 			return nil, fmt.Errorf("quiet window %d: time range %q must be HH:MM-HH:MM", i+1, fields[1])
 		}
 		windows = append(windows, QuietWindow{Days: days, Start: start, End: end})
+	}
+	if len(windows) == 0 {
+		// An empty schedule must be asked for by name, never inferred from a
+		// blank or stray separator.
+		return nil, errors.New("no quiet windows given; write DAYS HH:MM-HH:MM, or none for no quiet hours")
 	}
 	return windows, ValidateQuietHours(windows)
 }

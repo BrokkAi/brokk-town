@@ -662,6 +662,8 @@ function quietDays(value, index) {
   return days;
 }
 
+// A blank spec is an explicit empty schedule; a spec with only separators is
+// a mistake and is refused rather than read as "no quiet hours".
 export function parseQuietHours(spec) {
   const windows = [];
   String(spec || "").split(";").map((part) => part.trim()).filter(Boolean).forEach((part, i) => {
@@ -679,6 +681,8 @@ export function parseQuietHours(spec) {
     if (from === to) throw new Error(`Quiet window ${index}: start and end are both ${start}; use 00:00-24:00 for a whole day.`);
     windows.push({ days, start, end });
   });
+  if (!windows.length && String(spec || "").trim())
+    throw new Error("No quiet windows given. Write DAYS HH:MM-HH:MM, or leave the field empty for none.");
   return windows;
 }
 
