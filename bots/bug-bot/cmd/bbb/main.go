@@ -76,6 +76,7 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	maxIssues := fs.Int("max-issues", 3, "maximum new issues per scan (1-20)")
 	focus := fs.String("focus", "", "area or bug class to investigate")
 	dryRun := fs.Bool("dry-run", false, "find and review bugs without creating issues")
+	onlyOnChange := fs.Bool("only-on-change", false, "in daemon mode, skip scans while the branch commit matches the last completed scan")
 	once := fs.Bool("once", mode == "once", "run one scan (or resume a saved scan), then exit")
 	jsonOutput := fs.Bool("json", false, "structured logs (disables the dashboard)")
 	plain := fs.Bool("plain", false, "scrolling console output (disables the dashboard)")
@@ -146,6 +147,8 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 			cfg.Focus = *focus
 		case "dry-run":
 			cfg.DryRun = *dryRun
+		case "only-on-change":
+			cfg.OnlyOnChange = *onlyOnChange
 		case "label":
 			cfg.Labels = labels
 		case "poll":
