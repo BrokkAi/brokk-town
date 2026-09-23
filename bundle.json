@@ -9,8 +9,8 @@
     "feature": {
       "project": "feature-bot",
       "command": "bfb",
-      "version": "0.1.4",
-      "source_commit": "7f0967dc8e43d7cfa07c18e7e98cf49a88917fa2"
+      "version": "0.2.0",
+      "source_commit": "d751cab500c4483dd36b694e3791b18c984d09dd"
     },
     "issue": {
       "project": "issue-bot",
