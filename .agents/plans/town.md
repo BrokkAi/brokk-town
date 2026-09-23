@@ -244,6 +244,15 @@
 
 ## Frontline theme (browser, presentation only)
 
+- 2026-09-23 attack and defender pass: a new transparent six-unit atlas gives
+  every installation two faction ground defenders and an emplacement. Working
+  status affects patrol stance; idle defenders remain visible. A committed
+  delivery now fires human tracers, alien energy lances, or swarm spores as it
+  approaches, with faction-specific impact and defender response. Art loads
+  when the skin is selected, outside the draw loop. No event, command, or
+  worker behavior changes. Frontend syntax and 56 browser tests pass;
+  `go vet ./...` and `go test -race ./...` pass.
+
 - 2026-09-23 visual refresh: four original transparent image atlases replace
   the flat canvas silhouettes when loaded: eight isometric buildings for each
   of the three factions and a matching three-craft strip. Canvas silhouettes
