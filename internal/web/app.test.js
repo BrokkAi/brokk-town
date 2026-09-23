@@ -1014,3 +1014,237 @@ test("the task inspector snoozes a task and resumes a snoozed one", async () => 
   assert.equal(cleared.action, "undefer");
   assert.equal(cleared.task, "issue:5");
 });
+
+test("every dialog is named by its heading, and the motion toggle reports its real state", async () => {
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  const dialogs = [...html.matchAll(/<dialog\b([^>]*)>/g)];
+  assert.ok(dialogs.length >= 9);
+  for (const [, attrs] of dialogs) {
+    const id = attrs.match(/\bid="([^"]+)"/)?.[1];
+    const label = attrs.match(/aria-labelledby="([^"]+)"/)?.[1];
+    assert.ok(label, `${id} has aria-labelledby`);
+    assert.match(html, new RegExp(`<h2 id="${label}"`), `${id} is labelled by a heading that exists`);
+  }
+  assert.match(html, /id="motion"[^>]*aria-pressed="true"[^>]*>Motion on/, "the shipped markup says pressed while motion is on");
+
+  const elements = installFixture();
+  globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({}) });
+  await import(`./app.js?motion=${Date.now()}-${Math.random()}`);
+  assert.equal(elements.motion.textContent, "Motion on");
+  assert.equal(elements.motion["aria-pressed"], "true");
+  elements.motion.onclick();
+  assert.equal(elements.motion.textContent, "Motion off");
+  assert.equal(elements.motion["aria-pressed"], "false");
+});
+
+test("the event stream backs off exponentially, waits while hidden, and retries when shown", async () => {
+  const elements = installFixture();
+  const timers = [];
+  globalThis.setTimeout = (callback, delay) => {
+    timers.push({ callback, delay });
+    return timers.length;
+  };
+  let attempts = 0;
+  let serve = false;
+  const snapshot = `data: ${JSON.stringify(state)}\n\n`;
+  globalThis.fetch = async (url) => {
+    if (url !== "/api/events") return { ok: true, json: async () => ({}) };
+    attempts++;
+    if (!serve) return { ok: false, status: 503, json: async () => ({}) };
+    let sent = false;
+    return { ok: true, body: { getReader: () => ({ read: async () => (!sent ? ((sent = true), { value: new TextEncoder().encode(snapshot), done: false }) : new Promise(() => {})) }) } };
+  };
+  const flush = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  try {
+    await import(`./app.js?backoff=${Date.now()}-${Math.random()}`);
+    await flush();
+    assert.equal(attempts, 1);
+    assert.equal(elements.connection.textContent, "Reconnecting");
+    const delays = [];
+    for (let i = 0; i < 8; i++) {
+      const timer = timers.at(-1);
+      delays.push(timer.delay);
+      timer.callback();
+      await flush();
+    }
+    assert.equal(attempts, 9, "each timer makes exactly one attempt");
+    delays.forEach((delay, attempt) => {
+      const ceiling = Math.min(30000, 1000 * 2 ** attempt);
+      assert.ok(delay >= ceiling / 2 && delay <= ceiling, `attempt ${attempt} waits ${delay}ms within [${ceiling / 2}, ${ceiling}]`);
+    });
+    assert.ok(delays.at(-1) >= 15000 && delays.at(-1) <= 30000, "the wait is capped at thirty seconds");
+
+    // A hidden tab lets the pending timer lapse without connecting.
+    const pending = timers.length;
+    document.hidden = true;
+    timers.at(-1).callback();
+    await flush();
+    assert.equal(attempts, 9, "no attempt while hidden");
+    assert.equal(timers.length, pending, "no new timer while hidden");
+
+    // Showing the tab retries at once, and the stream paints its snapshot.
+    serve = true;
+    document.hidden = false;
+    document.dispatchEvent({ type: "visibilitychange" });
+    await flush();
+    assert.equal(attempts, 10, "becoming visible reconnects immediately");
+    assert.equal(elements.connection.textContent, "Connected");
+    assert.match(elements.towns.innerHTML, /data-town="acme\/project"/);
+  } finally {
+    globalThis.setTimeout = () => 0;
+    document.hidden = false;
+  }
+});
+
+test("a hidden tab keeps the newest snapshot and paints it when shown", async () => {
+  const elements = installFixture();
+  document.hidden = true;
+  let served = false;
+  const message = `data: ${JSON.stringify(state)}\n\n`;
+  globalThis.fetch = async (url) => {
+    if (url === "/api/events")
+      return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(message), done: false }) : new Promise(() => {})) }) } };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?hidden=${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(elements.towns.innerHTML, "", "nothing is painted while hidden");
+  document.hidden = false;
+  document.dispatchEvent({ type: "visibilitychange" });
+  assert.match(elements.towns.innerHTML, /data-town="acme\/project"/);
+});
+
+test("a write in flight stays disabled across snapshot redraws and focus returns after it settles", async () => {
+  const elements = installFixture();
+  const live = structuredClone(state);
+  live.demo = false;
+  let releaseSnapshot;
+  const messages = [
+    `data: ${JSON.stringify(live)}\n\n`,
+    new Promise((resolve) => { releaseSnapshot = () => resolve(`data: ${JSON.stringify({ ...live, seq: 2 })}\n\n`); }),
+  ];
+  const controls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (url === "/api/events") {
+      let index = 0;
+      return { ok: true, body: { getReader: () => ({ read: async () => (index < messages.length ? { value: new TextEncoder().encode(await messages[index++]), done: false } : new Promise(() => {})) }) } };
+    }
+    if (url === "/api/control")
+      return new Promise((resolve) => controls.push({ body: JSON.parse(options.body), resolve: () => resolve({ ok: true, json: async () => ({}) }) }));
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/task-detail") return { ok: false, json: async () => ({ error: "offline" }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  await import(`./app.js?inflight=${Date.now()}-${Math.random()}`);
+  await flush();
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+
+  const pause = elements.inspection.querySelectorAll("[data-action]").find((button) => button.dataset.action === "pause");
+  pause.focus();
+  const sent = pause.onclick();
+  assert.equal(controls.length, 1);
+  assert.deepEqual(controls[0].body, { town: "acme/project", role: "issue", action: "pause", task: "" });
+  assert.match(elements.inspection.innerHTML, /data-action="pause" disabled aria-busy="true"/);
+  pause.onclick();
+  assert.equal(controls.length, 1, "a second press while in flight sends nothing");
+
+  // A snapshot rebuilds the inspector while the request is out.
+  releaseSnapshot();
+  await flush();
+  assert.match(elements.inspection.innerHTML, /data-action="pause" disabled aria-busy="true"/, "the redraw keeps the pending button disabled");
+  assert.doesNotMatch(elements.inspection.innerHTML, /data-action="stop" disabled/, "other controls stay usable");
+
+  document.activeElement = document.body;
+  controls[0].resolve();
+  await sent;
+  assert.doesNotMatch(elements.inspection.innerHTML, /aria-busy/, "the control returns once the write settles");
+  assert.equal(document.activeElement.dataset.action, "pause", "focus returns to the control that was pressed");
+
+  // The inbox holds both decision buttons for a task while one is in flight.
+  const admit = elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxDecide === "admit");
+  const deciding = admit.onclick();
+  assert.equal(controls.length, 2);
+  assert.match(elements["inbox-list"].innerHTML, /data-inbox-decide="admit" disabled aria-busy="true"/);
+  assert.match(elements["inbox-list"].innerHTML, /data-inbox-decide="decline" disabled aria-busy="true"/);
+  elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxDecide === "decline").onclick();
+  assert.equal(controls.length, 2, "declining while admitting sends nothing");
+  controls[1].resolve();
+  await deciding;
+  assert.doesNotMatch(elements["inbox-list"].innerHTML, /aria-busy/);
+});
+
+test("a write that never answers is released at its deadline, and paired controls block each other", async () => {
+  const elements = installFixture();
+  const live = structuredClone(state);
+  live.demo = false;
+  const deadlines = [];
+  const timeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => {
+    const controller = new AbortController();
+    deadlines.push({ ms, controller });
+    return controller.signal;
+  };
+  const controls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (url === "/api/events") {
+      let sent = false;
+      return { ok: true, body: { getReader: () => ({ read: async () => (!sent ? ((sent = true), { value: new TextEncoder().encode(`data: ${JSON.stringify(live)}\n\n`), done: false }) : new Promise(() => {})) }) } };
+    }
+    if (url === "/api/control") {
+      const body = JSON.parse(options.body);
+      controls.push({ body, signal: options.signal });
+      // The inbox decision's request ignores its signal, as a stuck refresh
+      // would: the deadline must release the control regardless.
+      if (body.action === "decline") return new Promise(() => {});
+      return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason)));
+    }
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/task-detail") return { ok: false, json: async () => ({ error: "offline" }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  try {
+    await import(`./app.js?deadline=${Date.now()}-${Math.random()}`);
+    await flush();
+    elements.towns.querySelectorAll("[data-town]")[0].onclick();
+
+    // Town-wide wake and pause share one pending write for the town.
+    const waking = elements["town-toggle"].onclick();
+    assert.equal(controls.at(-1).body.role, "all");
+    assert.equal(elements["town-toggle"].disabled, true);
+    assert.equal(elements["pause-all"].disabled, true, "pause waits for the wake to settle");
+    elements["pause-all"].onclick();
+    assert.equal(controls.length, 1, "pausing the town while it wakes sends nothing");
+    assert.equal(deadlines.at(-1).ms, 30000);
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await waking;
+    assert.equal(elements["town-toggle"].disabled, false, "the deadline releases the town controls");
+    assert.match(elements.error.textContent, /may still have been applied/, "a lost answer is reported as uncertain, not failed");
+
+    // The inspector's Admit and Decline are one decision.
+    elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+    elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
+    const find = (id) => elements.inspection.querySelectorAll("button").find((button) => button.id === id);
+    const admitting = find("admit-task").onclick();
+    assert.match(elements.inspection.innerHTML, /id="admit-task" class="primary" disabled aria-busy="true"/);
+    assert.match(elements.inspection.innerHTML, /id="decline-task" class="danger" disabled aria-busy="true"/);
+    const before = controls.length;
+    find("decline-task").onclick();
+    assert.equal(controls.length, before, "declining while admitting sends nothing");
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await admitting;
+    assert.doesNotMatch(elements.inspection.innerHTML, /aria-busy/);
+
+    // A request that ignores its signal is still released at the deadline.
+    const declining = elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxDecide === "decline").onclick();
+    assert.match(elements["inbox-list"].innerHTML, /data-inbox-decide="decline" disabled/);
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await declining;
+    assert.doesNotMatch(elements["inbox-list"].innerHTML, /aria-busy/);
+    assert.match(elements["inbox-error"].textContent, /may still have been applied/);
+  } finally {
+    AbortSignal.timeout = timeout;
+  }
+});
