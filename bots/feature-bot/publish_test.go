@@ -426,9 +426,97 @@ func TestPublishRefusesExistingMarker(t *testing.T) {
 	// Someone filed the logged dry-run body by hand, marker included.
 	f.items = []Issue{{Number: 9, Title: c.Finding.Title, Body: issueBody(c, c.Commit), State: "open", URL: "https://github.com/o/r/issues/9"}}
 	a.onReview = func([]Issue) Review { return Review{Verdict: "new", Reason: "Reviewer missed it"} }
-	_, err := publishOutput(t, e, ProposalSelector(c))
-	if err == nil || !strings.Contains(err.Error(), "publication marker") || f.creates != 0 {
-		t.Fatalf("marker not guarded: %v creates=%d", err, f.creates)
+	out, err := publishOutput(t, e, ProposalSelector(c))
+	saved := savedState(t, e)
+	got := saved.Completed[0]
+	if err == nil || !strings.Contains(err.Error(), "duplicate") || f.creates != 0 || got.Status != "duplicate" || got.URL != "https://github.com/o/r/issues/9" || !strings.Contains(got.Review, "publication marker") || !strings.Contains(out, got.URL) || saved.Publication != nil {
+		t.Fatalf("marker not guarded: %v creates=%d %+v", err, f.creates, got)
+	}
+}
+
+// A crash (or failed save) after the outcome was saved but before the selection
+// was retired must report that outcome, never review or create again.
+func TestPublishResumedSavedOutcomeIsNotRepublished(t *testing.T) {
+	for _, status := range []string{"submitted", "duplicate", "uncertain", "invalid"} {
+		t.Run(status, func(t *testing.T) {
+			e, s, f, a, _ := dryRunProposals(t, 1)
+			c := s.Completed[0]
+			dir := filepath.Join(e.config.Directory+"-scans", "scan-selected")
+			s.Publication = &Publication{RequestID: c.RequestID, Commit: c.Commit, Directory: dir}
+			c.Status, c.Review = status, "Saved "+status+" outcome"
+			if status == "submitted" || status == "duplicate" {
+				c.URL = "https://github.com/o/r/issues/5"
+			}
+			if err := writeState(e.config, s); err != nil {
+				t.Fatal(err)
+			}
+			reviews, reads := a.reviews, f.reads
+			out, err := publishOutput(t, e, ProposalSelector(c))
+			if (status == "submitted") != (err == nil) || (err != nil && !strings.Contains(err.Error(), status)) {
+				t.Fatalf("outcome: %v", err)
+			}
+			saved := savedState(t, e)
+			if f.creates != 0 || a.reviews != reviews || f.reads != reads || saved.Completed[0].Status != status || saved.Publication != nil || !strings.Contains(out, status+" outcome") && status != "submitted" {
+				t.Fatalf("republished: creates=%d reviews=%d %+v %q", f.creates, a.reviews-reviews, saved.Completed[0], out)
+			}
+			if len(saved.Workspaces) != 2 || saved.Workspaces[1].Directory != dir {
+				t.Fatalf("workspace not retired: %+v", saved.Workspaces)
+			}
+		})
+	}
+}
+
+func TestPublishRetryReusesWorkspaceAndReplacementRetiresIt(t *testing.T) {
+	e, s, f, _, _ := dryRunProposals(t, 2)
+	first := ProposalSelector(s.Completed[0])
+	e.config.Verify = []string{"sh", "-c", "exit 7"}
+	if _, err := publishOutput(t, e, first); err == nil {
+		t.Fatal("expected verifier failure")
+	}
+	dir := savedState(t, e).Publication.Directory
+	if _, err := publishOutput(t, e, first); err == nil {
+		t.Fatal("expected verifier failure")
+	}
+	saved := savedState(t, e)
+	if saved.Publication.Directory != dir {
+		t.Fatalf("retry changed workspace: %s != %s", saved.Publication.Directory, dir)
+	}
+	e.config.Verify = nil
+	if _, err := publishOutput(t, e, ProposalSelector(s.Completed[1])); err != nil {
+		t.Fatal(err)
+	}
+	saved = savedState(t, e)
+	var retired []string
+	for _, w := range saved.Workspaces {
+		retired = append(retired, w.Directory)
+	}
+	if f.creates != 1 || saved.Completed[0].Status != "dry_run" || saved.Publication != nil || len(retired) != 3 || retired[1] != dir || retired[2] == dir {
+		t.Fatalf("abandoned workspace not recorded: %v", retired)
+	}
+}
+
+func TestPublishReconcilesPostingWhileScanActive(t *testing.T) {
+	e, s, f, _, _ := dryRunProposals(t, 1)
+	selector := ProposalSelector(s.Completed[0])
+	f.lost = true
+	if _, err := publishOutput(t, e, selector); err == nil {
+		t.Fatal("expected lost response")
+	}
+	saved := savedState(t, e)
+	saved.Scan = &Scan{Commit: saved.Completed[0].Commit, Directory: filepath.Join(e.config.Directory+"-scans", "scan-active")}
+	if err := writeState(e.config, saved); err != nil {
+		t.Fatal(err)
+	}
+	var list strings.Builder
+	if err := WriteProposalList(&list, savedState(t, e)); err != nil || !strings.Contains(list.String(), "unknown outcome: publish again to reconcile") {
+		t.Fatalf("listing: %q", list.String())
+	}
+	if _, err := publishOutput(t, e, selector); err != nil {
+		t.Fatal(err)
+	}
+	saved = savedState(t, e)
+	if f.creates != 1 || saved.Completed[0].Status != "submitted" || saved.Publication != nil || saved.Scan == nil {
+		t.Fatalf("not reconciled: creates=%d %+v", f.creates, saved.Completed[0])
 	}
 }
 

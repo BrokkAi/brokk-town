@@ -743,11 +743,17 @@
   the dry-run review checkpoint. It verifies cited files in the new worktree
   and calls the shared `reviewAndPublish`, now scoped by an explicit `*Scan`,
   with dry run forced off. Discovery never runs.
-- Errors keep `publication` with its failure so the same selector resumes with
-  its fresh checkpoints and request ID; a confirmed create rejection restores
-  `dry_run`. Verdicts and success retire it and record the worktree for prune.
-  A `posting` selection only reconciles its marker (never re-POSTs) and blocks
-  other selections; a non-posting one may be replaced. Branch advancement
-  (before or during review) refuses without replacement discovery.
-- `reviewAndPublish` also refuses to create when any issue already carries the
-  request marker, covering a hand-copied dry-run body.
+- Errors keep `publication` with its failure so the same selector resumes in
+  the same worktree with its fresh checkpoints and request ID; a confirmed
+  create rejection restores `dry_run`. Verdicts and success retire it and
+  record the worktree for prune; a resumed selection whose candidate already
+  has a saved outcome (crash or failed save before retirement) is retired and
+  reported without review or create. A `posting` selection only reconciles its
+  marker (never re-POSTs, allowed during an active scan) and blocks other
+  selections; a non-posting one may be replaced, recording its worktree for
+  prune. Branch advancement (before or during review) refuses without
+  replacement discovery.
+- `reviewAndPublish` saves a candidate as `duplicate` of any issue that already
+  carries its request marker (e.g. a hand-copied dry-run body), never creating
+  or claiming it.
+- The engine test fixture isolates Git from global and system configuration.

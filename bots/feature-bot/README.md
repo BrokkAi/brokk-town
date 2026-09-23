@@ -365,7 +365,7 @@ candidate and do not change across restarts; they do not reveal publication mark
 
 `--proposal` processes only the selected proposal and never starts discovery.
 It fetches the branch and refuses unless the branch is still at the proposal's
-recorded commit, then prepares a new isolated worktree at that commit, checks
+recorded commit, then prepares an isolated worktree at that commit, checks
 the cited source files, and runs a fresh independent review against all open
 and closed issues and discussions. The dry run's review progress is discarded
 on selection. The configured verifier, the tracked-content check, the
@@ -379,24 +379,28 @@ scan. A `dry_run` setting in the configuration is ignored by `publish`, and
   and the review explanation, and exits non-zero.
 - An incomplete review, verifier failure, changed tracked content, missing cited
   file or confirmed create rejection keeps the proposal `dry_run` and saves the
-  selection with its failure. Run the same command to retry; review batches
-  already completed for this selection are reused. Selecting a different
-  proposal abandons an unfinished selection that has not sent a create request.
+  selection with its failure. Run the same command to retry in the same
+  worktree; review batches already completed for this selection are reused.
+  Selecting a different proposal abandons an unfinished selection that has not
+  sent a create request. If a saved outcome was not yet retired when the
+  process stopped, the command reports it and never reviews or creates again.
 - A branch that advanced before or during publication refuses it. The proposal
   is not adapted to the newer revision and no replacement discovery starts;
   research again with `bfb once --dry-run`.
 - A lost create response keeps the `posting` state and the proposal's request
   ID. Running the command again reconciles the hidden marker and never sends
-  another create request; another proposal cannot be selected until then. An
-  existing issue that already carries the marker, such as a hand-copied dry-run
-  body, is never claimed and blocks creation.
+  another create request; another proposal cannot be selected until then. This
+  reconciliation also runs while a scan is active. An existing issue that
+  already carries the marker, such as a hand-copied dry-run body, is never
+  claimed: the proposal is saved as a `duplicate` of it and nothing is created.
 - Proposals saved by older releases have no recorded commit. They remain
   readable in reports but are refused; research them again with a new dry run.
 
-Publishing is refused while a scan is active (`once` or the daemon has
-unfinished work), and it takes the same repository locks as a scan. A
-successfully resolved selection's worktree is recorded for `prune`. Worktrees
-of failed attempts are left for inspection, as with scans.
+Publishing (other than reconciling an unknown outcome) is refused while a scan
+is active (`once` or the daemon has unfinished work), and it takes the same
+repository locks as a scan. Each selection owns one isolated worktree. When the
+selection is resolved or replaced, that worktree is recorded for `prune`, which
+removes it only if it is clean at the recorded commit.
 
 ### Reclaim completed scan workspaces
 

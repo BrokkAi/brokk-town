@@ -472,10 +472,15 @@ func (e engine) reviewAndPublish(ctx context.Context, s *State, scan *Scan, g, w
 			continue
 		}
 		// Dry runs log the issue body, marker included. Never add a second issue
-		// carrying this request ID, and never claim another author's copy as ours.
+		// carrying this request ID, and never claim another author's copy as ours:
+		// that issue is a duplicate of this proposal.
 		for _, i := range latest {
 			if containsMarker(i, c.RequestID) {
-				return fmt.Errorf("issue %s already carries this proposal's publication marker; refusing to create another", i.URL)
+				c.Status = "duplicate"
+				c.URL = i.URL
+				c.Review = fmt.Sprintf("Issue #%d already carries this proposal's publication marker (for example, a copied dry-run body); no second issue was created.", i.Number)
+				e.log.Info("Finding skipped", "title", c.Finding.Title, "status", c.Status, "reason", c.Review)
+				return e.save(s)
 			}
 		}
 		if e.config.DryRun {

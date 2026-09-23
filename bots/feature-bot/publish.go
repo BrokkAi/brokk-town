@@ -146,6 +146,11 @@ func (e engine) publish(ctx context.Context, s *State, selector string) (*Candid
 			c = candidate
 		}
 	}
+	// An unknown create outcome only needs its marker; no workspace or review
+	// is involved, so reconcile it even while a scan is active.
+	if c != nil && c.Status == "posting" {
+		return c, e.reconcilePublication(ctx, s, c)
+	}
 	if s.Scan != nil {
 		for _, candidate := range s.Scan.Candidates {
 			if ProposalSelector(candidate) == selector {
@@ -162,13 +167,17 @@ func (e engine) publish(ctx context.Context, s *State, selector string) (*Candid
 			return nil, fmt.Errorf("publication of proposal %s has an unknown outcome; run bfb publish --proposal %s to reconcile it first", ProposalSelector(other), ProposalSelector(other))
 		}
 		// An unfinished selection without a create request can be replaced; its
-		// proposal keeps its dry_run status and findings.
+		// proposal keeps its dry_run status and findings, and its worktree
+		// becomes prunable.
 		e.log.Info("Replacing unfinished proposal selection", "previous", ProposalSelector(completedCandidate(s, p.RequestID)))
+		e.retireWorkspace(s)
 		s.Publication = nil
 	}
 	resumed := s.Publication != nil
-	if c.Status == "posting" {
-		return c, e.reconcilePublication(ctx, s, c)
+	if resumed && c.Status != "dry_run" {
+		// The outcome was saved but the selection was not retired (interrupted
+		// or failed save). Report it; never review or create again.
+		return c, e.completePublication(s, c, selector)
 	}
 	if !resumed {
 		switch {
@@ -205,13 +214,14 @@ func (e engine) publish(ctx context.Context, s *State, selector string) (*Candid
 		c.Checkpoint = nil
 		s.Publication = &Publication{RequestID: c.RequestID, Commit: c.Commit}
 	}
-	// Each invocation revalidates in a new isolated worktree; review progress
-	// is scoped to the proposal and revision, not to the directory.
-	var id [12]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		return nil, err
+	// The selection owns one isolated worktree; retries revalidate the same one.
+	if s.Publication.Directory == "" {
+		var id [12]byte
+		if _, err := rand.Read(id[:]); err != nil {
+			return nil, err
+		}
+		s.Publication.Directory = filepath.Join(e.config.Directory+"-scans", fmt.Sprintf("scan-%x", id))
 	}
-	s.Publication.Directory = filepath.Join(e.config.Directory+"-scans", fmt.Sprintf("scan-%x", id))
 	s.Publication.Failure = ""
 	if err := e.save(s); err != nil {
 		return nil, err
@@ -255,12 +265,20 @@ func (e engine) reconcilePublication(ctx context.Context, s *State, c *Candidate
 	return errors.New("issue creation outcome is unknown; no marker visible yet, refusing to repost (inspect saved state and GitHub)")
 }
 
-// completePublication retires a resolved selection; its workspace becomes prunable.
-func (e engine) completePublication(s *State, c *Candidate, selector string) error {
+// retireWorkspace records the selection's worktree for prune, which removes it
+// only when it is clean at the recorded commit, and retires a missing one.
+func (e engine) retireWorkspace(s *State) {
 	if p := s.Publication; p != nil && p.Directory != "" {
 		s.Workspaces = append(s.Workspaces, CompletedWorkspace{Directory: p.Directory, Commit: p.Commit, CompletedAt: e.now()})
 	}
-	s.Publication = nil
+}
+
+// completePublication retires a resolved selection; its workspace becomes prunable.
+func (e engine) completePublication(s *State, c *Candidate, selector string) error {
+	if s.Publication != nil && s.Publication.RequestID == c.RequestID {
+		e.retireWorkspace(s)
+		s.Publication = nil
+	}
 	if err := e.save(s); err != nil {
 		return err
 	}
