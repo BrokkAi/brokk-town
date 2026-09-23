@@ -517,3 +517,81 @@ func TestRequeueReplacesAClosedPullRequest(t *testing.T) {
 		t.Fatal("requeue accepted without an issue")
 	}
 }
+
+// brokenPulls fails the pull request lookup of selected issues.
+type brokenPulls struct {
+	*fakeSource
+	broken map[int]error
+}
+
+func (f brokenPulls) pull(ctx context.Context, j *Job) (*PullRequest, error) {
+	if err := f.broken[j.Issue.Number]; err != nil {
+		return nil, err
+	}
+	return f.fakeSource.pull(ctx, j)
+}
+func TestBrokenSavedPRDoesNotStarveOtherIssues(t *testing.T) {
+	f := newFixture(t)
+	f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+	source := brokenPulls{f.source, map[int]error{1: errPullMismatch}}
+	f.e.source = source
+	// Each poll is still one unit of work, and #1's failure is reported with it.
+	worked, err := f.e.step(context.Background(), f.s)
+	if !worked || !issueOnly(err) || !errors.Is(err, errPullMismatch) {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[2] == nil || f.s.Jobs[2].Status != "submitted" || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("saved #1 lookup failure starved eligible #2: calls=%d creates=%d", f.calls, f.source.creates)
+	}
+	for range 2 {
+		if worked, err := f.e.step(context.Background(), f.s); worked || !issueOnly(err) {
+			t.Fatalf("repeated poll: %v %v", worked, err)
+		}
+	}
+	saved, err := ReadState(f.e.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worked, err := f.e.step(context.Background(), saved); worked || !issueOnly(err) {
+		t.Fatalf("restart: %v %v", worked, err)
+	}
+	j := saved.Jobs[1]
+	if j.Status != "pending" || j.Tries != 1 || j.URL != "" || !strings.Contains(j.Failure, "inspect branch "+j.Branch) || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("broken job was not retained untouched: %+v calls=%d creates=%d", j, f.calls, f.source.creates)
+	}
+	// Once the branch holds exactly this job's PR, it reconciles without new work.
+	delete(source.broken, 1)
+	p := &PullRequest{Number: 101, URL: "https://github.com/o/r/pull/101", State: "open"}
+	f.source.prs[1] = p
+	if worked, err := f.e.step(context.Background(), saved); err != nil || !worked {
+		t.Fatalf("reconcile: %v %v", worked, err)
+	}
+	if j.Status != "submitted" || j.URL != p.URL || j.Failure != "" || f.calls != 1 || f.source.creates != 1 {
+		t.Fatalf("fixed job did not reconcile: %+v calls=%d creates=%d", j, f.calls, f.source.creates)
+	}
+}
+func TestBrokenPRLookupNeverStartsTheIssue(t *testing.T) {
+	f := newFixture(t)
+	f.source.items = f.source.items[1:]
+	f.e.source = brokenPulls{f.source, map[int]error{2: errMultiplePulls}}
+	for range 2 {
+		if worked, err := f.e.step(context.Background(), f.s); worked || !issueOnly(err) {
+			t.Fatalf("step: %v %v", worked, err)
+		}
+	}
+	if j := f.s.Jobs[2]; j == nil || j.Status != "pending" || j.Failure == "" || f.calls != 0 || f.source.creates != 0 {
+		t.Fatalf("an unowned PR lookup started work: %+v calls=%d", j, f.calls)
+	}
+}
+func TestGlobalLookupFailureStillAbortsStep(t *testing.T) {
+	f := newFixture(t)
+	f.s.Jobs[1] = &Job{Issue: f.source.items[0], Branch: branchName(f.e.config, 1), Status: "pending", Tries: 1}
+	offline := errors.New("gh: connection refused")
+	f.e.source = brokenPulls{f.source, map[int]error{1: offline}}
+	if worked, err := f.e.step(context.Background(), f.s); worked || !errors.Is(err, offline) || issueOnly(err) {
+		t.Fatalf("step: %v %v", worked, err)
+	}
+	if f.s.Jobs[2] != nil || f.calls != 0 || f.s.Jobs[1].Failure != "" {
+		t.Fatalf("a global failure continued the scan: job2=%+v calls=%d", f.s.Jobs[2], f.calls)
+	}
+}

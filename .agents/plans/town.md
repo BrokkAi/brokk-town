@@ -216,5 +216,24 @@
 - Regression tests cover the restart path (a lost PR response reconciled on
   the next step), a PR found while fetching, and a later job's retained status
   comment; each failed before its fix.
-- Not changed here: a reconciliation error still aborts the whole step (#105).
+- A reconciliation error still aborted the whole step; see #105 below.
 - `bundle.json` moves issue-bot to 0.5.8 at the final fix commit.
+
+## issue-bot reconciliation failures (#105)
+
+- `step` returned on the first saved-job lookup error, before fetching issues,
+  so one issue branch holding a PR the bot could not prove it owned (missing
+  marker, several PRs) stopped every other issue on every poll.
+- Ownership failures are now sentinels. `lookup` records an `inspect branch`
+  failure on the job, leaves its status, tries and URL alone, and the step
+  skips that job for the rest of the scan, so it is never attempted or
+  published again until its lookup succeeds. A later successful lookup
+  reconciles it and clears the failure.
+- Such failures, and a failed status comment after a durable reconciliation,
+  are returned joined with the step's result. Any other error (network, auth,
+  cancellation, state writes) still aborts the step.
+- The daemon logs issue-only failures and keeps draining the queue; `--once`
+  (Town's exact-issue worker) still does one unit of work and exits with the
+  error, and the job summary carries the recorded failure.
+- Regression tests cover repeated polls, restart from saved state, eventual
+  reconciliation, a fresh job whose lookup fails, and a global lookup failure.

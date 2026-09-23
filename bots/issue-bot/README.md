@@ -148,7 +148,11 @@ available it proceeds sequentially. Each attempt has a two-hour budget. Saved
 pending jobs are checked for an existing PR before further agent work, including
 at the attempt limit or after the issue closes. A lost PR-creation response is
 reconciled by the persistent branch and issue marker. A closed, unmerged bot PR
-blocks the job for inspection. Work is not automatically deleted or reset.
+blocks the job for inspection. If the issue branch holds a PR the bot cannot
+prove it owns (a missing marker or several PRs), the job keeps its state and an
+`inspect branch` failure, is never attempted again until the lookup succeeds,
+and other issues continue; `--once` still exits with that error. Work is not
+automatically deleted or reset.
 
 ## Coordination between instances
 
