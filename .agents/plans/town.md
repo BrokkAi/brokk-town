@@ -403,4 +403,4 @@
   selection; the dashboard shows both. Zero findings start no review session.
 - Town and the worker protocol are unchanged: worker scans leave the overrides
   unset, so review inherits Town's agent settings as before.
-- `bundle.json` moves bug-bot to 0.4.0 at the feature commit.
+- `bundle.json` moves bug-bot to 0.4.0 at the final feature commit.
