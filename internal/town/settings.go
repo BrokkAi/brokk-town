@@ -198,11 +198,16 @@ func (s *Supervisor) Add(c Config) (string, error) {
 		if err != nil {
 			return err
 		}
+		restored := st.Towns[id] != nil
 		t, err := st.Add(cfg)
 		if err != nil {
 			return err
 		}
-		st.Event(t.ID, "town", "operator", "repo", "", "Town established; reporter is checking the repository", s.now())
+		title := "Town established; reporter is checking the repository"
+		if restored {
+			title = "Town restored with the new settings; recovery records retained"
+		}
+		st.Event(t.ID, "town", "operator", "repo", "", title, s.now())
 		return nil
 	})
 	return id, err
@@ -213,7 +218,7 @@ func (s *Supervisor) Delete(id string) error {
 	defer s.mu.Unlock()
 	if err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
-		if t == nil {
+		if t == nil || t.Deleted {
 			return errors.New("unknown town")
 		}
 		t.Deleted = true

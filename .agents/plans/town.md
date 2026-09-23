@@ -298,3 +298,14 @@
   comment and state-write failures after a reconciliation, and the daemon
   and `--once` handling of issue-only failures.
 - `bundle.json` moves issue-bot to 0.5.9 at the final fix commit.
+
+## Restoring deleted towns (#24)
+
+- Adding a deleted town applies the new config (validated) through
+  `Town.Restore`; tasks, ownership, intents and recovery holds are kept, the
+  branch is kept when the new config names none, and a branch change on an
+  initialized town is refused. Only the reporter is re-enabled and every
+  worker's `Next` is cleared. The event says the town was restored.
+- `serve --config` restores a listed deleted town with the listed settings;
+  `serve --repo` restores a deleted town with defaults. Both print a notice.
+- Deleting a deleted town returns `unknown town` and appends no event.

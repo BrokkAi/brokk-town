@@ -470,7 +470,9 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		if demo {
 			return errors.New("real config is not accepted in demo mode")
 		}
+		var restored []string
 		if e = store.Update(func(s *town.State) error {
+			restored = nil
 			if maxWorkers != nil {
 				cfg := town.ServiceConfig{MaxWorkers: *maxWorkers}
 				if err := cfg.Validate(); err != nil {
@@ -493,6 +495,16 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 					if t.Initialized && cfg.Branch != "" && cfg.Branch != t.Branch() {
 						return fmt.Errorf("cannot change town %s from branch %s to %s in place; use a separate state directory, or set branch to \"\" to follow the repository default", id, t.Branch(), cfg.Branch)
 					}
+					if t.Deleted {
+						// A town listed in the config file is live: a deleted one is
+						// restored under the listed settings, as adding it would.
+						if err := t.Restore(cfg); err != nil {
+							return err
+						}
+						s.Event(t.ID, "town", "operator", "repo", "", "Town restored from the config file; recovery records retained", time.Now())
+						restored = append(restored, t.ID)
+						continue
+					}
 					t.Config = cfg
 				} else {
 					if _, err := s.Add(cfg); err != nil {
@@ -504,14 +516,29 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		}); e != nil {
 			return e
 		}
+		for _, id := range restored {
+			fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with the config file's settings\n", id)
+		}
 	}
 	if repo != "" {
 		if demo {
 			return errors.New("real repository is not accepted in demo mode")
 		}
-		if _, ok := store.Snapshot().Towns[strings.ToLower(repo)]; !ok {
-			if err = store.Update(func(s *town.State) error { _, err := s.Add(town.DefaultConfig(repo)); return err }); err != nil {
+		// --repo adds a town that is absent or deleted; a deleted one is
+		// restored with default settings, exactly as adding it again would.
+		if t := store.Snapshot().Towns[strings.ToLower(repo)]; t == nil || t.Deleted {
+			if err = store.Update(func(s *town.State) error {
+				restoring := s.Towns[strings.ToLower(repo)] != nil
+				t, err := s.Add(town.DefaultConfig(repo))
+				if err == nil && restoring {
+					s.Event(t.ID, "town", "operator", "repo", "", "Town restored by serve --repo; recovery records retained", time.Now())
+				}
 				return err
+			}); err != nil {
+				return err
+			}
+			if t != nil {
+				fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with default settings\n", t.ID)
 			}
 		}
 	}

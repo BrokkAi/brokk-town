@@ -280,9 +280,13 @@ To remove a town, choose **Settings → Delete town** and confirm, or run:
 Deletion cancels its workers, cancels queued issue submissions, and removes it
 from the browser and terminal. GitHub repositories, issues, and PRs are preserved.
 Local history, uncertain writes, and private worktrees remain as recovery records.
-Adding the same repository again restores that history and its previous settings,
-with automation paused and the reporter enabled. Wait for stopping workers to
-finish before restoring a town.
+Adding the same repository again restores that history under the settings it is
+added with (merge policy, harness and agent), with automation paused and the
+reporter enabled. The town keeps its branch; restoring onto a different branch is
+refused. A deleted town listed in `bt serve --config` or named by `bt serve --repo`
+is restored the same way, and `bt serve` prints a notice. Deleting a town that is
+already deleted reports `unknown town`. Wait for stopping workers to finish
+before restoring a town.
 
 ## How work moves
 
