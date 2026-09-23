@@ -3,6 +3,7 @@ package bugbot
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -310,5 +311,88 @@ func TestUnchangedProgressWaitsWithoutCompleting(t *testing.T) {
 		if phase == "complete" || phase == "preparing" || phase == "investigating" {
 			t.Fatalf("unchanged poll reported %s", phase)
 		}
+	}
+}
+
+// levels records the level of every log record.
+type levels struct{ seen *[]slog.Level }
+
+func (h levels) Enabled(context.Context, slog.Level) bool { return true }
+func (h levels) Handle(_ context.Context, r slog.Record) error {
+	*h.seen = append(*h.seen, r.Level)
+	return nil
+}
+func (h levels) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h levels) WithGroup(string) slog.Handler      { return h }
+
+func TestDaemonLoopWaitsOnUnchangedPoll(t *testing.T) {
+	e, s, f, a, _, c := changeFixture(t, true)
+	if err := poll(e, s, c); err != nil {
+		t.Fatal(err)
+	}
+	c.advance(time.Duration(e.config.Poll) + time.Second)
+	reads := f.reads
+	var seen []slog.Level
+	e.log = slog.New(levels{&seen})
+	var last Progress
+	var phases []string
+	e.observe = func(p Progress) {
+		if p.Phase != "" {
+			phases = append(phases, p.Phase)
+			last = p
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var waits []time.Duration
+	e.sleep = func(ctx context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		cancel()
+		return ctx.Err()
+	}
+	if err := e.loop(ctx, s, false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("loop: %v", err)
+	}
+	if len(waits) != 1 || waits[0] != time.Duration(e.config.Poll) {
+		t.Fatalf("loop did not wait one poll interval: %v", waits)
+	}
+	if last.Phase != "waiting" || last.Task != "Branch unchanged since the last completed scan" || !last.WakeAt.Equal(c.now.Add(time.Duration(e.config.Poll))) {
+		t.Fatalf("unchanged poll reported %+v (phases %v)", last, phases)
+	}
+	for _, phase := range phases {
+		if phase == "paused" || phase == "blocked" || phase == "complete" {
+			t.Fatalf("unchanged poll reported %s", phase)
+		}
+	}
+	for _, level := range seen {
+		if level > slog.LevelDebug {
+			t.Fatalf("unchanged poll logged at %s", level)
+		}
+	}
+	if a.scans != 1 || f.reads != reads || len(s.History) != 1 || scanWorktrees(t, e.config) != 1 {
+		t.Fatal("unchanged poll investigated")
+	}
+}
+
+func TestZeroFindingDryRunThenRealRescans(t *testing.T) {
+	e, s, f, a, _, c := changeFixture(t, true)
+	e.config.DryRun = true
+	a.findings = []Finding{}
+	if err := poll(e, s, c); err != nil {
+		t.Fatal(err)
+	}
+	if s.LastCompleted == nil || !s.LastCompleted.DryRun {
+		t.Fatalf("zero-finding dry run marker: %+v", s.LastCompleted)
+	}
+	if err := poll(e, s, c); !errors.Is(err, errUnchanged) {
+		t.Fatalf("dry run rescanned: %v", err)
+	}
+	e.config.DryRun = false
+	a.findings = nil
+	if err := poll(e, s, c); err != nil {
+		t.Fatal(err)
+	}
+	if a.scans != 2 || f.creates != 1 || s.LastCompleted.DryRun {
+		t.Fatalf("real mode did not rescan: scans %d, creates %d", a.scans, f.creates)
 	}
 }

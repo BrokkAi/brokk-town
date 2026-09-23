@@ -75,6 +75,12 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 	observe, _ := ctx.Value(progressKey{}).(func(Progress))
 	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config, stage string) Agent { return agentProcess{c, log.With("stage", stage)} }, now: time.Now, sleep: pause, observe: observe}
 	e.report(s, "starting", "Loading saved scan")
+	return e.loop(ctx, s, once)
+}
+
+// loop runs scans until once completes, setup fails or ctx ends.
+func (e engine) loop(ctx context.Context, s *State, once bool) error {
+	cfg, log := e.config, e.log
 	for {
 		err := e.step(ctx, s, once)
 		unchanged := errors.Is(err, errUnchanged)
@@ -106,7 +112,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		} else {
 			e.report(s, "waiting", "Next scan")
 		}
-		if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
+		if err := e.sleep(ctx, time.Duration(cfg.Poll)); err != nil {
 			return err
 		}
 	}
@@ -229,7 +235,7 @@ func (e engine) step(ctx context.Context, s *State, force bool) error {
 		}
 	}
 	if s.Scan == nil && !force && e.config.OnlyOnChange && s.LastCompleted != nil && *s.LastCompleted == (LastCompleted{Commit: head, DryRun: e.config.DryRun}) {
-		e.log.Info("Branch unchanged since the last completed scan; waiting for a new commit", "commit", head, "next_check", e.now().Add(time.Duration(e.config.Poll)))
+		e.log.Debug("Branch unchanged since the last completed scan; waiting for a new commit", "commit", head, "next_check", e.now().Add(time.Duration(e.config.Poll)))
 		return errUnchanged
 	}
 	if s.Scan == nil {
