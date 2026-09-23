@@ -48,6 +48,9 @@ type Config struct {
 	Agent            AgentConfig  `json:"agent"`
 	GitHub           GitHubConfig `json:"github"`
 	Timeout          Duration     `json:"timeout"`
+	// Poll is the standalone bulletin interval: each run covers what merged
+	// since the previous bulletin. Town schedules its own windows.
+	Poll Duration `json:"poll"`
 	// MaxItems bounds one bulletin: the agent may report at most this many
 	// user-facing changes for a window.
 	MaxItems int      `json:"max_items"`
@@ -59,7 +62,7 @@ func DefaultConfig() Config {
 		Branch: "master", Directory: "var/checkout", StateDirectory: "var/state",
 		InstructionFiles: []string{"AGENTS.md", "README.md"},
 		Agent:            AgentConfig{Command: []string{"codex-acp"}}, GitHub: GitHubConfig{Host: "github.com"},
-		Timeout: Duration(time.Hour), MaxItems: 40,
+		Timeout: Duration(time.Hour), Poll: Duration(24 * time.Hour), MaxItems: 40,
 	}
 }
 func ReadConfig(filename string) (Config, error) {
@@ -183,8 +186,8 @@ func (c Config) Validate() error {
 			return fmt.Errorf("instruction file must be relative: %s", name)
 		}
 	}
-	if c.Timeout <= 0 || c.MaxItems < 1 || c.MaxItems > 200 {
-		return errors.New("timeout must be positive and max_items must be between 1 and 200")
+	if c.Timeout <= 0 || c.Poll <= 0 || c.MaxItems < 1 || c.MaxItems > 200 {
+		return errors.New("durations must be positive and max_items must be between 1 and 200")
 	}
 	return nil
 }

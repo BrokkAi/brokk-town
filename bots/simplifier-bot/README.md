@@ -23,6 +23,33 @@ The implementation is deliberately conservative: it must not recommend removing
 security, privacy, correctness, accessibility, durability, observability, or
 legally required behavior, and uncertain cases are admitted for human review.
 
+## Run standalone
+
+```sh
+bsb /path/to/your-repo                     # scan every poll interval, filing proposals
+bsb once /path/to/your-repo --dry-run      # one scan, save proposals without filing
+bsb /path/to/your-repo --max-proposals 2 --label simplify
+bsb assess /path/to/your-repo --issue 42   # print one assessment as JSON
+bsb assess /path/to/your-repo --pr 7 --mode auto
+bsb status /path/to/your-repo
+```
+
+With no configuration file, the bot discovers the repository from a checkout
+(or a subdirectory), a bare repository, or a Git URL, watches the remote's
+default branch, and keeps its own checkout and state under
+`$XDG_STATE_HOME/simplifier-bot` (default `~/.local/state/simplifier-bot`). It uses an installed
+`codex-acp`, or provisions it with `npx` when absent.
+
+Every bot shares these options: `--config`, `--branch`, `--agent`,
+`--agent-arg` (repeatable), `--model`, `--effort`, `--poll`, `--timeout`,
+`--once`, `--json` (structured logs) and `--plain` (scrolling console output,
+the default here). `status` prints the saved state; `version` prints the
+release.
+
+Bot options: `--max-proposals`, `--dry-run`, `--label` (repeatable), and for
+`assess`, `--issue`, `--pr` and `--mode suggest|auto`. Assessments perform no
+GitHub writes.
+
 ## Worker protocol
 
 ```sh

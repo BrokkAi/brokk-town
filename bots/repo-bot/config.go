@@ -49,6 +49,8 @@ type Config struct {
 	Agent            AgentConfig  `json:"agent"`
 	GitHub           GitHubConfig `json:"github"`
 	Timeout          Duration     `json:"timeout"`
+	// Poll is the standalone observation interval. Town schedules its own runs.
+	Poll Duration `json:"poll"`
 	// MaxRepairs bounds the agent attempts spent on one failing revision. The
 	// budget is per head: a new failing commit starts a fresh one.
 	MaxRepairs int `json:"max_repairs"`
@@ -63,7 +65,7 @@ func DefaultConfig() Config {
 		Branch: "master", Directory: "var/checkout", StateDirectory: "var/state",
 		InstructionFiles: []string{"AGENTS.md", "README.md"},
 		Agent:            AgentConfig{Command: []string{"codex-acp"}}, GitHub: GitHubConfig{Host: "github.com"},
-		Timeout: Duration(time.Hour), MaxRepairs: 3,
+		Timeout: Duration(time.Hour), Poll: Duration(15 * time.Minute), MaxRepairs: 3,
 	}
 }
 
@@ -208,8 +210,8 @@ func (c Config) Validate() error {
 			return fmt.Errorf("instruction file must be relative: %s", name)
 		}
 	}
-	if c.Timeout <= 0 || c.MaxRepairs < 1 || c.MaxRepairs > 10 {
-		return errors.New("timeout must be positive and max_repairs must be between 1 and 10")
+	if c.Timeout <= 0 || c.Poll <= 0 || c.MaxRepairs < 1 || c.MaxRepairs > 10 {
+		return errors.New("durations must be positive and max_repairs must be between 1 and 10")
 	}
 	return nil
 }

@@ -43,6 +43,31 @@ The bot pushes the repair directly to the branch it covers. Where that branch is
 protected, configure Town's merge policy and the branch's own rules
 accordingly — this bot does not open a pull request instead.
 
+## Run standalone
+
+```sh
+brp /path/to/your-repo                    # observe and repair every poll interval
+brp once /path/to/your-repo --dry-run     # one observation; commit a repair locally only
+brp /path/to/your-repo --agent ""         # observe and report, never repair
+brp status /path/to/your-repo
+```
+
+With no configuration file, the bot discovers the repository from a checkout
+(or a subdirectory), a bare repository, or a Git URL, watches the remote's
+default branch, and keeps its own checkout and state under
+`$XDG_STATE_HOME/repo-bot` (default `~/.local/state/repo-bot`). It uses an installed
+`codex-acp`, or provisions it with `npx` when absent.
+
+Every bot shares these options: `--config`, `--branch`, `--agent`,
+`--agent-arg` (repeatable), `--model`, `--effort`, `--poll`, `--timeout`,
+`--once`, `--json` (structured logs) and `--plain` (scrolling console output,
+the default here). `status` prints the saved state; `version` prints the
+release.
+
+Bot options: `--max-repairs` and `--dry-run`. Each observation is logged with the
+branch head, open issue and pull request counts, releases, new commits and the
+branch health. Without an agent the bot reports a failing branch and leaves it.
+
 ## Worker protocol
 
 ```sh

@@ -201,3 +201,20 @@
   already left intake.
 - A discarded assessment records an event, so the operator sees the result was
   dropped rather than silently lost.
+
+## Every bot runs standalone
+
+- mayor-bot (`bmb`), repo-bot (`brp`) and simplifier-bot (`bsb`) served only
+  `worker --socket`. Each now has the same no-config CLI as the other five:
+  repository discovery (checkout, bare repository or URL) into a managed
+  workspace under `$XDG_STATE_HOME/<bot>`, agent resolution with the `npx`
+  fallback, and the shared `--config --branch --agent --agent-arg --model
+  --effort --poll --timeout --once --json --plain` options plus `status` and
+  `version`.
+- `bsb` scans on its poll interval and adds `assess --issue|--pr --mode`.
+  `brp` observes and repairs on its poll interval (`--agent ""` observes only).
+  `bmb` writes a bulletin each interval from where the last recorded one ended,
+  and adds `bulletin --since` and `judge --issue|--pr`; it still never writes to
+  GitHub. Mayor and Repo configs gain a `poll` setting (24h and 15m).
+- The worker protocol is unchanged. The three have console output only; they do
+  not yet have the terminal dashboard the other five have.

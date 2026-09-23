@@ -23,6 +23,33 @@ The Mayor never writes to GitHub and never edits the repository. Tracked edits
 and revision movement fail the run. Every judgment is a decision the town's
 human Mayor could have clicked; Town applies it through the same path.
 
+## Run standalone
+
+```sh
+bmb /path/to/your-repo                    # a bulletin every poll interval (default 24h)
+bmb once /path/to/your-repo               # one bulletin since the last one, then exit
+bmb bulletin /path/to/your-repo --since 72h   # print one bulletin as JSON
+bmb judge /path/to/your-repo --issue 42   # print a decision as JSON
+bmb judge /path/to/your-repo --pr 7
+bmb status /path/to/your-repo
+```
+
+With no configuration file, the bot discovers the repository from a checkout
+(or a subdirectory), a bare repository, or a Git URL, watches the remote's
+default branch, and keeps its own checkout and state under
+`$XDG_STATE_HOME/mayor-bot` (default `~/.local/state/mayor-bot`). It uses an installed
+`codex-acp`, or provisions it with `npx` when absent.
+
+Every bot shares these options: `--config`, `--branch`, `--agent`,
+`--agent-arg` (repeatable), `--model`, `--effort`, `--poll`, `--timeout`,
+`--once`, `--json` (structured logs) and `--plain` (scrolling console output,
+the default here). `status` prints the saved state; `version` prints the
+release.
+
+Bot options: `--max-items`, and `--since` for `bulletin`. The watching bulletin
+starts where the last recorded bulletin ended. Standalone, the Mayor still never
+writes to GitHub.
+
 ## Worker protocol
 
 ```sh
