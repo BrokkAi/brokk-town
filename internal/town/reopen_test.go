@@ -41,13 +41,13 @@ func reconcilePulls(t *testing.T, state *State, town *Town, pulls ...Pull) {
 // selectedBy names the worker that would pick the task up next, or "" when
 // no worker selects it.
 func selectedBy(town *Town, task *Task) string {
-	if nextIssue(town) == task {
+	if nextIssue(town, time.Now()) == task {
 		return "issue"
 	}
-	if nextTask(town, Simplifier, "simplifying") == task {
+	if nextTask(town, Simplifier, "simplifying", time.Now()) == task {
 		return "simplifier"
 	}
-	if nextTask(town, Review, "queued") == task {
+	if nextTask(town, Review, "queued", time.Now()) == task {
 		return "review"
 	}
 	if nextJudgment(town, time.Now()) == task {

@@ -86,11 +86,12 @@ func pendingDecisions(t *Town) bool {
 // nextJudgment picks the arrival Mayor Bot judges next: the pending decision
 // with the lowest ID that is not blocked (a pull request retargeted off this
 // town's branch), not waiting out a failed attempt and has not exhausted its
-// attempts.
+// attempts. An arrival the operator snoozed waits for a person or for its
+// resume time.
 func nextJudgment(t *Town, now time.Time) *Task {
 	ids := make([]string, 0, len(t.Tasks))
 	for id, task := range t.Tasks {
-		if task.MayoralDecision == "pending" && task.Stage == "awaiting_mayor" && task.House == Hall && !task.Blocked && task.Attempts < mayorAttempts && !task.RetryAt.After(now) {
+		if task.MayoralDecision == "pending" && task.Stage == "awaiting_mayor" && task.House == Hall && !task.Blocked && task.Attempts < mayorAttempts && !task.RetryAt.After(now) && !task.Deferred(now) {
 			ids = append(ids, id)
 		}
 	}
