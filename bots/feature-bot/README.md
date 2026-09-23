@@ -371,10 +371,19 @@ publication), failed or discarded scans, and workspaces without completion
 records are never removed. Symlinked paths, foreign, modified or locked
 worktrees are skipped. Interrupted cleanup can be rerun: a missing directory
 has only its matching Git registration removed, and a record is retired once
-both are gone. A failed removal keeps its record and returns an error after the
-remaining eligible workspaces are processed.
+both are gone. A directory an interrupted removal left without its `.git` file
+is deleted, and its registration removed, only when the private index matches
+the recorded commit and no remaining tracked file was modified. Otherwise it is
+skipped; inspect it, keep what you need, then delete the directory and rerun
+prune, which removes the registration once its index holds no staged changes
+(or run `git -C CHECKOUT worktree remove --force DIRECTORY` yourself). A failed
+removal, or a skip caused by a Git or filesystem error rather than a policy,
+keeps its record and makes the command exit non-zero after the remaining
+workspaces are processed.
 
-With explicit configuration, pruning needs local Git and performs no fetch,
+Pruning requires Git 2.36 or newer. Inherited `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE` and similar repository overrides are ignored. With explicit
+configuration, pruning needs local Git and performs no fetch,
 GitHub request or agent execution; `gh` and an ACP executable are not required.
 Repository discovery may look up the default branch; pass `--branch` to avoid
 that lookup. Use the same configuration and branch as the original scan.

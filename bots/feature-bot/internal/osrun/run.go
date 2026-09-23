@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -70,10 +71,26 @@ func Kill(cmd *exec.Cmd) error {
 
 // Run separates stdout from diagnostic stderr. JSON callers fail if truncated.
 func Run(ctx context.Context, dir string, env map[string]string, args ...string) (string, error) {
+	return RunWithout(ctx, dir, env, nil, args...)
+}
+
+// RunWithout is Run with the named inherited variables removed from the
+// environment; unset takes precedence over env.
+func RunWithout(ctx context.Context, dir string, env map[string]string, unset []string, args ...string) (string, error) {
 	if len(args) == 0 {
 		return "", errors.New("empty command")
 	}
 	cmd := StartCommand(ctx, dir, args, env)
+	if len(unset) > 0 {
+		kept := cmd.Env[:0]
+		for _, entry := range cmd.Env {
+			key, _, _ := strings.Cut(entry, "=")
+			if !slices.Contains(unset, key) {
+				kept = append(kept, entry)
+			}
+		}
+		cmd.Env = kept
+	}
 	stdout := &Tail{Capacity: 8 << 20}
 	stderr := &Tail{Capacity: 64 << 10}
 	cmd.Stdout = stdout

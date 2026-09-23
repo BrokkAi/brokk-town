@@ -350,3 +350,87 @@ func TestPruneMissingWorkspacePreservesStagedData(t *testing.T) {
 		t.Fatal("lost staged index registration")
 	}
 }
+
+func TestPruneFinishesRemovalWithoutGitFile(t *testing.T) {
+	for _, kind := range []string{"partial", "modified", "staged"} {
+		t.Run(kind, func(t *testing.T) {
+			e, _, w := completedFixture(t)
+			if kind == "staged" {
+				writeTestFile(t, filepath.Join(w.Directory, "README.md"), "staged research")
+				localGit(t, w.Directory, "add", "README.md")
+			}
+			// An interrupted git worktree remove can delete .git and some files first.
+			if err := os.Remove(filepath.Join(w.Directory, ".git")); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "partial":
+				if err := os.Remove(filepath.Join(w.Directory, "README.md")); err != nil {
+					t.Fatal(err)
+				}
+				writeTestFile(t, filepath.Join(w.Directory, "research.txt"), "research")
+			case "modified":
+				writeTestFile(t, filepath.Join(w.Directory, "README.md"), "changed")
+			}
+			var out bytes.Buffer
+			now := w.CompletedAt.Add(2 * time.Hour)
+			if err := prune(context.Background(), e.config, time.Hour, false, &out, now); err != nil {
+				t.Fatal(err)
+			}
+			if err := prune(context.Background(), e.config, time.Hour, true, &out, now); err != nil {
+				t.Fatal(err)
+			}
+			s, err := ReadState(e.config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, statErr := os.Stat(w.Directory)
+			registered := strings.Contains(localGit(t, e.config.Directory, "worktree", "list", "--porcelain"), w.Directory)
+			if kind == "partial" {
+				if !strings.Contains(out.String(), "interrupted removal") || !errors.Is(statErr, os.ErrNotExist) || registered || len(s.Workspaces) != 0 {
+					t.Fatalf("interrupted removal not finished: %s %v %v %+v", out.String(), statErr, registered, s.Workspaces)
+				}
+				return
+			}
+			if !strings.Contains(out.String(), "skip ") || statErr != nil || !registered || len(s.Workspaces) != 1 {
+				t.Fatalf("unsafe interrupted removal finished: %s %v %v %+v", out.String(), statErr, registered, s.Workspaces)
+			}
+		})
+	}
+}
+
+func TestPruneOperationalErrorsFail(t *testing.T) {
+	e, _, w := completedFixture(t)
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := canonicalTestDir(t)
+	script := "#!/bin/sh\nif [ \"$1\" = worktree ] && [ \"$2\" = list ]; then exit 128; fi\nexec '" + realGit + "' \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var out bytes.Buffer
+	if err := prune(context.Background(), e.config, time.Hour, false, &out, w.CompletedAt.Add(2*time.Hour)); err == nil || !strings.Contains(out.String(), "skip ") {
+		t.Fatalf("Git failure reported as success: %v %s", err, out.String())
+	}
+	if _, err := os.Stat(w.Directory); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPruneIgnoresRedirectingGitEnvironment(t *testing.T) {
+	e, _, w := completedFixture(t)
+	bogus := canonicalTestDir(t)
+	for _, key := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"} {
+		t.Setenv(key, bogus)
+	}
+	var out bytes.Buffer
+	if err := prune(context.Background(), e.config, time.Hour, true, &out, w.CompletedAt.Add(2*time.Hour)); err != nil {
+		t.Fatal(err, out.String())
+	}
+	if _, err := os.Stat(w.Directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("workspace survives: %v %s", err, out.String())
+	}
+}

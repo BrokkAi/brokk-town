@@ -565,5 +565,12 @@
   has its private index checked before removing the registration; with neither
   left, the record is retired. Removal failures keep the record, continue with
   the rest and return a joined error. Legacy workspaces stay external.
+- A registered directory without `.git` (interrupted `worktree remove`) is
+  finished with `RemoveAll` plus `worktree remove` only if the admin index
+  equals the recorded commit, has no hiding flags and the remaining files show
+  no non-deletion changes; otherwise it is a policy skip with README recovery.
+- Policy skips exit zero; skips from Git/IO errors exit non-zero. Prune's Git
+  calls drop inherited `git rev-parse --local-env-vars` overrides
+  (`osrun.RunWithout`). Git 2.36+ is required for `worktree list -z`.
 - Town and the worker protocol are unchanged; ported from the unmerged
   BrokkAi/feature-bot#17. `bundle.json` moves feature-bot to 0.3.0.
