@@ -3,8 +3,8 @@
     "bug": {
       "project": "bug-bot",
       "command": "bbb",
-      "version": "0.5.0",
-      "source_commit": "a8c97c43834f3905e7b56bc927e20225ed0b8e49"
+      "version": "0.6.0",
+      "source_commit": "4ec815227b3db7ca64e1ad451dac3948f245f5aa"
     },
     "feature": {
       "project": "feature-bot",
