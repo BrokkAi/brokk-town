@@ -121,6 +121,8 @@ existing output and never open the dashboard.
 
 1. Fetch the target branch into a managed clone and make an isolated detached
    worktree for the scan. The original checkout and uncommitted work are preserved.
+   An optional operator setup command prepares the worktree at the start of
+   each attempt, before any agent runs.
 2. Download all open and closed issues and their comments with pagination. Give
    the investigator the complete snapshot and recent scan summaries so it can
    avoid known bugs and explore new areas on subsequent scans.
@@ -271,6 +273,23 @@ effective model and effort.
 `verify` accepts an argument array, such as `["/opt/checks/verify-bug"]`, executed
 in the scan worktree with `BUG_COMMIT` and JSON `BUG_FINDING` in its environment.
 Keep operator verifiers outside the writable worktree. A nonzero exit blocks filing.
+
+`setup` (default: none; set it in the `--config` file) accepts an argument array, such as
+`["/opt/checks/install-deps", "--frozen"]`, for preparing test prerequisites. It
+runs in the detached scan worktree with `BUG_COMMIT` set to its HEAD, once at the
+start of every counted scan attempt before any agent runs, including attempts
+that resume review of pending findings. It does not repeat for review batches or
+agent startup retries, so a later attempt runs it again: keep it idempotent and
+tolerant of partial earlier runs. It may create untracked or ignored files, which
+discovery and review then see; it must exit zero and leave HEAD and tracked
+source unchanged. Any failure, including exceeding the shared `timeout` (which
+kills its process tree), consumes the attempt, keeps pending findings unpublished,
+saves a `workspace setup` failure and waits `retry_delay` from when it failed.
+Dry runs run it; `status`, `report`, waiting polls and reconciling an interrupted
+publication do not. Only the tail of its output is kept in the saved failure.
+Nothing it exports reaches the agent. Keep setup scripts outside the writable
+worktree; they run with the bot's own privileges. An empty array or blank
+executable is rejected.
 
 ## State and execution
 
