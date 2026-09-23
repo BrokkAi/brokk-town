@@ -373,6 +373,37 @@
   that must still be rejected.
 - `bundle.json` moves review-bot to 0.2.7 at the fix commit.
 
+## Restoring deleted towns (#24)
+
+- `Town.Restore` revives a deleted town under a complete, validated config;
+  tasks, ownership, intents and recovery holds are kept, a branch change on an
+  initialized town is refused, only the reporter is re-enabled and every
+  worker's `Next` is cleared. The event says the town was restored.
+- The add request (web, `bt add`) goes through `Supervisor.AddRepo`: a deleted
+  town's kept config is the base, and only a non-empty merge policy and the
+  agent settings are applied over it, so budget, policies, bot profiles,
+  funnels (and their intents) and branch survive.
+- `serve --config` restores a listed deleted town with the file's config (the
+  same replacement a live town gets); `serve --repo` restores it with its kept
+  config. Both print a notice.
+- Deleting a deleted town returns `unknown town` and appends no event.
+
+## CLI polish (#28)
+
+- `bt request` encodes without HTML escaping, so `<`, `>` and `&` no longer
+  inflate sixfold and push a valid body past the service's 64 KiB limit. An
+  oversized body now gets 413 and "request body exceeds the 64 KiB limit"
+  instead of a decoder error.
+- The browser link carries the access key, so `serve` and `bt -d` print it only
+  when stdout is a terminal. The detached service's log and redirected output
+  get "run bt web for the link"; `bt web` still prints the key on request.
+- Earlier versions wrote the key into `logs/serve.log`, and the key persists
+  across restarts. Opening the service log redacts any `#token=<key>` link in
+  place; a log over 8 MiB is truncated instead of read.
+- `check-request` on an unknown ID returns "unknown request" (404) rather than
+  "does not need reconciliation".
+- The stale `connection.json` PID was already handled by `processAlive`.
+
 ## review-bot on acp-go 0.8.1 (fixes #107)
 
 - review-bot moved from acp-go v0.1.0 to v0.8.1, matching issue-bot and Town.

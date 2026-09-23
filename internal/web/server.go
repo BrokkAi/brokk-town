@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -172,7 +173,7 @@ func (s *Server) outcomeJudgment(w http.ResponseWriter, r *http.Request) {
 		Explanation string `json:"explanation"`
 	}
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), http.StatusBadRequest)
+		rejectInput(w, err)
 		return
 	}
 	err := s.Store.Update(func(state *town.State) error {
@@ -197,6 +198,17 @@ func problem(w http.ResponseWriter, message string, status int) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
+
+// rejectInput answers a request whose body could not be decoded. An oversized
+// body gets 413 and a message naming the limit, not the decoder's wording.
+func rejectInput(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		problem(w, fmt.Sprintf("request body exceeds the %d KiB limit", tooLarge.Limit>>10), http.StatusRequestEntityTooLarge)
+		return
+	}
+	problem(w, err.Error(), http.StatusBadRequest)
+}
 func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" {
@@ -207,7 +219,11 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	if err := decoder.Decode(v); err != nil {
 		return err
 	}
-	if decoder.Decode(new(any)) != io.EOF {
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return err
+		}
 		return fmt.Errorf("expected one JSON object")
 	}
 	return nil
@@ -250,7 +266,7 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 		Task   string    `json:"task"`
 	}
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	if err := s.Supervisor.Control(input.Town, input.Role, input.Action, input.Task); err != nil {
@@ -266,23 +282,14 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		Agent       town.AgentSettings `json:"agent"`
 	}
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	if s.Store.Snapshot().Demo {
 		problem(w, "Use a live service to add real repositories", 400)
 		return
 	}
-	cfg := town.DefaultConfig(input.Repo)
-	if input.MergePolicy != "" {
-		cfg.MergePolicy = input.MergePolicy
-	}
-	cfg, err := s.Supervisor.Prepare(cfg, input.Agent)
-	if err != nil {
-		problem(w, err.Error(), 400)
-		return
-	}
-	id, err := s.Supervisor.Add(cfg)
+	id, err := s.Supervisor.AddRepo(input.Repo, input.MergePolicy, input.Agent)
 	if err != nil {
 		problem(w, err.Error(), 400)
 		return
@@ -295,7 +302,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 func (s *Server) refreshHarnesses(w http.ResponseWriter, r *http.Request) {
 	var input struct{}
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	if err := s.Supervisor.Harnesses.Refresh(r.Context()); err != nil {
@@ -325,7 +332,7 @@ type settingsInput struct {
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	var input settingsInput
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	edits := town.TownSettings{MergePolicy: input.MergePolicy, SimplifierMode: input.SimplifierMode, CloseSeverity: input.ReviewCloseSeverity, Budget: input.Budget, WorkPolicy: input.WorkPolicy}
@@ -371,7 +378,7 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
 		Task string `json:"task"`
 	}
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	if input.Town == "" || input.Task == "" {
@@ -420,7 +427,7 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) choices(w http.ResponseWriter, r *http.Request) {
 	var input settingsInput
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	choices, err := s.Supervisor.ChoicesForRole(r.Context(), input.Town, input.Role, input.Agent)
@@ -439,7 +446,7 @@ func (s *Server) submitRequest(w http.ResponseWriter, r *http.Request) {
 		Body  string `json:"body"`
 	}
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	result, err := s.Supervisor.SubmitRequest(input.Town, town.IssueRequest{ID: input.ID, Kind: input.Kind, Title: input.Title, Body: input.Body})
@@ -457,11 +464,15 @@ func (s *Server) checkRequest(w http.ResponseWriter, r *http.Request) {
 		ID   string `json:"id"`
 	}
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	if err := s.Supervisor.RecheckRequest(input.Town, input.ID); err != nil {
-		problem(w, err.Error(), 400)
+		status := http.StatusBadRequest
+		if errors.Is(err, town.ErrUnknownRequest) {
+			status = http.StatusNotFound
+		}
+		problem(w, err.Error(), status)
 		return
 	}
 	respond(w, map[string]bool{"ok": true})
@@ -470,7 +481,7 @@ func (s *Server) checkRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
 	var input town.ServiceConfig
 	if err := decode(w, r, &input); err != nil {
-		problem(w, err.Error(), 400)
+		rejectInput(w, err)
 		return
 	}
 	if err := s.Supervisor.SetCapacity(input.MaxWorkers); err != nil {
