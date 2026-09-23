@@ -21,8 +21,8 @@
     "review": {
       "project": "review-bot",
       "command": "brv",
-      "version": "0.2.6",
-      "source_commit": "87ddecf9b1a567795c7624c16cc16ea6243f2779"
+      "version": "0.2.7",
+      "source_commit": "aa71e51cf7c09d377be87ec84facb356083a7d0c"
     },
     "release": {
       "project": "release-bot",
