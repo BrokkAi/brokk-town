@@ -393,11 +393,18 @@ export function normalizeView(value) {
   return viewModes.includes(value) ? value : "town";
 }
 
+// A control's identity survives a redraw that replaces its element: the same
+// data attributes (or, for the inspector's one-off buttons, the same id) name
+// the same control in the new markup.
+function focusKey(target) {
+  const dataset = target.dataset || {};
+  return dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || dataset.action || (dataset.judgment && dataset.outcome ? `${dataset.judgment}:${dataset.outcome}` : "") || target.id || "";
+}
 export function focusIdentity(target) {
   if (!target) return null;
-  const surface = target.closest?.("#towns, #houses, #journal, #board, #compact, #inbox-list")?.id || "";
+  const surface = target.closest?.("#towns, #houses, #journal, #board, #compact, #inbox-list, #inspection")?.id || "";
   const dataset = target.dataset || {};
-  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
+  const key = focusKey(target);
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return surface && key ? { surface, key, town } : null;
 }
@@ -405,9 +412,22 @@ export function focusIdentity(target) {
 export function focusMatches(target, identity) {
   if (!identity || !target) return false;
   const dataset = target.dataset || {};
-  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
+  const key = focusKey(target);
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return key === identity.key && (!identity.town || town === identity.town);
+}
+
+// reconnectDelay is how long the event stream waits before its next attempt:
+// exponential from one second, capped at thirty, and jittered into the upper
+// half of that window so many tabs that lost the same service do not all
+// return in the same instant.
+export const reconnectBaseMs = 1000;
+export const reconnectMaxMs = 30000;
+export function reconnectDelay(attempt, random = Math.random) {
+  const n = Math.max(0, Math.floor(Number(attempt) || 0));
+  const ceiling = Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** Math.min(n, 16));
+  const r = Math.min(1, Math.max(0, Number(random()) || 0));
+  return Math.round(ceiling / 2 + (ceiling / 2) * r);
 }
 
 // Which operator controls make sense for a worker in its current state.

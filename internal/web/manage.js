@@ -565,6 +565,9 @@ export function management({ api, getTown, getState, refresh }) {
       renderRequests();
     });
 
+  // Receipt checks in flight, by town and request: the history is rebuilt on
+  // every snapshot, so the disabled state lives here rather than on a button.
+  const rechecking = new Set();
   function renderRequests() {
     const t = getState()?.towns[requestTown];
     const requests = Object.values(t?.requests || {})
@@ -574,25 +577,31 @@ export function management({ api, getTown, getState, refresh }) {
       requests
         .map(
           (r) =>
-            `<article class="submission"><strong>${esc(r.title)}</strong><small>${esc(r.kind)} · ${esc(r.status)}${r.number ? ` · #${r.number}` : ""}</small><p>${esc(r.detail || "Waiting to contact GitHub…")}</p>${safeURL(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open issue ↗</a>` : ""}${r.status === "uncertain" ? `<button type="button" data-recheck="${esc(r.id)}">Check GitHub for receipt</button>` : ""}</article>`,
+            `<article class="submission"><strong>${esc(r.title)}</strong><small>${esc(r.kind)} · ${esc(r.status)}${r.number ? ` · #${r.number}` : ""}</small><p>${esc(r.detail || "Waiting to contact GitHub…")}</p>${safeURL(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open issue ↗</a>` : ""}${r.status === "uncertain" ? `<button type="button" data-recheck="${esc(r.id)}"${rechecking.has(`${requestTown}\u0000${r.id}`) ? ' disabled aria-busy="true"' : ""}>Check GitHub for receipt</button>` : ""}</article>`,
         )
         .join("") || '<p class="muted">Your submissions will appear here.</p>';
     $("#request-history")
       .querySelectorAll("[data-recheck]")
       .forEach((b) => {
         b.onclick = async () => {
-          b.disabled = true;
+          const town = requestTown,
+            key = `${town}\u0000${b.dataset.recheck}`;
+          if (rechecking.has(key)) return;
+          rechecking.add(key);
+          renderRequests();
           try {
+            // A stalled check must not hold the button until reload.
             await api("/api/requests/check", {
-              town: requestTown,
+              town,
               id: b.dataset.recheck,
-            });
+            }, AbortSignal.timeout(30000));
             $("#request-success").textContent =
               "Receipt check queued. This only reads GitHub.";
           } catch (e) {
             $("#request-error").textContent = e.message;
           } finally {
-            b.disabled = false;
+            rechecking.delete(key);
+            renderRequests();
           }
         };
       });
