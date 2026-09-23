@@ -18,7 +18,9 @@ func deletedTown(t *testing.T, dir, repo string) {
 	}
 	defer store.Close()
 	if err := store.Update(func(s *town.State) error {
-		x, e := s.Add(town.DefaultConfig(repo))
+		cfg := town.DefaultConfig(repo)
+		cfg.MergePolicy = "all"
+		x, e := s.Add(cfg)
 		if e != nil {
 			return e
 		}
@@ -71,7 +73,7 @@ func TestServeConfigRestoresDeletedTown(t *testing.T) {
 	}
 }
 
-// serve --repo treats a deleted town like an absent one and restores it.
+// serve --repo restores a deleted town with the settings it kept.
 func TestServeRepoRestoresDeletedTown(t *testing.T) {
 	dir := t.TempDir()
 	deletedTown(t, dir, "acme/named")
@@ -79,7 +81,7 @@ func TestServeRepoRestoresDeletedTown(t *testing.T) {
 		t.Fatal(err)
 	}
 	x := readTown(t, dir, "acme/named")
-	if x.Deleted || !x.Workers[town.Repo].Enabled {
+	if x.Deleted || !x.Workers[town.Repo].Enabled || x.Config.MergePolicy != "all" {
 		t.Fatal("serve --repo left the town deleted")
 	}
 }

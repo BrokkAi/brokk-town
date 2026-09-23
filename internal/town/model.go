@@ -657,10 +657,11 @@ func (s *State) Add(c Config) (*Town, error) {
 	return t, nil
 }
 
-// Restore revives a deleted town under the settings it is added again with.
+// Restore revives a deleted town under the complete configuration c.
 // Ownership, worktrees, tasks and uncertain writes are retained; restoration
-// never resumes automation or pending issue submissions. A town that has
-// already worked on one branch cannot be restored onto another in place.
+// never resumes automation or pending issue submissions. An initialized town
+// cannot be restored onto a different named branch in place; an empty branch
+// follows the repository default.
 func (t *Town) Restore(c Config) error {
 	if !t.Deleted {
 		return fmt.Errorf("town %s is not deleted", t.ID)

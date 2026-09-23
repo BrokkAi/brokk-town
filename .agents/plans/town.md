@@ -301,11 +301,15 @@
 
 ## Restoring deleted towns (#24)
 
-- Adding a deleted town applies the new config (validated) through
-  `Town.Restore`; tasks, ownership, intents and recovery holds are kept, the
-  branch is kept when the new config names none, and a branch change on an
-  initialized town is refused. Only the reporter is re-enabled and every
+- `Town.Restore` revives a deleted town under a complete, validated config;
+  tasks, ownership, intents and recovery holds are kept, a branch change on an
+  initialized town is refused, only the reporter is re-enabled and every
   worker's `Next` is cleared. The event says the town was restored.
-- `serve --config` restores a listed deleted town with the listed settings;
-  `serve --repo` restores a deleted town with defaults. Both print a notice.
+- The add request (web, `bt add`) goes through `Supervisor.AddRepo`: a deleted
+  town's kept config is the base, and only a non-empty merge policy and the
+  agent settings are applied over it, so budget, policies, bot profiles,
+  funnels (and their intents) and branch survive.
+- `serve --config` restores a listed deleted town with the file's config (the
+  same replacement a live town gets); `serve --repo` restores it with its kept
+  config. Both print a notice.
 - Deleting a deleted town returns `unknown town` and appends no event.

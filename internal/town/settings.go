@@ -181,10 +181,33 @@ func (s *Supervisor) prepareAgent(c Config, settings AgentSettings) (Config, err
 	return cfg, cfg.Validate()
 }
 
+// Add establishes a town from a complete configuration. A deleted town is
+// restored under that configuration.
 func (s *Supervisor) Add(c Config) (string, error) {
+	return s.add(c.Repo, func(*Town) (Config, error) { return s.Prepare(c, AgentSettings{}) })
+}
+
+// AddRepo is the operator's add request: only a non-empty merge policy and the
+// agent settings are supplied. A new town starts from the defaults; a deleted
+// town is restored with those settings applied over the ones it kept, so its
+// budget, work policies, bot profiles and funnels survive.
+func (s *Supervisor) AddRepo(repo, mergePolicy string, settings AgentSettings) (string, error) {
+	return s.add(repo, func(existing *Town) (Config, error) {
+		cfg := DefaultConfig(repo)
+		if existing != nil {
+			cfg = clone(existing.Config)
+		}
+		if mergePolicy != "" {
+			cfg.MergePolicy = mergePolicy
+		}
+		return s.Prepare(cfg, settings)
+	})
+}
+
+func (s *Supervisor) add(repo string, prepare func(existing *Town) (Config, error)) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id := strings.ToLower(c.Repo)
+	id := strings.ToLower(repo)
 	for key := range s.running {
 		if strings.HasPrefix(key, id+":") {
 			return "", errors.New("town workers are still stopping; try again shortly")
@@ -194,17 +217,20 @@ func (s *Supervisor) Add(c Config) (string, error) {
 		if st.Demo {
 			return errors.New("use a live service to add real repositories")
 		}
-		cfg, err := s.Prepare(c, AgentSettings{})
+		existing := st.Towns[id]
+		if existing != nil && !existing.Deleted {
+			return errors.New("town already exists")
+		}
+		cfg, err := prepare(existing)
 		if err != nil {
 			return err
 		}
-		restored := st.Towns[id] != nil
 		t, err := st.Add(cfg)
 		if err != nil {
 			return err
 		}
 		title := "Town established; reporter is checking the repository"
-		if restored {
+		if existing != nil {
 			title = "Town restored with the new settings; recovery records retained"
 		}
 		st.Event(t.ID, "town", "operator", "repo", "", title, s.now())

@@ -524,21 +524,25 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		if demo {
 			return errors.New("real repository is not accepted in demo mode")
 		}
-		// --repo adds a town that is absent or deleted; a deleted one is
-		// restored with default settings, exactly as adding it again would.
+		// --repo adds a town that is absent; a deleted one is restored with
+		// the settings it kept, since --repo supplies none of its own.
 		if t := store.Snapshot().Towns[strings.ToLower(repo)]; t == nil || t.Deleted {
 			if err = store.Update(func(s *town.State) error {
-				restoring := s.Towns[strings.ToLower(repo)] != nil
-				t, err := s.Add(town.DefaultConfig(repo))
-				if err == nil && restoring {
-					s.Event(t.ID, "town", "operator", "repo", "", "Town restored by serve --repo; recovery records retained", time.Now())
+				existing := s.Towns[strings.ToLower(repo)]
+				if existing == nil {
+					_, err := s.Add(town.DefaultConfig(repo))
+					return err
 				}
-				return err
+				if err := existing.Restore(existing.Config); err != nil {
+					return err
+				}
+				s.Event(existing.ID, "town", "operator", "repo", "", "Town restored by serve --repo; recovery records retained", time.Now())
+				return nil
 			}); err != nil {
 				return err
 			}
 			if t != nil {
-				fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with default settings\n", t.ID)
+				fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with its previous settings\n", t.ID)
 			}
 		}
 	}

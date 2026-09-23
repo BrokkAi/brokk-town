@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/acp-go/runner"
 )
 
 // Adding a deleted town again applies the settings it is added with, keeps its
@@ -64,6 +66,55 @@ func TestReaddAppliesNewSettingsAndKeepsRecovery(t *testing.T) {
 	}
 	if after := s.Snapshot().Towns[x.ID]; !after.Deleted || after.Config.MergePolicy != "manual" {
 		t.Fatal("failed restore changed the tombstone", after.Deleted, after.Config.MergePolicy)
+	}
+}
+
+// The operator's add request supplies only a merge policy and agent settings;
+// restoring through it keeps everything else the town was configured with.
+func TestAddRepoRestoreOverlaysOnlySuppliedSettings(t *testing.T) {
+	s := testStore(t, false)
+	x := addTown(t, s)
+	funnel := FunnelConfig{ID: "github-ready", Provider: "github", Location: SourceLocation{"repository": "acme/orchard"}, Enabled: true, PriorityPolicy: "operator-explicit"}
+	review := BotAgentConfig{Harness: "custom", Agent: runner.AgentConfig{Command: []string{"reviewer"}}}
+	update(t, s, func(st *State) {
+		c := &st.Towns[x.ID].Config
+		c.Harness = "custom"
+		c.Agent.Command = []string{"agent"}
+		c.MergePolicy = "manual"
+		c.Budget = &Budget{Period: "day", MaxAttempts: 3}
+		c.BotPolicies = map[Role]BotPolicy{Issue: {Only: 42}}
+		c.BotAgents = map[Role]BotAgentConfig{Review: review}
+		c.Verify = []string{"make", "check"}
+		c.ReviewCloseSeverity = "P1"
+		c.Funnels = FunnelConfigs{funnel}
+	})
+	sup := NewSupervisor(s, nil, nil)
+	if err := sup.Delete(x.ID); err != nil {
+		t.Fatal(err)
+	}
+	// No merge policy: the kept one stays. The agent settings apply.
+	if _, err := sup.AddRepo(x.ID, "", AgentSettings{Command: ptr([]string{"agent", "--acp"}), Model: ptr("m")}); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Snapshot().Towns[x.ID].Config
+	if got.MergePolicy != "manual" || got.Agent.Model != "m" || !reflect.DeepEqual(got.Agent.Command, []string{"agent", "--acp"}) {
+		t.Fatal("supplied settings were not applied over the kept ones", got.MergePolicy, got.Agent)
+	}
+	if got.Budget == nil || got.Budget.MaxAttempts != 3 || got.BotPolicies[Issue].Only != 42 || !reflect.DeepEqual(got.BotAgents[Review], review) || !reflect.DeepEqual(got.Verify, []string{"make", "check"}) || got.ReviewCloseSeverity != "P1" || len(got.Funnels) != 1 || got.Funnels[0].ID != funnel.ID || got.Branch != "main" {
+		t.Fatal("restore dropped settings the request did not supply", got)
+	}
+	// A supplied merge policy replaces the kept one.
+	if err := sup.Delete(x.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sup.AddRepo(x.ID, "all", AgentSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Snapshot().Towns[x.ID].Config; got.MergePolicy != "all" || got.Budget == nil || len(got.Funnels) != 1 {
+		t.Fatal("merge policy restore", got.MergePolicy, got.Budget, got.Funnels)
+	}
+	if _, err := sup.AddRepo(x.ID, "", AgentSettings{}); err == nil || err.Error() != "town already exists" {
+		t.Fatal("added a live town again", err)
 	}
 }
 
