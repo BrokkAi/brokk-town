@@ -237,3 +237,118 @@ func TestReopenedPullKeepsDecisionsAndReviewRouting(t *testing.T) {
 		t.Fatalf("reopened own PR did not return to Review: %s/%s", task.House, task.Stage)
 	}
 }
+
+func TestAutoDeclinedPullStaysDeclined(t *testing.T) {
+	state, town := reopenTown(t, "auto")
+	open := pull(5)
+	reconcilePulls(t, state, town)
+	reconcilePulls(t, state, town, open)
+	task := town.Tasks["pr:5"]
+	applySimplification(state, town, task, &Simplification{Mode: "auto", Decision: "decline", Detail: "Out of scope."}, nil, time.Now())
+	// A new revision, a draft round trip and a close and reopen all leave
+	// Simplifier's decline in place.
+	revised := open
+	revised.Head.SHA = strings.Repeat("c", 40)
+	reconcilePulls(t, state, town, revised)
+	draft := revised
+	draft.Draft = true
+	reconcilePulls(t, state, town, draft)
+	reconcilePulls(t, state, town, revised)
+	closed := revised
+	closed.State = "closed"
+	reconcilePulls(t, state, town, closed)
+	reconcilePulls(t, state, town, revised)
+	if task.House != Hall || task.Stage != "declined" || selectedBy(town, task) != "" {
+		t.Fatalf("Simplifier's decline was bypassed: %s/%s", task.House, task.Stage)
+	}
+
+	// State from before the decline was final: a revision carried the pull
+	// request to Review and a failed review sent it to the Mayor. Closing
+	// and reopening it must keep the Mayor's pending decision.
+	state, town = reopenTown(t, "auto")
+	town.Initialized = true
+	task = &Task{ID: "pr:5", Kind: "pr", Number: 5, Title: "Change 5", House: Hall, Stage: "awaiting_mayor", MayoralDecision: "pending", External: true, Retired: true, Head: headSHA, Base: baseSHA, Simplification: &Simplification{Mode: "auto", Decision: "decline", Detail: "Out of scope."}, Updated: time.Now()}
+	town.Tasks[task.ID] = task
+	closed = open
+	closed.State = "closed"
+	reconcilePulls(t, state, town, closed)
+	reconcilePulls(t, state, town, open)
+	if selectedBy(town, task) != "mayor" {
+		t.Fatalf("reopened PR lost its pending decision: %s/%s %q", task.House, task.Stage, task.MayoralDecision)
+	}
+}
+
+func TestPullReturningToTheBranchKeepsIntake(t *testing.T) {
+	for _, test := range []struct {
+		name, mode, worker, stage string
+		decline                   bool
+	}{
+		{name: "awaiting mayor", mode: "suggest", worker: "mayor", stage: "awaiting_mayor"},
+		{name: "declined by mayor", mode: "suggest", decline: true, stage: "declined"},
+		{name: "awaiting simplifier", mode: "auto", worker: "simplifier", stage: "simplifying"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state, town := reopenTown(t, test.mode)
+			open := pull(5)
+			reconcilePulls(t, state, town)
+			reconcilePulls(t, state, town, open)
+			task := town.Tasks["pr:5"]
+			if test.decline {
+				if err := state.decideTask(town, task, "decline", "you", time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			away := open
+			away.Base.Ref = "develop"
+			reconcilePulls(t, state, town, away)
+			if !task.Offbranch {
+				t.Fatalf("retargeted PR was not held: %+v", task)
+			}
+			reconcilePulls(t, state, town, open)
+			if task.Offbranch || task.Blocked || task.Stage != test.stage || selectedBy(town, task) != test.worker {
+				t.Fatalf("returning PR left intake: house=%s stage=%s decision=%q", task.House, task.Stage, task.MayoralDecision)
+			}
+		})
+	}
+}
+
+func TestClosedDeclinedPullIsNotOpenWork(t *testing.T) {
+	state, town := reopenTown(t, "suggest")
+	open := pull(5)
+	reconcilePulls(t, state, town)
+	reconcilePulls(t, state, town, open)
+	task := town.Tasks["pr:5"]
+	if err := state.decideTask(town, task, "decline", "you", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	closed := open
+	closed.State = "closed"
+	town.Reports = nil
+	reconcilePulls(t, state, town, closed)
+	if task.Stage != "closed" || task.MayoralDecision != "declined" {
+		t.Fatalf("closed declined PR: %+v", task)
+	}
+	if body := town.Reports[len(town.Reports)-1].Body; !strings.Contains(body, "0 open PRs") {
+		t.Fatalf("closed declined PR counted as open: %s", body)
+	}
+	// A later branch rename does not treat the closed PR as work to retire.
+	renamed := closed
+	renamed.Base.Ref = "develop"
+	reconcilePulls(t, state, town, renamed)
+	if task.Offbranch || task.Blocked {
+		t.Fatalf("closed declined PR was marked off-branch: %+v", task)
+	}
+}
+
+func TestResumeWakesTheHouseThatSelectsIt(t *testing.T) {
+	state, town := reopenTown(t, "suggest")
+	open := RemoteIssue{Number: 9, Title: "Remove the registry", State: "open", Body: "<!-- simplifier-bot:abc -->"}
+	closed := open
+	closed.State = "closed"
+	reconcileIssues(t, state, town, closed)
+	town.Workers[Hall].Next = time.Now().Add(time.Hour)
+	reconcileIssues(t, state, town, open)
+	if selectedBy(town, town.Tasks["issue:9"]) != "mayor" || !town.Workers[Hall].Next.IsZero() {
+		t.Fatalf("reopened decision did not wake the Mayor: next=%v", town.Workers[Hall].Next)
+	}
+}

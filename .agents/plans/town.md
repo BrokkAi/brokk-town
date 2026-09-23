@@ -211,14 +211,23 @@
   straight to Review.
 - `resume` now derives where the task returns from its house: Simplifier →
   `simplifying`, Town Hall → `awaiting_mayor` with a pending decision (issues
-  and outside pull requests), a Simplifier auto-decline stays `declined`, and
-  work past intake returns to Issue or Review as before. A reopened pull request
-  resumes before draft or lock state applies, so a later revision cannot carry
-  it out of intake.
+  and outside pull requests), a Mayoral or Simplifier decline stays `declined`,
+  and work past intake returns to Issue or Review as before. It wakes the house
+  that selects the task. A reopened pull request resumes before draft or lock
+  state applies, so a later revision cannot carry it out of intake. `Blocked`,
+  `Attempts` and `RetryAt` are left as they were, so a decision whose Mayor Bot
+  attempts are exhausted still waits for the operator.
+- A Simplifier auto-decline is now as final as the Mayor's: a new revision or a
+  draft change no longer moves it to Review (`holdsIntake`). Older state where
+  that already happened has its stale decline cleared on the next inventory.
+- A pull request returning from another base branch resumes its intake or
+  decline instead of going to Review; a pending one used to fail state
+  validation there.
 - Closure clears only a pending decision (the invariant keeps pending in Town
-  Hall); admitted and declined decisions survive it, and a declined pull request
-  stays declined like a declined issue. An issue already stranded `queued`
-  outside Issue is healed on the next inventory.
+  Hall). A declined pull request its author closed is stored `closed` with its
+  decline kept, so it is not counted as open or retired off-branch, and resume
+  restores `declined` on reopen. An issue already stranded `queued` outside
+  Issue is healed on the next inventory.
 
 ## Frontline theme (browser, presentation only)
 

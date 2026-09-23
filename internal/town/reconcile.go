@@ -137,16 +137,27 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			related := fmt.Sprintf("issue:%d", owned.Issue)
 			t.RecordOutcome(OutcomeRecord{ID: "implementation-pr:" + id, At: now, Class: "artifact", Kind: "implementation_pr", Status: "submitted", Role: Issue, TaskID: id, RelatedTaskID: related, Revision: p.Head.SHA, URL: p.URL, Detail: p.Title})
 		}
+		if autoDeclined(task) && (task.House != Hall || task.MayoralDecision == "pending") {
+			// Older state let a revision carry an auto-declined pull request
+			// back to Review; the decline no longer describes where it is.
+			task.Simplification = nil
+		}
 		if task.Offbranch {
 			// Town blocked this itself when the pull request left the branch.
 			// It is back, so the block is released and a fresh review decides
-			// it; nothing about the earlier audit is reused.
+			// it; nothing about the earlier audit is reused. Intake and a
+			// decline are not review, so they resume where they stood.
 			task.Offbranch = false
 			task.Blocked = false
 			task.Attempts = 0
 			task.RetryAt = time.Time{}
 			task.Audit = nil
-			s.Move(t, task, "queued", Review, "PR targets this town's branch again: back for review", now)
+			if holdsIntake(task) {
+				s.Event(t.ID, "delivery", "outside", string(task.House), id, "PR targets this town's branch again: "+p.Title, now)
+				wake(t, task)
+			} else {
+				s.Move(t, task, "queued", Review, "PR targets this town's branch again: back for review", now)
+			}
 		}
 		wasExternal := task.External
 		task.External = !isOwned
@@ -168,7 +179,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			task.Attempts = 0
 			task.RetryAt = time.Time{}
 			task.FollowUps = nil
-			if task.Stage != "merged" && task.Stage != "closed" && task.Stage != "closing" && task.Stage != "simplifying" && task.MayoralDecision != "pending" && task.MayoralDecision != "declined" {
+			if task.Stage != "merged" && task.Stage != "closed" && task.Stage != "closing" && !holdsIntake(task) {
 				s.Move(t, task, "queued", Review, "New revision ready for review", now)
 			}
 		}
@@ -212,10 +223,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			if isOwned && task.Stage != "closed" {
 				t.RecordOutcome(OutcomeRecord{ID: "abandoned:" + id + ":" + p.Head.SHA, At: now, Class: "outcome", Kind: "abandoned", Status: "abandoned", TaskID: id, RelatedTaskID: fmt.Sprintf("issue:%d", owned.Issue), Revision: p.Head.SHA, URL: p.URL, Detail: "Implementation PR closed without a confirmed merge"})
 			}
-			if task.MayoralDecision != "declined" {
-				// A decline stays final across a closure, as it does for issues.
-				task.Stage = "closed"
-			}
+			// A Mayoral decline stays on the closed pull request; resume
+			// restores it if the pull request is reopened.
+			task.Stage = "closed"
 			if task.MayoralDecision == "pending" {
 				task.MayoralDecision = ""
 			}
@@ -226,7 +236,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				// way of a later revision.
 				resume(t, task)
 			}
-			if task.Stage == "simplifying" || task.MayoralDecision == "pending" || task.MayoralDecision == "declined" {
+			if holdsIntake(task) {
 				// A contributor revision or draft-state change never bypasses the
 				// durable Simplifier or Mayoral intake decision.
 			} else if p.Draft {
@@ -315,21 +325,48 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 	t.Error = ""
 }
 
+// autoDeclined reports whether Simplifier's auto mode declined the task, a
+// decision as final as the Mayor's.
+func autoDeclined(task *Task) bool {
+	return task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
+}
+
+// holdsIntake reports whether a pull request is still in intake or carries a
+// final decline. Repository metadata never moves such a task to Review.
+func holdsIntake(task *Task) bool {
+	return task.Stage == "simplifying" || task.Stage == "declined" || task.MayoralDecision == "pending" || task.MayoralDecision == "declined"
+}
+
+// wake lets the house now holding a task pick it up without waiting out its
+// poll interval.
+func wake(t *Town, task *Task) {
+	house := task.House
+	switch {
+	case task.Stage == "simplifying":
+		house = Simplifier
+	case task.MayoralDecision == "pending":
+		house = Hall
+	case task.Stage != "queued":
+		return
+	}
+	if w := t.Workers[house]; w != nil {
+		w.Next = time.Time{}
+	}
+}
+
 // resume returns an issue or pull request to work after GitHub reopened,
 // unlocked or undrafted it. A closure clears a pending Mayoral decision, so the
 // house is the durable record of how far intake got: work that had not finished
 // intake goes back to it rather than straight to the worker after it, and a
-// Simplifier decline stays final.
+// Mayoral or Simplifier decline stays final. Blocked, Attempts and RetryAt are
+// left as they were.
 func resume(t *Town, task *Task) {
-	autoDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
 	switch {
+	case task.MayoralDecision == "declined" || (task.House == Hall && autoDeclined(task)):
+		task.Stage = "declined"
+		return
 	case task.House == Simplifier:
 		task.Stage = "simplifying"
-		if w := t.Workers[Simplifier]; w != nil {
-			w.Next = time.Time{}
-		}
-	case task.House == Hall && autoDeclined:
-		task.Stage = "declined"
 	case task.House == Hall && (task.Kind == "issue" || task.External):
 		// An issue reaches Town Hall only to await the Mayor, and an outside
 		// pull request only for the Mayor to decide it. Town's own pull
@@ -343,4 +380,5 @@ func resume(t *Town, task *Task) {
 		task.Stage = "queued"
 		task.House = Review
 	}
+	wake(t, task)
 }
