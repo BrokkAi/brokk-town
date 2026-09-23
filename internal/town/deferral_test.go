@@ -312,3 +312,69 @@ func TestDemoSnoozeEndsOnTheDemoClock(t *testing.T) {
 		t.Fatalf("the demo snooze did not end on the demo clock: %+v", task)
 	}
 }
+
+func TestIssueAttemptIsChargedToTheIssueItRan(t *testing.T) {
+	s := testStore(t, false)
+	x := snoozeTown(t, s)
+	now := time.Now()
+	if err := NewSupervisor(s, nil, nil).Defer(x.ID, "issue:1", now.Add(time.Hour), "not now"); err != nil {
+		t.Fatal(err)
+	}
+	x = s.Snapshot().Towns[x.ID]
+	// The run reports its issue: the attempt belongs to it, not to the
+	// lowest-numbered issue in the queue.
+	if id, _ := outcomeAttemptTask(x, Issue, RunResult{Issue: 2}, now); id != "issue:2" {
+		t.Fatalf("an issue-2 run was charged to %s", id)
+	}
+	// A run that failed before choosing an issue falls back to the one the
+	// house would have chosen, which is never the snoozed one.
+	if id, _ := outcomeAttemptTask(x, Issue, RunResult{}, now); id != "issue:2" {
+		t.Fatalf("a failed issue run was charged to %s", id)
+	}
+}
+
+func TestSnoozeReasonIsCountedInCharacters(t *testing.T) {
+	s := testStore(t, false)
+	x := snoozeTown(t, s)
+	sup := NewSupervisor(s, nil, nil)
+	until := time.Now().Add(time.Hour)
+	// 200 two-byte characters are 400 bytes and still a valid reason.
+	if err := sup.Defer(x.ID, "issue:1", until, strings.Repeat("é", MaxDeferReason)); err != nil {
+		t.Fatalf("a 200-character multibyte reason was refused: %v", err)
+	}
+	if err := sup.Defer(x.ID, "issue:2", until, strings.Repeat("🙂", MaxDeferReason+1)); err == nil {
+		t.Fatal("a 201-character reason was accepted")
+	}
+}
+
+func TestFinishedSnoozedTaskEndsQuietly(t *testing.T) {
+	s := testStore(t, false)
+	x := setupPR(t, s, 1)
+	now := time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC)
+	sup := NewSupervisor(s, nil, nil)
+	sup.now = func() time.Time { return now }
+	if err := sup.Defer(x.ID, "pr:1", now.Add(time.Hour), "hold"); err != nil {
+		t.Fatal(err)
+	}
+	update(t, s, func(st *State) {
+		st.Towns[x.ID].Tasks["pr:1"].Stage = "merged"
+		st.Towns[x.ID].Tasks["pr:1"].House = Release
+		for _, w := range st.Towns[x.ID].Workers {
+			w.Enabled = false
+			w.Next = now.Add(2 * time.Hour)
+		}
+	})
+	events := len(s.Snapshot().Events)
+	now = now.Add(time.Hour)
+	sup.schedule(context.Background())
+	current := s.Snapshot().Towns[x.ID]
+	if task := current.Tasks["pr:1"]; !task.DeferredUntil.IsZero() || task.DeferReason != "" {
+		t.Fatalf("a finished task kept its ended snooze: %+v", task)
+	}
+	if len(s.Snapshot().Events) != events {
+		t.Fatal("a finished task announced the end of its snooze")
+	}
+	if !current.Workers[Release].Next.After(now) {
+		t.Fatal("a finished task woke its house")
+	}
+}

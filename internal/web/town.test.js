@@ -641,6 +641,10 @@ test("snooze requests are checked before they are sent", () => {
   assert.match(snoozeRequest("2026-09-23T08:00:00Z", "", now).error, /future/);
   assert.match(snoozeRequest("2028-09-23T08:00:00Z", "", now).error, /366 days/);
   assert.match(snoozeRequest("2026-09-24T08:00:00Z", "x".repeat(201), now).error, /200 characters/);
+  // Characters are counted as the service counts them, not as UTF-16 units:
+  // 200 emoji are 400 units but still a valid reason.
+  assert.equal(snoozeRequest("2026-09-24T08:00:00Z", "🙂".repeat(200), now).reason, "🙂".repeat(200));
+  assert.match(snoozeRequest("2026-09-24T08:00:00Z", "🙂".repeat(201), now).error, /200 characters/);
   const suggested = Date.parse(defaultSnoozeUntil(now));
   assert.ok(suggested > now + 86400000 - 1 && suggested <= now + 86400000 + 3600000, "suggests about a day ahead");
 });

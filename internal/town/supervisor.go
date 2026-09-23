@@ -486,7 +486,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			}
 		}
 		if ValidAgentRole(r) {
-			taskID, revision := outcomeAttemptTask(t, r, result)
+			taskID, revision := outcomeAttemptTask(t, r, result, started)
 			status, detail := "attempted", "Worker attempt completed"
 			if err != nil && !errors.Is(err, context.Canceled) {
 				status, detail = "blocked", err.Error()
@@ -605,14 +605,17 @@ func latestProgress(ch chan Progress, p Progress) {
 	}
 }
 
-func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
+// outcomeAttemptTask names the task one attempt worked on. An issue run
+// reports its issue; only a run that failed before choosing one falls back to
+// the issue the house would have chosen, never one the operator snoozed.
+func outcomeAttemptTask(t *Town, role Role, result RunResult, now time.Time) (string, string) {
 	if role == Hall {
 		if task := t.Tasks[result.JudgedTask]; task != nil {
 			return task.ID, task.Head
 		}
 		return result.JudgedTask, ""
 	}
-	if role == Simplifier && result.Issue > 0 {
+	if (role == Simplifier || role == Issue) && result.Issue > 0 {
 		id := fmt.Sprintf("issue:%d", result.Issue)
 		if task := t.Tasks[id]; task != nil {
 			return id, task.Head
@@ -629,7 +632,7 @@ func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
 	if role == Issue {
 		var selected *Task
 		for _, task := range t.Tasks {
-			if task.Kind == "issue" && task.House == Issue && (task.Stage == "queued" || task.Stage == "blocked") && (selected == nil || task.Number < selected.Number) {
+			if task.Kind == "issue" && task.House == Issue && (task.Stage == "queued" || task.Stage == "blocked") && !task.Deferred(now) && (selected == nil || task.Number < selected.Number) {
 				selected = task
 			}
 		}

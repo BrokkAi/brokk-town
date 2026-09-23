@@ -646,7 +646,8 @@ export function snoozeRequest(value, reason, now = Date.now()) {
   if (at <= now) return { error: "The resume time must be in the future." };
   if (at > now + 366 * 86400000) return { error: "The resume time must be within 366 days." };
   const note = String(reason || "").trim();
-  if (note.length > 200) return { error: "Keep the reason to 200 characters or fewer." };
+  // Count characters as the service does (code points), not UTF-16 units.
+  if ([...note].length > 200) return { error: "Keep the reason to 200 characters or fewer." };
   return { until: new Date(at).toISOString().replace(/\.\d{3}Z$/, "Z"), reason: note };
 }
 

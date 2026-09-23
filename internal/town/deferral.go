@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // An operator can snooze one issue or pull request until a chosen time. The
@@ -14,7 +15,8 @@ import (
 // becomes eligible again on its own when the time passes.
 
 const (
-	// MaxDeferReason bounds the operator's note so it stays a short label.
+	// MaxDeferReason bounds the operator's note, in characters, so it stays a
+	// short label.
 	MaxDeferReason = 200
 	// MaxDefer is the furthest ahead a snooze may be set.
 	MaxDefer = 366 * 24 * time.Hour
@@ -41,8 +43,7 @@ func (s *State) deferTask(t *Town, task *Task, until time.Time, reason string, n
 		s.Event(t.ID, "control", "operator", string(task.House), task.ID, "Snooze cleared: "+task.Title, now)
 		return nil
 	}
-	switch task.Stage {
-	case "merged", "closed", "closing", "declined", "implemented":
+	if finished(task) {
 		return fmt.Errorf("%s is %s; there is no pending work to snooze", task.ID, task.Stage)
 	}
 	if !until.After(now) {
@@ -63,10 +64,19 @@ func (s *State) deferTask(t *Town, task *Task, until time.Time, reason string, n
 }
 
 func validDeferReason(reason string) error {
-	if len(reason) > MaxDeferReason || strings.ContainsFunc(reason, unicode.IsControl) {
+	if utf8.RuneCountInString(reason) > MaxDeferReason || strings.ContainsFunc(reason, unicode.IsControl) {
 		return fmt.Errorf("snooze reason must be one line of at most %d characters", MaxDeferReason)
 	}
 	return nil
+}
+
+// finished reports a task with no pending work left to snooze.
+func finished(task *Task) bool {
+	switch task.Stage {
+	case "merged", "closed", "closing", "declined", "implemented":
+		return true
+	}
+	return false
 }
 
 // expiredDeferrals reports whether any live town holds a snooze that ended.
@@ -98,6 +108,11 @@ func expireDeferrals(st *State, now time.Time) {
 				continue
 			}
 			task.DeferredUntil, task.DeferReason = time.Time{}, ""
+			if finished(task) {
+				// Work that finished while snoozed has nothing to resume, so
+				// its snooze is dropped without waking a house or announcing it.
+				continue
+			}
 			task.Updated = now
 			if w := t.Workers[task.House]; w != nil {
 				w.Next = time.Time{}
