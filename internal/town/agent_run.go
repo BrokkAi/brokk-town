@@ -30,6 +30,9 @@ func executeACP(ctx context.Context, cfg runner.Config, log *slog.Logger, prompt
 	if log == nil {
 		log = slog.Default()
 	}
+	if cfg.ClientInfo.Name == "" || cfg.ClientInfo.Version == "" {
+		cfg.ClientInfo = acp.ClientInfo{Name: "acp-go-runner", Version: "0.1.0"}
+	}
 	if len(cfg.Agent.Command) == 0 || cfg.Agent.Command[0] == "" {
 		return "", &runner.SetupError{Err: errors.New("agent command is required")}
 	}
@@ -198,8 +201,9 @@ func setEffort(ctx context.Context, connection *acp.Connection, session *acp.Ses
 	}
 	compatible := *session
 	compatible.ConfigOptions = append([]schema.SessionConfigOption(nil), session.ConfigOptions...)
-	for i := range compatible.ConfigOptions {
-		if compatible.ConfigOptions[i].ID == option.ID {
+	// Tag the exact option effortOption chose, even if another shares its ID.
+	for i := range session.ConfigOptions {
+		if &session.ConfigOptions[i] == option {
 			category := schema.SessionConfigOptionCategoryThoughtLevel
 			compatible.ConfigOptions[i].Category = &category
 			break

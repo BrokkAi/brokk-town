@@ -183,7 +183,18 @@ func TestLegacyThoughtLevelEffortIsListedAndSelected(t *testing.T) {
 	if run.err != nil {
 		t.Fatalf("a legacy thought_level effort was not selectable: %v", run.err)
 	}
-	if !strings.Contains(run.state, `"configId":"thought_level","sessionId":"fixture","value":"xhigh"`) {
+	selected := false
+	for _, line := range strings.Split(strings.TrimSpace(run.state), "\n") {
+		var call struct {
+			Method string            `json:"method"`
+			Params map[string]string `json:"params"`
+		}
+		if json.Unmarshal([]byte(line), &call) == nil && call.Method == "session/set_config_option" &&
+			call.Params["configId"] == "thought_level" && call.Params["value"] == "xhigh" {
+			selected = true
+		}
+	}
+	if !selected {
 		t.Fatalf("effort was not sent to the thought_level option:\n%s", run.state)
 	}
 	exe, err := os.Executable()
