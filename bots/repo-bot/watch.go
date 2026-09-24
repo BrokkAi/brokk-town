@@ -26,6 +26,11 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 	if err != nil {
 		return err
 	}
+	unlock, err := lockWatch(cfg)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	saved, err := ReadState(cfg)
 	if err != nil {
 		return err

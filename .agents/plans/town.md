@@ -262,6 +262,15 @@
   branch advanced read stale code and failed its own revision check. Scans now
   run when due in a detached worktree at the fetched head. Town dispatches only
   item assessments, so its behavior is unchanged.
+- A second review of #120 fixed three standalone gaps. `bmb` continued from
+  "one interval ago" after a window that recorded no bulletin, so an empty
+  window skipped the merges during its own run and a failed first window lost
+  its whole range; the next window now starts where the last covered or failed
+  one did. `brp` took no lock, so two standalone processes on one branch could
+  both spend its repair budget and push repairs; a standalone watch now holds a
+  per-branch and a per-state lock. Its saved history could outgrow the 1 MiB
+  state read limit (escaped check output) and leave a state it could not read;
+  the oldest observations now give way before the state is saved.
 
 ## Frontline theme (browser, presentation only)
 
