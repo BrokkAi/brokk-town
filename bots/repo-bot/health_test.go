@@ -179,6 +179,39 @@ func TestRepairPublishesAVerifiedFixOntoTheBranch(t *testing.T) {
 	}
 }
 
+func TestRunRepairsTheResolvedDefaultBranch(t *testing.T) {
+	origin, head := originRepository(t)
+	cfg := workspace(t)
+	cfg.Remote = origin
+	cfg.Branch = ""
+	cfg.Verify = []string{"test", "-f", "fixed.txt"}
+	answers := repositoryAnswers()
+	answers["repos/acme/orchard/branches/main"] = `{"commit":{"sha":"` + head + `"}}`
+	answers["*/check-runs\\?*"] = `{"total_count":1,"check_runs":[{"name":"build","status":"completed","conclusion":"failure"}]}`
+	answers["*/commits/*/status"] = `{"state":"success","statuses":[]}`
+	fakeGitHub(t, answers)
+	agent := agentFunc(func(_ context.Context, prompt string) (string, error) {
+		if !strings.Contains(prompt, "main") {
+			t.Fatal("repair prompt omitted the resolved branch")
+		}
+		return "", os.WriteFile(filepath.Join(cfg.Directory+"-repairs", "branch", "fixed.txt"), []byte("repaired\n"), 0600)
+	})
+	result, err := Run(t.Context(), cfg, Request{}, agent, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Health == nil || result.Health.State != healthRepaired || !SHA(result.Health.Pushed) {
+		t.Fatalf("default branch repair = %+v", result.Health)
+	}
+	if published := gitOutput(t, origin, "rev-parse", "refs/heads/main"); published != result.Health.Pushed {
+		t.Fatalf("default branch at %s, expected %s", published, result.Health.Pushed)
+	}
+	cfg.Branch = "main"
+	if saved, err := ReadState(cfg); err != nil || saved == nil || saved.Attempts != 1 || saved.Pushed != result.Health.Pushed {
+		t.Fatalf("repair state = %+v, error = %v", saved, err)
+	}
+}
+
 func TestUnverifiedRepairIsNotPublished(t *testing.T) {
 	origin, head := originRepository(t)
 	root := t.TempDir()

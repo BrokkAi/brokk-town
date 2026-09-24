@@ -387,6 +387,9 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		request.SupersededPR = d.supersededPR
 	}
 	if role == Repo {
+		// Repo Bot discovers the current default on every inventory. Other
+		// houses work on the branch that inventory has already established.
+		request.Branch = t.Config.Branch
 		request.Mode = d.mode
 		request.SinceHead = d.sinceHead
 		request.Commits = d.commits

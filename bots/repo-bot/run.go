@@ -22,7 +22,7 @@ type Request struct {
 // checks, repairs it. The inventory is reported even when the repair does not
 // land: Town's view of the repository must not depend on an agent.
 func Run(ctx context.Context, cfg Config, request Request, agent Agent, log *slog.Logger) (worker.Result, error) {
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.validate(true); err != nil {
 		return worker.Result{}, err
 	}
 	cfg, err := cfg.resolved()
@@ -39,6 +39,10 @@ func Run(ctx context.Context, cfg Config, request Request, agent Agent, log *slo
 	if err != nil {
 		return worker.Result{}, fmt.Errorf("read repository inventory: %w", err)
 	}
+	// Resolve once per run before any state access or repair. Town leaves the
+	// branch empty when following the repository default, including on startup.
+	cfg.Branch = inventory.Branch
+	gh.config = cfg
 	if SHA(request.SinceHead) && request.SinceHead != inventory.Head {
 		report(Progress{Phase: "inventorying", Task: "Naming changes since " + short(request.SinceHead)})
 		if inventory.Commits, err = gh.changes(ctx, request.SinceHead, inventory.Head); err != nil {
