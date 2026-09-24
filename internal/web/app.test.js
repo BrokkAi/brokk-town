@@ -852,7 +852,7 @@ test("a house shows its work policy and marks the inventory that policy holds ba
 
 // The Frontline skin is a theme: it repaints labels and the map, keeps a
 // per-browser choice, and never edits the snapshot it is drawn from.
-async function openFrontline({ search = "" } = {}) {
+async function openFrontline({ search = "", extraTowns = [] } = {}) {
   const elements = installFixture();
   document.body = document.createElement("body");
   const stored = new Map();
@@ -865,6 +865,12 @@ async function openFrontline({ search = "" } = {}) {
   globalThis.location = { hash: "#token=test-key", pathname: "/", search };
   const live = structuredClone(baseState);
   live.demo = false;
+  for (const id of extraTowns) {
+    const town = structuredClone(live.towns["acme/project"]);
+    town.id = id;
+    town.config.repo = id;
+    live.towns[id] = town;
+  }
   const message = `data: ${JSON.stringify(live)}\n\n`;
   let served = false;
   globalThis.fetch = async (url) => {
@@ -905,7 +911,7 @@ test("the frontline skin relabels the town, holds its own faction, and leaves st
 
   const options = elements["faction-select"].children;
   assert.equal(options.length, 4, "auto plus one option per army");
-  assert.match(options[0].textContent, /^Auto · /);
+  assert.match(options[0].textContent, /^Automatic · /);
 
   // A base names its own structures; the town's names are gone.
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
@@ -935,6 +941,20 @@ test("?skin=frontline opens the war map for whoever the link is sent to", async 
   assert.equal(elements["activity-eyebrow"].textContent, "LIVE FIELD JOURNAL");
   assert.equal(elements["skin"].textContent, "Theme: Frontline");
   assert.equal(elements["skin"].title, "Switch back to the Brokk Town neighbourhood");
+});
+
+test("Frontline overview shows each base's race art even when races repeat", async () => {
+  const { elements } = await openFrontline({ search: "?skin=frontline",
+    extraTowns: ["acme/repo-3", "acme/repo-5"] });
+  const links = elements.towns.querySelectorAll("[data-town]");
+  assert.equal(new Set(links.map((link) => link.dataset.faction)).size, 2);
+  assert.equal(links.filter((link) => link.dataset.faction === "vanguard").length, 2);
+  elements["all-towns"].click();
+  const cards = elements.overview.querySelectorAll("[data-visit]");
+  assert.equal(new Set(cards.map((card) => card.dataset.faction)).size, 2);
+  assert.equal((elements.overview.innerHTML.match(/town-card-houses frontline-card-art/g) || []).length, 3);
+  for (const label of ["Vanguard", "Hive"])
+    assert.match(elements.overview.textContent, new RegExp(label));
 });
 
 test("a faction choice survives blocked browser storage for the session", async () => {

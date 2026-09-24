@@ -148,9 +148,7 @@ function hash(value) {
   return Math.abs(n >>> 0);
 }
 
-// A base keeps its faction between restarts and machines: the assignment is a
-// pure function of the repository, so two people looking at the same town see
-// the same war.
+// A repository has a stable automatic faction, independent of other towns.
 export function factionFor(townId) {
   return factionIds[hash(townId) % factionIds.length];
 }
