@@ -45,13 +45,12 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		return err
 	}
 	report(Progress{Phase: "starting", Task: "Loading recorded bulletins"})
+	// covered is where this process's last window left off when that window
+	// recorded no bulletin: an empty window ends at its Until, a failed one
+	// still owes everything from its Since.
+	var covered time.Time
 	for {
-		since := time.Now().Add(-time.Duration(cfg.Poll))
-		if s != nil {
-			if last := latestUntil(s); !last.IsZero() {
-				since = last
-			}
-		}
+		since := windowStart(s, covered, time.Now(), time.Duration(cfg.Poll))
 		if wait := time.Until(since.Add(time.Duration(cfg.Poll))); !once && wait > 0 {
 			mu.Lock()
 			wake = since.Add(time.Duration(cfg.Poll))
@@ -61,9 +60,13 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 				return err
 			}
 		} else {
-			result, err := WriteBulletin(ctx, cfg, Window{Since: since, Until: time.Now()}, log)
+			window := Window{Since: since, Until: time.Now()}
+			result, err := WriteBulletin(ctx, cfg, window, log)
 			if err == nil {
 				logBulletin(log, result)
+				covered = window.Until
+			} else {
+				covered = window.Since
 			}
 			if _, loadErr := load(); loadErr != nil && err == nil {
 				err = loadErr
@@ -97,6 +100,22 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 			return err
 		}
 	}
+}
+
+// windowStart is where the next bulletin begins: the later of the newest
+// recorded bulletin's end and the window this process already covered without
+// recording one, or one interval ago when there is neither.
+func windowStart(s *State, covered, now time.Time, poll time.Duration) time.Time {
+	since := covered
+	if s != nil {
+		if last := latestUntil(s); last.After(since) {
+			since = last
+		}
+	}
+	if since.IsZero() {
+		since = now.Add(-poll)
+	}
+	return since
 }
 
 // latestUntil is where the most recent recorded bulletin ended.

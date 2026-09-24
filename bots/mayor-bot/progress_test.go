@@ -38,3 +38,30 @@ func TestLatestUntilIsTheNewestWindowEnd(t *testing.T) {
 		t.Fatalf("latest %v", got)
 	}
 }
+
+func TestWindowStartContinuesAnUnrecordedWindow(t *testing.T) {
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	poll := 24 * time.Hour
+	if got := windowStart(nil, time.Time{}, now, poll); !got.Equal(now.Add(-poll)) {
+		t.Fatalf("fresh start %v", got)
+	}
+	// An empty window records no bulletin; the next one must start where it
+	// ended rather than one interval before now, which would skip the merges
+	// between the two windows.
+	emptyEnd := now.Add(-poll - time.Minute)
+	if got := windowStart(nil, emptyEnd, now, poll); !got.Equal(emptyEnd) {
+		t.Fatalf("after an empty window %v, want %v", got, emptyEnd)
+	}
+	// A failed first window still owes everything from its start.
+	failedStart := now.Add(-2*poll - time.Hour)
+	if got := windowStart(nil, failedStart, now, poll); !got.Equal(failedStart) {
+		t.Fatalf("after a failed window %v, want %v", got, failedStart)
+	}
+	recorded := &State{Bulletins: []BulletinRecord{{Until: now.Add(-time.Hour)}}}
+	if got := windowStart(recorded, emptyEnd, now, poll); !got.Equal(now.Add(-time.Hour)) {
+		t.Fatalf("a newer recorded bulletin wins: %v", got)
+	}
+	if got := windowStart(recorded, now.Add(-time.Minute), now, poll); !got.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("a newer empty window wins: %v", got)
+	}
+}
