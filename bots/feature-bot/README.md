@@ -63,8 +63,12 @@ make build
 ./bin/bfb once /path/to/your-repo --focus "onboarding and reporting workflows"
 ./bin/bfb /path/to/your-repo --max-issues 2 --label enhancement
 ./bin/bfb /path/to/your-repo --model YOUR_MODEL_ID --effort low
+./bin/bfb /path/to/your-repo --model RESEARCH_MODEL_ID --review-model REVIEW_MODEL_ID --review-effort high
 ./bin/bfb status /path/to/your-repo
 ./bin/bfb report /path/to/your-repo --branch master --status dry_run > proposals.md
+./bin/bfb publish /path/to/your-repo --branch master --list
+./bin/bfb publish /path/to/your-repo --proposal SELECTOR
+./bin/bfb prune /path/to/your-repo --branch master --older-than 720h
 ./bin/bfb version
 ./bin/bfb retry /path/to/your-repo --once
 ```
@@ -100,7 +104,8 @@ bfb /path/to/repo --json    # structured logs for tools and log collectors
 
 The overview shows the repository, branch and commit, scan stage, active tool,
 uptime, attempt budget, and next check or retry countdown. Larger panes also
-show the selected model, reasoning effort, and investigation focus.
+show the discovery and review model and reasoning effort, and the investigation
+focus.
 
 **Saved** counts cover findings in the configured repository/branch state,
 including the current scan: found, filed, duplicate, pending, dry run, and skipped
@@ -124,7 +129,7 @@ details on exit.
 
 Piped input, redirected stderr, and `TERM=dumb` use scrolling output automatically.
 `--plain` and `--json` disable the dashboard and are mutually exclusive.
-`NO_COLOR` disables dashboard colors. `status`, `report`, `version`, and help keep their
+`NO_COLOR` disables dashboard colors. `status`, `report`, `publish`, `version`, and help keep their
 existing output and never open the dashboard.
 
 ## How it works
@@ -286,6 +291,25 @@ Enterprise, and `github.repo` (`OWNER/REPO`) identifies a local mirror's GitHub
 repository. `agent` also supports `environment`, `auth_method`, `mode`, `model`,
 and `effort`, with selection handled by the shared ACP runner.
 
+Research uses `agent.model` and `agent.effort` (`--model`, `--effort`) for
+discovery and discovery receipt recovery. Independent review uses
+`review_model` and `review_effort` (`--review-model`, `--review-effort`) for
+every review batch, coverage correction and review receipt recovery, including
+pending candidates resumed from a saved scan. Each omitted review setting
+inherits its research setting; CLI flags override JSON, and blank values are
+rejected. Review runs with the same agent command, environment, authentication,
+mode, workspace, timeout and publication gates. The ACP adapter defines which
+model IDs and effort values exist: a review model or effort it does not offer
+stops with a setup error naming the review setting before any review prompt,
+keeps discovered candidates pending, creates no issue and never falls back to
+the research settings. Saved review progress records the effective review model
+and effort; changing either, or resuming progress saved before this identity
+was recorded, reviews pending candidates again from validation through every
+issue batch without repeating discovery. A review setup failure has already
+replaced saved review progress with the failed selection, so reverting the
+setting afterwards also restarts validation. Logs mark `stage=discovery` or
+`stage=review` with the effective model and effort.
+
 `verify` accepts an argument array, such as `["/opt/checks/verify-feature"]`, executed
 in the scan worktree with `FEATURE_COMMIT` and JSON `FEATURE_FINDING` in its environment.
 Keep operator verifiers outside the writable worktree. A nonzero exit blocks filing.
@@ -318,13 +342,114 @@ Reporting only reads saved state: it starts no scan or agent and does not requir
 `gh` or an ACP executable. Explicit configuration permits fully local reading;
 with repository discovery, pass `--branch` to avoid a default-branch network
 lookup. Use the same configuration and branch as the original run.
-Reports omit commit attribution because completed candidates do not retain their
-original commit. Internal workspace paths, transcripts, and publication markers
-are not included as metadata. Proposal and review prose is preserved as Markdown;
+Candidates discovered by this release record the commit at which their cited
+files were validated, shown as `Researched at commit`; candidates saved by older
+releases have no commit and are never attributed to another scan's commit.
+Internal workspace paths, transcripts, and publication markers are not included
+as metadata. Proposal and review prose is preserved as Markdown;
 review that content before sharing it.
 
-Scan worktrees and research files are retained for inspection. Manage their
-retention along with transcripts externally. Agent instructions prohibit feature implementation, fixes,
+### Publish a saved dry-run proposal
+
+After inspecting dry-run proposals, list their selectors and publish exactly one:
+
+```sh
+bfb publish --config feature-bot.json --list
+bfb publish --config feature-bot.json --proposal 3fa2b1c0d9e8
+```
+
+`--list` reads saved state only, like `report`: it starts no agent, fetch or
+GitHub request. Each row shows a stable 12-character selector, eligibility, the
+recorded source commit and the title. Selectors are derived from the saved
+candidate and do not change across restarts; they do not reveal publication markers.
+
+`--proposal` processes only the selected proposal and never starts discovery.
+It fetches the branch and refuses unless the branch is still at the proposal's
+recorded commit, then prepares an isolated worktree at that commit, checks
+the cited source files, and runs a fresh independent review against all open
+and closed issues and discussions. The dry run's review progress is discarded
+on selection. The configured verifier, the tracked-content check, the
+pre-publication history refresh and the saved posting intent all apply as in a
+scan. A `dry_run` setting in the configuration is ignored by `publish`, and
+`--dry-run` is rejected. Other saved proposals are unchanged.
+
+- Success records the issue URL and `submitted` status. Repeating the command
+  prints the saved URL without reviewing or creating anything.
+- A duplicate, uncertain or invalid verdict prevents creation, saves that status
+  and the review explanation, and exits non-zero.
+- An incomplete review, verifier failure, changed tracked content, missing cited
+  file or confirmed create rejection keeps the proposal `dry_run` and saves the
+  selection with its failure. Run the same command to retry in the same
+  worktree; review batches already completed for this selection are reused.
+  Selecting a different proposal abandons an unfinished selection that has not
+  sent a create request. If a saved outcome was not yet retired when the
+  process stopped, the command reports it and never reviews or creates again.
+- A branch that advanced before or during publication refuses it. The proposal
+  is not adapted to the newer revision and no replacement discovery starts;
+  research again with `bfb once --dry-run`.
+- A lost create response keeps the `posting` state and the proposal's request
+  ID. Running the command again reconciles the hidden marker and never sends
+  another create request; another proposal cannot be selected until then. This
+  reconciliation also runs while a scan is active. An existing issue that
+  already carries the marker, such as a hand-copied dry-run body, is never
+  claimed: the proposal is saved as a `duplicate` of it and nothing is created.
+- Proposals saved by older releases have no recorded commit. They remain
+  readable in reports but are refused; research them again with a new dry run.
+
+Publishing (other than reconciling an unknown outcome) is refused while a scan
+is active (`once` or the daemon has unfinished work), and it takes the same
+repository locks as a scan. Each selection owns one isolated worktree. When the
+selection is resolved or replaced, that worktree is recorded for `prune`, which
+removes it only if it is clean at the recorded commit.
+
+### Reclaim completed scan workspaces
+
+Scan worktrees and research files are retained for inspection. Preview old
+successfully completed workspaces, then explicitly apply removal:
+
+```sh
+bfb prune --config feature-bot.json --older-than 720h
+bfb prune --config feature-bot.json --older-than 720h --apply
+```
+
+A successful scan records its workspace, scanned commit and completion time,
+including zero-finding and dry-run scans. The positive duration is required;
+only scans completed strictly before the cutoff qualify. Preview lists eligible
+workspaces, explains skipped records and changes neither worktrees nor saved
+state. Apply uses Git worktree removal, **including untracked and ignored
+research artifacts**. Saved proposals, reviews, issue URLs, history and
+transcripts are preserved.
+
+Pruning takes the same repository, state and checkout locks as research and
+refuses to run while research holds them. It checks workspace containment, Git
+ownership, detached HEAD, the recorded commit, tracked or staged changes and
+Git locks. Active scans (including exhausted retries and unresolved
+publication), failed or discarded scans, and workspaces without completion
+records are never removed. Symlinked paths, foreign, modified or locked
+worktrees are skipped. Interrupted cleanup can be rerun: a missing directory
+has only its matching Git registration removed, and a record is retired once
+both are gone. A directory an interrupted removal left without its `.git` file
+is deleted, and its registration removed, only when the private index matches
+the recorded commit and no remaining tracked file was modified. Otherwise it is
+skipped; inspect it, keep what you need, then delete the directory and rerun
+prune, which removes the registration once its index holds no staged changes
+(or run `git -C CHECKOUT worktree remove --force DIRECTORY` yourself). A failed
+removal, or a skip caused by a Git or filesystem error rather than a policy,
+keeps its record and makes the command exit non-zero after the remaining
+workspaces are processed.
+
+Pruning requires Git 2.36 or newer. Inherited `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE` and similar repository overrides are ignored. With explicit
+configuration, pruning needs local Git and performs no fetch,
+GitHub request or agent execution; `gh` and an ACP executable are not required.
+Repository discovery may look up the default branch; pass `--branch` to avoid
+that lookup. Use the same configuration and branch as the original scan.
+Workspaces from releases before completion records, and transcripts, remain
+externally managed; pruning never runs `git gc`.
+
+### Agent boundaries
+
+Agent instructions prohibit feature implementation, fixes,
 commits, pushes, and direct GitHub writes; tracked source changes or a changed
 HEAD invalidate the scan. Evidence is independently reviewed by the LLM, not
 proof that tests are correct. As in the sibling bots, ACP permission requests

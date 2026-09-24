@@ -1,4 +1,4 @@
-import { safeURL } from "./town.js";
+import { safeURL, parseQuietHours, formatQuietHours } from "./town.js";
 
 const $ = (s) => document.querySelector(s);
 const esc = (v) =>
@@ -302,10 +302,37 @@ export function management({ api, getTown, getState, refresh }) {
     $("#settings-merge-policy").value = t.config.merge_policy || "bot";
     $("#settings-simplifier-mode").value = t.config.simplifier_mode || "suggest";
     $("#settings-review-close-severity").value = t.config.review_close_severity || "P2";
+    const own = t.config.quiet_hours;
+    $("#settings-quiet-mode").value = own == null ? "default" : own.length ? "own" : "none";
+    $("#settings-quiet-hours").value = own?.length ? formatQuietHours(own) : "";
+    syncQuietControls();
     $("#settings-success").textContent = "";
     showProfile(Object.hasOwn(profileNames, role) ? role : "");
     $("#settings-dialog").showModal();
     void loadCatalog();
+  }
+  // The quiet-hours text applies only to the town's own windows; the note
+  // names the service default the town would otherwise follow.
+  function syncQuietControls() {
+    const mode = $("#settings-quiet-mode").value;
+    $("#settings-quiet-hours").hidden = mode !== "own";
+    const service = getState()?.service_config?.quiet_hours || [];
+    const fallback = service.length ? `The service default is ${formatQuietHours(service)}.` : "The service sets no default.";
+    $("#settings-quiet-note").textContent =
+      mode === "own"
+        ? "Write each window as DAYS HH:MM-HH:MM and join windows with “;”, on the clock of the machine running Town. An end at or before the start runs past midnight. No new agent work or GitHub writes by Town start inside a window; running work finishes."
+        : mode === "none"
+          ? `This town ignores the service default. ${fallback}`
+          : fallback;
+  }
+  $("#settings-quiet-mode").onchange = syncQuietControls;
+  function quietEdit() {
+    const mode = $("#settings-quiet-mode").value;
+    if (mode === "default") return { windows: null };
+    if (mode === "none") return { windows: [] };
+    const windows = parseQuietHours($("#settings-quiet-hours").value);
+    if (!windows.length) throw new Error("Enter at least one quiet window, or choose No quiet hours.");
+    return { windows };
   }
   $("#town-settings").onclick = () => openSettings();
   document.addEventListener("open-settings", (event) =>
@@ -415,6 +442,7 @@ export function management({ api, getTown, getState, refresh }) {
     const version = settingsVersion;
     return busyForm(e, "#settings-error", async () => {
       const role = settingsRole;
+      const quiet = quietEdit();
       rememberDraft();
       settingsSaving = true;
       cancelChoices();
@@ -426,6 +454,7 @@ export function management({ api, getTown, getState, refresh }) {
           merge_policy: $("#settings-merge-policy").value,
           simplifier_mode: $("#settings-simplifier-mode").value,
           review_close_severity: $("#settings-review-close-severity").value,
+          quiet_hours: quiet,
         });
         if (version === settingsVersion)
           $("#settings-success").textContent = `${profileNames[role]} saved.`;
@@ -536,6 +565,9 @@ export function management({ api, getTown, getState, refresh }) {
       renderRequests();
     });
 
+  // Receipt checks in flight, by town and request: the history is rebuilt on
+  // every snapshot, so the disabled state lives here rather than on a button.
+  const rechecking = new Set();
   function renderRequests() {
     const t = getState()?.towns[requestTown];
     const requests = Object.values(t?.requests || {})
@@ -545,25 +577,31 @@ export function management({ api, getTown, getState, refresh }) {
       requests
         .map(
           (r) =>
-            `<article class="submission"><strong>${esc(r.title)}</strong><small>${esc(r.kind)} · ${esc(r.status)}${r.number ? ` · #${r.number}` : ""}</small><p>${esc(r.detail || "Waiting to contact GitHub…")}</p>${safeURL(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open issue ↗</a>` : ""}${r.status === "uncertain" ? `<button type="button" data-recheck="${esc(r.id)}">Check GitHub for receipt</button>` : ""}</article>`,
+            `<article class="submission"><strong>${esc(r.title)}</strong><small>${esc(r.kind)} · ${esc(r.status)}${r.number ? ` · #${r.number}` : ""}</small><p>${esc(r.detail || "Waiting to contact GitHub…")}</p>${safeURL(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open issue ↗</a>` : ""}${r.status === "uncertain" ? `<button type="button" data-recheck="${esc(r.id)}"${rechecking.has(`${requestTown}\u0000${r.id}`) ? ' disabled aria-busy="true"' : ""}>Check GitHub for receipt</button>` : ""}</article>`,
         )
         .join("") || '<p class="muted">Your submissions will appear here.</p>';
     $("#request-history")
       .querySelectorAll("[data-recheck]")
       .forEach((b) => {
         b.onclick = async () => {
-          b.disabled = true;
+          const town = requestTown,
+            key = `${town}\u0000${b.dataset.recheck}`;
+          if (rechecking.has(key)) return;
+          rechecking.add(key);
+          renderRequests();
           try {
+            // A stalled check must not hold the button until reload.
             await api("/api/requests/check", {
-              town: requestTown,
+              town,
               id: b.dataset.recheck,
-            });
+            }, AbortSignal.timeout(30000));
             $("#request-success").textContent =
               "Receipt check queued. This only reads GitHub.";
           } catch (e) {
             $("#request-error").textContent = e.message;
           } finally {
-            b.disabled = false;
+            rechecking.delete(key);
+            renderRequests();
           }
         };
       });

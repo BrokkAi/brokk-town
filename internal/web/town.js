@@ -75,13 +75,17 @@ export const roadSegments = [
     [positions[role][0], houseRoad(role)],
   ]),
 ];
+// settled marks a task with no work left. An issue Town is closing counts:
+// only the GitHub write remains, and the decline behind it is final.
+export function settled(task) {
+  return (
+    ["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(task.stage) ||
+    (task.kind === "issue" && task.stage === "closing")
+  );
+}
 export function queueFor(town, role) {
   return Object.values(town.tasks || {})
-    .filter(
-      (t) =>
-        t.house === role &&
-        !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
-    )
+    .filter((t) => t.house === role && !settled(t))
     .sort(
       (a, b) =>
         Number(!!b.blocked) - Number(!!a.blocked) ||
@@ -199,10 +203,8 @@ export function townSummary(town) {
     ).length,
     blocked: tasks.filter((t) => t.blocked).length,
     failed: workers.filter((w) => w.status === "failed").length,
-    queued: tasks.filter(
-      (t) => !["complete", "closed", "merged", "shipped", "implemented", "declined"].includes(t.stage),
-    ).length,
-    decisions: tasks.filter((t) => t.mayoral_decision === "pending").length,
+    queued: tasks.filter((t) => !settled(t)).length,
+    decisions: tasks.filter((t) => t.mayoral_decision === "pending" && !t.blocked).length,
     release: town.last_release || "No releases yet",
   };
 }
@@ -281,7 +283,9 @@ export function inbox(state) {
     });
     for (const task of Object.values(town.tasks || {})) {
       if (!task) continue;
-      if (task.mayoral_decision === "pending") {
+      // A blocked decision (a pull request retargeted off the branch) is not
+      // one Mayor Bot takes up either; it shows as blocked instead.
+      if (task.mayoral_decision === "pending" && !task.blocked) {
         counts.decisions++;
         decisions.push({
           ...base(task),
@@ -360,13 +364,14 @@ export const taskStatuses = {
   waiting_github: { label: "Waiting on GitHub", className: "waiting-github" },
   ready: { label: "Ready", className: "ready" },
   blocked: { label: "Blocked", className: "blocked" },
+  snoozed: { label: "Snoozed", className: "snoozed" },
   failed: { label: "Failed", className: "failed" },
   inconclusive: { label: "Inconclusive", className: "inconclusive" },
   uncertain_write: { label: "Uncertain write", className: "uncertain-write" },
   unreleased: { label: "Unreleased", className: "unreleased" },
   implemented: { label: "Implemented", className: "implemented" },
   complete: { label: "Done", className: "complete" },
-  closing: { label: "Closing after review", className: "closed" },
+  closing: { label: "Closing", className: "closed" },
   closed: { label: "Closed", className: "closed" },
   merged: { label: "Merged", className: "merged" },
   shipped: { label: "Shipped", className: "shipped" },
@@ -388,11 +393,18 @@ export function normalizeView(value) {
   return viewModes.includes(value) ? value : "town";
 }
 
+// A control's identity survives a redraw that replaces its element: the same
+// data attributes (or, for the inspector's one-off buttons, the same id) name
+// the same control in the new markup.
+function focusKey(target) {
+  const dataset = target.dataset || {};
+  return dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || dataset.action || (dataset.judgment && dataset.outcome ? `${dataset.judgment}:${dataset.outcome}` : "") || target.id || "";
+}
 export function focusIdentity(target) {
   if (!target) return null;
-  const surface = target.closest?.("#towns, #houses, #journal, #board, #compact, #inbox-list")?.id || "";
+  const surface = target.closest?.("#towns, #houses, #journal, #board, #compact, #inbox-list, #inspection")?.id || "";
   const dataset = target.dataset || {};
-  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
+  const key = focusKey(target);
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return surface && key ? { surface, key, town } : null;
 }
@@ -400,9 +412,22 @@ export function focusIdentity(target) {
 export function focusMatches(target, identity) {
   if (!identity || !target) return false;
   const dataset = target.dataset || {};
-  const key = dataset.town || dataset.house || dataset.task || dataset.cargo || dataset.boardTask || dataset.boardHouse || dataset.compactTask || dataset.compactHouse || dataset.inboxKey || "";
+  const key = focusKey(target);
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
   return key === identity.key && (!identity.town || town === identity.town);
+}
+
+// reconnectDelay is how long the event stream waits before its next attempt:
+// exponential from one second, capped at thirty, and jittered into the upper
+// half of that window so many tabs that lost the same service do not all
+// return in the same instant.
+export const reconnectBaseMs = 1000;
+export const reconnectMaxMs = 30000;
+export function reconnectDelay(attempt, random = Math.random) {
+  const n = Math.max(0, Math.floor(Number(attempt) || 0));
+  const ceiling = Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** Math.min(n, 16));
+  const r = Math.min(1, Math.max(0, Number(random()) || 0));
+  return Math.round(ceiling / 2 + (ceiling / 2) * r);
 }
 
 // Which operator controls make sense for a worker in its current state.
@@ -436,6 +461,19 @@ export function townControls(town) {
     : "Bug Bot, Feature Bot, Issue Bot, Review Bot, Simplifier Bot, Mayor Bot, and Release Bot";
   if (!awake)
     return { status: "Paused", statusClass: "paused", primary: { action: "start", label: `▶ Wake the town (${agents.length})` }, secondary: null, detail: `Starts ${names}. Repo Bot already watches the repository.` };
+  // Quiet hours are a scheduled pause: the houses stay awake and resume on
+  // their own, so the actions are those of an awake town.
+  if (town?.quiet_hours?.active) {
+    const until = town.quiet_hours.until ? ` · until ${quietTime(town.quiet_hours.until)}` : "";
+    const full = awake === agents.length;
+    return {
+      status: `Quiet hours${until}`,
+      statusClass: "quiet",
+      primary: full ? { action: "pause", label: "Ⅱ Pause the town" } : { action: "start", label: "▶ Wake the rest" },
+      secondary: full ? null : { action: "pause", label: "Ⅱ Pause all" },
+      detail: quietNote(town),
+    };
+  }
   if (awake === agents.length)
     return { status: `Awake · ${awake} agent${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Ⅱ Pause the town" }, secondary: null, detail: "" };
   return {
@@ -474,6 +512,7 @@ export function scheduleLabel(worker, now = Date.now()) {
   if (worker?.recovery) return "Recovery required";
   if (!worker?.enabled) return "Paused";
   if (worker?.agent) return "After current run";
+  if (worker?.status === "quiet") return "Quiet hours";
   const next = Date.parse(worker?.next || "");
   if (!Number.isFinite(next)) return "Waiting for assignment";
   if (next <= now) return "Due now";
@@ -607,7 +646,140 @@ export function profileSummary(profile) {
   };
 }
 
-export function taskStatus(town, task) {
+// Quiet hours are weekly windows on the service's local clock in which Town
+// starts no new agent work and makes none of its own GitHub writes. The
+// compact form is what bt settings --quiet-hours takes: windows joined by ";",
+// each "DAYS HH:MM-HH:MM". The service validates again and has the last word.
+const quietWeek = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const quietAliases = { daily: "mon-sun", weekdays: "mon-fri", weekends: "sat,sun" };
+
+function quietMinutes(value, end) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const hours = Number(match[1]), minutes = Number(match[2]);
+  if (minutes > 59) return null;
+  if (end && hours === 24 && minutes === 0) return 1440;
+  return hours > 23 ? null : hours * 60 + minutes;
+}
+
+function quietDays(value, index) {
+  const days = [];
+  for (const item of (quietAliases[value.toLowerCase()] || value.toLowerCase()).split(",")) {
+    const [from, to] = item.split("-");
+    const a = quietWeek.indexOf(from);
+    if (a < 0) throw new Error(`Quiet window ${index}: "${from}" is not one of mon, tue, wed, thu, fri, sat, sun.`);
+    if (to === undefined) {
+      if (!days.includes(from)) days.push(from);
+      continue;
+    }
+    const b = quietWeek.indexOf(to);
+    if (b < 0) throw new Error(`Quiet window ${index}: "${to}" is not one of mon, tue, wed, thu, fri, sat, sun.`);
+    for (let i = a; ; i = (i + 1) % 7) {
+      if (!days.includes(quietWeek[i])) days.push(quietWeek[i]);
+      if (i === b) break;
+    }
+  }
+  return days;
+}
+
+// A blank spec is an explicit empty schedule; a spec with only separators is
+// a mistake and is refused rather than read as "no quiet hours".
+export function parseQuietHours(spec) {
+  const windows = [];
+  String(spec || "").split(";").map((part) => part.trim()).filter(Boolean).forEach((part, i) => {
+    const index = i + 1;
+    const fields = part.split(/\s+/);
+    if (fields.length !== 2)
+      throw new Error(`Quiet window ${index}: write DAYS HH:MM-HH:MM, such as mon-fri 18:00-08:00.`);
+    const days = quietDays(fields[0], index);
+    const [start, end, extra] = fields[1].split("-");
+    if (end === undefined || extra !== undefined)
+      throw new Error(`Quiet window ${index}: "${fields[1]}" must be HH:MM-HH:MM.`);
+    const from = quietMinutes(start, false), to = quietMinutes(end, true);
+    if (from === null) throw new Error(`Quiet window ${index}: start "${start}" must be HH:MM from 00:00 to 23:59.`);
+    if (to === null) throw new Error(`Quiet window ${index}: end "${end}" must be HH:MM from 00:00 to 24:00.`);
+    if (from === to) throw new Error(`Quiet window ${index}: start and end are both ${start}; use 00:00-24:00 for a whole day.`);
+    windows.push({ days, start, end });
+  });
+  if (!windows.length && String(spec || "").trim())
+    throw new Error("No quiet windows given. Write DAYS HH:MM-HH:MM, or leave the field empty for none.");
+  return windows;
+}
+
+export function formatQuietHours(windows) {
+  return (windows || []).map((w) => `${(w.days || []).join(",")} ${w.start}-${w.end}`).join("; ");
+}
+
+function quietTime(value) {
+  const at = new Date(value);
+  return at.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// quietNote is one line on a town's quiet hours: why work is held and until
+// when, or when the next window begins. Empty when no quiet hours apply.
+export function quietNote(town) {
+  const quiet = town?.quiet_hours;
+  if (!quiet?.source) return "";
+  const from = quiet.source === "service" ? " (service default)" : "";
+  if (quiet.active) {
+    const until = quiet.until ? `until ${quietTime(quiet.until)}` : "all week";
+    return `Quiet hours ${until}${from}: no new agent work or GitHub writes by Town; running work finishes and the repository is still watched.`;
+  }
+  return quiet.next ? `Quiet hours${from} next begin ${quietTime(quiet.next)}.` : "";
+}
+
+// A snooze is the operator's own hold on one task, set with a resume time.
+// The service clears it when that time passes; until the snapshot says so, the
+// time itself decides, so an expired snooze never reads as still holding.
+export function taskSnooze(task, now = Date.now()) {
+  const until = Date.parse(task?.deferred_until || "");
+  if (!Number.isFinite(until) || until <= now) return null;
+  return { until: new Date(until), reason: task.defer_reason || "" };
+}
+
+// Only an issue or pull request with work still ahead of it can be snoozed.
+// The service applies the same rule and explains a refusal.
+export function taskSnoozable(task) {
+  return (task?.kind === "issue" || task?.kind === "pr") &&
+    !["merged", "closed", "closing", "declined", "implemented"].includes(task?.stage);
+}
+
+// defaultSnoozeUntil suggests tomorrow at the next whole hour, as the local
+// value a datetime-local input takes.
+export function defaultSnoozeUntil(now = Date.now()) {
+  const at = new Date(now + 86400000);
+  at.setMinutes(0, 0, 0);
+  at.setHours(at.getHours() + 1);
+  return localInputValue(at);
+}
+
+export function localInputValue(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// snoozeRequest turns the dialog's local time and reason into the control
+// payload, or explains what is wrong with them. The service checks again.
+export function snoozeRequest(value, reason, now = Date.now()) {
+  const at = Date.parse(value || "");
+  if (!Number.isFinite(at)) return { error: "Choose the date and time the task should resume." };
+  if (at <= now) return { error: "The resume time must be in the future." };
+  if (at > now + 366 * 86400000) return { error: "The resume time must be within 366 days." };
+  const note = String(reason || "").trim();
+  // Count characters as the service does (code points), not UTF-16 units.
+  if ([...note].length > 200) return { error: "Keep the reason to 200 characters or fewer." };
+  return { until: new Date(at).toISOString().replace(/\.\d{3}Z$/, "Z"), reason: note };
+}
+
+export function snoozeLabel(task, now = Date.now()) {
+  const snooze = taskSnooze(task, now);
+  if (!snooze) return "";
+  const at = snooze.until;
+  const sameDay = new Date(now).toDateString() === at.toDateString();
+  return `Snoozed until ${sameDay ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : at.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`;
+}
+
+export function taskStatus(town, task, now = Date.now()) {
   const stage = normalized(task?.stage);
   const intent = intentFor(town, task);
   const intentStatus = normalized(intent?.status);
@@ -625,14 +797,18 @@ export function taskStatus(town, task) {
     normalized(task?.audit?.verdict) === "inconclusive"
   )
     return "inconclusive";
-  if (task?.blocked || stage === "blocked") return "blocked";
-  if (stage === "failed") return "failed";
   const worker = town?.workers?.[task?.house];
   const run = worker?.run;
-  if ((workerIsActive(worker) || worker?.agent) && run &&
+  const running = !!((workerIsActive(worker) || worker?.agent) && run &&
       ((task?.kind === "issue" && task.number > 0 && run.issue === task.number) ||
-       (task?.kind === "pr" && task.number > 0 && run.pr === task.number)))
-    return "working";
+       (task?.kind === "pr" && task.number > 0 && run.pr === task.number)));
+  // A snooze outranks blocked and failed: the operator has set the task
+  // aside, so it is not asking for attention until it resumes. A run already
+  // under way when it was snoozed still finishes, and shows as working.
+  if (!running && taskSnooze(task, now)) return "snoozed";
+  if (task?.blocked || stage === "blocked") return "blocked";
+  if (stage === "failed") return "failed";
+  if (running) return "working";
   if (stage === "ready") return "ready";
   if (stage === "draft") return "draft";
   if (stage === "open") return "open";
@@ -652,6 +828,7 @@ export function boardColumn(task) {
   if (status === "unreleased") return "ready";
   if (attentionStatuses.includes(status)) return "blocked";
   if (status === "simplifying") return "simplifier";
+  if (status === "snoozed") return "queued";
   if (status === "unknown") return "open";
   if (status === "ready") return "ready";
   if (["waiting_github", "review"].includes(status) || ["awaiting_author", "checks"].includes(stage)) return "review";
@@ -661,8 +838,8 @@ export function boardColumn(task) {
   return "open";
 }
 
-export function projectTask(town, task) {
-  const status = taskStatus(town, task);
+export function projectTask(town, task, now = Date.now()) {
+  const status = taskStatus(town, task, now);
   const worker = town?.workers?.[task?.house];
   return {
     ...task,
@@ -670,6 +847,7 @@ export function projectTask(town, task) {
     statusLabel: taskStatuses[status]?.label || status,
     statusClass: taskStatuses[status]?.className || status,
     blocked: !!task?.blocked,
+    snooze: taskSnooze(task, now),
     workerStatus: normalized(worker?.status) || "paused",
     // A queued task must use the configured profile even while its house has
     // another task running with a captured profile.

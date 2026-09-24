@@ -29,7 +29,7 @@ class Element {
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 let elements;
 beforeEach(() => {
-  elements = Object.fromEntries([...html.matchAll(/<([a-z]+)\b[^>]*\bid="([^"]+)"[^>]*>/gs)]
+  elements = Object.fromEntries([...html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*\bid="([^"]+)"[^>]*>/gs)]
     .map(([, tag, id]) => [id, new Element(tag)]));
   for (const [, id, body] of html.matchAll(/<form id="([^"]+)">([\s\S]*?)<\/form>/g)) {
     elements[id].children = [...body.matchAll(/\bid="([^"]+)"/g)].map(([, child]) => elements[child]);
@@ -140,6 +140,7 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
     merge_policy: "bot",
     simplifier_mode: "suggest",
     review_close_severity: "P2",
+    quiet_hours: { windows: null },
   });
   assert.equal(elements["settings-dialog"].open, true);
   assert.match(elements["settings-success"].textContent, /Review Bot saved/);
@@ -152,6 +153,35 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
   assert.equal(app.saves()[1].body.agent.version, "1.0");
 });
 
+
+test("quiet hours follow the default, opt out, or save the town's own windows", async () => {
+  const app = fixture();
+  await open();
+  assert.equal(elements["settings-quiet-mode"].value, "default");
+  assert.equal(elements["settings-quiet-hours"].hidden, true);
+  edit("settings-quiet-mode", "own", "onchange");
+  assert.equal(elements["settings-quiet-hours"].hidden, false);
+  elements["settings-quiet-hours"].value = "weekdays 18:00-08:00; weekends 00:00-24:00";
+  await save();
+  assert.deepEqual(app.saves()[0].body.quiet_hours, {
+    windows: [
+      { days: ["mon", "tue", "wed", "thu", "fri"], start: "18:00", end: "08:00" },
+      { days: ["sat", "sun"], start: "00:00", end: "24:00" },
+    ],
+  });
+  elements["settings-quiet-hours"].value = "mon 25:00-01:00";
+  await save();
+  assert.equal(app.saves().length, 1, "an invalid window never reaches the service");
+  assert.match(elements["settings-error"].textContent, /start "25:00" must be HH:MM/);
+  edit("settings-quiet-mode", "none", "onchange");
+  await save();
+  assert.deepEqual(app.saves()[1].body.quiet_hours, { windows: [] });
+  // A town that saved its own windows reopens showing them.
+  app.town.config.quiet_hours = [{ days: ["sat", "sun"], start: "00:00", end: "24:00" }];
+  await open();
+  assert.equal(elements["settings-quiet-mode"].value, "own");
+  assert.equal(elements["settings-quiet-hours"].value, "sat,sun 00:00-24:00");
+});
 
 test("Repo Bot exposes and saves its repair agent profile", async () => {
   const app = fixture();
@@ -271,4 +301,48 @@ test("a failed save from a closed dialog cannot affect a reopened profile", asyn
   assert.equal(elements["agent-role"].value, "issue");
   assert.equal(elements["settings-error"].textContent, "");
   assert.equal(elements["model-input"].disabled, false);
+});
+
+test("a receipt check stays disabled across redraws and is released when it times out", async () => {
+  const deadlines = [];
+  const timeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => {
+    const controller = new AbortController();
+    deadlines.push({ ms, controller });
+    return controller.signal;
+  };
+  try {
+    const checks = [];
+    const { town } = fixture(async (url, body, signal) => {
+      if (url !== "/api/requests/check") return {};
+      checks.push({ body, signal });
+      return new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("no answer"))));
+    });
+    town.requests = { r1: { id: "r1", title: "Flaky export", kind: "bug", status: "uncertain", created: "2026-09-01T00:00:00Z" } };
+    // The page's request history holds one button per uncertain submission.
+    const history = elements["request-history"];
+    Object.defineProperty(history, "innerHTML", {
+      set(html) {
+        this._html = html;
+        this.children = [...html.matchAll(/data-recheck="([^"]+)"([^>]*)>/g)].map(([, id, rest]) =>
+          Object.assign(new Element("button"), { dataset: { recheck: id }, disabled: /\bdisabled\b/.test(rest) }));
+      },
+      get() { return this._html; },
+    });
+    history.querySelectorAll = () => history.children;
+    elements["new-request"].onclick();
+    history.children[0].onclick();
+    assert.equal(checks.length, 1);
+    assert.equal(deadlines.at(-1).ms, 30000, "the check has a deadline");
+    assert.equal(checks[0].signal, deadlines.at(-1).controller.signal);
+    assert.equal(history.children[0].disabled, true, "the redrawn button stays disabled while the check is out");
+    history.children[0].onclick();
+    assert.equal(checks.length, 1, "a second press sends nothing");
+    deadlines.at(-1).controller.abort();
+    await tick();
+    assert.equal(history.children[0].disabled, false, "the deadline releases the button");
+    assert.equal(elements["request-error"].textContent, "no answer");
+  } finally {
+    AbortSignal.timeout = timeout;
+  }
 });

@@ -489,3 +489,108 @@ func TestHarnessCatalogAPIIncludesRegistryAndSupplements(t *testing.T) {
 		}
 	}
 }
+
+func TestOversizedBodyIsRejectedAsTooLarge(t *testing.T) {
+	_, h := fixture(t)
+	body := `{"town":"acme/managed","id":"x","kind":"bug","title":"t","body":"` + strings.Repeat("a", 70<<10) + `"}`
+	r := call(t, h.URL, "POST", "/api/requests", body, "test-key", "")
+	var v struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&v)
+	if r.StatusCode != http.StatusRequestEntityTooLarge || v.Error != "request body exceeds the 64 KiB limit" {
+		t.Fatal(r.Status, v.Error)
+	}
+}
+
+func TestTrailingBytesPastTheLimitAreRejectedAsTooLarge(t *testing.T) {
+	_, h := fixture(t)
+	body := `{"town":"acme/managed","role":"issue","action":"start","task":""}` + strings.Repeat(" ", 70<<10) + "{}"
+	r := call(t, h.URL, "POST", "/api/control", body, "test-key", "")
+	if r.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatal(r.Status)
+	}
+}
+
+func TestCheckRequestDistinguishesUnknownFromSettled(t *testing.T) {
+	s, h := fixture(t)
+	s.Supervisor.Publisher = issuePublisher{}
+	if r := call(t, h.URL, "POST", "/api/towns", `{"repo":"acme/managed"}`, "test-key", ""); r.StatusCode != 201 {
+		t.Fatal(r.Status)
+	}
+	id := "12345678123456781234567812345678"
+	if r := call(t, h.URL, "POST", "/api/requests", `{"town":"acme/managed","id":"`+id+`","kind":"bug","title":"t","body":"b"}`, "test-key", ""); r.StatusCode != 202 {
+		t.Fatal(r.Status)
+	}
+	check := func(request string) (int, string) {
+		r := call(t, h.URL, "POST", "/api/requests/check", `{"town":"acme/managed","id":"`+request+`"}`, "test-key", "")
+		var v struct {
+			Error string `json:"error"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&v)
+		return r.StatusCode, v.Error
+	}
+	if status, message := check("ffffffffffffffffffffffffffffffff"); status != http.StatusNotFound || message != `unknown request "ffffffffffffffffffffffffffffffff"` {
+		t.Fatal(status, message)
+	}
+	if status, message := check(id); status != http.StatusBadRequest || message != "request does not need reconciliation" {
+		t.Fatal(status, message)
+	}
+}
+
+func TestControlSnoozesAndClearsATask(t *testing.T) {
+	s, h := fixture(t)
+	if err := s.Store.Update(func(st *town.State) error {
+		x, err := st.Add(town.DefaultConfig("acme/snooze"))
+		if err != nil {
+			return err
+		}
+		x.Tasks["issue:3"] = &town.Task{ID: "issue:3", Kind: "issue", Number: 3, Title: "Noisy", House: town.Issue, Stage: "queued"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	post := func(body string) (int, string) {
+		r := call(t, h.URL, "POST", "/api/control", body, "test-key", "")
+		var v struct {
+			Error string `json:"error"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&v)
+		return r.StatusCode, v.Error
+	}
+	for body, want := range map[string]string{
+		`{"town":"acme/snooze","role":"issue","action":"defer","task":"issue:3","until":"tomorrow"}`:             "RFC 3339",
+		`{"town":"acme/snooze","role":"issue","action":"defer","task":"issue:3","until":"2001-01-01T00:00:00Z"}`: "not in the future",
+		`{"town":"acme/snooze","role":"issue","action":"retry","task":"issue:3","until":"2001-01-01T00:00:00Z"}`: "only to the defer action",
+		`{"town":"acme/snooze","role":"issue","action":"undefer","task":"issue:3"}`:                              "not snoozed",
+	} {
+		if status, message := post(body); status != 400 || !strings.Contains(message, want) {
+			t.Fatalf("%s: %d %q, want %q", body, status, message, want)
+		}
+	}
+	until := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
+	if status, message := post(`{"town":"acme/snooze","role":"issue","action":"defer","task":"issue:3","until":"` + until.Format(time.RFC3339) + `","reason":"vendor fix"}`); status != 200 {
+		t.Fatal(status, message)
+	}
+	r := call(t, h.URL, "GET", "/api/state", "", "test-key", "")
+	var public struct {
+		Towns map[string]struct {
+			Tasks map[string]struct {
+				DeferredUntil time.Time `json:"deferred_until"`
+				DeferReason   string    `json:"defer_reason"`
+			} `json:"tasks"`
+		} `json:"towns"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&public); err != nil {
+		t.Fatal(err)
+	}
+	if task := public.Towns["acme/snooze"].Tasks["issue:3"]; !task.DeferredUntil.Equal(until) || task.DeferReason != "vendor fix" {
+		t.Fatalf("the snapshot does not publish the snooze: %+v", task)
+	}
+	if status, message := post(`{"town":"acme/snooze","role":"issue","action":"undefer","task":"issue:3"}`); status != 200 {
+		t.Fatal(status, message)
+	}
+	if task := s.Store.Snapshot().Towns["acme/snooze"].Tasks["issue:3"]; !task.DeferredUntil.IsZero() {
+		t.Fatalf("undefer left the snooze: %+v", task)
+	}
+}

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BrokkAi/brokk-town/internal/harness"
 )
@@ -147,6 +149,14 @@ func (s *Supervisor) schedule(ctx context.Context) {
 	if state.Demo {
 		return
 	}
+	if now := s.now(); expiredDeferrals(state, now) {
+		s.update(func(st *State) error { expireDeferrals(st, now); return nil })
+		state = s.Store.Snapshot()
+	}
+	if now := s.now(); quietTransitionDue(state, now) {
+		s.update(func(st *State) error { recordQuietTransitions(st, now); return nil })
+		state = s.Store.Snapshot()
+	}
 	for _, t := range state.Towns {
 		if t.Deleted {
 			continue
@@ -231,6 +241,10 @@ func (s *Supervisor) claimRepair(id string) bool {
 	if s.Store.budgetExhausted(id, s.now()) {
 		return false
 	}
+	// A repair pushes to the branch, so quiet hours hold it too.
+	if s.Store.quietActive(id, s.now()) {
+		return false
+	}
 	if s.repairing == nil {
 		s.repairing = map[string]bool{}
 	}
@@ -262,12 +276,11 @@ func (s *Supervisor) releaseWorker(key string) {
 // SetCapacity commits before waking scheduling. Existing runs keep their slots
 // until cleanup finishes even if the new limit is lower than current usage.
 func (s *Supervisor) SetCapacity(limit int) error {
-	cfg := ServiceConfig{MaxWorkers: limit}
-	if err := cfg.Validate(); err != nil {
+	if err := (ServiceConfig{MaxWorkers: limit}).Validate(); err != nil {
 		return err
 	}
 	s.mu.Lock()
-	err := s.Store.Update(func(st *State) error { st.ServiceConfig = cfg; return nil })
+	err := s.Store.Update(func(st *State) error { st.ServiceConfig.MaxWorkers = limit; return nil })
 	s.mu.Unlock()
 	if err == nil {
 		s.notifyScheduler()
@@ -390,8 +403,8 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil && !taskOwned {
 			w.Status = "failed"
 			w.Error = err.Error()
-			w.Task = "Work paused: " + err.Error()
-			w.Next = s.now().Add(15 * time.Minute)
+			w.Task = workPausedPrefix + err.Error()
+			w.Next = s.now().Add(houseFailureBackoff)
 			st.Event(t.ID, "error", string(r), "hall", "", string(r)+" needs attention", s.now())
 			if r == Repo {
 				current.Error = err.Error()
@@ -482,7 +495,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			}
 		}
 		if ValidAgentRole(r) {
-			taskID, revision := outcomeAttemptTask(t, r, result)
+			taskID, revision := outcomeAttemptTask(t, r, result, started)
 			status, detail := "attempted", "Worker attempt completed"
 			if err != nil && !errors.Is(err, context.Canceled) {
 				status, detail = "blocked", err.Error()
@@ -601,14 +614,17 @@ func latestProgress(ch chan Progress, p Progress) {
 	}
 }
 
-func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
+// outcomeAttemptTask names the task one attempt worked on. An issue run
+// reports its issue; only a run that failed before choosing one falls back to
+// the issue the house would have chosen, never one the operator snoozed.
+func outcomeAttemptTask(t *Town, role Role, result RunResult, now time.Time) (string, string) {
 	if role == Hall {
 		if task := t.Tasks[result.JudgedTask]; task != nil {
 			return task.ID, task.Head
 		}
 		return result.JudgedTask, ""
 	}
-	if role == Simplifier && result.Issue > 0 {
+	if (role == Simplifier || role == Issue) && result.Issue > 0 {
 		id := fmt.Sprintf("issue:%d", result.Issue)
 		if task := t.Tasks[id]; task != nil {
 			return id, task.Head
@@ -625,7 +641,7 @@ func outcomeAttemptTask(t *Town, role Role, result RunResult) (string, string) {
 	if role == Issue {
 		var selected *Task
 		for _, task := range t.Tasks {
-			if task.Kind == "issue" && task.House == Issue && (task.Stage == "queued" || task.Stage == "blocked") && (selected == nil || task.Number < selected.Number) {
+			if task.Kind == "issue" && task.House == Issue && (task.Stage == "queued" || task.Stage == "blocked") && !task.Deferred(now) && (selected == nil || task.Number < selected.Number) {
 				selected = task
 			}
 		}
@@ -903,6 +919,13 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 			return fmt.Errorf("preserve issue-bot jobs after inventory: %w", err)
 		}
 	}
+	// Closing declined issues and retired pull requests and filing follow-ups
+	// are Town's own GitHub writes. Quiet hours leave them for the first
+	// inventory after the window; each is idempotent or committed step by
+	// step, so waiting loses nothing.
+	if s.Store.quietActive(t.ID, s.now()) {
+		return nil
+	}
 	current := s.Store.Snapshot().Towns[t.ID]
 	err = errors.Join(s.closeDeclinedProposals(ctx, current, remote), s.closeRetiredPulls(ctx, current, remote))
 	return errors.Join(err, s.fileFollowUps(ctx, s.Store.Snapshot().Towns[t.ID]))
@@ -912,6 +935,14 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 // Mayor's decline for Town's own proposals, or Simplifier's auto decline for an
 // intake issue. Closing is idempotent, so an issue that is already closed is
 // skipped and an uncertain attempt is retried by the next inventory.
+//
+// The candidates come from a snapshot, and the Mayor can admit an auto-declined
+// issue while this runs. Each issue is therefore claimed under the store just
+// before the GitHub write: the claim rechecks the decline and moves an
+// auto-declined issue to "closing", which the Mayor's admission refuses. An
+// accepted close settles it as closed, a definite rejection releases it, and an
+// uncertain outcome keeps the claim so the write is retried rather than
+// admitted.
 func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote RepoSnapshot) error {
 	if t == nil || t.Deleted {
 		return nil
@@ -924,9 +955,7 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	}
 	numbers := []int{}
 	for _, task := range t.Tasks {
-		mayorDeclined := !task.External && task.MayoralDecision == "declined"
-		simplifierDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
-		if task.Kind == "issue" && (mayorDeclined || simplifierDeclined) && open[task.Number] {
+		if closableDecline(task) && open[task.Number] {
 			numbers = append(numbers, task.Number)
 		}
 	}
@@ -934,8 +963,50 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	var failures error
 	for _, n := range numbers {
 		id := fmt.Sprintf("issue:%d", n)
+		claimed := false
+		if err := s.Store.Update(func(st *State) error {
+			current := st.Towns[t.ID]
+			if current == nil || current.Deleted {
+				return nil
+			}
+			task := current.Tasks[id]
+			if !closableDecline(task) {
+				return nil
+			}
+			if task.MayoralDecision == "" && task.Stage == "declined" {
+				task.Stage = "closing"
+				task.Updated = s.now()
+			}
+			claimed = true
+			return nil
+		}); err != nil {
+			return errors.Join(failures, err)
+		}
+		if !claimed {
+			continue
+		}
 		if err := s.GitHub.CloseIssue(ctx, t.Config.Repo, n); err != nil {
 			failures = errors.Join(failures, fmt.Errorf("close declined issue #%d: %w", n, err))
+			var rejected *RejectedError
+			if errors.As(err, &rejected) {
+				// GitHub refused the close, so nothing happened there; the
+				// claim is released and the Mayor can admit the issue again.
+				if err := s.Store.Update(func(st *State) error {
+					current := st.Towns[t.ID]
+					if current == nil {
+						return nil
+					}
+					if task := current.Tasks[id]; task != nil && task.Stage == "closing" && task.MayoralDecision == "" {
+						task.Stage = "declined"
+						task.Detail = fmt.Sprintf("GitHub refused to close this issue (HTTP %d). Simplifier's decline stands; the Mayor can admit it anyway.", rejected.Status)
+						task.Updated = s.now()
+						st.Event(t.ID, "error", string(Repo), "hall", id, "GitHub refused to close: "+task.Title, s.now())
+					}
+					return nil
+				}); err != nil {
+					return errors.Join(failures, err)
+				}
+			}
 			continue
 		}
 		if err := s.Store.Update(func(st *State) error {
@@ -944,12 +1015,16 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 			if current == nil || task == nil {
 				return nil
 			}
-			mayorDeclined := task.MayoralDecision == "declined"
-			simplifierDeclined := task.Simplification != nil && task.Simplification.Mode == "auto" && task.Simplification.Decision == "decline"
-			if !mayorDeclined && !simplifierDeclined {
+			if !closableDecline(task) {
 				return nil
 			}
-			if mayorDeclined {
+			if task.Stage == "closing" {
+				// GitHub accepted the close. A reopen seen by a later
+				// inventory is then an appeal rather than a close to retry.
+				task.Stage = "closed"
+				task.Updated = s.now()
+			}
+			if task.MayoralDecision == "declined" {
 				task.Detail = "The Mayor declined this proposal. Town closed the issue."
 				st.Event(t.ID, "decision", "hall", string(Repo), id, "Declined proposal closed: "+task.Title, s.now())
 			} else {
@@ -963,12 +1038,31 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 	}
 	return failures
 }
+
+// closableDecline reports whether Town still holds a final decline it carries
+// out by closing the issue: the Mayor's decline of Town's own proposal, or
+// Simplifier's auto decline that nobody has escalated to the Mayor or admitted.
+func closableDecline(task *Task) bool {
+	if task == nil || task.Kind != "issue" {
+		return false
+	}
+	if task.MayoralDecision == "declined" {
+		return !task.External
+	}
+	return task.MayoralDecision == "" && task.House == Hall && autoDeclined(task) && (task.Stage == "declined" || task.Stage == "closing" || task.Stage == "locked")
+}
 func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
 	if action == "delete" {
 		if role != "all" {
 			return errors.New("delete applies to the entire town")
 		}
 		return s.Delete(id)
+	}
+	if action == "undefer" {
+		return s.Defer(id, taskID, time.Time{}, "")
+	}
+	if action == "defer" {
+		return errors.New("a snooze needs a resume time")
 	}
 	decision := action == "admit" || action == "decline"
 	if action != "start" && action != "pause" && action != "stop" && action != "retry" && !decision {
@@ -1271,7 +1365,9 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) (bool, error) {
 	numbers := []int{}
 	for _, task := range t.Tasks {
-		if task.Kind == "pr" && task.Stage == "ready" && !task.Blocked && !task.RetryAt.After(s.now()) {
+		// A snoozed pull request is not merged: the operator set it aside,
+		// and a merge is the most consequential write Town makes for it.
+		if task.Kind == "pr" && task.Stage == "ready" && !task.Blocked && !task.RetryAt.After(s.now()) && !task.Deferred(s.now()) {
 			numbers = append(numbers, task.Number)
 		}
 	}
@@ -1339,6 +1435,11 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 		if fresh.Head.SHA != p.Head.SHA || fresh.Base.SHA != p.Base.SHA || description(fresh) != description(p) || fresh.State != "open" || fresh.Draft || fresh.Locked {
 			continue
 		}
+		// Quiet hours may have begun since this review dispatch started. The
+		// merge is the write they exist to hold, so check again just before it.
+		if s.Store.quietActive(t.ID, s.now()) {
+			return true, nil
+		}
 		if err = s.Store.Update(func(st *State) error {
 			st.Towns[t.ID].Intents[n] = &Intent{Kind: "merge", PR: n, Base: p.Base.SHA, Head: p.Head.SHA, Status: "uncertain", At: s.now()}
 			return nil
@@ -1363,6 +1464,18 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 	return false, nil
 }
 
+const (
+	// houseFailureBackoff is how long a house waits after a failure that
+	// belongs to the house rather than to one task.
+	houseFailureBackoff = 15 * time.Minute
+	// workPausedPrefix opens a failed house's task line.
+	workPausedPrefix = "Work paused: "
+)
+
+// credentialText matches credential-shaped text: GitHub tokens, a token
+// embedded in a clone URL, Anthropic keys and bearer authorization values.
+var credentialText = regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|x-access-token:[^@\s]+|sk-ant-[A-Za-z0-9_-]{10,}|(?i:bearer)\s+[A-Za-z0-9._~+/=-]{16,}`)
+
 type workerLog struct {
 	role  Role
 	out   chan Log
@@ -1374,19 +1487,42 @@ type workerLog struct {
 func (l *workerLog) Enabled(context.Context, slog.Level) bool { return true }
 func (l *workerLog) Handle(_ context.Context, r slog.Record) error {
 	text := r.Message
-	appendAttr := func(a slog.Attr) {
+	// Redaction works in two layers. By key: groups and LogValuers are
+	// resolved and walked, so a sensitive key nested inside one is dropped
+	// like a top-level one. By value: every formatted line is scrubbed of
+	// credential-shaped text, which is what protects a struct, map, error or
+	// slice passed with slog.Any, since those print whole and their field
+	// names are not inspected. A secret with no recognizable shape inside such
+	// a value is not caught; do not log values that carry one.
+	var appendAttr func(prefix string, a slog.Attr)
+	appendAttr = func(prefix string, a slog.Attr) {
 		key := strings.ToLower(a.Key)
 		if strings.Contains(key, "token") || strings.Contains(key, "secret") || key == "environment" || key == "command" {
 			return
 		}
-		text += " · " + a.Key + "=" + a.Value.String()
+		v := a.Value.Resolve()
+		if v.Kind() == slog.KindGroup {
+			if a.Key != "" {
+				prefix += a.Key + "."
+			}
+			for _, member := range v.Group() {
+				appendAttr(prefix, member)
+			}
+			return
+		}
+		text += " · " + prefix + a.Key + "=" + v.String()
 	}
 	for _, a := range l.attrs {
-		appendAttr(a)
+		appendAttr("", a)
 	}
-	r.Attrs(func(a slog.Attr) bool { appendAttr(a); return true })
+	r.Attrs(func(a slog.Attr) bool { appendAttr("", a); return true })
+	text = credentialText.ReplaceAllString(text, "[redacted]")
 	if len(text) > 4000 {
-		text = text[:4000] + "…"
+		cut := 4000
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + "…"
 	}
 	entry := Log{l.now(), r.Level.String(), text}
 	select {

@@ -28,7 +28,7 @@ type engine struct {
 	config  Config
 	source  issueSource
 	log     *slog.Logger
-	agent   func(Config) Agent
+	agent   func(cfg Config, stage string) Agent
 	now     func() time.Time
 	sleep   func(context.Context, time.Duration) error
 	observe func(Progress)
@@ -73,15 +73,27 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		s = newState(cfg)
 	}
 	observe, _ := ctx.Value(progressKey{}).(func(Progress))
-	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config) Agent { return agentProcess{c, log} }, now: time.Now, sleep: pause, observe: observe}
+	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config, stage string) Agent { return agentProcess{c, log.With("stage", stage)} }, now: time.Now, sleep: pause, observe: observe}
 	e.report(s, "starting", "Loading saved scan")
+	return e.loop(ctx, s, once)
+}
+
+// loop runs scans until once completes, setup fails or ctx ends.
+func (e engine) loop(ctx context.Context, s *State, once bool) error {
+	cfg, log := e.config, e.log
 	for {
 		err := e.step(ctx, s, once)
+		unchanged := errors.Is(err, errUnchanged)
+		if unchanged {
+			err = nil
+		}
 		var setup *runner.SetupError
 		if once || errors.As(err, &setup) || ctx.Err() != nil {
 			return err
 		}
-		if err != nil {
+		if unchanged {
+			e.report(s, "waiting", "Branch unchanged since the last completed scan")
+		} else if err != nil {
 			log.Error("Bug scan paused", "error", err)
 			phase := "paused"
 			if s.Scan != nil {
@@ -100,11 +112,15 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		} else {
 			e.report(s, "waiting", "Next scan")
 		}
-		if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
+		if err := e.sleep(ctx, time.Duration(cfg.Poll)); err != nil {
 			return err
 		}
 	}
 }
+
+// errUnchanged tells the daemon loop that a poll found the last completed revision.
+var errUnchanged = errors.New("branch unchanged since the last completed scan")
+
 func pause(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -218,6 +234,10 @@ func (e engine) step(ctx context.Context, s *State, force bool) error {
 			return nil
 		}
 	}
+	if s.Scan == nil && !force && e.config.OnlyOnChange && s.LastCompleted != nil && *s.LastCompleted == (LastCompleted{Commit: head, DryRun: e.config.DryRun}) {
+		e.log.Debug("Branch unchanged since the last completed scan; waiting for a new commit", "commit", head, "next_check", e.now().Add(time.Duration(e.config.Poll)))
+		return errUnchanged
+	}
 	if s.Scan == nil {
 		var id [12]byte
 		if _, err := rand.Read(id[:]); err != nil {
@@ -239,8 +259,13 @@ func (e engine) step(ctx context.Context, s *State, force bool) error {
 	if err := e.save(s); err != nil {
 		return err
 	}
-	e.report(s, "attempt", "Loading GitHub issue history")
-	err = e.attempt(ctx, s, g, w)
+	// Setup belongs to the counted attempt: its failures keep pending findings,
+	// consume the attempt and wait the retry delay like any other failure.
+	err = e.setup(ctx, s, w)
+	if err == nil {
+		e.report(s, "attempt", "Loading GitHub issue history")
+		err = e.attempt(ctx, s, g, w)
+	}
 	if err == nil || s.Scan == nil {
 		return err
 	}
@@ -257,12 +282,36 @@ func containsMarker(i Issue, key string) bool {
 	return strings.Contains(i.Body, marker(key))
 }
 
+// setup runs the operator's workspace preparation once per counted attempt,
+// within the attempt timeout. It may add untracked or ignored prerequisites but
+// must leave HEAD and tracked source unchanged. Only the tail of its combined
+// output is kept for the saved failure.
+func (e engine) setup(ctx context.Context, s *State, w checkout) error {
+	if len(e.config.Setup) == 0 {
+		return nil
+	}
+	e.report(s, "preparing", "Running workspace setup")
+	e.log.Info("Running workspace setup", "commit", s.Scan.Commit, "directory", w.config.Directory)
+	cmd := osrun.StartCommand(ctx, w.config.Directory, e.config.Setup, map[string]string{"BUG_COMMIT": s.Scan.Commit})
+	output := &osrun.Tail{Capacity: 16 << 10}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		text, _ := output.Text()
+		// Report the deadline or cancellation, not only the killed process.
+		return fmt.Errorf("workspace setup: %s: %w\n%s", e.config.Setup[0], errors.Join(err, ctx.Err()), text)
+	}
+	if err := w.verify(ctx, s.Scan); err != nil {
+		return fmt.Errorf("workspace setup changed the scan worktree: %w", err)
+	}
+	return nil
+}
+
 func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 	issues, err := e.source.issues(ctx)
 	if err != nil {
 		return err
 	}
-	a := e.agent(w.config)
 	if !s.Scan.Discovered {
 		// Keep a complete, untruncated snapshot in the agent's workspace for discovery.
 		file, err := os.CreateTemp(w.config.Directory, ".bug-bot-issues-*.json")
@@ -276,8 +325,8 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			return err
 		}
 		e.report(s, "investigating", "Investigating new bugs")
-		e.log.Info("Investigating new bugs", "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
-		text, err := e.execute(ctx, s, a, scanPrompt(e.config, s, path))
+		e.log.Info("Investigating new bugs", "stage", "discovery", "model", selection(w.config.Agent.Model), "effort", selection(w.config.Agent.Effort), "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
+		text, err := e.execute(ctx, s, e.agent(w.config, "discovery"), scanPrompt(e.config, s, path))
 		if err != nil {
 			return err
 		}
@@ -307,15 +356,31 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			return err
 		}
 	}
+	// Review uses the current effective selection, including when resuming pending
+	// candidates discovered under an earlier configuration.
+	var review Agent
 	for _, c := range s.Scan.Candidates {
 		if c.Status != "pending" {
 			continue
 		}
-		if err := e.reviewAndPublish(ctx, s, w, a, c); err != nil {
+		if review == nil {
+			cfg := w.config.review()
+			e.log.Info("Reviewing findings", "stage", "review", "model", selection(cfg.Agent.Model), "effort", selection(cfg.Agent.Effort), "commit", s.Scan.Commit)
+			review = e.agent(cfg, "review")
+		}
+		if err := e.reviewAndPublish(ctx, s, w, review, c); err != nil {
 			return err
 		}
 	}
 	return e.finish(s)
+}
+
+// selection names an unset model or effort without implying a specific value.
+func selection(value string) string {
+	if value == "" {
+		return "agent default"
+	}
+	return value
 }
 
 // Bound each review prompt without truncating any issue or discussion. Large individual
@@ -488,6 +553,16 @@ func (e engine) finish(s *State) error {
 		if c.Status == "stale" {
 			phase = "discarded"
 		}
+	}
+	if phase == "complete" {
+		// A revision published only in dry-run mode remains eligible for publication.
+		done := LastCompleted{Commit: s.Scan.Commit, DryRun: e.config.DryRun}
+		for _, c := range s.Scan.Candidates {
+			if c.Status == "dry_run" {
+				done.DryRun = true
+			}
+		}
+		s.LastCompleted = &done
 	}
 	s.History = append(s.History, s.Scan.Commit+": "+s.Scan.Summary)
 	if len(s.History) > 20 {

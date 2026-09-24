@@ -60,6 +60,15 @@ type Config struct {
 	TriageTimeout       Duration     `json:"triage_timeout"`
 	Verify              []string     `json:"verify,omitempty"`
 	Preflight           []string     `json:"preflight,omitempty"`
+	// ReleaseTriggerIgnore lists repository-relative files, and directories
+	// ending in "/", whose changes alone never start a new automatic release.
+	ReleaseTriggerIgnore []string `json:"release_trigger_ignore,omitempty"`
+	// Notify is an optional operator command run, best effort, with a
+	// versioned JSON event on stdin after a verified release or before exiting
+	// on an exhausted retry budget. Empty disables it. NotifyTimeout bounds
+	// each invocation and is required with a command.
+	Notify        []string `json:"notify,omitempty"`
+	NotifyTimeout Duration `json:"notify_timeout,omitempty"`
 }
 
 func DefaultConfig() Config {
@@ -176,9 +185,25 @@ func (c Config) Validate() error {
 	if len(c.Preflight) > 0 && c.Preflight[0] == "" {
 		return errors.New("preflight command is empty")
 	}
+	if len(c.Notify) > 0 && strings.TrimSpace(c.Notify[0]) == "" {
+		return errors.New("notify command is empty")
+	}
+	for _, arg := range c.Notify {
+		if strings.ContainsRune(arg, 0) {
+			return errors.New("notify arguments must not contain NUL bytes")
+		}
+	}
+	if c.NotifyTimeout < 0 || len(c.Notify) > 0 && c.NotifyTimeout <= 0 {
+		return errors.New("notify_timeout must be positive when notify is configured")
+	}
 	for _, s := range c.InstructionFiles {
 		if !filepath.IsLocal(s) {
 			return fmt.Errorf("instruction file must be relative: %s", s)
+		}
+	}
+	for _, entry := range c.ReleaseTriggerIgnore {
+		if err := validTriggerIgnore(entry); err != nil {
+			return err
 		}
 	}
 	for _, pattern := range c.GitHub.Assets {
@@ -200,4 +225,35 @@ func (c Config) Validate() error {
 		return errors.New("invalid schedule or retry limits")
 	}
 	return nil
+}
+
+// validTriggerIgnore accepts a literal repository-relative file path, or a
+// directory prefix with a trailing slash. Globs, backslashes, absolute paths,
+// surrounding whitespace, and empty, "." or ".." segments are refused rather
+// than reinterpreted.
+func validTriggerIgnore(entry string) error {
+	invalid := fmt.Errorf("release_trigger_ignore entry %q must be a repository-relative file, or directory ending in /, without globs or . and .. segments", entry)
+	name := strings.TrimSuffix(entry, "/")
+	if name == "" || strings.TrimSpace(entry) != entry || strings.ContainsAny(entry, "*?[\\") {
+		return invalid
+	}
+	for _, segment := range strings.Split(name, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return invalid
+		}
+	}
+	return nil
+}
+
+// triggerIgnored reports whether a changed repository path is excluded from
+// starting a release: an exact file entry, or a path under a directory entry.
+// Matching is byte-exact and case-sensitive. A submodule is reported as its
+// bare path, so only a file entry such as "vendor/sub" ignores its bumps.
+func (c Config) triggerIgnored(path string) bool {
+	for _, entry := range c.ReleaseTriggerIgnore {
+		if path == entry || strings.HasSuffix(entry, "/") && strings.HasPrefix(path, entry) {
+			return true
+		}
+	}
+	return false
 }

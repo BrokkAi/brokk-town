@@ -18,6 +18,14 @@ func TestFailedCommandNeverReturnsTruncatedResponse(t *testing.T) {
 	}
 }
 
+func TestRunWithoutRemovesInheritedVariables(t *testing.T) {
+	t.Setenv("OSRUN_INHERITED", "leak")
+	out, err := RunWithout(context.Background(), "", map[string]string{"OSRUN_KEPT": "kept"}, []string{"OSRUN_INHERITED"}, "sh", "-c", "echo \"${OSRUN_INHERITED-unset} $OSRUN_KEPT\"")
+	if err != nil || out != "unset kept" {
+		t.Fatalf("%q %v", out, err)
+	}
+}
+
 func TestTailIsBoundedAndUTF8(t *testing.T) {
 	tail := &Tail{Capacity: 4}
 	_, _ = tail.Write([]byte("prefix€€"))

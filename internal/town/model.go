@@ -129,6 +129,9 @@ type Config struct {
 	// in one accounting period. Nil leaves automation bounded only by capacity
 	// and the existing per-task attempt limits.
 	Budget *Budget `json:"budget,omitempty"`
+	// QuietHours are this town's weekly quiet windows. Nil follows the
+	// service default; an empty list opts this town out of it.
+	QuietHours *[]QuietWindow `json:"quiet_hours,omitempty"`
 }
 
 // BotAgentConfig is a complete private selection. Omitted roles inherit the town
@@ -251,6 +254,11 @@ func (c Config) Validate() error {
 	if err := c.Budget.Validate(); err != nil {
 		return err
 	}
+	if c.QuietHours != nil {
+		if err := ValidateQuietHours(*c.QuietHours); err != nil {
+			return err
+		}
+	}
 	if err := c.Funnels.Validate(); err != nil {
 		return err
 	}
@@ -276,6 +284,9 @@ type PublicConfig struct {
 	ReviewCloseSeverity string            `json:"review_close_severity"`
 	Budget              *Budget           `json:"budget,omitempty"`
 	WorkPolicies        []PublicBotPolicy `json:"work_policies"`
+	// QuietHours is the town's own schedule: null follows the service
+	// default, and an empty list opts out of it.
+	QuietHours *[]QuietWindow `json:"quiet_hours"`
 }
 
 type PublicBotAgentConfig struct {
@@ -473,7 +484,15 @@ type Task struct {
 	// not cover. It blocks the task, and is the record that lets Town release
 	// its own block if the pull request is retargeted back.
 	Offbranch bool `json:"offbranch,omitempty"`
+	// DeferredUntil is an operator's snooze: before then Town starts no new
+	// agent run and makes no merge for this task. DeferReason says why.
+	// Both are operator state; nothing Town observes on GitHub changes them.
+	DeferredUntil time.Time `json:"deferred_until,omitzero"`
+	DeferReason   string    `json:"defer_reason,omitempty"`
 }
+
+// Deferred reports whether the operator's snooze still holds at now.
+func (t *Task) Deferred(now time.Time) bool { return t.DeferredUntil.After(now) }
 
 // IssueJob is the public scheduling outcome from issue-bot durable state.
 type IssueJob struct {
@@ -555,10 +574,14 @@ type Town struct {
 	// Health is what Repo Bot last reported about the branch this town covers.
 	Health *BranchHealth `json:"health,omitempty"`
 	// Budget is the measured agent spend for the accounting period in progress.
-	Budget      *BudgetLedger `json:"budget_ledger,omitempty"`
-	LastSync    time.Time     `json:"last_sync"`
-	LastRelease string        `json:"last_release"`
-	Error       string        `json:"error,omitempty"`
+	Budget *BudgetLedger `json:"budget_ledger,omitempty"`
+	// Quiet records that the scheduler last saw this town inside its quiet
+	// hours, so entering and leaving them is announced once. The dispatch
+	// gate reads the clock, never this flag.
+	Quiet       bool      `json:"quiet,omitempty"`
+	LastSync    time.Time `json:"last_sync"`
+	LastRelease string    `json:"last_release"`
+	Error       string    `json:"error,omitempty"`
 }
 
 // BranchHealth is Repo Bot's report on the branch this town covers: the checks
@@ -603,13 +626,15 @@ const MaximumMaxWorkers = 64
 
 type ServiceConfig struct {
 	MaxWorkers int `json:"max_workers"`
+	// QuietHours is the default quiet schedule for towns that set none.
+	QuietHours []QuietWindow `json:"quiet_hours,omitempty"`
 }
 
 func (c ServiceConfig) Validate() error {
 	if c.MaxWorkers < 1 || c.MaxWorkers > MaximumMaxWorkers {
 		return fmt.Errorf("max_workers must be between 1 and %d", MaximumMaxWorkers)
 	}
-	return nil
+	return ValidateQuietHours(c.QuietHours)
 }
 
 type Capacity struct {
@@ -635,16 +660,18 @@ func (s *State) Add(c Config) (*Town, error) {
 		return nil, err
 	}
 	id := strings.ToLower(c.Repo)
-	if _, ok := s.Towns[id]; ok {
-		t := s.Towns[id]
+	if t := s.Towns[id]; t != nil {
 		if !t.Deleted {
 			return nil, fmt.Errorf("town already exists")
 		}
-		// Retain ownership, worktrees and uncertain writes when restoring a town.
-		// Restoration never resumes automation or pending issue submissions.
-		t.Deleted = false
-		t.Workers[Repo].Enabled = true
-		t.Workers[Repo].Next = time.Time{}
+		if c.Branch == "" {
+			// Adding names no branch; the restored town keeps the branch its
+			// recovery records were made on.
+			c.Branch = t.Config.Branch
+		}
+		if err := t.Restore(c); err != nil {
+			return nil, err
+		}
 		return t, nil
 	}
 	t := &Town{ID: id, Config: c, Workers: map[Role]*Worker{}, Tasks: map[string]*Task{}, Owned: map[int]Ownership{}, Intents: map[int]*Intent{}, FunnelIntents: map[string]*WriteIntent{}, FunnelSyncs: map[FunnelID]*FunnelSync{}, Reports: []Report{}, Bulletins: []Bulletin{}, Outcomes: []OutcomeRecord{}}
@@ -653,6 +680,29 @@ func (s *State) Add(c Config) (*Town, error) {
 	}
 	s.Towns[id] = t
 	return t, nil
+}
+
+// Restore revives a deleted town under the complete configuration c.
+// Ownership, worktrees, tasks and uncertain writes are retained; restoration
+// never resumes automation or pending issue submissions. An initialized town
+// cannot be restored onto a different named branch in place; an empty branch
+// follows the repository default.
+func (t *Town) Restore(c Config) error {
+	if !t.Deleted {
+		return fmt.Errorf("town %s is not deleted", t.ID)
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if t.Initialized && c.Branch != "" && c.Branch != t.Branch() {
+		return fmt.Errorf("cannot restore town %s from branch %s onto %s; use a separate state directory", t.ID, t.Branch(), c.Branch)
+	}
+	t.Config = c
+	t.Deleted = false
+	for r, w := range t.Workers {
+		w.Enabled, w.Status, w.Next = r == Repo, "paused", time.Time{}
+	}
+	return nil
 }
 
 // Branch is the branch this town actually works on: the operator's choice when
@@ -735,6 +785,11 @@ func (s State) PublicAt(now time.Time) map[string]any {
 		}
 		public["towns"].(map[string]any)[id].(map[string]any)["config"] = t.PublicConfig()
 		public["towns"].(map[string]any)[id].(map[string]any)["budget"] = t.BudgetState(now)
+		quiet := t.QuietState(now, s.ServiceConfig.QuietHours)
+		public["towns"].(map[string]any)[id].(map[string]any)["quiet_hours"] = quiet
+		if quiet.Active {
+			t.markQuiet(public["towns"].(map[string]any)[id].(map[string]any))
+		}
 		t.markFiltered(public["towns"].(map[string]any)[id].(map[string]any))
 	}
 	events := []Event{}
@@ -769,5 +824,5 @@ func (c Config) Public() PublicConfig {
 	for _, funnel := range c.Funnels {
 		funnels = append(funnels, funnel.Public())
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies()}
+	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies(), QuietHours: c.QuietHours}
 }

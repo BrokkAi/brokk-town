@@ -71,9 +71,12 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	agent := fs.String("agent", "", "ACP executable (default: codex-acp or npx)")
 	model := fs.String("model", "", "agent model ID")
 	effort := fs.String("effort", "", "reasoning effort")
+	reviewModel := fs.String("review-model", "", "agent model ID for evidence and duplicate review (default: --model)")
+	reviewEffort := fs.String("review-effort", "", "reasoning effort for evidence and duplicate review (default: --effort)")
 	maxIssues := fs.Int("max-issues", 3, "maximum new issues per scan (1-20)")
 	focus := fs.String("focus", "", "area or bug class to investigate")
 	dryRun := fs.Bool("dry-run", false, "find and review bugs without creating issues")
+	onlyOnChange := fs.Bool("only-on-change", false, "in daemon mode, skip scans while the branch commit matches the last completed scan")
 	once := fs.Bool("once", mode == "once", "run one scan (or resume a saved scan), then exit")
 	jsonOutput := fs.Bool("json", false, "structured logs (disables the dashboard)")
 	plain := fs.Bool("plain", false, "scrolling console output (disables the dashboard)")
@@ -128,12 +131,24 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 			if strings.TrimSpace(*effort) == "" {
 				err = errors.New("effort cannot be empty")
 			}
+		case "review-model":
+			cfg.ReviewModel = reviewModel
+			if strings.TrimSpace(*reviewModel) == "" {
+				err = errors.New("review-model cannot be empty")
+			}
+		case "review-effort":
+			cfg.ReviewEffort = reviewEffort
+			if strings.TrimSpace(*reviewEffort) == "" {
+				err = errors.New("review-effort cannot be empty")
+			}
 		case "max-issues":
 			cfg.MaxIssues = *maxIssues
 		case "focus":
 			cfg.Focus = *focus
 		case "dry-run":
 			cfg.DryRun = *dryRun
+		case "only-on-change":
+			cfg.OnlyOnChange = *onlyOnChange
 		case "label":
 			cfg.Labels = labels
 		case "poll":

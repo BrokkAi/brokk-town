@@ -26,6 +26,7 @@ func (g gitFixtureGH) Pull(ctx context.Context, repo string, n int) (Pull, error
 }
 func fixtureWorkers(t *testing.T) (*BotWorkers, *Town, *Task, string) {
 	t.Helper()
+	isolateGitConfig(t)
 	ctx := context.Background()
 	s := testStore(t, false)
 	x := addTown(t, s)

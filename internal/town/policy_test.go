@@ -121,10 +121,10 @@ func TestPolicyRestrictsTownSelectionToEligibleWork(t *testing.T) {
 	}
 	current := s.Snapshot().Towns[x.ID]
 	// Issue #1 sorts first but the filter excludes it.
-	if got := nextIssue(current); got == nil || got.ID != "issue:2" {
+	if got := nextIssue(current, time.Now()); got == nil || got.ID != "issue:2" {
 		t.Fatalf("nextIssue = %v, want issue:2", got)
 	}
-	if got := nextTask(current, Review, "queued"); got == nil || got.ID != "pr:12" {
+	if got := nextTask(current, Review, "queued", time.Now()); got == nil || got.ID != "pr:12" {
 		t.Fatalf("nextTask = %v, want pr:12", got)
 	}
 }

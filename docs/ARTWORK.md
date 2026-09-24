@@ -56,8 +56,50 @@ request number, and an impact burst where the work arrived. No new image assets
 are used, so the atlases and `docs/artwork-prompts.json` are unchanged.
 `internal/web/skins.js` is the one surface both themes answer.
 
-The theme is presentation only. A base's faction comes from the repository name
-and can be pinned per base in the browser; `?skin=frontline` opens the theme for
+## Frontline artwork refresh (2026-09-23)
+
+Frontline now uses four original RGBA atlases in `internal/web/assets`:
+`frontline-vanguard.png`, `frontline-ascendancy.png`, `frontline-hive.png`, and
+`frontline-craft.png`. The three building atlases each hold eight structures in
+role order, four columns by two rows. The craft atlas holds one craft per
+faction, left to right. They were generated with the built-in `image_gen` tool
+for this project and are included under its Apache-2.0 distribution. The art
+uses the detailed isometric industrial, psionic, and biological vocabulary of
+classic space strategy games; it does not reuse game assets or named designs.
+
+`frontline.js` draws the atlases over the existing seeded battlefield and
+retains its canvas shapes as a loading fallback. The browser loads images once
+per faction, outside the draw loop. Committed deliveries, animation timing,
+reduced motion, and all service commands are unchanged. The Frontline CSS adds
+metal-framed map and HUD surfaces. The Town skin still uses its original art.
+
+The theme is presentation only. Each base automatically uses one of the three
+race styles based on its repository name, independently of other bases. Two
+bases can use the same race. A browser user can choose a different race for any
+base. Adding or removing another base does not change its automatic race.
+`?skin=frontline` opens the theme for
 whoever the link is sent to. Strikes still follow committed events, the motion
 toggle and the operating system's reduced-motion setting, and the theme never
 writes to GitHub or changes what a delivery means.
+
+The all-base overview now uses each faction's existing building atlas for its
+card art, with a matching color and explicit faction label. The sidebar also
+labels each base's faction. The Town theme retains its original cottage strip.
+
+## Frontline attacks and defenders (2026-09-23)
+
+`frontline-defenders.png` is a new original transparent 3-column by 2-row
+atlas generated with the built-in `image_gen` tool. The top row contains one
+ground defender for each faction (armored human, crystalline alien, chitinous
+swarm); the lower row contains matching defensive emplacements. The final
+prompt asked for six separate isometric game sprites, each centered in its
+cell, with genuine transparency and no text, logos, or copied game units.
+
+Every Frontline installation now holds two ground units and one emplacement.
+They stand still when their worker is idle, patrol lightly when it is working,
+and respond only when a committed delivery approaches. The delivery craft
+fires faction-specific volleys: human tracers and smoke, alien energy lances,
+or arcing swarm spores. Its arrival produces a matching explosion, energy
+burst, or acid splash. These effects derive from the existing event, route,
+faction, and frame time; they do not create commands or events. Image requests
+start when the Frontline skin is selected, outside the canvas draw loop.

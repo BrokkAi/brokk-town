@@ -21,7 +21,7 @@ type engine struct {
 	config  Config
 	source  issueSource
 	log     *slog.Logger
-	agent   func(Config) Agent
+	agent   func(cfg Config, stage string) Agent
 	now     func() time.Time
 	observe func(Progress)
 }
@@ -49,7 +49,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		s = newState(cfg)
 	}
 	observe, _ := ctx.Value(progressKey{}).(func(Progress))
-	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config) Agent { return agentProcess{c, log} }, now: time.Now, observe: observe}
+	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config, stage string) Agent { return agentProcess{c, log.With("stage", stage), stage} }, now: time.Now, observe: observe}
 	e.report(s, "starting", "Loading saved scan")
 	for {
 		err := e.step(ctx, s, once)
@@ -240,7 +240,6 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 	if err != nil {
 		return err
 	}
-	a := e.agent(w.config)
 	if !s.Scan.Discovered {
 		// Keep a complete, untruncated snapshot in the agent's workspace for discovery.
 		file, err := os.CreateTemp(w.config.Directory, ".feature-bot-issues-*.json")
@@ -254,9 +253,9 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			return err
 		}
 		e.report(s, "investigating", "Researching new features")
-		e.log.Info("Researching new features", "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
+		e.log.Info("Researching new features", "stage", "discovery", "model", selection(w.config.Agent.Model), "effort", selection(w.config.Agent.Effort), "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
 		var r ScanResult
-		if err := e.execute(ctx, s, "investigating", a, scanPrompt(e.config, s, path), "FEATURE_RESULT", func(text string) (err error) {
+		if err := e.execute(ctx, s, "investigating", e.agent(w.config, "discovery"), scanPrompt(e.config, s, path), "FEATURE_RESULT", func(text string) (err error) {
 			r, err = parseScan(text, e.config.MaxIssues)
 			return err
 		}); err != nil {
@@ -275,7 +274,8 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			if _, err := rand.Read(id[:]); err != nil {
 				return err
 			}
-			candidates = append(candidates, &Candidate{RequestID: fmt.Sprintf("%x", id), Finding: f, Status: "pending"})
+			// Record the revision at which the cited files were just validated.
+			candidates = append(candidates, &Candidate{RequestID: fmt.Sprintf("%x", id), Commit: s.Scan.Commit, Finding: f, Status: "pending"})
 		}
 		s.Scan.Summary = r.Summary
 		s.Scan.Candidates = candidates
@@ -284,15 +284,34 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 			return err
 		}
 	}
+	// Review uses the current effective selection, including when resuming pending
+	// candidates discovered under an earlier configuration.
+	var review Agent
 	for _, c := range s.Scan.Candidates {
 		if c.Status != "pending" {
 			continue
 		}
-		if err := e.reviewAndPublish(ctx, s, g, w, a, c); err != nil {
+		if review == nil {
+			cfg := w.config.review()
+			e.log.Info("Reviewing proposals", "stage", "review", "model", selection(cfg.Agent.Model), "effort", selection(cfg.Agent.Effort), "commit", s.Scan.Commit)
+			review = e.agent(cfg, "review")
+		}
+		if err := e.reviewAndPublish(ctx, s, s.Scan, g, w, review, c); err != nil {
+			if errors.Is(err, errBranchAdvanced) {
+				return fmt.Errorf("%w; next attempt will scan the new commit", err)
+			}
 			return err
 		}
 	}
 	return e.finish(s)
+}
+
+// selection names an unset model or effort without implying a specific value.
+func selection(value string) string {
+	if value == "" {
+		return "agent default"
+	}
+	return value
 }
 
 // Bound each review prompt without truncating any issue or discussion. Large individual
@@ -337,11 +356,23 @@ func reviewChunks(issues []Issue) [][]Issue {
 }
 func issueDigest(i Issue) [32]byte { b, _ := json.Marshal(i); return sha256.Sum256(b) }
 
-func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a Agent, c *Candidate) error {
+var errBranchAdvanced = errors.New("remote branch advanced during review")
+
+// reviewAndPublish reviews c against the current issue history within scan's
+// workspace and revision, then files it unless a gate fails. A confirmed create
+// rejection restores the status c had on entry (pending or dry_run).
+func (e engine) reviewAndPublish(ctx context.Context, s *State, scan *Scan, g, w checkout, a Agent, c *Candidate) error {
 	e.report(s, "reviewing", "Refreshing issue history: "+c.Finding.Title)
-	contextKey := fmt.Sprintf("%x", sha256.Sum256([]byte(jsonContext(c.Finding)+s.Scan.Commit)))
-	if c.Checkpoint == nil || c.Checkpoint.Context != contextKey {
-		c.Checkpoint = &ReviewCheckpoint{Context: contextKey}
+	prior := c.Status
+	contextKey := fmt.Sprintf("%x", sha256.Sum256([]byte(jsonContext(c.Finding)+scan.Commit)))
+	selected := w.config.ReviewAgent()
+	reviewer := Reviewer{Model: selected.Model, Effort: selected.Effort}
+	if c.Checkpoint == nil || c.Checkpoint.Context != contextKey || c.Checkpoint.Reviewer == nil || *c.Checkpoint.Reviewer != reviewer {
+		if c.Checkpoint != nil && c.Checkpoint.Context == contextKey && (c.Checkpoint.Validated || len(c.Checkpoint.Batches) > 0) {
+			// Earlier results came from another (or an unrecorded) review selection.
+			e.log.Info("Reviewing again with current review settings", "title", c.Finding.Title, "model", selection(reviewer.Model), "effort", selection(reviewer.Effort))
+		}
+		c.Checkpoint = &ReviewCheckpoint{Context: contextKey, Reviewer: &reviewer}
 	}
 	if c.Checkpoint.Batches == nil {
 		c.Checkpoint.Batches = map[string]bool{}
@@ -368,11 +399,11 @@ func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a
 			chunks = pending
 			for index, chunk := range chunks {
 				e.report(s, "reviewing", fmt.Sprintf("%s (batch %d/%d)", c.Finding.Title, index+1, len(chunks)))
-				r, err := e.executeReview(ctx, s, a, c.Finding, s.Scan.Commit, chunk, !validated)
+				r, err := e.executeReview(ctx, s, a, c.Finding, scan.Commit, chunk, !validated)
 				if err != nil {
 					return err
 				}
-				if err := w.verify(ctx, s.Scan); err != nil {
+				if err := w.verify(ctx, scan); err != nil {
 					return err
 				}
 				if !validated {
@@ -410,17 +441,17 @@ func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a
 		if err != nil {
 			return err
 		}
-		if head != s.Scan.Commit {
-			return errors.New("remote branch advanced during scan; next attempt will scan the new commit")
+		if head != scan.Commit {
+			return errBranchAdvanced
 		}
-		if err := w.verify(ctx, s.Scan); err != nil {
+		if err := w.verify(ctx, scan); err != nil {
 			return err
 		}
 		if len(e.config.Verify) > 0 {
-			if _, err := osrun.Run(ctx, w.config.Directory, map[string]string{"FEATURE_COMMIT": s.Scan.Commit, "FEATURE_FINDING": jsonContext(c.Finding)}, e.config.Verify...); err != nil {
+			if _, err := osrun.Run(ctx, w.config.Directory, map[string]string{"FEATURE_COMMIT": scan.Commit, "FEATURE_FINDING": jsonContext(c.Finding)}, e.config.Verify...); err != nil {
 				return fmt.Errorf("operator verification: %w", err)
 			}
-			if err := w.verify(ctx, s.Scan); err != nil {
+			if err := w.verify(ctx, scan); err != nil {
 				return err
 			}
 		}
@@ -440,9 +471,21 @@ func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a
 		if changed {
 			continue
 		}
+		// Dry runs log the issue body, marker included. Never add a second issue
+		// carrying this request ID, and never claim another author's copy as ours:
+		// that issue is a duplicate of this proposal.
+		for _, i := range latest {
+			if containsMarker(i, c.RequestID) {
+				c.Status = "duplicate"
+				c.URL = i.URL
+				c.Review = fmt.Sprintf("Issue #%d already carries this proposal's publication marker (for example, a copied dry-run body); no second issue was created.", i.Number)
+				e.log.Info("Finding skipped", "title", c.Finding.Title, "status", c.Status, "reason", c.Review)
+				return e.save(s)
+			}
+		}
 		if e.config.DryRun {
 			c.Status = "dry_run"
-			e.log.Info("Would create issue", "title", c.Finding.Title, "body", issueBody(c, s.Scan.Commit))
+			e.log.Info("Would create issue", "title", c.Finding.Title, "body", issueBody(c, scan.Commit))
 			return e.save(s)
 		}
 		if err := ctx.Err(); err != nil {
@@ -451,15 +494,15 @@ func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a
 		// Save BEFORE POST. Even a process crash must never turn into a blind retry.
 		c.Status = "posting"
 		if err := e.save(s); err != nil {
-			c.Status = "pending"
+			c.Status = prior
 			return err
 		}
 		e.report(s, "publishing", c.Finding.Title)
-		i, err := e.source.create(ctx, c, s.Scan.Commit)
+		i, err := e.source.create(ctx, c, scan.Commit)
 		if err != nil {
 			var rejected *rejectedCreateError
 			if errors.As(err, &rejected) {
-				c.Status = "pending"
+				c.Status = prior
 				return errors.Join(err, e.save(s))
 			}
 			return err
@@ -484,6 +527,11 @@ func (e engine) finish(s *State) error {
 		if c.Status == "stale" {
 			phase = "discarded"
 		}
+	}
+	// Only successful scans, including zero-finding and dry-run ones, become
+	// prunable; the record is saved atomically with the completion itself.
+	if phase == "complete" {
+		s.Workspaces = append(s.Workspaces, CompletedWorkspace{Directory: s.Scan.Directory, Commit: s.Scan.Commit, CompletedAt: e.now()})
 	}
 	s.History = append(s.History, s.Scan.Commit+": "+s.Scan.Summary)
 	if len(s.History) > 20 {

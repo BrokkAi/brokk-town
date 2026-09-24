@@ -16,6 +16,7 @@ import {
   drawImpact as drawFrontlineImpact,
   frontlineLandscape,
   frontlineWords,
+  preloadFrontlineArt,
 } from "./frontline.js";
 
 // A skin is presentation only. Both skins read the same snapshot, draw the
@@ -37,6 +38,7 @@ export const skinTextKeys = [
   "legend-active",
   "legend-waiting",
   "legend-blocked",
+  "legend-quiet",
   "world-aria",
   "faction-label",
   "overview-owner",
@@ -71,8 +73,9 @@ export const townText = {
   "legend-active": "Working",
   "legend-waiting": "Waiting",
   "legend-blocked": "Needs attention",
+  "legend-quiet": "Quiet hours",
   "world-aria": "Animated deliveries between the agent houses",
-  "faction-label": "Sector faction",
+  "faction-label": "Base race",
   "overview-owner": "YOUR LOCAL WORLD",
   "overview-title": "Every town, together.",
   "overview-empty-body":
@@ -95,6 +98,7 @@ export const frontlineText = {
   "legend-active": "Engaged",
   "legend-waiting": "Standing by",
   "legend-blocked": "Needs support",
+  "legend-quiet": "Stood down",
   "world-aria": "Animated strikes between the bases of your campaign",
   "faction-label": "Sector faction",
   "overview-owner": "YOUR CAMPAIGN",
@@ -201,7 +205,9 @@ export const skins = {
     label: "Frontline",
     switchLabel: "Theme: Frontline",
     switchTitle: "Switch back to the Brokk Town neighbourhood",
-    note: "Frontline is a look, not a lever: every strike animates a delivery Town already committed, and nothing here writes to GitHub.",
+    note: "Each base uses one of three race styles, and bases can share one. Changing a base race only changes this browser's art; strikes still follow committed deliveries and nothing here writes to GitHub.",
+    prepare: preloadFrontlineArt,
+    showIdleOccupants: true,
     supportsFactions: true,
     travelMs: 6500,
     impactMs: 900,
@@ -214,8 +220,8 @@ export const skins = {
     paintInstallation(c, { role, x, y, faction, now, motion }) {
       paintFrontlineInstallation(c, { role, x, y, faction, now, motion });
     },
-    paintOccupants(c, { role, x, y, faction, now, motion }) {
-      drawGarrison(c, { role, x, y, faction, now, motion });
+    paintOccupants(c, { role, x, y, faction, now, motion, working, threat }) {
+      drawGarrison(c, { role, x, y, faction, now, motion, working, threat });
     },
     drawStrike(c, strike) {
       drawFrontlineStrike(c, {
@@ -227,6 +233,7 @@ export const skins = {
         progress: strike.progress,
         direction: strike.direction,
         motion: strike.motion,
+        to: strike.to,
       });
     },
     drawImpact(c, { x, y, faction, age }) {

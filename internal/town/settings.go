@@ -2,6 +2,7 @@ package town
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	acp "github.com/BrokkAi/acp-go"
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/acp-go/schema"
 	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
@@ -181,10 +183,33 @@ func (s *Supervisor) prepareAgent(c Config, settings AgentSettings) (Config, err
 	return cfg, cfg.Validate()
 }
 
+// Add establishes a town from a complete configuration. A deleted town is
+// restored under that configuration.
 func (s *Supervisor) Add(c Config) (string, error) {
+	return s.add(c.Repo, func(*Town) (Config, error) { return s.Prepare(c, AgentSettings{}) })
+}
+
+// AddRepo is the operator's add request: only a non-empty merge policy and the
+// agent settings are supplied. A new town starts from the defaults; a deleted
+// town is restored with those settings applied over the ones it kept, so its
+// budget, work policies, bot profiles and funnels survive.
+func (s *Supervisor) AddRepo(repo, mergePolicy string, settings AgentSettings) (string, error) {
+	return s.add(repo, func(existing *Town) (Config, error) {
+		cfg := DefaultConfig(repo)
+		if existing != nil {
+			cfg = clone(existing.Config)
+		}
+		if mergePolicy != "" {
+			cfg.MergePolicy = mergePolicy
+		}
+		return s.Prepare(cfg, settings)
+	})
+}
+
+func (s *Supervisor) add(repo string, prepare func(existing *Town) (Config, error)) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id := strings.ToLower(c.Repo)
+	id := strings.ToLower(repo)
 	for key := range s.running {
 		if strings.HasPrefix(key, id+":") {
 			return "", errors.New("town workers are still stopping; try again shortly")
@@ -194,7 +219,11 @@ func (s *Supervisor) Add(c Config) (string, error) {
 		if st.Demo {
 			return errors.New("use a live service to add real repositories")
 		}
-		cfg, err := s.Prepare(c, AgentSettings{})
+		existing := st.Towns[id]
+		if existing != nil && !existing.Deleted {
+			return errors.New("town already exists")
+		}
+		cfg, err := prepare(existing)
 		if err != nil {
 			return err
 		}
@@ -202,7 +231,11 @@ func (s *Supervisor) Add(c Config) (string, error) {
 		if err != nil {
 			return err
 		}
-		st.Event(t.ID, "town", "operator", "repo", "", "Town established; reporter is checking the repository", s.now())
+		title := "Town established; reporter is checking the repository"
+		if existing != nil {
+			title = "Town restored with the new settings; recovery records retained"
+		}
+		st.Event(t.ID, "town", "operator", "repo", "", title, s.now())
 		return nil
 	})
 	return id, err
@@ -213,7 +246,7 @@ func (s *Supervisor) Delete(id string) error {
 	defer s.mu.Unlock()
 	if err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
-		if t == nil {
+		if t == nil || t.Deleted {
 			return errors.New("unknown town")
 		}
 		t.Deleted = true
@@ -256,6 +289,14 @@ type BudgetEdit struct {
 	Budget *Budget `json:"budget"`
 }
 
+// QuietHoursEdit distinguishes leaving a town's quiet hours alone from
+// changing them: a nil *QuietHoursEdit preserves them. Inside it, nil Windows
+// makes the town follow the service default again, and an empty list opts the
+// town out of quiet hours altogether.
+type QuietHoursEdit struct {
+	Windows *[]QuietWindow `json:"windows"`
+}
+
 // PolicyEdit distinguishes leaving a house's work policy alone from clearing
 // it: a nil *PolicyEdit preserves the saved policy, and one holding a nil or
 // empty Policy removes it.
@@ -266,10 +307,11 @@ type PolicyEdit struct {
 // TownSettings are the town-wide edits one submission may carry alongside an
 // agent profile. A nil field leaves that setting as it was saved.
 type TownSettings struct {
-	MergePolicy    *string     `json:"merge_policy,omitempty"`
-	SimplifierMode *string     `json:"simplifier_mode,omitempty"`
-	CloseSeverity  *string     `json:"review_close_severity,omitempty"`
-	Budget         *BudgetEdit `json:"budget,omitempty"`
+	MergePolicy    *string         `json:"merge_policy,omitempty"`
+	SimplifierMode *string         `json:"simplifier_mode,omitempty"`
+	CloseSeverity  *string         `json:"review_close_severity,omitempty"`
+	Budget         *BudgetEdit     `json:"budget,omitempty"`
+	QuietHours     *QuietHoursEdit `json:"quiet_hours,omitempty"`
 	// WorkPolicy edits the policy of the role this submission names. It needs
 	// a role: a work policy always belongs to one house.
 	WorkPolicy *PolicyEdit `json:"work_policy,omitempty"`
@@ -299,6 +341,11 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 	}
 	if edits.Budget != nil {
 		if err := edits.Budget.Budget.Validate(); err != nil {
+			return err
+		}
+	}
+	if edits.QuietHours != nil && edits.QuietHours.Windows != nil {
+		if err := ValidateQuietHours(*edits.QuietHours.Windows); err != nil {
 			return err
 		}
 	}
@@ -335,6 +382,13 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 			// A changed period starts a fresh window rather than carrying an
 			// old one's spend into a differently sized one.
 			t.rollBudget(s.now())
+		}
+		if edits.QuietHours != nil {
+			t.Config.QuietHours = nil
+			if w := edits.QuietHours.Windows; w != nil {
+				windows := append([]QuietWindow{}, (*w)...)
+				t.Config.QuietHours = &windows
+			}
 		}
 		if edits.WorkPolicy != nil {
 			if edits.WorkPolicy.Policy.Empty() {
@@ -393,29 +447,80 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 	return nil
 }
 
-type AgentChoices struct {
-	Models  []acp.ConfigValue `json:"models"`
-	Efforts []acp.ConfigValue `json:"efforts"`
+// ChoiceValue is the API shape of one selectable model or effort. It stays
+// independent of acp-go's generated schema so the browser contract is fixed.
+type ChoiceValue struct {
+	Value string `json:"value"`
+	Name  string `json:"name"`
 }
 
-func choices(session acp.Session) AgentChoices {
-	out := AgentChoices{Models: []acp.ConfigValue{}, Efforts: []acp.ConfigValue{}}
-	for _, o := range session.ConfigOptions {
-		if o.Type != "select" {
-			continue
-		}
-		category := o.Category
-		if category == "" {
-			category = o.ID
-		}
-		switch category {
-		case "model":
-			out.Models = append(out.Models, o.Options...)
-		case "thought_level", "reasoning_effort":
-			out.Efforts = append(out.Efforts, o.Options...)
+type AgentChoices struct {
+	Models  []ChoiceValue `json:"models"`
+	Efforts []ChoiceValue `json:"efforts"`
+}
+
+// choices lists the options a run selects. acp-go does not export its
+// selector lookup, so sessionSelector repeats the one SetModel and SetEffort
+// use: model category else uncategorized "model"; thought_level category else
+// uncategorized "reasoning_effort".
+func choices(session acp.Session) (AgentChoices, error) {
+	models, err := selectValues(sessionSelector(session, schema.SessionConfigOptionCategoryModel, "model"))
+	if err != nil {
+		return AgentChoices{}, err
+	}
+	efforts, err := selectValues(sessionSelector(session, schema.SessionConfigOptionCategoryThoughtLevel, "reasoning_effort"))
+	if err != nil {
+		return AgentChoices{}, err
+	}
+	return AgentChoices{Models: models, Efforts: efforts}, nil
+}
+
+// sessionSelector matches acp-go's: the first select option in the category,
+// else the first uncategorized select option with the conventional ID.
+func sessionSelector(session acp.Session, category schema.SessionConfigOptionCategory, conventionalID string) *schema.SessionConfigOption {
+	for i := range session.ConfigOptions {
+		if o := &session.ConfigOptions[i]; o.Select != nil && o.Category != nil && *o.Category == category {
+			return o
 		}
 	}
-	return out
+	for i := range session.ConfigOptions {
+		if o := &session.ConfigOptions[i]; o.Select != nil && o.Category == nil && o.ID == schema.SessionConfigId(conventionalID) {
+			return o
+		}
+	}
+	return nil
+}
+
+// selectValues flattens a select option's values exactly as acp-go does when
+// selecting one: the first entry decides between flat and grouped values.
+func selectValues(option *schema.SessionConfigOption) ([]ChoiceValue, error) {
+	out := []ChoiceValue{}
+	if option == nil || option.Select.Options == nil {
+		return out, nil
+	}
+	encoded, err := json.Marshal(option.Select.Options)
+	if err != nil {
+		return nil, err
+	}
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &items); err != nil || len(items) == 0 {
+		return out, err
+	}
+	var flat []schema.SessionConfigSelectOption
+	if _, grouped := items[0]["group"]; grouped || json.Unmarshal(encoded, &flat) != nil {
+		var groups []schema.SessionConfigSelectGroup
+		if err := json.Unmarshal(encoded, &groups); err != nil {
+			return nil, fmt.Errorf("unsupported %s options: %w", option.Name, err)
+		}
+		flat = nil
+		for _, group := range groups {
+			flat = append(flat, group.Options...)
+		}
+	}
+	for _, value := range flat {
+		out = append(out, ChoiceValue{Value: string(value.Value), Name: value.Name})
+	}
+	return out, nil
 }
 
 // A discovery session never sends a prompt, exposes client tools or uses a
@@ -458,7 +563,10 @@ func ProbeAgent(ctx context.Context, cfg Config, roots ...string) (AgentChoices,
 	defer func() { cancel(); _ = cmd.Wait() }()
 	c := acp.Connect(in, out, nil, nil)
 	defer c.Close()
-	init, err := c.InitializeWithInfo(ctx, acp.Capabilities{}, acp.ClientInfo{Name: "brokk-town", Version: "dev"})
+	// Advertise the same session config support as runner.Execute, so an agent
+	// that gates its selectors on it reports what a real run would see. No
+	// workspace capabilities: discovery never serves files or terminals.
+	init, err := c.InitializeWithInfo(ctx, acp.Capabilities{Session: acp.ConfigOptionsClientCapabilities(true)}, acp.ClientInfo{Name: "brokk-town", Version: "dev"})
 	if err != nil {
 		return AgentChoices{}, errors.New("harness initialization failed; check its installation and login")
 	}
@@ -481,7 +589,7 @@ func ProbeAgent(ctx context.Context, cfg Config, roots ...string) (AgentChoices,
 			return AgentChoices{}, fmt.Errorf("model selection: %w", err)
 		}
 	}
-	return choices(session), nil
+	return choices(session)
 }
 
 func (s *Supervisor) Choices(ctx context.Context, id string, settings AgentSettings) (AgentChoices, error) {
@@ -512,7 +620,7 @@ func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, s
 	}
 	if s.Store.Snapshot().Demo {
 		s.mu.Unlock()
-		return AgentChoices{Models: []acp.ConfigValue{{Value: "demo-model", Name: "Demo model"}}, Efforts: []acp.ConfigValue{{Value: "low", Name: "Low"}, {Value: "high", Name: "High"}}}, nil
+		return AgentChoices{Models: []ChoiceValue{{Value: "demo-model", Name: "Demo model"}}, Efforts: []ChoiceValue{{Value: "low", Name: "Low"}, {Value: "high", Name: "High"}}}, nil
 	}
 	key := id + ":choices"
 	if s.running[key] != nil {

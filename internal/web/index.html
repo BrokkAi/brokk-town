@@ -49,7 +49,7 @@
       >
         Theme: Town
       </button>
-      <button id="motion" class="quiet" aria-pressed="false">Motion on</button
+      <button id="motion" class="quiet" type="button" aria-pressed="true">Motion on</button
       ><button id="new-town" data-skin-text="new-town">＋ New town</button>
     </header>
     <div class="app">
@@ -139,6 +139,11 @@
               ><span id="legend-blocked" data-skin-text="legend-blocked"
                 >Needs attention</span
               ></span
+            ><span
+              ><i class="dot quiet"></i
+              ><span id="legend-quiet" data-skin-text="legend-quiet"
+                >Quiet hours</span
+              ></span
             >
           </div>
           <div id="empty" hidden>
@@ -187,10 +192,10 @@
         </div>
       </aside>
     </div>
-    <dialog id="add-dialog">
+    <dialog id="add-dialog" aria-labelledby="add-heading">
       <form id="add-form">
         <div class="eyebrow">ESTABLISH A NEIGHBORHOOD</div>
-        <h2>A new town</h2>
+        <h2 id="add-heading">A new town</h2>
         <label for="repo-input">GitHub repository</label
         ><input
           id="repo-input"
@@ -222,17 +227,17 @@
         </div>
       </form>
     </dialog>
-    <dialog id="connect-dialog">
-      <h2>Connect to your town</h2>
+    <dialog id="connect-dialog" aria-labelledby="connect-heading">
+      <h2 id="connect-heading">Connect to your town</h2>
       <p>
         Run <code>bt web</code> and open the URL it prints. That link carries the
         local access key for this browser.
       </p>
     </dialog>
-    <dialog id="capacity-dialog">
+    <dialog id="capacity-dialog" aria-labelledby="capacity-heading">
       <form id="capacity-form">
         <div class="eyebrow">TOWN OPERATIONS</div>
-        <h2>Worker capacity</h2>
+        <h2 id="capacity-heading">Worker capacity</h2>
         <p class="muted">Set the maximum number of active bot workers across all towns. Lowering the limit lets active work finish before more bots start. Reporters and issue publishing use separate capacity.</p>
         <label for="capacity-input">Maximum active workers</label>
         <input id="capacity-input" name="max_workers" type="number" min="1" max="64" step="1" required />
@@ -243,11 +248,40 @@
           <button type="submit" class="primary">Save capacity</button>
         </div>
       </form>
+      <form id="service-quiet-form">
+        <h2>Quiet hours</h2>
+        <p class="muted">Weekly windows, on the clock of the machine running Town, in which no new agent work starts and Town makes none of its own GitHub writes. Running work finishes, the repository is still watched, and work resumes on its own when a window ends. Every town follows this default unless its settings choose otherwise.</p>
+        <label for="service-quiet-input">Service default (empty for none)</label>
+        <input id="service-quiet-input" class="quiet-hours-input" type="text" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" />
+        <p class="muted">Write each window as DAYS HH:MM-HH:MM and join windows with “;”. Days are mon…sun, ranges such as mon-fri, or daily, weekdays, weekends. An end at or before the start runs past midnight; 24:00 ends at midnight.</p>
+        <div id="service-quiet-error" class="form-error" role="alert"></div>
+        <div id="service-quiet-success" role="status"></div>
+        <div class="dialog-actions">
+          <button type="submit" class="primary">Save quiet hours</button>
+        </div>
+      </form>
     </dialog>
-    <dialog id="settings-dialog" class="wide-dialog">
+    <dialog id="snooze-dialog" aria-labelledby="snooze-heading">
+      <form id="snooze-form">
+        <div class="eyebrow">SET ASIDE ONE TASK</div>
+        <h2 id="snooze-heading">Snooze task</h2>
+        <p id="snooze-title" class="muted"></p>
+        <p class="muted">Its house keeps working everything else. No agent starts and no merge happens for this task until the resume time, when it rejoins the queue on its own.</p>
+        <label for="snooze-until">Resume at (your local time)</label>
+        <input id="snooze-until" name="until" type="datetime-local" required />
+        <label for="snooze-reason">Reason <span class="muted">(optional, up to 200 characters)</span></label>
+        <input id="snooze-reason" name="reason" type="text" autocomplete="off" />
+        <div id="snooze-error" class="form-error" role="alert"></div>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-snooze" class="quiet">Cancel</button>
+          <button type="submit" class="primary">Snooze</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="settings-dialog" class="wide-dialog" aria-labelledby="settings-heading">
       <form id="settings-form">
         <div class="eyebrow">YOUR AGENT TEAM</div>
-        <h2>Town settings</h2>
+        <h2 id="settings-heading">Town settings</h2>
         <p id="settings-repo" class="muted"></p>
         <section class="settings-section" aria-labelledby="external-policy-heading">
           <div class="eyebrow" id="external-policy-heading">EXTERNAL CONTRIBUTIONS</div>
@@ -277,6 +311,14 @@
             <option value="P3">Any finding</option>
           </select>
           <p class="muted">Every pull request gets one fix round. If the second review still finds work at or above this severity, Town closes the pull request and starts the issue over from the current branch. Anything below it is filed as a follow-up issue and the pull request merges.</p>
+          <label for="settings-quiet-mode">Quiet hours</label>
+          <select id="settings-quiet-mode">
+            <option value="default">Follow the service default</option>
+            <option value="own">Use this town's own windows</option>
+            <option value="none">No quiet hours for this town</option>
+          </select>
+          <input id="settings-quiet-hours" class="quiet-hours-input" type="text" aria-label="This town's quiet windows" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" aria-describedby="settings-quiet-note" />
+          <p id="settings-quiet-note" class="muted"></p>
         </section>
         <div class="agent-profile">
           <label for="agent-role">Configure agent for</label>
@@ -389,10 +431,10 @@
         </div>
       </form>
     </dialog>
-    <dialog id="delete-dialog">
+    <dialog id="delete-dialog" aria-labelledby="delete-heading">
       <form id="delete-form">
         <div class="eyebrow">REMOVE A NEIGHBORHOOD</div>
-        <h2>Delete this town?</h2>
+        <h2 id="delete-heading">Delete this town?</h2>
         <p id="delete-repo"></p>
         <p>
           This stops its workers and removes the town from your world. Your
@@ -410,10 +452,10 @@
         </div>
       </form>
     </dialog>
-    <dialog id="request-dialog" class="wide-dialog">
+    <dialog id="request-dialog" class="wide-dialog" aria-labelledby="request-heading">
       <form id="request-form">
         <div class="eyebrow">BRING AN IDEA TO TOWN</div>
-        <h2>A new piece of work</h2>
+        <h2 id="request-heading">A new piece of work</h2>
         <p id="request-repo" class="muted"></p>
         <label for="request-kind">What would you like to submit?</label>
         <select id="request-kind">
@@ -452,9 +494,9 @@
         <div id="request-history" aria-live="polite"></div>
       </section>
     </dialog>
-    <dialog id="inbox-dialog" class="wide-dialog">
+    <dialog id="inbox-dialog" class="wide-dialog" aria-labelledby="inbox-heading">
       <div class="eyebrow">ACROSS YOUR TOWNS</div>
-      <h2>What needs you</h2>
+      <h2 id="inbox-heading">What needs you</h2>
       <p class="muted">
         Mayoral decisions and stuck work from every town, longest wait first.
         Each item explains what is blocked and your next step.
@@ -466,8 +508,8 @@
         <button type="button" id="close-inbox" class="quiet">Close</button>
       </div>
     </dialog>
-    <dialog id="help-dialog">
-      <h2>Around the town</h2>
+    <dialog id="help-dialog" aria-labelledby="help-heading">
+      <h2 id="help-heading">Around the town</h2>
       <p class="muted" id="help-version"></p>
       <p><kbd>0</kbd> All towns</p>
       <p><kbd>I</kbd> What needs you, across every town</p>

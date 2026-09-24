@@ -40,8 +40,8 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				w.Status = "waiting"
 				w.Task = "Watching the village"
 			}
-			t.Report("A good morning in orchard", "The town is awake. Bug and feature investigations are underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
 			if repo == "BrokkAi/orchard" {
+				t.Report("A good morning in orchard", "The town is awake. Bug and feature investigations are underway, and a delivery of external work is expected shortly. This is simulated activity.", time.Now())
 				seedDemoBoard(s, t, time.Now())
 				now := time.Now()
 				id := WorkIdentity{Funnel: "demo-slack", Provider: "slack", Item: "1712345678.000100"}
@@ -53,6 +53,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 				doneGitHub := WorkItem{Identity: doneGitHubID, Title: "Retire the legacy import endpoint", Status: WorkClosed, Eligible: false, Eligibility: "issue is closed at source", Priority: Priority{Policy: "demo-explicit"}, Provenance: Provenance{Identity: doneGitHubID, URL: "https://github.com/BrokkAi/orchard/issues/706", Revision: "demo-r3", ObservedAt: now, ExternalState: "closed"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
 				_ = ReconcileFunnelPage(s, t, DiscoveryPage{Funnel: "demo-github", Provider: "github", Items: []WorkItem{doneGitHub}, Complete: true, Outcome: Outcome{Kind: OutcomeComplete, Covered: true}, ObservedAt: now}, now)
 			} else {
+				t.Report("Paper-trail is waiting on its watchtower", "The last inventory failed and waits for an operator retry. The other houses keep watching. This is simulated activity.", time.Now())
 				t.Workers[Repo].Status = "failed"
 				t.Workers[Repo].Error = "Demo inventory is waiting for an operator retry"
 				t.Workers[Repo].Task = "Inspect the watchtower report"
@@ -71,6 +72,9 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 			return ctx.Err()
 		case now := <-ticker.C:
 			if err := store.Update(func(s *State) error {
+				// A snooze ends on the demo's own clock, exactly as the live
+				// scheduler ends it, so the resumption is visible in the demo.
+				expireDeferrals(s, now)
 				t := s.Towns["brokkai/orchard"]
 				if t == nil || t.Deleted {
 					return nil
@@ -220,6 +224,7 @@ func seedDemoBoard(s *State, t *Town, now time.Time) {
 	t.Intents[703] = &Intent{Kind: "merge", PR: 703, Base: base, Head: sha("c"), Status: "uncertain", Detail: "Demo merge response was lost; reconcile before retrying.", At: now}
 	t.Tasks["issue:704"] = &Task{ID: "issue:704", Kind: "issue", Number: 704, Title: "Add saved report views", Stage: "queued", House: Issue, Detail: "A queued issue waiting for the workshop.", Updated: now}
 	t.Tasks["pr:705"] = &Task{ID: "pr:705", Kind: "pr", Number: 705, Title: "Make reconnect tests deterministic", Stage: "ready", House: Review, Head: sha("d"), Base: base, Audit: &Audit{Base: base, Head: sha("d"), Verdict: "clean", Complete: true, Summary: "The full change passed the independent review.", Checks: []string{"Reconnect regression tests passed"}, Findings: []Finding{}}, Updated: now}
+	t.Tasks["issue:707"] = &Task{ID: "issue:707", Kind: "issue", Number: 707, Title: "Adopt the vendor's new import API", Stage: "queued", House: Issue, Detail: "Snoozed by the operator; the rest of the workshop queue keeps moving.", DeferredUntil: now.Add(6 * time.Hour).UTC(), DeferReason: "Waiting for the vendor's API release", Updated: now}
 	t.Tasks["commit:"+sha("e")] = &Task{ID: "commit:" + sha("e"), Kind: "commit", Title: "Ship the cursor recovery", Stage: "shipped", House: Release, Head: sha("e"), Updated: now}
 
 	// Active profiles make dispatch provenance visible in the first frame. The

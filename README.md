@@ -8,7 +8,7 @@ The browser has two themes. The default is the town; Frontline draws every
 repository as a base flying one of three armies — humans, humanoid aliens or a
 swarm — and every committed delivery as a strike between its installations. The
 theme is a look, not a lever: it reads the same snapshot, keeps the theme and
-the base's faction in that browser, and never changes what Town does or writes
+any race chosen for a base in that browser, and never changes what Town does or writes
 to GitHub.
 
 ## Build and run
@@ -20,7 +20,9 @@ make build
 ./bin/bt web --demo
 ```
 
-Bare `bt` runs in the foreground and prints its browser URL. Ctrl+C, SIGTERM or
+Bare `bt` runs in the foreground and prints its browser URL. The URL carries the
+access key, so it is printed only to a terminal; redirected output and the
+background service's log point to `bt web` instead. Ctrl+C, SIGTERM or
 SIGHUP stops Town, its bots and their agent processes. Closing the browser does
 not stop the service. Demo mode is isolated and never invokes bots, agents or GitHub.
 
@@ -184,6 +186,51 @@ what it enforces. Where usage or cost is missing, Town Hall prints "not
 reported"; it never shows absent telemetry as zero. Attempts whose elapsed time
 never arrived are counted and reported separately rather than billed as free.
 
+### Quiet hours
+
+Quiet hours are weekly windows in which Town starts no new agent work and
+makes none of its own GitHub writes: no filing, repairing, reviewing, merging
+or releasing. Set a default for every town, give one town its own windows, or
+opt one town out:
+
+```sh
+# Service default: weeknights and weekends.
+./bin/bt settings --quiet-hours "mon-fri 19:00-07:00; weekends 00:00-24:00"
+./bin/bt settings --quiet-hours none            # remove the service default
+# One town's own windows, none at all, or back to the service default.
+./bin/bt settings --repo BrokkAi/my-project --quiet-hours "daily 12:00-13:00"
+./bin/bt settings --repo BrokkAi/my-project --quiet-hours none
+./bin/bt settings --repo BrokkAi/my-project --quiet-hours default
+```
+
+Each window is `DAYS HH:MM-HH:MM`, joined with `;`. Days are `mon` through
+`sun`, ranges such as `mon-fri` or `fri-mon`, or `daily`, `weekdays` and
+`weekends`, and name the day a window starts. An end at or before the start runs
+past midnight into the next day, and `24:00` ends a window at midnight.
+Overlapping windows count as one. A window with no day, an unknown day, a time
+that is not `HH:MM`, or the same start and end is refused with the reason. The
+browser edits the same schedules: the service default under Capacity, and a
+town's own in Town settings. Config files take `"quiet_hours": [{"days":
+["mon"], "start": "19:00", "end": "07:00"}]` at the top level for the default
+and in a town entry for its own, where `[]` opts the town out.
+
+Windows are read on the local clock of the machine running Town, by the clock
+on the wall: a window holds through a daylight-saving change, an hour the clock
+skips is never quiet, and an hour it repeats is quiet both times.
+
+Inside a window, work already running finishes as it would after Pause, and
+the repository inventory keeps running so uncertain writes are still
+reconciled. Town leaves closing declined issues and retired pull requests and
+filing review follow-ups for the first inventory after the window. Issues you
+submit yourself are still posted. Houses stay awake: the browser shows them as
+*quiet* rather than paused, the town header reads "Quiet hours · until …",
+Town Hall explains the hold, and `bt status` carries the same `quiet_hours`
+state for each town. When the window ends, scheduling resumes on its own with
+each house's usual cadence; nothing missed is replayed. Pause and quiet hours
+are independent and both survive a restart: a paused house stays paused after
+the window, and a woken one resumes. Release Bot's own release quiet period
+(`--release-quiet-seconds`) is unrelated and keeps working as before.
+
 For each profile, select any agent from the
 [official ACP registry](https://agentclientprotocol.com/get-started/registry),
 plus **Anvil**, **Muse ACP**, **Draupnir**, or a custom ACP command. The full
@@ -280,8 +327,14 @@ To remove a town, choose **Settings → Delete town** and confirm, or run:
 Deletion cancels its workers, cancels queued issue submissions, and removes it
 from the browser and terminal. GitHub repositories, issues, and PRs are preserved.
 Local history, uncertain writes, and private worktrees remain as recovery records.
-Adding the same repository again restores that history and its previous settings,
-with automation paused and the reporter enabled. Wait for stopping workers to
+Adding the same repository again restores that history and its previous
+settings, with automation paused and the reporter enabled. A merge policy or
+harness/agent choice given with the add replaces the previous one; budgets, work
+policies, bot profiles, funnels and the branch are kept. A deleted town listed in
+`bt serve --config` is restored with the file's settings, and one named by
+`bt serve --repo` with its previous settings; `bt serve` prints a notice. A town
+that already worked on one branch cannot be restored onto another. Deleting a
+town that is already deleted reports `unknown town`. Wait for stopping workers to
 finish before restoring a town.
 
 ## How work moves
@@ -350,7 +403,8 @@ limit its authority to publish while forbidding its release-preparation PR merge
 Town pauses Release Bot and rejects attempts to start or retry it under this policy.
 `all` also permits eligible external PRs. Town-managed merges require current clean Town evidence, GitHub mergeability, required checks
 and approvals. Town uses an expected-head squash merge, without admin bypass.
-Change this at any time under **Town Settings → External contributions**.
+Change this at any time under **Town Settings → External contributions**, or
+with `./bin/bt settings --repo BrokkAi/my-project --merge-policy manual`.
 Repositories that require a merge queue or prohibit squash merging need manual
 merges for now. GitHub is the final authority at write time.
 
@@ -368,7 +422,10 @@ Configuration is a JSON array for town-only files. Each entry supplies `repo`, o
 `merge_policy`, `simplifier_mode`, optional `review_close_severity` (`P1`, `P2`
 or `P3`, default `P2`), optional `budget`, optional `bot_policies`,
 `poll_seconds`, `report_seconds`, and `max_cycles`. The example
-lists all required values. To persist global capacity alongside the town list,
+lists all required values. A config-file entry gets no defaults for
+`merge_policy`, `poll_seconds`, `report_seconds`, or `max_cycles`: omitting any
+of them rejects the file. The defaults quoted below apply to towns added with
+`bt add` or the browser. To persist global capacity alongside the town list,
 use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
 remains accepted. When `serve --config` includes `max_workers`, that value
 overrides the persisted service setting in the same atomic state update; an
@@ -397,7 +454,9 @@ Repo-bot and issue/review scheduling use `poll_seconds` (default 60). Quiet repo
 use `report_seconds` (1800). Bug-bot, feature-bot, and simplifier-bot run at most every 30 minutes; mayor-bot
 writes a bulletin at most every `bulletin_seconds` (21600) and only after something merged; release-bot
 checks every five minutes and retains its own quiet window, minimum gap, and
-batching decisions. Each worker attempt has a two-hour deadline. A pull request
+batching decisions. Each worker attempt, including the repo inventory, has a
+two-hour deadline, and each GitHub call Town makes itself, such as the merge
+gate's read, gives up after one minute. A pull request
 gets one fix round and two attempts per revision at any step; `max_cycles` is
 accepted for compatibility but no longer extends that.
 
@@ -507,9 +566,37 @@ the reported failure and ask Town to lift the budget:
 
 The next release run first calls the bot's `POST /v1/retry` worker API, which
 resets the pending release's attempt budget in its own workspace, then resumes
-the same release. Town never edits the bot's private state. The pinned Release
+the same release. Unlike a task retry, a release retry also starts the release
+house if it was paused. Town never edits the bot's private state. The pinned Release
 Bot must advertise the `retry` capability; older pins report that plainly.
 Use `bt status` to inspect saved details and GitHub to resolve conflicts.
+
+### Snoozing one task
+
+To set one issue or pull request aside without pausing its house, snooze it
+until a chosen time. Open the task in the browser and choose **Snooze…**, or:
+
+```sh
+./bin/bt defer --repo BrokkAi/my-project --task pr:123 --until 2d --reason "waiting on the vendor fix"
+./bin/bt defer --repo BrokkAi/my-project --task issue:45 --until 2026-10-01T09:00:00Z
+./bin/bt undefer --repo BrokkAi/my-project --task pr:123
+```
+
+`--until` takes an RFC 3339 time or a delay from now (`90m`, `4h`, `2d`); the
+resume time must be in the future and within 366 days, and the reason is one
+line of at most 200 characters. The house keeps working the rest of its queue.
+Until the resume time, no agent starts for the snoozed task: Issue, Review and
+Simplifier Bots skip it, Mayor Bot does not judge it, and Town does not merge
+it. A run already under way when you snooze finishes. The Mayor can still decide
+a snoozed arrival by hand.
+
+The task shows as **Snoozed** with its reason and resume time in the browser
+and in `bt status` (`deferred_until`, `defer_reason`). Snoozed is distinct from
+blocked and failed, so a snoozed task does not appear in the inbox. At the
+resume time Town clears the snooze, wakes the house and records the event; the
+snooze is saved state, so it survives a restart and repository reconciliation.
+Resume now (`bt undefer`) makes the task eligible immediately. Finished work
+(merged, closed, declined, or an implemented issue) cannot be snoozed.
 
 The HTTP listener accepts loopback IPs only (default `127.0.0.1:8099`). Host,
 origin, and bearer key checks protect the local API. A browser supporting WebMCP

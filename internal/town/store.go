@@ -214,11 +214,15 @@ func validateState(s State, demo bool) error {
 			if task.MayoralDecision == "pending" && (task.House != Hall || task.Stage != "awaiting_mayor") {
 				return errors.New("pending Mayoral decision left Town Hall")
 			}
-			if task.MayoralDecision == "declined" && (task.House != Hall || task.Stage != "declined") {
+			// A declined pull request its author closed keeps the decline.
+			if task.MayoralDecision == "declined" && (task.House != Hall || (task.Stage != "declined" && (task.Stage != "closed" || task.Kind != "pr"))) {
 				return errors.New("declined Mayoral decision is not final")
 			}
 			if task.Stage == "simplifying" && (task.House != Simplifier || (task.Kind != "issue" && task.Kind != "pr")) {
 				return errors.New("pending simplifier intake left the clarifier")
+			}
+			if validDeferReason(task.DeferReason) != nil || (task.DeferReason != "" && task.DeferredUntil.IsZero()) {
+				return errors.New("invalid task snooze")
 			}
 			if s := task.Simplification; s != nil {
 				if (s.Mode != "suggest" && s.Mode != "auto") || (s.Decision != "admit" && s.Decision != "decline") || strings.TrimSpace(s.Detail) == "" || len(s.Detail) > 16<<10 || len(s.Summary) > 1024 {
@@ -352,6 +356,11 @@ func (s *Store) dispatchEligibility(id string, role Role, now time.Time) (bool, 
 	// inventory keeps running: a town that cannot see GitHub cannot
 	// reconcile the writes its earlier attempts may already have made.
 	if OccupiesAgentSlot(role) && t.BudgetState(now).Exhausted {
+		return false, s.state.ServiceConfig.MaxWorkers
+	}
+	// Quiet hours hold new agent work the same way, and for the same reason
+	// leave the inventory running.
+	if OccupiesAgentSlot(role) && t.QuietState(now, s.state.ServiceConfig.QuietHours).Active {
 		return false, s.state.ServiceConfig.MaxWorkers
 	}
 	w := t.Workers[role]

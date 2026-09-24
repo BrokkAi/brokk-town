@@ -12,6 +12,8 @@
   "focus": "",
   "labels": [],
   "dry_run": false,
+  "only_on_change": false,
+  "setup": null,
   "agent": {"command": ["codex-acp"]},
   "github": {"host": "github.com"}
 }

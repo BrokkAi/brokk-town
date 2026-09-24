@@ -146,9 +146,17 @@ func (h *dashboardHandler) Handle(_ context.Context, r slog.Record) error {
 	case "Starting agent":
 		d.sessions++
 	case "Using model":
-		d.cfg.Agent.Model = attrs["model"]
+		if attrs["stage"] == "review" {
+			d.cfg.ReviewModel = new(attrs["model"])
+		} else {
+			d.cfg.Agent.Model = attrs["model"]
+		}
 	case "Using reasoning effort":
-		d.cfg.Agent.Effort = attrs["effort"]
+		if attrs["stage"] == "review" {
+			d.cfg.ReviewEffort = new(attrs["effort"])
+		} else {
+			d.cfg.Agent.Effort = attrs["effort"]
+		}
 	}
 	if r.Level >= slog.LevelError {
 		d.failures++
@@ -294,13 +302,7 @@ func (d *dashboard) render(width, height int, now time.Time, color bool) string 
 	}
 	add(branch+" · up "+elapsed(now.Sub(d.started)), "2")
 	if height >= 18 {
-		model := d.cfg.Agent.Model
-		if model == "" {
-			model = "agent default"
-		}
-		if d.cfg.Agent.Effort != "" {
-			model += " / " + d.cfg.Agent.Effort
-		}
+		model := "discovery: " + selectionText(d.cfg.Agent) + " · review: " + selectionText(d.cfg.ReviewAgent())
 		if d.cfg.Focus != "" {
 			model += " · focus: " + d.cfg.Focus
 		}
@@ -316,6 +318,10 @@ func (d *dashboard) render(width, height int, now time.Time, color bool) string 
 	if p.Phase == "waiting" || p.Phase == "paused" {
 		if !p.WakeAt.IsZero() {
 			task = "Next check in " + elapsed(max(time.Duration(0), p.WakeAt.Sub(now))) + " · " + p.WakeAt.Local().Format("15:04:05")
+			// Keep a waiting explanation, such as an unchanged branch, beside the countdown.
+			if p.Phase == "waiting" && p.Task != "" && p.Task != "Next scan" {
+				task = p.Task + " · " + task
+			}
 		}
 	}
 	if d.stopping {
@@ -575,4 +581,16 @@ func wrapText(text string, width int) []string {
 		}
 	}
 	return append(rows, b.String())
+}
+
+// selectionText shows only the model and effort, never the agent environment.
+func selectionText(a bot.AgentConfig) string {
+	text := a.Model
+	if text == "" {
+		text = "agent default"
+	}
+	if a.Effort != "" {
+		text += " / " + a.Effort
+	}
+	return text
 }

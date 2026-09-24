@@ -36,24 +36,34 @@ type GitHubConfig struct {
 	Host string `json:"host"`
 }
 type Config struct {
-	Remote           string       `json:"remote"`
-	Branch           string       `json:"branch"`
-	Directory        string       `json:"directory"`
-	StateDirectory   string       `json:"state_directory"`
-	InstructionFiles []string     `json:"instruction_files"`
-	Agent            AgentConfig  `json:"agent"`
-	GitHub           GitHubConfig `json:"github"`
-	Poll             Duration     `json:"poll"`
-	Timeout          Duration     `json:"timeout"`
+	Remote           string      `json:"remote"`
+	Branch           string      `json:"branch"`
+	Directory        string      `json:"directory"`
+	StateDirectory   string      `json:"state_directory"`
+	InstructionFiles []string    `json:"instruction_files"`
+	Agent            AgentConfig `json:"agent"`
+	// Optional review selection. Nil inherits Agent.Model or Agent.Effort; an
+	// explicit blank value is invalid rather than a request for the default.
+	ReviewModel  *string      `json:"review_model,omitempty"`
+	ReviewEffort *string      `json:"review_effort,omitempty"`
+	GitHub       GitHubConfig `json:"github"`
+	Poll         Duration     `json:"poll"`
+	Timeout      Duration     `json:"timeout"`
 
 	RetryDelay Duration `json:"retry_delay"`
 	Attempts   int      `json:"attempts"`
 	Labels     []string `json:"labels,omitempty"`
 
-	MaxIssues int      `json:"max_issues"`
-	DryRun    bool     `json:"dry_run"`
-	Focus     string   `json:"focus,omitempty"`
-	Verify    []string `json:"verify,omitempty"`
+	MaxIssues int  `json:"max_issues"`
+	DryRun    bool `json:"dry_run"`
+	// OnlyOnChange skips daemon polls whose fetched commit matches the last
+	// completed scan for the same dry-run setting. Once invocations always run.
+	OnlyOnChange bool     `json:"only_on_change"`
+	Focus        string   `json:"focus,omitempty"`
+	Verify       []string `json:"verify,omitempty"`
+	// Setup optionally prepares each scan attempt's worktree before any agent
+	// runs. Nil runs nothing; a present command needs a non-blank executable.
+	Setup []string `json:"setup,omitempty"`
 }
 
 func DefaultConfig() Config {
@@ -155,6 +165,26 @@ func (c Config) GitHubRepo() string {
 	}
 	return ""
 }
+
+// ReviewAgent is the agent configuration for evidence validation and duplicate
+// review. It differs from discovery only in the overridden model and effort.
+func (c Config) ReviewAgent() AgentConfig {
+	a := c.Agent
+	if c.ReviewModel != nil {
+		a.Model = *c.ReviewModel
+	}
+	if c.ReviewEffort != nil {
+		a.Effort = *c.ReviewEffort
+	}
+	return a
+}
+
+// review returns the configuration for review sessions in the same workspace.
+func (c Config) review() Config {
+	c.Agent = c.ReviewAgent()
+	return c
+}
+
 func (c Config) Validate() error {
 	if c.Remote == "" || strings.HasPrefix(c.Remote, "-") {
 		return errors.New("remote is required")
@@ -180,6 +210,12 @@ func (c Config) Validate() error {
 	if c.Agent.Effort != "" && strings.TrimSpace(c.Agent.Effort) == "" {
 		return errors.New("agent.effort requires a reasoning effort value")
 	}
+	if c.ReviewModel != nil && strings.TrimSpace(*c.ReviewModel) == "" {
+		return errors.New("review_model requires a model ID")
+	}
+	if c.ReviewEffort != nil && strings.TrimSpace(*c.ReviewEffort) == "" {
+		return errors.New("review_effort requires a reasoning effort value")
+	}
 	if c.GitHub.Repo != "" && !slug.MatchString(c.GitHub.Repo) {
 		return errors.New("github.repo must be owner/repository")
 	}
@@ -188,6 +224,9 @@ func (c Config) Validate() error {
 	}
 	if len(c.Verify) > 0 && c.Verify[0] == "" {
 		return errors.New("verify command is empty")
+	}
+	if c.Setup != nil && (len(c.Setup) == 0 || strings.TrimSpace(c.Setup[0]) == "") {
+		return errors.New("setup requires a command executable")
 	}
 	for _, name := range c.InstructionFiles {
 		if !filepath.IsLocal(name) {

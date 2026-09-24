@@ -280,6 +280,7 @@ const state = {
         "issue:2": { id: "issue:2", kind: "issue", number: 2, title: "Queue this change", house: "issue", stage: "queued" },
         "source:done": { id: "source:done", kind: "source", title: "Checked off in Slack", house: "issue", stage: "complete", source: { eligible: false } },
         "issue:3": { id: "issue:3", kind: "issue", number: 3, title: "Outside request", house: "hall", stage: "awaiting_mayor", external: true, mayoral_decision: "pending", simplification: { mode: "suggest", decision: "decline", summary: "Low value", detail: "The request adds a second registry for one caller." } },
+        "pr:4": { id: "pr:4", kind: "pr", number: 4, title: "Speculative matrix", house: "hall", stage: "declined", external: true, simplification: { mode: "auto", decision: "decline", detail: "No callers." } },
       },
       intents: {}, reports: [], events: [],
     },
@@ -453,6 +454,18 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(requests.some((request) => request.url === "/api/task-detail"), false, "demo never fetches live details");
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"')), true);
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  const declined = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "pr:4");
+  assert.ok(declined, "Town Hall lists work Simplifier declined");
+  declined.onclick();
+  assert.match(elements.inspection.textContent, /Simplifier declined this/, "the overrule explains itself");
+  globalThis.confirm = () => false;
+  await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"task":"pr:4"')), false, "refusing the confirmation sends nothing");
+  globalThis.confirm = (message) => { assert.match(message, /over Simplifier's decline/); return true; };
+  await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
+  globalThis.confirm = () => true;
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"') && request.options.body.includes('"task":"pr:4"')), true, "admitting anyway uses the Mayoral decision command");
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   assert.match(elements.inspection.textContent, /Mayor Bot waiting/, "Town Hall shows Mayor Bot's status");
@@ -726,12 +739,16 @@ test("responsive and reduced-motion contracts remain shipped in the stylesheet",
 // openTownHall renders one snapshot and opens the Town Hall inspector. The
 // client keeps its own copy of a delivered snapshot, so a test that needs
 // different town state installs a fresh fixture rather than mutating this one.
-async function openTownHall(budget) {
+async function openTownHall(budget, adjust) {
+  return (await openTownHallPanel(budget, adjust)).textContent;
+}
+async function openTownHallPanel(budget, adjust = () => {}) {
   const elements = installFixture();
   const live = structuredClone(state);
   live.seq = 1;
   live.demo = false;
   live.towns["acme/project"].budget = budget;
+  adjust(live.towns["acme/project"]);
   const message = `data: ${JSON.stringify(live)}\n\n`;
   let served = false;
   globalThis.fetch = async (url) => {
@@ -745,7 +762,7 @@ async function openTownHall(budget) {
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
-  return elements.inspection.textContent;
+  return elements.inspection;
 }
 
 test("an exhausted agent budget explains itself and never renders absent telemetry as zero", async () => {
@@ -778,6 +795,22 @@ test("a town with no budget still reports the agent spend it measured", async ()
   assert.match(text, /3 agent attempts/, "spend is reported without a budget");
   assert.match(text, /No budget set for this town/, "an absent budget is stated plainly");
   assert.doesNotMatch(text, /New agent work resumes/, "an unlimited town is not described as held");
+});
+
+test("Town Hall shows quiet hours as a scheduled pause, with Mayor Bot's quiet dot", async () => {
+  const panel = await openTownHallPanel(null, (town) => {
+    town.quiet_hours = { source: "service", active: true, until: "2026-09-22T08:00:00Z", windows: [], reason: "" };
+    town.workers.hall = { ...(town.workers.hall || {}), role: "hall", enabled: true, status: "quiet" };
+  });
+  assert.match(panel.innerHTML, /<h2>Quiet hours<\/h2><p class="quiet-held">/, "Town Hall explains the hold");
+  assert.match(panel.textContent, /Quiet hours until .*service default.*running work finishes/);
+  assert.match(panel.innerHTML, /dot quiet"><\/i>Mayor Bot quiet hours/, "Mayor Bot's dot and status read as quiet");
+});
+
+test("the world legend explains the quiet dot, and the quiet windows input is labelled", () => {
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  assert.match(html, /<i class="dot quiet"><\/i\s*><span id="legend-quiet" data-skin-text="legend-quiet"/);
+  assert.match(html, /id="settings-quiet-hours"[^>]*aria-label="[^"]+"/, "the town's quiet windows input is labelled");
 });
 
 test("a house shows its work policy and marks the inventory that policy holds back", async () => {
@@ -819,7 +852,7 @@ test("a house shows its work policy and marks the inventory that policy holds ba
 
 // The Frontline skin is a theme: it repaints labels and the map, keeps a
 // per-browser choice, and never edits the snapshot it is drawn from.
-async function openFrontline({ search = "" } = {}) {
+async function openFrontline({ search = "", extraTowns = [] } = {}) {
   const elements = installFixture();
   document.body = document.createElement("body");
   const stored = new Map();
@@ -832,6 +865,12 @@ async function openFrontline({ search = "" } = {}) {
   globalThis.location = { hash: "#token=test-key", pathname: "/", search };
   const live = structuredClone(baseState);
   live.demo = false;
+  for (const id of extraTowns) {
+    const town = structuredClone(live.towns["acme/project"]);
+    town.id = id;
+    town.config.repo = id;
+    live.towns[id] = town;
+  }
   const message = `data: ${JSON.stringify(live)}\n\n`;
   let served = false;
   globalThis.fetch = async (url) => {
@@ -872,7 +911,7 @@ test("the frontline skin relabels the town, holds its own faction, and leaves st
 
   const options = elements["faction-select"].children;
   assert.equal(options.length, 4, "auto plus one option per army");
-  assert.match(options[0].textContent, /^Auto · /);
+  assert.match(options[0].textContent, /^Automatic · /);
 
   // A base names its own structures; the town's names are gone.
   elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
@@ -904,6 +943,20 @@ test("?skin=frontline opens the war map for whoever the link is sent to", async 
   assert.equal(elements["skin"].title, "Switch back to the Brokk Town neighbourhood");
 });
 
+test("Frontline overview shows each base's race art even when races repeat", async () => {
+  const { elements } = await openFrontline({ search: "?skin=frontline",
+    extraTowns: ["acme/repo-3", "acme/repo-5"] });
+  const links = elements.towns.querySelectorAll("[data-town]");
+  assert.equal(new Set(links.map((link) => link.dataset.faction)).size, 2);
+  assert.equal(links.filter((link) => link.dataset.faction === "vanguard").length, 2);
+  elements["all-towns"].click();
+  const cards = elements.overview.querySelectorAll("[data-visit]");
+  assert.equal(new Set(cards.map((card) => card.dataset.faction)).size, 2);
+  assert.equal((elements.overview.innerHTML.match(/town-card-houses frontline-card-art/g) || []).length, 3);
+  for (const label of ["Vanguard", "Hive"])
+    assert.match(elements.overview.textContent, new RegExp(label));
+});
+
 test("a faction choice survives blocked browser storage for the session", async () => {
   const { elements } = await openFrontline({ search: "?skin=frontline" });
   let reads = 0;
@@ -919,4 +972,299 @@ test("a faction choice survives blocked browser storage for the session", async 
   elements.skin.click();
   assert.equal(elements["faction-select"].value, "hive", "the choice lasts through redraws");
   assert.equal(reads, 0, "redraws do not read browser storage");
+});
+
+test("the task inspector snoozes a task and resumes a snoozed one", async () => {
+  const elements = installFixture();
+  const requests = [];
+  const live = structuredClone({ ...state, seq: 1, demo: false });
+  live.towns["acme/project"].tasks["issue:5"] = { id: "issue:5", kind: "issue", number: 5, title: "Wait for the vendor", house: "issue", stage: "queued", deferred_until: "2999-01-01T09:00:00Z", defer_reason: "vendor API not released" };
+  const message = `data: ${JSON.stringify(live)}\n\n`;
+  let served = false;
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url === "/api/events") {
+      return { ok: true, body: { getReader: () => ({ read: async () => !served ? (served = true, { value: new TextEncoder().encode(message), done: false }) : { done: true } }) } };
+    }
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
+  await import(`./app.js?snooze=${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  assert.match(elements.inspection.textContent, /1 snoozed/, "the house queue counts snoozed work");
+  const snoozedCard = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5");
+  assert.match(snoozedCard.textContent, /Snoozed until/, "the queue card says when the task resumes");
+
+  elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:2").onclick();
+  const snooze = elements.inspection.querySelectorAll("button").find((button) => button.id === "snooze-task");
+  assert.ok(snooze, "a queued task offers a snooze");
+  snooze.onclick();
+  assert.equal(elements["snooze-dialog"].open, true);
+  assert.ok(elements["snooze-until"].value, "the dialog suggests a resume time");
+  elements["snooze-until"].value = "2020-01-01T09:00";
+  await elements["snooze-form"].onsubmit({ preventDefault() {}, submitter: new Element("button") });
+  assert.match(elements["snooze-error"].textContent, /future/, "a past time is refused before it is sent");
+  assert.equal(requests.some((request) => request.url === "/api/control"), false);
+  const soon = new Date(Date.now() + 2 * 86400000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const local = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T09:30`;
+  elements["snooze-until"].value = local;
+  elements["snooze-reason"].value = "  after the release  ";
+  await elements["snooze-form"].onsubmit({ preventDefault() {}, submitter: new Element("button") });
+  const sent = requests.find((request) => request.url === "/api/control");
+  assert.ok(sent, "the snooze is sent through the control API");
+  const body = JSON.parse(sent.options.body);
+  assert.equal(body.action, "defer");
+  assert.equal(body.town, "acme/project");
+  assert.equal(body.task, "issue:2");
+  assert.equal(body.reason, "after the release");
+  assert.equal(body.until, new Date(local).toISOString().replace(/\.\d{3}Z$/, "Z"));
+  assert.equal(elements["snooze-dialog"].open, false);
+
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5").onclick();
+  assert.match(elements.inspection.textContent, /Snoozed until/);
+  assert.match(elements.inspection.textContent, /vendor API not released/);
+  assert.match(elements.inspection.textContent, /Resumes .* without any action/);
+  await elements.inspection.querySelectorAll("button").find((button) => button.id === "clear-snooze").onclick();
+  const cleared = JSON.parse(requests.filter((request) => request.url === "/api/control").at(-1).options.body);
+  assert.equal(cleared.action, "undefer");
+  assert.equal(cleared.task, "issue:5");
+});
+
+test("every dialog is named by its heading, and the motion toggle reports its real state", async () => {
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  const dialogs = [...html.matchAll(/<dialog\b([^>]*)>/g)];
+  assert.ok(dialogs.length >= 9);
+  for (const [, attrs] of dialogs) {
+    const id = attrs.match(/\bid="([^"]+)"/)?.[1];
+    const label = attrs.match(/aria-labelledby="([^"]+)"/)?.[1];
+    assert.ok(label, `${id} has aria-labelledby`);
+    assert.match(html, new RegExp(`<h2 id="${label}"`), `${id} is labelled by a heading that exists`);
+  }
+  assert.match(html, /id="motion"[^>]*aria-pressed="true"[^>]*>Motion on/, "the shipped markup says pressed while motion is on");
+
+  const elements = installFixture();
+  globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({}) });
+  await import(`./app.js?motion=${Date.now()}-${Math.random()}`);
+  assert.equal(elements.motion.textContent, "Motion on");
+  assert.equal(elements.motion["aria-pressed"], "true");
+  elements.motion.onclick();
+  assert.equal(elements.motion.textContent, "Motion off");
+  assert.equal(elements.motion["aria-pressed"], "false");
+});
+
+test("the event stream backs off exponentially, waits while hidden, and retries when shown", async () => {
+  const elements = installFixture();
+  const timers = [];
+  globalThis.setTimeout = (callback, delay) => {
+    timers.push({ callback, delay });
+    return timers.length;
+  };
+  let attempts = 0;
+  let serve = false;
+  const snapshot = `data: ${JSON.stringify(state)}\n\n`;
+  globalThis.fetch = async (url) => {
+    if (url !== "/api/events") return { ok: true, json: async () => ({}) };
+    attempts++;
+    if (!serve) return { ok: false, status: 503, json: async () => ({}) };
+    let sent = false;
+    return { ok: true, body: { getReader: () => ({ read: async () => (!sent ? ((sent = true), { value: new TextEncoder().encode(snapshot), done: false }) : new Promise(() => {})) }) } };
+  };
+  const flush = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  try {
+    await import(`./app.js?backoff=${Date.now()}-${Math.random()}`);
+    await flush();
+    assert.equal(attempts, 1);
+    assert.equal(elements.connection.textContent, "Reconnecting");
+    const delays = [];
+    for (let i = 0; i < 8; i++) {
+      const timer = timers.at(-1);
+      delays.push(timer.delay);
+      timer.callback();
+      await flush();
+    }
+    assert.equal(attempts, 9, "each timer makes exactly one attempt");
+    delays.forEach((delay, attempt) => {
+      const ceiling = Math.min(30000, 1000 * 2 ** attempt);
+      assert.ok(delay >= ceiling / 2 && delay <= ceiling, `attempt ${attempt} waits ${delay}ms within [${ceiling / 2}, ${ceiling}]`);
+    });
+    assert.ok(delays.at(-1) >= 15000 && delays.at(-1) <= 30000, "the wait is capped at thirty seconds");
+
+    // A hidden tab lets the pending timer lapse without connecting.
+    const pending = timers.length;
+    document.hidden = true;
+    timers.at(-1).callback();
+    await flush();
+    assert.equal(attempts, 9, "no attempt while hidden");
+    assert.equal(timers.length, pending, "no new timer while hidden");
+
+    // Showing the tab retries at once, and the stream paints its snapshot.
+    serve = true;
+    document.hidden = false;
+    document.dispatchEvent({ type: "visibilitychange" });
+    await flush();
+    assert.equal(attempts, 10, "becoming visible reconnects immediately");
+    assert.equal(elements.connection.textContent, "Connected");
+    assert.match(elements.towns.innerHTML, /data-town="acme\/project"/);
+  } finally {
+    globalThis.setTimeout = () => 0;
+    document.hidden = false;
+  }
+});
+
+test("a hidden tab keeps the newest snapshot and paints it when shown", async () => {
+  const elements = installFixture();
+  document.hidden = true;
+  let served = false;
+  const message = `data: ${JSON.stringify(state)}\n\n`;
+  globalThis.fetch = async (url) => {
+    if (url === "/api/events")
+      return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(message), done: false }) : new Promise(() => {})) }) } };
+    return { ok: true, json: async () => ({}) };
+  };
+  await import(`./app.js?hidden=${Date.now()}-${Math.random()}`);
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(elements.towns.innerHTML, "", "nothing is painted while hidden");
+  document.hidden = false;
+  document.dispatchEvent({ type: "visibilitychange" });
+  assert.match(elements.towns.innerHTML, /data-town="acme\/project"/);
+});
+
+test("a write in flight stays disabled across snapshot redraws and focus returns after it settles", async () => {
+  const elements = installFixture();
+  const live = structuredClone(state);
+  live.demo = false;
+  let releaseSnapshot;
+  const messages = [
+    `data: ${JSON.stringify(live)}\n\n`,
+    new Promise((resolve) => { releaseSnapshot = () => resolve(`data: ${JSON.stringify({ ...live, seq: 2 })}\n\n`); }),
+  ];
+  const controls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (url === "/api/events") {
+      let index = 0;
+      return { ok: true, body: { getReader: () => ({ read: async () => (index < messages.length ? { value: new TextEncoder().encode(await messages[index++]), done: false } : new Promise(() => {})) }) } };
+    }
+    if (url === "/api/control")
+      return new Promise((resolve) => controls.push({ body: JSON.parse(options.body), resolve: () => resolve({ ok: true, json: async () => ({}) }) }));
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/task-detail") return { ok: false, json: async () => ({ error: "offline" }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  await import(`./app.js?inflight=${Date.now()}-${Math.random()}`);
+  await flush();
+  elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+
+  const pause = elements.inspection.querySelectorAll("[data-action]").find((button) => button.dataset.action === "pause");
+  pause.focus();
+  const sent = pause.onclick();
+  assert.equal(controls.length, 1);
+  assert.deepEqual(controls[0].body, { town: "acme/project", role: "issue", action: "pause", task: "" });
+  assert.match(elements.inspection.innerHTML, /data-action="pause" disabled aria-busy="true"/);
+  pause.onclick();
+  assert.equal(controls.length, 1, "a second press while in flight sends nothing");
+
+  // A snapshot rebuilds the inspector while the request is out.
+  releaseSnapshot();
+  await flush();
+  assert.match(elements.inspection.innerHTML, /data-action="pause" disabled aria-busy="true"/, "the redraw keeps the pending button disabled");
+  assert.doesNotMatch(elements.inspection.innerHTML, /data-action="stop" disabled/, "other controls stay usable");
+
+  document.activeElement = document.body;
+  controls[0].resolve();
+  await sent;
+  assert.doesNotMatch(elements.inspection.innerHTML, /aria-busy/, "the control returns once the write settles");
+  assert.equal(document.activeElement.dataset.action, "pause", "focus returns to the control that was pressed");
+
+  // The inbox holds both decision buttons for a task while one is in flight.
+  const admit = elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxDecide === "admit");
+  const deciding = admit.onclick();
+  assert.equal(controls.length, 2);
+  assert.match(elements["inbox-list"].innerHTML, /data-inbox-decide="admit" disabled aria-busy="true"/);
+  assert.match(elements["inbox-list"].innerHTML, /data-inbox-decide="decline" disabled aria-busy="true"/);
+  elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxDecide === "decline").onclick();
+  assert.equal(controls.length, 2, "declining while admitting sends nothing");
+  controls[1].resolve();
+  await deciding;
+  assert.doesNotMatch(elements["inbox-list"].innerHTML, /aria-busy/);
+});
+
+test("a write that never answers is released at its deadline, and paired controls block each other", async () => {
+  const elements = installFixture();
+  const live = structuredClone(state);
+  live.demo = false;
+  const deadlines = [];
+  const timeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => {
+    const controller = new AbortController();
+    deadlines.push({ ms, controller });
+    return controller.signal;
+  };
+  const controls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (url === "/api/events") {
+      let sent = false;
+      return { ok: true, body: { getReader: () => ({ read: async () => (!sent ? ((sent = true), { value: new TextEncoder().encode(`data: ${JSON.stringify(live)}\n\n`), done: false }) : new Promise(() => {})) }) } };
+    }
+    if (url === "/api/control") {
+      const body = JSON.parse(options.body);
+      controls.push({ body, signal: options.signal });
+      // The inbox decision's request ignores its signal, as a stuck refresh
+      // would: the deadline must release the control regardless.
+      if (body.action === "decline") return new Promise(() => {});
+      return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason)));
+    }
+    if (url === "/api/state") return { ok: true, json: async () => live };
+    if (url === "/api/task-detail") return { ok: false, json: async () => ({ error: "offline" }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  try {
+    await import(`./app.js?deadline=${Date.now()}-${Math.random()}`);
+    await flush();
+    elements.towns.querySelectorAll("[data-town]")[0].onclick();
+
+    // Town-wide wake and pause share one pending write for the town.
+    const waking = elements["town-toggle"].onclick();
+    assert.equal(controls.at(-1).body.role, "all");
+    assert.equal(elements["town-toggle"].disabled, true);
+    assert.equal(elements["pause-all"].disabled, true, "pause waits for the wake to settle");
+    elements["pause-all"].onclick();
+    assert.equal(controls.length, 1, "pausing the town while it wakes sends nothing");
+    assert.equal(deadlines.at(-1).ms, 30000);
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await waking;
+    assert.equal(elements["town-toggle"].disabled, false, "the deadline releases the town controls");
+    assert.match(elements.error.textContent, /may still have been applied/, "a lost answer is reported as uncertain, not failed");
+
+    // The inspector's Admit and Decline are one decision.
+    elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+    elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
+    const find = (id) => elements.inspection.querySelectorAll("button").find((button) => button.id === id);
+    const admitting = find("admit-task").onclick();
+    assert.match(elements.inspection.innerHTML, /id="admit-task" class="primary" disabled aria-busy="true"/);
+    assert.match(elements.inspection.innerHTML, /id="decline-task" class="danger" disabled aria-busy="true"/);
+    const before = controls.length;
+    find("decline-task").onclick();
+    assert.equal(controls.length, before, "declining while admitting sends nothing");
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await admitting;
+    assert.doesNotMatch(elements.inspection.innerHTML, /aria-busy/);
+
+    // A request that ignores its signal is still released at the deadline.
+    const declining = elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxDecide === "decline").onclick();
+    assert.match(elements["inbox-list"].innerHTML, /data-inbox-decide="decline" disabled/);
+    deadlines.at(-1).controller.abort(new DOMException("deadline", "TimeoutError"));
+    await declining;
+    assert.doesNotMatch(elements["inbox-list"].innerHTML, /aria-busy/);
+    assert.match(elements["inbox-error"].textContent, /may still have been applied/);
+  } finally {
+    AbortSignal.timeout = timeout;
+  }
 });

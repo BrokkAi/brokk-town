@@ -26,6 +26,11 @@ type engine struct {
 	state              *State
 	unreleased, recent int
 	changesKnown       bool
+	// deferred explains why the last check left unreleased commits waiting
+	// because release_trigger_ignore excluded every changed path.
+	deferred string
+	// verified is the event for a receipt saved during the current cycle.
+	verified *NotificationEvent
 }
 
 var errAttemptsExhausted = errors.New("release retry budget exhausted; fix the reported failure and run release-bot retry")
@@ -46,20 +51,33 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once, force bool) er
 	defer unlock()
 	e := engine{config: cfg, git: checkout{cfg}, github: github{config: cfg}, agent: agentProcess{cfg, log}, log: log, now: time.Now, starting: true}
 	e.observe, _ = ctx.Value(progressKey{}).(func(Progress))
+	return e.run(ctx, once, force)
+}
+func (e *engine) run(ctx context.Context, once, force bool) error {
+	cfg, log := e.config, e.log
 	// Check immediately, including on restart; polling only delays later checks.
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		cycleCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.Timeout)+2*time.Duration(cfg.VerificationTimeout)+5*time.Minute)
+		e.verified = nil
 		err := e.cycle(cycleCtx, force)
 		e.starting = false
 		cancel()
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// Notifications follow durable outcomes and never change them.
+		if e.verified != nil {
+			_ = e.notify(ctx, *e.verified)
+			e.verified = nil
+		}
 		if err != nil {
 			e.report(e.state, "paused", err.Error())
+		}
+		if errors.Is(err, errAttemptsExhausted) && e.state != nil && e.state.Job != nil {
+			_ = e.notify(ctx, e.notificationFor("exhausted", e.state.Job))
 		}
 		var setup *agentSetupError
 		if once || errors.As(err, &setup) || errors.Is(err, errAttemptsExhausted) {
@@ -69,7 +87,11 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once, force bool) er
 			log.Error("release cycle", "error", err)
 		}
 		if err == nil {
-			e.report(e.state, "waiting", "Waiting for the next release check")
+			task := "Waiting for the next release check"
+			if e.deferred != "" {
+				task = e.deferred
+			}
+			e.report(e.state, "waiting", task)
 		}
 		timer := time.NewTimer(time.Duration(cfg.Poll))
 		select {
@@ -137,6 +159,7 @@ func (e *engine) cycle(ctx context.Context, force bool) error {
 	}
 	e.state = s
 	e.changesKnown = false
+	e.deferred = ""
 	e.report(s, "fetching", "Checking repository for changes")
 	e.log.Info("Checking repository for changes")
 	if err := e.git.open(ctx); err != nil {
@@ -174,12 +197,24 @@ func (e *engine) cycle(ctx context.Context, force bool) error {
 	if err := e.save(s); err != nil {
 		return err
 	}
+	if !force {
+		ignored, err := e.onlyIgnoredChanges(ctx, s, total, head, remoteHead)
+		if err != nil {
+			return err
+		}
+		if ignored {
+			e.deferred = "Waiting: unreleased changes touch only release_trigger_ignore paths"
+			e.report(s, "waiting", e.deferred)
+			e.log.Info("monitoring; changes touch only release_trigger_ignore paths", "unreleased_commits", total, "recent_commits", recent)
+			return nil
+		}
+	}
 	reason := due(e.config, s, total, recent, now)
 	if force && total > 0 {
 		reason = "forced cadence"
 	}
 	if reason == "" {
-		if reason, err = e.triage(ctx, s, head, total, now); err != nil {
+		if reason, err = e.triage(ctx, s, head, remoteHead, total, now); err != nil {
 			return err
 		}
 	}
@@ -204,6 +239,35 @@ func (e *engine) cycle(ctx context.Context, force bool) error {
 	}
 	e.log.Info("release due", "reason", reason, "target", head, "work_branch", workBranch)
 	return e.resume(ctx, s)
+}
+
+// onlyIgnoredChanges reports whether every path changed since the verified
+// release, on the watched branch and in the preserved local head, matches
+// release_trigger_ignore. Without a policy, unreleased commits or an
+// established release (commit and time), and for an empty net diff, it is
+// false, so first releases and the existing cadence are unchanged. A Git
+// failure is returned rather than read as ignorable.
+func (e *engine) onlyIgnoredChanges(ctx context.Context, s *State, total int, head, remoteHead string) (bool, error) {
+	if len(e.config.ReleaseTriggerIgnore) == 0 || total == 0 || s.Released == "" || s.ReleasedAt.IsZero() {
+		return false, nil
+	}
+	changed := 0
+	for _, tip := range []string{remoteHead, head} {
+		paths, err := e.git.changedPaths(ctx, s.Released, tip)
+		if err != nil {
+			return false, fmt.Errorf("inspect changed paths for release_trigger_ignore: %w", err)
+		}
+		for _, path := range paths {
+			if !e.config.triggerIgnored(path) {
+				return false, nil
+			}
+		}
+		changed += len(paths)
+		if head == remoteHead {
+			break
+		}
+	}
+	return changed > 0, nil
 }
 func (e *engine) resume(ctx context.Context, s *State) error {
 	j := s.Job
@@ -403,6 +467,12 @@ func (e *engine) verify(ctx context.Context, target string, r Result) error {
 }
 func (e *engine) finish(s *State, r Result) error {
 	now := e.now().UTC()
+	var event *NotificationEvent
+	if s.Job != nil {
+		n := e.notificationFor("verified", s.Job)
+		n.Release, n.Commit, n.Tag = "release:"+r.Tag, r.Commit, r.Tag
+		event = &n
+	}
 	s.recordVerified(r, now)
 	s.Released = r.Commit
 	s.ReleasedAt = now
@@ -411,6 +481,7 @@ func (e *engine) finish(s *State, r Result) error {
 	if err := e.save(s); err != nil {
 		return err
 	}
+	e.verified = event
 	e.changesKnown = false
 	e.report(s, "complete", "Release verified: "+r.Tag)
 	e.log.Info("release verified", "tag", r.Tag, "commit", r.Commit, "url", r.URL)

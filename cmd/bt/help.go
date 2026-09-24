@@ -15,12 +15,15 @@ import (
 type cliFlags struct {
 	daemon               *bool
 	closeSeverity        *string
+	mergePolicy          *string
 	dir                  *string
 	listen               *string
 	demo                 *bool
 	repo                 *string
 	role                 *string
 	task                 *string
+	until                *string
+	reason               *string
 	config               *string
 	harness              *string
 	harnessVersion       *string
@@ -37,6 +40,7 @@ type cliFlags struct {
 	budgetPeriod         *string
 	budgetAttempts       *int
 	budgetMinutes        *int
+	quietHours           *string
 	labels               *string
 	excludeLabels        *string
 	only                 *int
@@ -68,7 +72,9 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.demo = fs.Bool("demo", false, "isolated simulated town (serve only)")
 	fl.repo = fs.String("repo", "", "GitHub OWNER/REPO")
 	fl.role = fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release, simplifier, hall (Mayor Bot); repo/all for controls (start all wakes every house, except release under manual merge policy); omit for town defaults in settings")
-	fl.task = fs.String("task", "", "task ID for retry; omit with --role release to reset the release bot's exhausted attempt budget")
+	fl.task = fs.String("task", "", "task ID for retry, defer, undefer, admit or decline; omit with retry --role release to reset the release bot's exhausted attempt budget")
+	fl.until = fs.String("until", "", "resume time as RFC 3339 (2026-01-02T15:04:05Z) or a delay from now such as 90m, 4h or 2d (defer)")
+	fl.reason = fs.String("reason", "", "short note on why the task is snoozed, at most 200 characters (defer)")
 	fl.config = fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
 	fl.harness = fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
 	fl.harnessVersion = fs.String("harness-version", "", "select an exact catalog version (add/settings)")
@@ -78,6 +84,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.agentCommand = fs.String("agent-command", "", "custom ACP command as a JSON argument array (add/settings)")
 	fl.inherit = fs.Bool("inherit", false, "restore a bot's town defaults (settings --role BOT)")
 	fl.closeSeverity = fs.String("review-close-severity", "", "least severe finding (P1, P2 or P3) that closes a pull request after its second review; lower findings become follow-up issues (settings)")
+	fl.mergePolicy = fs.String("merge-policy", "", "who merges eligible pull requests: bot (Town-created), all (external too), or manual; manual pauses Release Bot (settings)")
 	fl.kind = fs.String("kind", "feature", "feature or bug (request)")
 	fl.title = fs.String("title", "", "GitHub issue title (request)")
 	fl.bodyFile = fs.String("body-file", "", "issue description file, or - for stdin (request)")
@@ -86,6 +93,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.budgetPeriod = fs.String("budget-period", "", "accounting period for this town's agent budget: day, week, month, or none to remove it (settings)")
 	fl.budgetAttempts = fs.Int("budget-attempts", 0, "agent attempts allowed per period; 0 leaves attempts uncapped (settings)")
 	fl.budgetMinutes = fs.Int("budget-agent-minutes", 0, "agent minutes allowed per period; 0 leaves time uncapped (settings)")
+	fl.quietHours = fs.String("quiet-hours", "", "weekly windows when Town starts no new agent work or GitHub writes, as \"DAYS HH:MM-HH:MM\" joined by ';' (mon-fri 18:00-08:00; weekends 00:00-24:00); none for no quiet hours, default to follow the service default; omit --repo to set the service default (settings)")
 	fl.labels = fs.String("labels", "", "comma-separated labels this bot's work must carry (settings --role BOT)")
 	fl.excludeLabels = fs.String("exclude-labels", "", "comma-separated labels that exclude work from this bot (settings --role issue|review)")
 	fl.only = fs.Int("only", 0, "restrict this bot to one issue (--role issue) or pull request (--role review) number (settings)")
@@ -142,14 +150,17 @@ var cliCommands = []commandInfo{
 	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog.", args: "[flags]", flags: []string{"refresh"}},
 	{name: "settings", short: "Configure a town or bot", long: "Configure a town's defaults or one bot house. Omit --role to edit town defaults.\n\n" +
 		"A budget bounds agent attempts and agent minutes per accounting period. Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol.\n\n" +
-		"With --role, the work-policy flags choose what that bot takes on: label filters, one selected issue or pull request, a discovery focus, per-run limits, attempts, and its own verification command. Each flag is refused by a bot that cannot honour it.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "attempts", "budget-agent-minutes", "budget-attempts", "budget-period", "clear-policy", "effort", "exclude-labels", "focus", "harness", "harness-version", "inherit", "labels", "limit", "model", "only", "release-burst", "release-burst-window-seconds", "release-daily-seconds", "release-minimum-gap-seconds", "release-assets", "release-preflight", "release-quiet-seconds", "release-triage", "release-verification-timeout-seconds", "release-workflows", "repo", "review-close-severity", "role", "verify"}},
+		"Quiet hours are weekly windows on this machine's local clock in which Town starts no new agent work and makes none of its own GitHub writes; running work finishes and the repository is still watched. A window ending at or before its start runs past midnight. Without --repo, --quiet-hours sets the default every town follows unless it sets its own.\n\n" +
+		"With --role, the work-policy flags choose what that bot takes on: label filters, one selected issue or pull request, a discovery focus, per-run limits, attempts, and its own verification command. Each flag is refused by a bot that cannot honour it.", args: "[--repo OWNER/REPO] [flags]", flags: []string{"agent-command", "attempts", "budget-agent-minutes", "budget-attempts", "budget-period", "clear-policy", "effort", "exclude-labels", "focus", "harness", "harness-version", "inherit", "labels", "limit", "merge-policy", "model", "only", "release-burst", "release-burst-window-seconds", "release-daily-seconds", "release-minimum-gap-seconds", "release-assets", "release-preflight", "release-quiet-seconds", "release-triage", "release-verification-timeout-seconds", "release-workflows", "quiet-hours", "repo", "review-close-severity", "role", "verify"}},
 	{name: "request", short: "Submit a GitHub issue request", long: "Submit a GitHub issue as work for a town.", args: "--repo OWNER/REPO --title TITLE --body-file FILE [flags]", flags: []string{"body-file", "kind", "repo", "request-id", "title"}},
 	{name: "check-request", short: "Check a submitted request", long: "Check the status of a submitted request.", args: "--repo OWNER/REPO --request-id ID [flags]", flags: []string{"repo", "request-id"}},
 	{name: "start", short: "Start a town or bot house", long: "Start a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "pause", short: "Pause a town or bot house", long: "Pause a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "stop", short: "Stop a town or bot house", long: "Stop a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "retry", short: "Retry a task", long: "Retry a task. Omit --task with --role release to reset the release bot's exhausted attempt budget.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role", "task"}},
-	{name: "admit", short: "Admit a Mayoral decision", long: "Admit a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
+	{name: "defer", short: "Snooze a task until a chosen time", long: "Snooze one issue or pull request until a chosen time. Its house keeps working the rest of the queue; no agent starts and no merge happens for the snoozed task until the resume time, when it rejoins the queue on its own.", args: "--repo OWNER/REPO --task ID --until TIME [flags]", flags: []string{"reason", "repo", "task", "until"}},
+	{name: "undefer", short: "Clear a task's snooze", long: "Clear a task's snooze so its house can take it up at once.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
+	{name: "admit", short: "Admit a Mayoral decision", long: "Admit a pending Mayoral decision, or admit work Simplifier declined in auto mode.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "decline", short: "Decline a Mayoral decision", long: "Decline a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "serve", short: "Run the town service in the foreground", long: "Run the town service in the foreground.", args: "[flags]", flags: []string{"config", "repo"}},
 	{name: "version", short: "Print the version", long: "Print the bt version.", args: "", flags: nil},

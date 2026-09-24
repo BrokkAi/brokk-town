@@ -71,13 +71,17 @@ textarea:focus-visible,
   outline: 2px solid var(--green);
   outline-offset: 3px;
 }
+/* The header row wraps rather than squeezing labels onto two lines or pushing
+   past the window; with the three-column layout it still fits one row from
+   roughly 1400px, and a long development version string is truncated. */
 header {
-  height: 74px;
+  min-height: 74px;
   border-bottom: 1px solid var(--line);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 0 25px;
-  gap: 23px;
+  padding: 12px 25px;
+  gap: 10px 23px;
   background: #0b1912;
 }
 .brand {
@@ -138,6 +142,11 @@ header {
 .dot.blocked {
   background: #f1a775;
 }
+/* Quiet hours are a scheduled pause: calm, apart from failure and from the
+   operator's own Pause. */
+.dot.quiet {
+  background: #a89fd6;
+}
 .header-space {
   flex: 1;
 }
@@ -188,6 +197,15 @@ header {
 .town-version {
   color: #b5caae;
   font: 11px var(--mono);
+  white-space: nowrap;
+  /* A development build's version runs past forty characters; the full string
+     is in its tooltip and the help dialog. */
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A header control keeps its label on one line; the header row wraps instead. */
+header button {
   white-space: nowrap;
 }
 .inbox-toggle {
@@ -796,12 +814,20 @@ canvas {
   height: 100%;
   display: block;
 }
+/* The legend sits in the open strip above the top row of houses. The bottom
+   edge belongs to the lower row's labels, which hang below their buildings and
+   reach it whenever the map is short (narrow windows and the three-column
+   layout alike). */
 .world-legend {
   position: absolute;
-  bottom: 15px;
-  left: 19px;
+  top: 10px;
+  left: 12px;
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #0a1b15b3;
   font: 12px var(--mono);
   color: #b8cdb4;
   pointer-events: none;
@@ -1495,10 +1521,12 @@ textarea {
   .app {
     grid-template-columns: 175px minmax(370px, 1fr);
   }
+  /* The drawer spans the full window height, so a wrapped header never leaves
+     it misaligned. */
   .inspector {
     position: fixed;
     right: 0;
-    top: 74px;
+    top: 0;
     bottom: 0;
     width: 325px;
     z-index: 4;
@@ -1603,12 +1631,11 @@ textarea {
   }
   .world-legend {
     font-size: 10px;
-    gap: 8px;
-    left: 10px;
-    bottom: 10px;
+    gap: 2px 8px;
+    left: 8px;
+    top: 6px;
   }
   .inspector {
-    top: 64px;
     width: min(350px, 100vw);
   }
   .section-heading > .eyebrow {
@@ -1664,10 +1691,17 @@ textarea {
     margin-top: 3px;
   }
   .world-legend {
-    left: 7px;
-    bottom: 5px;
-    gap: 8px;
+    left: 5px;
+    top: 4px;
+    gap: 2px 8px;
+    padding: 1px 5px;
     font-size: 8px;
+  }
+  /* At phone width the header keeps the controls and drops the two readouts
+     the Capacity and Help dialogs already show. */
+  .town-version,
+  .capacity-summary {
+    display: none;
   }
 }
 
@@ -1765,6 +1799,22 @@ textarea {
   border-radius: 4px;
 }
 
+.quiet-held {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid #a89fd6;
+  background: var(--panel);
+  border-radius: 4px;
+}
+.status-chip.status-quiet {
+  border-color: #6f6899;
+  color: #cfc8f2;
+}
+.quiet-hours-input {
+  width: 100%;
+  font: 12px var(--mono);
+}
+
 /* Work a filter holds back stays listed: hiding it would leave an operator
    unable to see what their own policy excluded. It is dimmed, not removed. */
 .task-card.filtered {
@@ -1776,42 +1826,114 @@ textarea {
    else. The base palette below is the only thing a skin may change here, so a
    new theme never has to touch layout or state. */
 body[data-skin="frontline"] {
-  --green: #9de3ff;
-  --line: #2b4050;
-  --panel: #0d1a22;
-  --muted: #93a9b6;
-  background: #070d12;
+  --green: #8ed9f6;
+  --line: #374b56;
+  --panel: #111d24;
+  --muted: #a2b4bd;
+  background: #080e12;
 }
 body[data-skin="frontline"] header {
-  background: #0f1b24;
-  border-bottom-color: #2b4050;
+  background: linear-gradient(180deg, #26343d, #101b22 74%, #0b141a);
+  border-bottom: 2px solid #61727a;
 }
 body[data-skin="frontline"] .sidebar {
-  background: #0b151d;
+  background: linear-gradient(100deg, #17252d, #0b151b);
+  border-right-color: #465c66;
 }
 body[data-skin="frontline"] .primary {
-  color: #05141b;
+  color: #07151b;
+  background: linear-gradient(180deg, #bceaff, #75b7d6);
+  border-color: #c8e8f3;
+  box-shadow: inset 0 1px #ffffff88, 0 0 18px #58b9e433;
+}
+body[data-skin="frontline"] .world {
+  border: 2px solid #70818a;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 3px #0b1318, 0 0 0 1px #10191e;
+}
+body[data-skin="frontline"] .house-label {
+  border-color: #66747b;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #1d303bcc, #09151eea);
+  box-shadow: inset 0 1px #c4dbe422, 0 3px 10px #0009;
 }
 body[data-skin="frontline"] .world-legend {
-  color: #9dc6dc;
+  color: #c3dbe5;
+  background: #08121bd9;
+  border: 1px solid #536570;
+  border-radius: 2px;
+  padding: 7px 10px;
 }
 .skin-toggle[data-skin="frontline"] {
-  color: #9de3ff;
-  border-color: #2b4050;
+  color: #bceaff;
+  border-color: #657780;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #273944, #13232d);
 }
 
-/* The overview strip shows the town's own cottages. A war theme has no
-   cottages, so the strip becomes a claimed-ground band rather than a row of
-   buildings that do not exist in the theme. */
-body[data-skin="frontline"] .town-card-houses {
-  background:
-    repeating-linear-gradient(90deg, #f2c14e22 0 10px, transparent 10px 34px),
-    linear-gradient(180deg, #101c24, #0a1116);
-  border-top: 1px solid #2b4050;
-  border-bottom: 1px solid #2b4050;
-  height: 78px;
+/* Frontline cards show the actual faction atlas used on each base map. */
+body[data-skin="frontline"] [data-faction="vanguard"] {
+  --faction-accent: #8fd0ff;
+  --faction-atlas: url("/assets/frontline-vanguard.png");
+}
+body[data-skin="frontline"] [data-faction="ascendancy"] {
+  --faction-accent: #d9a6ff;
+  --faction-atlas: url("/assets/frontline-ascendancy.png");
+}
+body[data-skin="frontline"] [data-faction="hive"] {
+  --faction-accent: #c8f45f;
+  --faction-atlas: url("/assets/frontline-hive.png");
+}
+body[data-skin="frontline"] .town-card[data-faction] {
+  border-color: var(--faction-accent);
+  background: linear-gradient(145deg, #1d2c33, #0b151b 75%);
+}
+body[data-skin="frontline"] .town-card[data-faction]:hover {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--faction-accent) 25%, transparent);
+}
+body[data-skin="frontline"] .town-link[data-faction] {
+  border-left: 3px solid var(--faction-accent);
+}
+body[data-skin="frontline"] .faction-badge {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  color: var(--faction-accent);
+  border: 1px solid var(--faction-accent);
+  border-radius: 2px;
+  font: 11px var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+body[data-skin="frontline"] .frontline-card-art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  height: 120px;
+  margin: 10px auto;
+  padding: 0 4px 10px;
+  background: radial-gradient(ellipse at 50% 100%,
+    color-mix(in srgb, var(--faction-accent) 22%, #14212a), #091116 76%);
+  border-top: 1px solid var(--faction-accent);
+  border-bottom: 1px solid #46535a;
   opacity: 1;
 }
+body[data-skin="frontline"] .frontline-card-art .base-mini {
+  display: block;
+  flex: 0 0 30%;
+  aspect-ratio: 1;
+  background-image: var(--faction-atlas);
+  background-size: 400% 200%;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 5px 4px #000a);
+}
+body[data-skin="frontline"] [data-faction="hive"] .base-mini {
+  flex-basis: 25%;
+  aspect-ratio: 3/4;
+}
+body[data-skin="frontline"] .base-mini.hall { background-position: 0 0; }
+body[data-skin="frontline"] .base-mini.bug { background-position: 66.667% 0; }
+body[data-skin="frontline"] .base-mini.release { background-position: 66.667% 100%; }
 
 /* The faction picker states which army a base flies. It only appears for a
    skin that has factions, and it never changes what the base does. */
@@ -1846,4 +1968,23 @@ body[data-skin="frontline"] .town-card-houses {
   font: 11px var(--mono);
   color: #8fb4c6;
   line-height: 1.5;
+}
+/* A snooze is the operator's own hold, not a fault: it reads as a calm lilac,
+   apart from the warm tones of blocked and failed work. */
+.status-snoozed { border-top-color: #8f86b8; }
+.status-chip.status-snoozed {
+  border-color: #6f6899;
+  color: #cfc8f2;
+}
+.snooze-note {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #6f6899;
+  border-left: 4px solid #a89fd6;
+  border-radius: 6px;
+  background: #1d1e2e;
+}
+.snooze-note strong {
+  font-size: 12px;
+  letter-spacing: .04em;
 }

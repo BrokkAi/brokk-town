@@ -144,7 +144,7 @@ func fixture(t *testing.T) (engine, *State, *fakeSource, *fakeAgent, string) {
 	}
 	f := &fakeSource{cfg: cfg}
 	a := &fakeAgent{}
-	e := engine{config: cfg, source: f, log: slog.New(slog.NewTextHandler(io.Discard, nil)), agent: func(Config) Agent { return a }, now: time.Now, sleep: func(context.Context, time.Duration) error { return nil }}
+	e := engine{config: cfg, source: f, log: slog.New(slog.NewTextHandler(io.Discard, nil)), agent: func(Config, string) Agent { return a }, now: time.Now, sleep: func(context.Context, time.Duration) error { return nil }}
 	return e, newState(cfg), f, a, source
 }
 
@@ -417,7 +417,7 @@ func TestChangedSourceAndMissingSourceRefused(t *testing.T) {
 				bad.Files = []string{"does-not-exist.go"}
 				a.findings = []Finding{bad}
 			} else {
-				e.agent = func(cfg Config) Agent {
+				e.agent = func(cfg Config, _ string) Agent {
 					a.onScan = func() { writeTestFile(t, filepath.Join(cfg.Directory, "README.md"), "edited source") }
 					return a
 				}

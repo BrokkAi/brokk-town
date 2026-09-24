@@ -61,6 +61,51 @@ export const installationRoles = [
   "simplifier",
 ];
 
+// Each atlas has four columns and two rows in installationRoles order. Image
+// loading happens outside draw calls; until an atlas is ready, the original
+// canvas silhouettes keep the base readable.
+const installationArt = new Map();
+let craftArt;
+let defenderArt;
+let artLoadScheduled = false;
+export function preloadFrontlineArt() {
+  if (typeof Image === "undefined" || artLoadScheduled) return;
+  artLoadScheduled = true;
+  // Start browser image requests in a separate task, outside the theme click
+  // handler and the canvas animation loop.
+  setTimeout(() => {
+    if (!craftArt) {
+      craftArt = new Image();
+      craftArt.src = "/assets/frontline-craft.png";
+    }
+    if (!defenderArt) {
+      defenderArt = new Image();
+      defenderArt.src = "/assets/frontline-defenders.png";
+    }
+    for (const id of factionIds) {
+      if (!installationArt.has(id)) {
+        const atlas = new Image();
+        atlas.src = `/assets/frontline-${id}.png`;
+        installationArt.set(id, atlas);
+      }
+    }
+  }, 0);
+}
+function ready(image) {
+  return image?.complete && image.naturalWidth ? image : null;
+}
+function craftAtlas() {
+  return ready(craftArt);
+}
+function atlasFor(faction) {
+  const id = factionIds.includes(faction) ? faction : "vanguard";
+  const atlas = installationArt.get(id);
+  return ready(atlas);
+}
+function defenderAtlas() {
+  return ready(defenderArt);
+}
+
 // Each base names its own installations. The first name is what a player
 // reads on the map, the second is the compact form the journal has room for,
 // and the third is the inspector's eyebrow.
@@ -103,9 +148,7 @@ function hash(value) {
   return Math.abs(n >>> 0);
 }
 
-// A base keeps its faction between restarts and machines: the assignment is a
-// pure function of the repository, so two people looking at the same town see
-// the same war.
+// A repository has a stable automatic faction, independent of other towns.
 export function factionFor(townId) {
   return factionIds[hash(townId) % factionIds.length];
 }
@@ -420,6 +463,26 @@ export function paintInstallation(c, { role, x, y, faction, now = 0, motion = tr
   const p = paletteFor(faction),
     shape = shapes[role] || shapes.hall;
   plate(c, p, x, y + 52);
+  const atlas = atlasFor(faction);
+  const index = installationRoles.indexOf(role);
+  if (atlas && index >= 0) {
+    const cellWidth = atlas.naturalWidth / 4;
+    const cellHeight = atlas.naturalHeight / 2;
+    const height = role === "repo" ? 182 : 172;
+    const width = height * cellWidth / cellHeight;
+    c.drawImage(
+      atlas,
+      (index % 4) * cellWidth,
+      Math.floor(index / 4) * cellHeight,
+      cellWidth,
+      cellHeight,
+      x - width / 2,
+      y + 69 - height,
+      width,
+      height,
+    );
+    return;
+  }
   c.save();
   c.translate(x, y + 52);
   // Beams and domes read as one army without hiding what an installation does.
@@ -427,12 +490,20 @@ export function paintInstallation(c, { role, x, y, faction, now = 0, motion = tr
   c.restore();
 }
 
-// Garrisons stand in for the walking workers of the town skin: same committed
-// status, drawn as a patrol around the installation that is working.
+// Craft carry deliveries. Ground units hold each installation, including when
+// its worker is idle; working status only changes their stance and patrol.
 function craft(c, p, { x, y, direction = 1, scale = 1, now = 0, motion = true, faction }) {
   c.save();
   c.translate(x, y);
   c.scale(direction * scale, scale);
+  const atlas = craftAtlas();
+  if (atlas) {
+    const index = Math.max(0, factionIds.indexOf(faction));
+    const cell = atlas.naturalWidth / 3;
+    c.drawImage(atlas, index * cell, 0, cell, atlas.naturalHeight, -42, -25, 84, 50);
+    c.restore();
+    return;
+  }
   const flick = motion ? Math.sin(now / 70) * 1.4 : 0;
   if (faction === "ascendancy") {
     poly(c, [[0, -9], [30, -3], [36, 6], [-8, 6]], p.armor);
@@ -457,40 +528,162 @@ function craft(c, p, { x, y, direction = 1, scale = 1, now = 0, motion = true, f
   c.restore();
 }
 
-export function drawGarrison(c, { role, x, y, faction, now, motion = true }) {
-  const p = paletteFor(faction),
-    pose = workerPose(role, now, motion),
-    t = pose.phase;
-  for (let i = 0; i < 3; i++) {
-    const angle = motion ? t * 0.42 + i * 2.1 : i * 2.1,
-      rx = 62 + Math.sin(angle * 1.7) * 8,
-      cx = x + Math.cos(angle) * rx,
-      cy = y + 46 + Math.sin(angle) * 17;
-    c.fillStyle = "#0d151b70";
+function defender(c, atlas, index, x, y, size, direction, p) {
+  c.save();
+  c.translate(x, y);
+  c.scale(direction, 1);
+  oval(c, 2, size * 0.35, size * 0.27, size * 0.09, "#02070aaa");
+  if (atlas) {
+    const cellWidth = atlas.naturalWidth / 3;
+    const cellHeight = atlas.naturalHeight / 2;
+    c.drawImage(atlas, (index % 3) * cellWidth, Math.floor(index / 3) * cellHeight,
+      cellWidth, cellHeight, -size / 2, -size / 2, size, size);
+  } else {
+    // A small faction-specific silhouette is available until the atlas loads.
+    if (index < 3) {
+      circle(c, 0, -size * 0.18, size * 0.12, p.armor);
+      poly(c, [[-size * 0.2, -size * 0.08], [size * 0.15, -size * 0.08],
+        [size * 0.22, size * 0.31], [-size * 0.12, size * 0.31]], p.mid);
+      bar(c, 1, 0, size * 0.35, 4, p.accent);
+    } else {
+      poly(c, [[-size * 0.38, size * 0.24], [-size * 0.22, -size * 0.12],
+        [size * 0.24, -size * 0.12], [size * 0.38, size * 0.24]], p.mid);
+      circle(c, 0, 0, size * 0.16, p.accent);
+    }
+  }
+  c.restore();
+}
+
+function defend(c, p, faction, x, y, threat, now) {
+  if (!threat) return;
+  const tx = threat.x, ty = threat.y;
+  if (faction === "ascendancy") {
+    ring(c, x, y, 58, 17, `${p.accent}99`, 2);
+    c.strokeStyle = `${p.glow}b8`;
+    c.lineWidth = 3;
     c.beginPath();
-    c.ellipse(cx + 3, cy + 16, 17, 5, 0, 0, Math.PI * 2);
-    c.fill();
-    craft(c, p, {
-      faction,
-      x: cx,
-      y: cy,
-      direction: Math.cos(angle) >= 0 ? 1 : -1,
-      scale: 0.55,
-      now: now + i * 120,
-      motion,
-    });
-    if (motion && pose.working) {
-      const muzzle = (t * 1.4 + i / 3) % 1;
-      c.fillStyle = `rgba(255,236,180,${(1 - muzzle) * 0.8})`;
-      c.fillRect(cx + 16, cy - 3 - muzzle * 12, 3, 3);
+    c.moveTo(x + 3, y + 72);
+    c.quadraticCurveTo((x + tx) / 2, Math.min(y, ty) - 36, tx, ty);
+    c.stroke();
+  } else if (faction === "hive") {
+    for (let i = -1; i <= 1; i++) {
+      const sx = x + i * 23, sy = y + 78;
+      c.strokeStyle = `${p.accent}aa`;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(sx, sy);
+      c.quadraticCurveTo((sx + tx) / 2, Math.min(sy, ty) - 22 - i * 8, tx + i * 8, ty);
+      c.stroke();
+    }
+  } else {
+    for (const side of [-1, 1]) {
+      const sx = x + side * 83, sy = y + 54;
+      c.strokeStyle = now % 260 < 130 ? "#ffe9a6d9" : "#8fd0ff88";
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(sx, sy);
+      c.lineTo(tx, ty);
+      c.stroke();
     }
   }
 }
 
+export function drawGarrison(c, { role, x, y, faction, now = 0, motion = true, working = false, threat = null }) {
+  const p = paletteFor(faction);
+  const index = Math.max(0, factionIds.indexOf(faction));
+  const atlas = defenderAtlas();
+  const pose = workerPose(role, now, motion);
+  const patrol = working && motion ? Math.sin(pose.phase * 0.7) * 6 : 0;
+  defend(c, p, faction, x, y, motion ? threat : null, now);
+  defender(c, atlas, index, x - 83 + patrol, y + 56, 53, 1, p);
+  defender(c, atlas, index, x + 83 - patrol, y + 56, 53, -1, p);
+  defender(c, atlas, index + 3, x, y + 82, 54, motion && threat?.x < x ? -1 : 1, p);
+  if (working) {
+    const pulse = motion ? 0.55 + Math.sin(now / 370) * 0.18 : 0.6;
+    c.globalAlpha = pulse;
+    ring(c, x, y + 80, 25, 8, p.accent, 2);
+    c.globalAlpha = 1;
+  }
+}
+
+// Fire is drawn only for a committed delivery in flight. The destination is
+// the actual installation, but projectile reach is bounded so a route never
+// paints a beam across the entire map.
+function drawVolley(c, { x, y, faction, to, direction, now, progress }) {
+  if (progress < 0.48) return;
+  const p = paletteFor(faction);
+  const destination = positions[to];
+  const sx = x + direction * 25, sy = y + 2;
+  const dx = destination ? destination[0] - sx : direction * 130;
+  const dy = destination ? destination[1] + 58 - sy : 0;
+  const distance = Math.hypot(dx, dy) || 1;
+  const reach = Math.min(155, distance);
+  const tx = sx + dx / distance * reach;
+  const ty = sy + dy / distance * reach;
+  c.save();
+  if (faction === "ascendancy") {
+    const pulse = 0.55 + Math.abs(Math.sin(now / 180)) * 0.45;
+    c.globalAlpha = pulse;
+    c.strokeStyle = p.accent;
+    c.lineWidth = 9;
+    c.beginPath();
+    c.moveTo(sx, sy);
+    c.quadraticCurveTo((sx + tx) / 2, (sy + ty) / 2 - 15, tx, ty);
+    c.stroke();
+    c.strokeStyle = p.glow;
+    c.lineWidth = 3;
+    c.stroke();
+    for (const offset of [-1, 1]) {
+      c.strokeStyle = `${p.accent}99`;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(sx, sy + offset * 7);
+      c.lineTo((sx + tx) / 2, (sy + ty) / 2 + offset * 13);
+      c.lineTo(tx, ty);
+      c.stroke();
+    }
+    circle(c, tx, ty, 7 + pulse * 4, p.glow);
+  } else if (faction === "hive") {
+    for (let i = 0; i < 4; i++) {
+      const phase = ((now / 520 + i / 4) % 1);
+      const py = sy + (ty - sy) * phase - Math.sin(phase * Math.PI) * (22 + i * 5);
+      const px = sx + (tx - sx) * phase;
+      c.strokeStyle = `${p.accent}88`;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(sx, sy);
+      c.quadraticCurveTo((sx + px) / 2, Math.min(sy, py) - 19, px, py);
+      c.stroke();
+      circle(c, px, py, 3 + i % 2, i % 2 ? p.hazard : p.accent);
+    }
+    circle(c, sx, sy, 5, p.glow);
+  } else {
+    circle(c, sx, sy, 7 + (now % 140) / 100, p.hazard);
+    for (let i = 0; i < 4; i++) {
+      const phase = (now / 290 + i / 4) % 1;
+      const bx = sx + (tx - sx) * phase;
+      const by = sy + (ty - sy) * phase;
+      c.strokeStyle = i % 2 ? "#fff0bc" : p.hazard;
+      c.lineWidth = 3;
+      c.beginPath();
+      c.moveTo(bx - dx / distance * 17, by - dy / distance * 17);
+      c.lineTo(bx, by);
+      c.stroke();
+      circle(c, bx, by, 3, p.glow);
+    }
+    for (let i = 0; i < 3; i++) {
+      const drift = (now / 680 + i / 3) % 1;
+      circle(c, sx - direction * drift * 34, sy + drift * 12, 4 + drift * 5,
+        `rgba(143,163,172,${(1 - drift) * 0.4})`);
+    }
+  }
+  c.restore();
+}
+
 // A strike is one committed delivery drawn as an attack run: a faction craft
 // crossing the base, a target marker carrying the real issue or PR number, and
-// an impact burst where the work actually arrived.
-export function drawStrike(c, { x, y, cargo, faction, now, progress = 0, direction = 1, motion = true }) {
+// a faction-specific volley and impact where the work actually arrived.
+export function drawStrike(c, { x, y, cargo, faction, to, now, progress = 0, direction = 1, motion = true }) {
   const p = paletteFor(faction),
     lift = motion ? Math.sin(now / 110) * 2.4 : 0,
     bob = y + lift;
@@ -503,21 +696,12 @@ export function drawStrike(c, { x, y, cargo, faction, now, progress = 0, directi
   c.beginPath();
   c.ellipse(x + 4, y + 26, 30, 8, 0, 0, Math.PI * 2);
   c.fill();
-  for (let i = 1; i <= 4; i++) {
-    const trail = i * 13;
-    c.fillStyle = `rgba(255,255,255,${0.22 - i * 0.045})`;
-    c.beginPath();
-    c.ellipse(x - direction * trail, bob + Math.sin(now / 90 + i) * 1.6, 9 - i * 1.4, 4 - i * 0.5, 0, 0, Math.PI * 2);
-    c.fill();
-  }
-  for (let i = 0; i < 3; i++) {
-    const dust = motion ? (now / 420 + i / 3) % 1 : i / 3;
-    c.fillStyle = `rgba(206,222,214,${(1 - dust) * 0.22})`;
-    c.beginPath();
-    c.ellipse(x - direction * (26 + dust * 30), y + 20 - dust * 6, 2 + dust * 5, 2 + dust * 2, 0, 0, Math.PI * 2);
-    c.fill();
-  }
+  const trail = faction === "hive" ? p.accent : faction === "ascendancy" ? p.glow : p.hazard;
+  for (let i = 1; i <= 4; i++)
+    circle(c, x - direction * i * 13, bob + Math.sin(now / 120 + i) * 2,
+      6 - i, `${trail}${Math.max(0, 68 - i * 12).toString(16).padStart(2, "0")}`);
   craft(c, p, { faction, x, y: bob, direction, scale: 1.2, now, motion });
+  drawVolley(c, { x, y: bob, faction, to, direction, now, progress });
   const pulse = 1 + (motion ? Math.sin(now / 160) * 0.08 : 0);
   ring(c, x, bob, 30 * pulse, 30 * pulse, `${p.accent}bb`, 2);
   c.strokeStyle = `${p.glow}55`;
@@ -546,22 +730,39 @@ export function drawImpact(c, { x, y, faction, age = 0 }) {
   const p = paletteFor(faction),
     t = Math.max(0, Math.min(1, age)),
     radius = 16 + t * 74;
-  c.fillStyle = `rgba(255,247,224,${(1 - t) * 0.5})`;
-  c.beginPath();
-  c.ellipse(x, y, 26 * (1 - t) + 8, 20 * (1 - t) + 6, 0, 0, Math.PI * 2);
-  c.fill();
-  ring(c, x, y, radius, radius * 0.42, `${p.accent}${t > 0.6 ? "55" : "cc"}`, 3 - t * 2);
-  ring(c, x, y, radius * 0.62, radius * 0.26, `${p.glow}77`, 2);
-  for (let i = 0; i < 9; i++) {
-    const angle = (i / 9) * Math.PI * 2 + t * 0.6,
-      distance = radius * (0.7 + (i % 3) * 0.12);
-    c.fillStyle = i % 2 ? p.hazard : p.armor;
-    c.fillRect(x + Math.cos(angle) * distance - 2, y + Math.sin(angle) * distance * 0.46 - 2, 4 - t * 2, 4 - t * 2);
+  c.save();
+  c.globalAlpha = 1 - t;
+  if (faction === "ascendancy") {
+    ring(c, x, y, radius, radius * 0.65, p.accent, 5 - t * 3);
+    ring(c, x, y, radius * 0.58, radius * 0.38, p.glow, 3);
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4 + t * 0.5;
+      poly(c, [[x + Math.cos(a) * radius, y + Math.sin(a) * radius * 0.5],
+        [x + Math.cos(a + 0.18) * (radius + 18), y + Math.sin(a + 0.18) * (radius + 18) * 0.5],
+        [x + Math.cos(a - 0.18) * (radius + 18), y + Math.sin(a - 0.18) * (radius + 18) * 0.5]], p.glow);
+    }
+    circle(c, x, y, 20 * (1 - t) + 4, p.glow);
+  } else if (faction === "hive") {
+    oval(c, x, y + 8, radius, radius * 0.43, `${p.accent}99`);
+    for (let i = 0; i < 11; i++) {
+      const a = i * Math.PI * 2 / 11;
+      const d = radius * (0.5 + (i % 3) * 0.2);
+      circle(c, x + Math.cos(a) * d, y + Math.sin(a) * d * 0.55 - t * 20,
+        3 + i % 3, i % 2 ? p.hazard : p.glow);
+    }
+    ring(c, x, y + 7, radius * 0.7, radius * 0.28, p.hazard, 3);
+  } else {
+    circle(c, x, y, 24 * (1 - t) + 6, "#fff2cb");
+    ring(c, x, y, radius, radius * 0.46, p.hazard, 6 - t * 4);
+    for (let i = 0; i < 10; i++) {
+      const a = i * Math.PI / 5;
+      const d = radius * (0.75 + (i % 3) * 0.1);
+      bar(c, x + Math.cos(a) * d, y + Math.sin(a) * d * 0.5, 5, 5,
+        i % 2 ? p.hazard : p.armor);
+    }
+    oval(c, x, y + 12, radius * 0.55, radius * 0.22, "#17130ee0");
   }
-  c.fillStyle = `rgba(24,18,12,${(1 - t) * 0.4})`;
-  c.beginPath();
-  c.ellipse(x, y + 6, 40 * (1 - t) + 12, 15 * (1 - t) + 5, 0, 0, Math.PI * 2);
-  c.fill();
+  c.restore();
 }
 
 // The map itself: ashen ground, craters, armored trackways between the

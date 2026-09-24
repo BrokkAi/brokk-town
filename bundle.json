@@ -3,14 +3,14 @@
     "bug": {
       "project": "bug-bot",
       "command": "bbb",
-      "version": "0.3.7",
-      "source_commit": "ecac6efcee71e64b5ef3a6ad3ac8faf60aaca36a"
+      "version": "0.6.0",
+      "source_commit": "29d20411d60b0eab94910346efef28d42c9c66ac"
     },
     "feature": {
       "project": "feature-bot",
       "command": "bfb",
-      "version": "0.1.4",
-      "source_commit": "7f0967dc8e43d7cfa07c18e7e98cf49a88917fa2"
+      "version": "0.4.0",
+      "source_commit": "4c9cc8cd7dced2c065a5e43c3d875683d0534087"
     },
     "issue": {
       "project": "issue-bot",
@@ -21,14 +21,14 @@
     "review": {
       "project": "review-bot",
       "command": "brv",
-      "version": "0.2.6",
-      "source_commit": "87ddecf9b1a567795c7624c16cc16ea6243f2779"
+      "version": "0.2.9",
+      "source_commit": "c940c1888346d6d77ad88257cec8946ed8adb90b"
     },
     "release": {
       "project": "release-bot",
       "command": "brb",
-      "version": "0.6.3",
-      "source_commit": "d7222a04471383ab228bda3c4b585ad73f61631d"
+      "version": "0.8.0",
+      "source_commit": "328694104cb6ce20d8276a79a517ff75809a12e8"
     },
     "repo": {
       "project": "repo-bot",

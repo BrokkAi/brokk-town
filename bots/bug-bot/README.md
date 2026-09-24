@@ -50,7 +50,9 @@ make build
 ./bin/bbb once /path/to/your-repo --dry-run
 ./bin/bbb once /path/to/your-repo --focus "parser and input validation"
 ./bin/bbb /path/to/your-repo --max-issues 2 --label bug
+./bin/bbb /path/to/your-repo --only-on-change
 ./bin/bbb /path/to/your-repo --model YOUR_MODEL_ID --effort low
+./bin/bbb /path/to/your-repo --model SCAN_MODEL_ID --review-model REVIEW_MODEL_ID --review-effort high
 ./bin/bbb status /path/to/your-repo
 ./bin/bbb report /path/to/your-repo --status dry_run > findings.md
 ./bin/bbb version
@@ -87,7 +89,8 @@ bbb /path/to/repo --json    # structured logs for tools and log collectors
 
 The overview shows the repository, branch and commit, scan stage, active tool,
 uptime, attempt budget, and next check or retry countdown. Larger panes also
-show the selected model, reasoning effort, and investigation focus.
+show the discovery and review model and reasoning effort, and the investigation
+focus.
 
 **Saved** counts cover findings in the configured repository/branch state,
 including the current scan: found, filed, duplicate, pending, dry run, and skipped
@@ -118,6 +121,8 @@ existing output and never open the dashboard.
 
 1. Fetch the target branch into a managed clone and make an isolated detached
    worktree for the scan. The original checkout and uncommitted work are preserved.
+   An optional operator setup command prepares the worktree at the start of
+   each attempt, before any agent runs.
 2. Download all open and closed issues and their comments with pagination. Give
    the investigator the complete snapshot and recent scan summaries so it can
    avoid known bugs and explore new areas on subsequent scans.
@@ -145,6 +150,17 @@ belonging to that report. The bot does not reopen or comment on it.
 The default is at most **three issues per scan**, a **two-hour attempt budget**,
 and another scan **30 minutes after completion**, even if the commit is unchanged.
 Recent summaries guide exploration; this is not a claim of exhaustive coverage.
+With `only_on_change` (`--only-on-change`), the daemon still fetches at each poll
+but starts no investigation while the branch commit matches the last completed
+scan for the same dry-run setting; the dashboard reports the unchanged branch and
+the next check. A completed scan is one whose findings were all reviewed,
+including a scan with zero findings; a scan discarded because the branch
+advanced does not count. Switching from dry-run to publication permits a new scan
+of the same commit. Saved state from earlier versions scans once to establish the
+baseline. Uncertain publications, pending retries and exhausted budgets are
+handled before this check, and `once` always runs. This is a polling policy, not
+a claim that the revision was exhaustively investigated; use `once` to rescan after
+changing focus or model settings.
 `once` runs or resumes one scan and exits. Failed scans retain their candidates,
 workspace, and diagnostics; retries wait at least 15 minutes and run on the next
 poll, with three attempts before requiring `retry`. Agent startup failures are
@@ -229,6 +245,7 @@ See [bug-bot.example.json](bug-bot.example.json).
   "focus": "",
   "labels": [],
   "dry_run": false,
+  "only_on_change": false,
   "agent": {"command": ["codex-acp"]}
 }
 ```
@@ -239,9 +256,41 @@ Enterprise, and `github.repo` (`OWNER/REPO`) identifies a local mirror's GitHub
 repository. `agent` also supports `environment`, `auth_method`, `mode`, `model`,
 and `effort`, with selection handled by the shared ACP runner.
 
+Discovery uses `agent.model` and `agent.effort` (`--model`, `--effort`). Evidence
+validation and every duplicate-review batch, including reviews after issue
+history changes and reviews of pending findings resumed from a saved scan, use
+`review_model` and `review_effort` (`--review-model`, `--review-effort`). Each
+omitted review setting inherits the discovery setting; CLI flags override JSON,
+and blank values are rejected. For example, adding
+`"review_model": "REVIEW_MODEL_ID"` to the configuration keeps discovery on
+`agent.model` while review uses `REVIEW_MODEL_ID`. Review runs with the same agent command,
+environment, workspace, retries, timeout, and publication gates. A review model
+or effort the adapter does not offer stops the scan with a setup error before any
+review prompt; pending findings stay pending and never fall back to the discovery
+selection. Progress logs carry `stage=discovery` or `stage=review` with the
+effective model and effort.
+
 `verify` accepts an argument array, such as `["/opt/checks/verify-bug"]`, executed
 in the scan worktree with `BUG_COMMIT` and JSON `BUG_FINDING` in its environment.
 Keep operator verifiers outside the writable worktree. A nonzero exit blocks filing.
+
+`setup` (default: none; set it in the `--config` file) accepts an argument array, such as
+`["/opt/checks/install-deps", "--frozen"]`, for preparing test prerequisites. It
+runs in the detached scan worktree with `bbb`'s environment, like `verify`, plus
+`BUG_COMMIT` set to its HEAD, once at the
+start of every counted scan attempt before any agent runs, including attempts
+that resume review of pending findings. It does not repeat for review batches or
+agent startup retries, so a later attempt runs it again: keep it idempotent and
+tolerant of partial earlier runs. It may create untracked or ignored files, which
+discovery and review then see; it must exit zero and leave HEAD and tracked
+source unchanged. Any failure, including exceeding the shared `timeout` (which
+kills its process tree), consumes the attempt, keeps pending findings unpublished,
+saves a `workspace setup` failure and waits `retry_delay` from when it failed.
+Dry runs run it; `status`, `report`, waiting polls and reconciling an interrupted
+publication do not. Only the tail of its output is kept in the saved failure.
+Nothing it exports reaches the agent. Keep setup scripts outside the writable
+worktree; they run with the bot's own privileges. An empty array or blank
+executable is rejected.
 
 ## State and execution
 

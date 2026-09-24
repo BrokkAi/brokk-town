@@ -218,7 +218,7 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 		var capacity town.Capacity
-		if err := request(ctx, conn, "POST", "/api/capacity", town.ServiceConfig{MaxWorkers: *maxWorkers}, &capacity); err != nil {
+		if err := request(ctx, conn, "POST", "/api/capacity", map[string]int{"max_workers": *maxWorkers}, &capacity); err != nil {
 			return err
 		}
 		fmt.Printf("Capacity: %d active · limit %d\n", capacity.Active, capacity.Limit)
@@ -301,8 +301,13 @@ func run(ctx context.Context, args []string) error {
 		var result any
 		return request(ctx, conn, "POST", "/api/towns", map[string]any{"repo": *repo, "agent": agent}, &result)
 	case "settings":
+		quietSet := false
+		fs.Visit(func(f *flag.Flag) { quietSet = quietSet || f.Name == "quiet-hours" })
 		if *repo == "" {
-			return errors.New("--repo OWNER/REPO is required")
+			if !quietSet {
+				return errors.New("--repo OWNER/REPO is required")
+			}
+			return setServiceQuietHours(ctx, conn, fs, *fl.quietHours)
 		}
 		var result any
 		settingsRole := ""
@@ -318,6 +323,12 @@ func run(ctx context.Context, args []string) error {
 				return errors.New("--review-close-severity is a town setting; omit --role")
 			}
 			payload["review_close_severity"] = strings.ToUpper(*fl.closeSeverity)
+		}
+		if *fl.mergePolicy != "" {
+			if settingsRole != "" {
+				return errors.New("--merge-policy is a town setting; omit --role")
+			}
+			payload["merge_policy"] = strings.ToLower(*fl.mergePolicy)
 		}
 		budgetEdited := *fl.budgetPeriod != "" || *fl.budgetAttempts != 0 || *fl.budgetMinutes != 0
 		if budgetEdited {
@@ -339,6 +350,16 @@ func run(ctx context.Context, args []string) error {
 				}
 				payload["budget"] = map[string]any{"budget": map[string]any{"period": period, "max_attempts": *fl.budgetAttempts, "max_agent_minutes": *fl.budgetMinutes}}
 			}
+		}
+		if quietSet {
+			if settingsRole != "" {
+				return errors.New("quiet hours are a town setting; omit --role")
+			}
+			edit, err := quietHoursEdit(*fl.quietHours, true)
+			if err != nil {
+				return err
+			}
+			payload["quiet_hours"] = edit
 		}
 		policy, edited, err := workPolicyEdit(fl, fs)
 		if err != nil {
@@ -390,6 +411,30 @@ func run(ctx context.Context, args []string) error {
 		}
 		var result any
 		return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
+	case "defer", "undefer":
+		if *repo == "" || *task == "" {
+			return errors.New("--repo OWNER/REPO and --task ID are required")
+		}
+		payload := map[string]string{"town": strings.ToLower(*repo), "role": "all", "action": command, "task": *task}
+		if command == "defer" {
+			until, err := deferUntil(*fl.until, time.Now())
+			if err != nil {
+				return err
+			}
+			payload["until"], payload["reason"] = until.Format(time.RFC3339), *fl.reason
+		} else if *fl.until != "" || *fl.reason != "" {
+			return errors.New("--until and --reason apply only to defer")
+		}
+		var result any
+		if err := request(ctx, conn, "POST", "/api/control", payload, &result); err != nil {
+			return err
+		}
+		if command == "defer" {
+			fmt.Printf("Snoozed %s until %s\n", *task, payload["until"])
+		} else {
+			fmt.Printf("Cleared the snooze on %s\n", *task)
+		}
+		return nil
 	case "start", "pause", "stop", "retry", "delete", "admit", "decline":
 		if *repo == "" {
 			return errors.New("--repo OWNER/REPO is required")
@@ -407,6 +452,106 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
 	}
 }
+
+// quietHoursEdit turns --quiet-hours into the settings edit: a schedule, none
+// for no quiet hours, or, for a town, default to follow the service default.
+func quietHoursEdit(value string, forTown bool) (map[string]any, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "none":
+		return map[string]any{"windows": []town.QuietWindow{}}, nil
+	case "default":
+		if !forTown {
+			return nil, errors.New("--quiet-hours default applies to a town; the service default is a schedule or none")
+		}
+		return map[string]any{"windows": nil}, nil
+	case "":
+		return nil, errors.New("--quiet-hours needs windows such as \"mon-fri 18:00-08:00\", none, or default")
+	}
+	windows, err := town.ParseQuietHours(value)
+	if err != nil {
+		return nil, fmt.Errorf("--quiet-hours: %w", err)
+	}
+	return map[string]any{"windows": windows}, nil
+}
+
+// setServiceQuietHours edits the service default quiet hours. It is the only
+// setting bt settings takes without --repo.
+func setServiceQuietHours(ctx context.Context, conn connection, fs *flag.FlagSet, value string) error {
+	var other []string
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name != "quiet-hours" && !isGlobalFlag(f.Name) {
+			other = append(other, "--"+f.Name)
+		}
+	})
+	if len(other) > 0 {
+		return fmt.Errorf("without --repo, settings edits only the service default --quiet-hours; %s needs --repo", strings.Join(other, ", "))
+	}
+	edit, err := quietHoursEdit(value, false)
+	if err != nil {
+		return err
+	}
+	var saved town.ServiceConfig
+	if err := request(ctx, conn, "POST", "/api/quiet-hours", edit, &saved); err != nil {
+		return err
+	}
+	if len(saved.QuietHours) == 0 {
+		fmt.Println("Service default quiet hours: none")
+	} else {
+		fmt.Println("Service default quiet hours:", town.FormatQuietHours(saved.QuietHours))
+	}
+	return nil
+}
+
+// deferUntil reads a resume time as an RFC 3339 timestamp or as a delay from
+// now. A delay accepts Go durations (90m, 4h30m) and whole days (2d). Town
+// checks the result again: it must be in the future and within its limit.
+func deferUntil(value string, now time.Time) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, errors.New("--until is required: an RFC 3339 time such as 2026-01-02T15:04:05Z, or a delay such as 4h or 2d")
+	}
+	if at, err := time.Parse(time.RFC3339, value); err == nil {
+		return at.UTC(), nil
+	}
+	if days, ok := strings.CutSuffix(value, "d"); ok {
+		if n, err := strconv.Atoi(days); err == nil && n > 0 {
+			return now.Add(time.Duration(n) * 24 * time.Hour).UTC().Truncate(time.Second), nil
+		}
+	}
+	if d, err := time.ParseDuration(value); err == nil && d > 0 {
+		return now.Add(d).UTC().Truncate(time.Second), nil
+	}
+	return time.Time{}, fmt.Errorf("--until %q is neither an RFC 3339 time such as 2026-01-02T15:04:05Z nor a positive delay such as 90m, 4h or 2d", value)
+}
+
+// browserLink returns the browser address with its access key only when
+// stdout is an interactive terminal. Redirected output, such as the background
+// service's log, gets a pointer to bt web so the key never lands in a file.
+func browserLink(conn connection, demo bool) string {
+	if stdoutIsTerminal() {
+		return conn.URL + "/#token=" + conn.Token
+	}
+	if demo {
+		return "run bt web --demo for the link"
+	}
+	return "run bt web for the link"
+}
+
+var stdoutIsTerminal = func() bool {
+	info, err := os.Stdout.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// serveBanner is what the foreground service prints once it is listening.
+func serveBanner(conn connection, demo bool) string {
+	return fmt.Sprintf("Brokk Town %s\nBrowser: %s\n", buildVersion(), browserLink(conn, demo))
+}
+
+// backgroundBanner is what bt -d prints once the detached service is ready.
+func backgroundBanner(conn connection, demo bool, logs string) string {
+	return fmt.Sprintf("Town running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo), logs)
+}
+
 func readConnection(dir string) (connection, error) {
 	var c connection
 	b, err := os.ReadFile(filepath.Join(dir, "connection.json"))
@@ -419,8 +564,15 @@ func readConnection(dir string) (connection, error) {
 func request(ctx context.Context, c connection, method, path string, body, out any) error {
 	var input io.Reader
 	if body != nil {
-		b, _ := json.Marshal(body)
-		input = strings.NewReader(string(b))
+		// Send text as written: HTML escaping would inflate <, > and & sixfold
+		// and push a valid body past the service's request size limit.
+		var b bytes.Buffer
+		encoder := json.NewEncoder(&b)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(body); err != nil {
+			return err
+		}
+		input = &b
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, input)
 	if err != nil {
@@ -463,20 +615,30 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		if e != nil {
 			return e
 		}
-		configs, maxWorkers, e := decodeConfigFile(data)
+		configs, service, e := decodeConfigFile(data)
 		if e != nil {
 			return e
 		}
 		if demo {
 			return errors.New("real config is not accepted in demo mode")
 		}
+		var restored []string
 		if e = store.Update(func(s *town.State) error {
-			if maxWorkers != nil {
-				cfg := town.ServiceConfig{MaxWorkers: *maxWorkers}
-				if err := cfg.Validate(); err != nil {
+			restored = nil
+			if service.MaxWorkers != nil {
+				if err := (town.ServiceConfig{MaxWorkers: *service.MaxWorkers}).Validate(); err != nil {
 					return err
 				}
-				s.ServiceConfig = cfg
+				s.ServiceConfig.MaxWorkers = *service.MaxWorkers
+			}
+			if service.QuietHours != nil {
+				if err := town.ValidateQuietHours(*service.QuietHours); err != nil {
+					return err
+				}
+				s.ServiceConfig.QuietHours = nil
+				if len(*service.QuietHours) > 0 {
+					s.ServiceConfig.QuietHours = *service.QuietHours
+				}
 			}
 			for _, entry := range configs {
 				cfg := entry.Config
@@ -493,6 +655,16 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 					if t.Initialized && cfg.Branch != "" && cfg.Branch != t.Branch() {
 						return fmt.Errorf("cannot change town %s from branch %s to %s in place; use a separate state directory, or set branch to \"\" to follow the repository default", id, t.Branch(), cfg.Branch)
 					}
+					if t.Deleted {
+						// A town listed in the config file is live: a deleted one is
+						// restored under the listed settings, as adding it would.
+						if err := t.Restore(cfg); err != nil {
+							return err
+						}
+						s.Event(t.ID, "town", "operator", "repo", "", "Town restored from the config file; recovery records retained", time.Now())
+						restored = append(restored, t.ID)
+						continue
+					}
 					t.Config = cfg
 				} else {
 					if _, err := s.Add(cfg); err != nil {
@@ -504,14 +676,33 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		}); e != nil {
 			return e
 		}
+		for _, id := range restored {
+			fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with the config file's settings\n", id)
+		}
 	}
 	if repo != "" {
 		if demo {
 			return errors.New("real repository is not accepted in demo mode")
 		}
-		if _, ok := store.Snapshot().Towns[strings.ToLower(repo)]; !ok {
-			if err = store.Update(func(s *town.State) error { _, err := s.Add(town.DefaultConfig(repo)); return err }); err != nil {
+		// --repo adds a town that is absent; a deleted one is restored with
+		// the settings it kept, since --repo supplies none of its own.
+		if t := store.Snapshot().Towns[strings.ToLower(repo)]; t == nil || t.Deleted {
+			if err = store.Update(func(s *town.State) error {
+				existing := s.Towns[strings.ToLower(repo)]
+				if existing == nil {
+					_, err := s.Add(town.DefaultConfig(repo))
+					return err
+				}
+				if err := existing.Restore(existing.Config); err != nil {
+					return err
+				}
+				s.Event(existing.ID, "town", "operator", "repo", "", "Town restored by serve --repo; recovery records retained", time.Now())
+				return nil
+			}); err != nil {
 				return err
+			}
+			if t != nil {
+				fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with its previous settings\n", t.ID)
 			}
 		}
 	}
@@ -557,7 +748,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 	} else {
 		go func() { results <- supervisor.Run(ctx) }()
 	}
-	fmt.Printf("Brokk Town %s\nBrowser: %s/#token=%s\n", buildVersion(), conn.URL, conn.Token)
+	fmt.Print(serveBanner(conn, demo))
 	if demo {
 		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
 	}
@@ -636,46 +827,72 @@ func decodeTowns(raw []byte) ([]townEntry, error) {
 	return entries, nil
 }
 
-func decodeConfigFile(data []byte) ([]townEntry, *int, error) {
+// fileService is what the object form says about the whole service. A nil
+// field was absent, and leaves the saved setting as it was.
+type fileService struct {
+	MaxWorkers *int
+	// QuietHours replaces the service default quiet hours; an empty list
+	// removes them.
+	QuietHours *[]town.QuietWindow
+}
+
+func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
+	var none fileService
 	trimmed := strings.TrimSpace(string(data))
 	if strings.HasPrefix(trimmed, "[") {
 		entries, err := decodeTowns([]byte(trimmed))
-		return entries, nil, err
+		return entries, none, err
 	}
 	var file struct {
 		MaxWorkers json.RawMessage `json:"max_workers"`
+		QuietHours json.RawMessage `json:"quiet_hours"`
 		Towns      json.RawMessage `json:"towns"`
 	}
 	d := json.NewDecoder(strings.NewReader(trimmed))
 	d.DisallowUnknownFields()
 	if err := d.Decode(&file); err != nil {
-		return nil, nil, err
+		return nil, none, err
 	}
 	if d.Decode(new(any)) != io.EOF {
-		return nil, nil, errors.New("expected one config object")
+		return nil, none, errors.New("expected one config object")
 	}
 	if len(file.Towns) == 0 || string(file.Towns) == "null" {
-		return nil, nil, errors.New("config object requires a towns array")
+		return nil, none, errors.New("config object requires a towns array")
 	}
 	towns, err := decodeTowns(file.Towns)
 	if err != nil {
-		return nil, nil, err
+		return nil, none, err
 	}
-	var limit *int
+	var service fileService
 	if len(file.MaxWorkers) > 0 {
 		if string(file.MaxWorkers) == "null" {
-			return nil, nil, errors.New("max_workers cannot be null")
+			return nil, none, errors.New("max_workers cannot be null")
 		}
 		var value int
 		if err := json.Unmarshal(file.MaxWorkers, &value); err != nil {
-			return nil, nil, errors.New("max_workers must be an integer")
+			return nil, none, errors.New("max_workers must be an integer")
 		}
 		if err := (town.ServiceConfig{MaxWorkers: value}).Validate(); err != nil {
-			return nil, nil, err
+			return nil, none, err
 		}
-		limit = &value
+		service.MaxWorkers = &value
 	}
-	return towns, limit, nil
+	if len(file.QuietHours) > 0 {
+		if string(file.QuietHours) == "null" {
+			return nil, none, errors.New("quiet_hours cannot be null; use [] for no service default")
+		}
+		windows := []town.QuietWindow{}
+		qd := json.NewDecoder(bytes.NewReader(file.QuietHours))
+		qd.DisallowUnknownFields()
+		if err := qd.Decode(&windows); err != nil {
+			return nil, none, fmt.Errorf("quiet_hours must be a list of {days, start, end} windows: %w", err)
+		}
+		if err := town.ValidateQuietHours(windows); err != nil {
+			return nil, none, err
+		}
+		service.QuietHours = &windows
+	}
+	return towns, service, nil
 }
 
 // policyFlagNames are the settings flags that build a bot's work policy. They
