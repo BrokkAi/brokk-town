@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -34,18 +33,13 @@ func logPaths(dir string) (string, string) {
 	return filepath.Join(dir, "logs", "serve.log"), filepath.Join(dir, "logs", "serve.err.log")
 }
 
-// openLogs creates the log files owner-only before any supervisor writes to
-// them: service output can name local paths and repository details. The banner
-// no longer carries the access key, but logs from earlier versions did, so the
-// stdout log is scrubbed before it is reopened for appending.
+// openLogs creates the log files owner-only before the background service
+// writes to them: its output can name local paths and repository details.
 func openLogs(dir string) (*os.File, *os.File, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0700); err != nil {
 		return nil, nil, err
 	}
 	stdout, stderr := logPaths(dir)
-	if err := scrubAccessKeys(stdout); err != nil {
-		return nil, nil, err
-	}
 	out, err := os.OpenFile(stdout, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, nil, err
@@ -58,40 +52,6 @@ func openLogs(dir string) (*os.File, *os.File, error) {
 	_ = os.Chmod(stdout, 0600)
 	_ = os.Chmod(stderr, 0600)
 	return out, errFile, nil
-}
-
-// maxScrubbedLog bounds the work of scrubbing an old log. A larger log is
-// truncated rather than read into memory.
-const maxScrubbedLog = 8 << 20
-
-var loggedAccessKey = regexp.MustCompile(`#token=[0-9a-f]{64}`)
-
-// scrubAccessKeys redacts browser links written by earlier versions, which
-// printed the long-lived access key into the service log.
-func scrubAccessKeys(path string) error {
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info.Size() > maxScrubbedLog {
-		return os.Truncate(path, 0)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if !loggedAccessKey.Match(data) {
-		return nil
-	}
-	data = loggedAccessKey.ReplaceAll(data, []byte("#token=[redacted]"))
-	temp := path + ".scrub"
-	if err = os.WriteFile(temp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(temp, path)
 }
 
 func processAlive(pid int) bool {
@@ -112,16 +72,6 @@ func serviceAlive(ctx context.Context, dir string) (connection, bool) {
 	defer cancel()
 	var state struct{}
 	return conn, request(probe, conn, "GET", "/api/state", nil, &state) == nil
-}
-
-// serviceArgs is the command line every launcher uses. The base directory is
-// absolute so the service never depends on the supervisor's environment.
-func serviceArgs(base string, demo bool, listen string) []string {
-	args := []string{"serve", "--state-dir", base, "--listen", listen}
-	if demo {
-		args = append(args, "--demo")
-	}
-	return args
 }
 
 // temporaryBinary recognizes go run and go test executables, which must not
@@ -152,7 +102,12 @@ func spawnDetached(base string, demo bool, listen, config string) (*exec.Cmd, er
 	}
 	defer out.Close()
 	defer errFile.Close()
-	args := serviceArgs(base, demo, listen)
+	// Bare bt runs Town. The state directory is absolute so the child never
+	// depends on this process's working directory.
+	args := []string{"--state-dir", base, "--listen", listen}
+	if demo {
+		args = append(args, "--demo")
+	}
 	if config != "" {
 		args = append(args, "--config", config)
 	}
@@ -167,12 +122,12 @@ func spawnDetached(base string, demo bool, listen, config string) (*exec.Cmd, er
 	return cmd, nil
 }
 
-// waitReady polls for a service newer than `after` that answers requests.
-func waitReady(ctx context.Context, dir string, after time.Time) (connection, error) {
+// waitReady polls until a service answers requests.
+func waitReady(ctx context.Context, dir string) (connection, error) {
 	deadline := time.Now().Add(startTimeout)
 	for {
 		conn, alive := serviceAlive(ctx, dir)
-		if alive && conn.Started.After(after) {
+		if alive {
 			return conn, nil
 		}
 		if time.Now().After(deadline) {
@@ -201,7 +156,7 @@ func logTail(dir string) string {
 
 // stopProcess terminates a service and waits for it to release the state
 // lock after it has stopped its bot processes.
-func stopProcess(ctx context.Context, dir string, conn connection) error {
+func stopProcess(ctx context.Context, conn connection) error {
 	if !processAlive(conn.PID) {
 		return nil
 	}
@@ -246,7 +201,7 @@ func startBackground(ctx context.Context, base string, demo bool, listen, config
 	if err != nil {
 		return err
 	}
-	conn, err := waitReady(ctx, runtimeDir(base, demo), time.Time{})
+	conn, err := waitReady(ctx, runtimeDir(base, demo))
 	if err != nil {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
 		_ = cmd.Wait()

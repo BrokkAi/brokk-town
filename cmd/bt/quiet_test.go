@@ -128,7 +128,7 @@ func TestConfigFileCarriesQuietHours(t *testing.T) {
 		}
 	}
 	// A town window is checked by the same validation as every other setting.
-	bad, _, err := decodeConfigFile([]byte(`[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1,"quiet_hours":[{"days":["mon"],"start":"9:00","end":"10:00"}]}]`))
+	bad, _, err := decodeConfigFile([]byte(`{"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1,"quiet_hours":[{"days":["mon"],"start":"9:00","end":"10:00"}]}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

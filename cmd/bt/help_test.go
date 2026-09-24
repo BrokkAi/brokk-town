@@ -28,10 +28,6 @@ func TestRootHelpHasCobraSections(t *testing.T) {
 			t.Fatalf("root help omits command %q:\n%s", cmd, help)
 		}
 	}
-	// serve is the hidden alias for bare bt.
-	if strings.Contains(help, "  serve ") {
-		t.Fatalf("root help lists the serve alias:\n%s", help)
-	}
 	// The root lists the startup and shared connection flags, with a --help row.
 	for _, f := range []string{"--state-dir", "--listen", "--demo", "--config", "\n  -d ", "-h, --help"} {
 		if !strings.Contains(help, f) {
@@ -70,7 +66,7 @@ func TestCommandHelpFiltersToRelevantFlags(t *testing.T) {
 func TestHelpRequestsNeedNoService(t *testing.T) {
 	ctx := context.Background()
 	for _, args := range [][]string{
-		{"--help"}, {"-h"}, {"help"}, {"help", "add"}, {"help", "serve"},
+		{"--help"}, {"-h"}, {"help"}, {"help", "add"},
 		{"add", "--help"}, {"settings", "-h"}, {"shutdown", "--help"}, {"version", "--help"},
 	} {
 		if err := run(ctx, args); err != nil {
@@ -87,7 +83,7 @@ func TestUnknownCommandsPointAtHelp(t *testing.T) {
 	if err := run(ctx, []string{"help", "bogus"}); err == nil || !strings.Contains(err.Error(), "unknown command") {
 		t.Fatalf("help bogus: %v", err)
 	}
-	for _, removed := range []string{"service", "capacity", "check-request"} {
+	for _, removed := range []string{"service", "serve", "capacity", "check-request"} {
 		if err := run(ctx, []string{removed}); err == nil || !strings.Contains(err.Error(), "unknown command") {
 			t.Fatalf("removed command %s: %v", removed, err)
 		}
@@ -111,7 +107,7 @@ func TestCommandsRejectFlagsTheyDoNotTake(t *testing.T) {
 		{[]string{"delete", "--state-dir", dir, "--repo", "a/b", "--role", "bug"}, "--role: not a flag of bt delete"},
 		{[]string{"status", "--state-dir", dir, "-d"}, "-d: not a flag of bt status"},
 		{[]string{"--state-dir", dir, "--repo", "a/b"}, "--repo: not a flag of bt"},
-		{[]string{"serve", "--state-dir", dir, "--max-workers", "2"}, "--max-workers: not a flag of bt serve"},
+		{[]string{"--state-dir", dir, "--max-workers", "2"}, "--max-workers: not a flag of bt"},
 	} {
 		err := run(ctx, tc.args)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

@@ -419,7 +419,8 @@ bot profiles, verification command, and policy, then run:
 ./bin/bt --config /path/to/towns.json
 ```
 
-Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
+Configuration is one JSON object: optional `max_workers` and `quiet_hours` for
+the whole service, and a `towns` array. Each town supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
 `merge_policy`, `simplifier_mode`, optional `review_close_severity` (`P1`, `P2`
 or `P3`, default `P2`), optional `budget`, optional `bot_policies`,
@@ -427,11 +428,9 @@ or `P3`, default `P2`), optional `budget`, optional `bot_policies`,
 lists all required values. A config-file entry gets no defaults for
 `merge_policy`, `poll_seconds`, `report_seconds`, or `max_cycles`: omitting any
 of them rejects the file. The defaults quoted below apply to towns added with
-`bt add` or the browser. To persist global capacity alongside the town list,
-use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
-remains accepted. When `--config` includes `max_workers`, that value
-overrides the persisted service setting in the same atomic state update; an
-array config without it preserves the saved limit. Town
+`bt add` or the browser. When `--config` includes `max_workers`, that value
+overrides the persisted service setting in the same atomic state update; a
+config without it preserves the saved limit. Town
 uses the repository's default branch when omitted, and keeps following it: the
 observed default is recorded as repository state, so renaming it moves the town
 with it and never overwrites a branch you chose. An initialized town's branch

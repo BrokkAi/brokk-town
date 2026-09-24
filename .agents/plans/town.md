@@ -24,8 +24,8 @@
   foreground-by-default with `-d` as the option. Clean break, no aliases.
 - Removed `bt service status|stop`: `bt status` summarizes a running or stopped
   Town (`--json` keeps the full state) and `bt shutdown` stops it.
-- `serve` stays only as the hidden alias bare `bt` and `-d` run. Removed
-  `serve --repo`, which duplicated `bt add` with different settings; `--config`
+- Removed `serve`: bare `bt` runs Town and `-d` re-executes bare `bt` with
+  `--state-dir` and `--listen`. Removed `serve --repo`, which duplicated `bt add` with different settings; `--config`
   stays for declarative setup.
 - `capacity` folded into `bt settings --max-workers` (service-wide, no `--repo`),
   beside the service default `--quiet-hours`; both are validated before either
@@ -34,6 +34,9 @@
   `--listen` shows only on startup; `delete` no longer offers `--role`.
 - `bt harnesses` reads (and `--refresh` updates) the local registry cache when
   Town is stopped, the same cache the next start loads.
+- Dropped what only served earlier versions or nothing: the old-log access key
+  scrubber, the array config form (`--config` takes only the object with a
+  `towns` array), and the unread `executable`/`started` connection fields.
 
 ## Validation and delivery
 
@@ -472,9 +475,6 @@
 - The browser link carries the access key, so `serve` and `bt -d` print it only
   when stdout is a terminal. The detached service's log and redirected output
   get "run bt web for the link"; `bt web` still prints the key on request.
-- Earlier versions wrote the key into `logs/serve.log`, and the key persists
-  across restarts. Opening the service log redacts any `#token=<key>` link in
-  place; a log over 8 MiB is truncated instead of read.
 - `request --check` (formerly `check-request`) on an unknown ID returns "unknown request" (404) rather than
   "does not need reconciliation".
 - The stale `connection.json` PID was already handled by `processAlive`.

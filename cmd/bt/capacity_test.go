@@ -56,14 +56,14 @@ func TestSettingsMaxWorkersPostsBoundedLimit(t *testing.T) {
 	}
 }
 
-func TestDecodeConfigFileSupportsCapacityObjectAndLegacyArray(t *testing.T) {
+func TestDecodeConfigFileReadsServiceSettingsAndTowns(t *testing.T) {
 	configs, limit, err := decodeConfigFile([]byte(`{"max_workers":9,"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]}`))
 	if err != nil || len(configs) != 1 || limit.MaxWorkers == nil || *limit.MaxWorkers != 9 {
 		t.Fatalf("object config: configs=%d limit=%v err=%v", len(configs), limit, err)
 	}
-	configs, limit, err = decodeConfigFile([]byte(`[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]`))
+	configs, limit, err = decodeConfigFile([]byte(`{"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]}`))
 	if err != nil || len(configs) != 1 || limit.MaxWorkers != nil || limit.QuietHours != nil {
-		t.Fatalf("legacy config: configs=%d limit=%v err=%v", len(configs), limit, err)
+		t.Fatalf("towns-only config: configs=%d limit=%v err=%v", len(configs), limit, err)
 	}
 	for _, raw := range []string{
 		`{"max_workers":null,"towns":[]}`,
@@ -71,6 +71,7 @@ func TestDecodeConfigFileSupportsCapacityObjectAndLegacyArray(t *testing.T) {
 		`{"max_workers":{},"towns":[]}`,
 		`{"max_workers":0,"towns":[]}`,
 		`{"max_workers":65,"towns":[]}`,
+		`[]`,
 	} {
 		if _, _, err := decodeConfigFile([]byte(raw)); err == nil {
 			t.Fatalf("accepted malformed capacity config %s", raw)
@@ -126,12 +127,12 @@ func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 	if got := readLimit(t); got != 2 {
 		t.Fatalf("object config did not override persisted limit: %d", got)
 	}
-	// The legacy array has no service setting and therefore preserves it.
-	if err := serveConfig(t, writeConfig(t, `[]`)); err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatalf("serve legacy config: %v", err)
+	// A config without max_workers leaves the persisted setting alone.
+	if err := serveConfig(t, writeConfig(t, `{"towns":[]}`)); err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("serve towns-only config: %v", err)
 	}
 	if got := readLimit(t); got != 2 {
-		t.Fatalf("legacy config unexpectedly changed persisted limit: %d", got)
+		t.Fatalf("towns-only config unexpectedly changed persisted limit: %d", got)
 	}
 	// Applying a bad town and a new capacity is one store transaction: neither
 	// change may survive the validation error.
@@ -176,7 +177,7 @@ func TestServeConfigBranchOmittedKeepsPinAndEmptyClearsIt(t *testing.T) {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "towns.json")
 		entry := `{"repo":"acme/pinned","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":1800,"max_cycles":5` + branch + `}`
-		if e := os.WriteFile(path, []byte("["+entry+"]"), 0600); e != nil {
+		if e := os.WriteFile(path, []byte(`{"towns":[`+entry+`]}`), 0600); e != nil {
 			t.Fatal(e)
 		}
 		ctx, cancel := context.WithCancel(context.Background())

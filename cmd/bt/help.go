@@ -125,16 +125,17 @@ type commandInfo struct {
 	long  string
 	args  string
 	flags []string
-	// hidden commands parse and run but stay out of the command list.
-	hidden bool
 }
 
 // globalFlagNames are the persistent flags: they apply to every command and
 // select which service a client talks to.
 var globalFlagNames = []string{"demo", "state-dir"}
 
-// runFlagNames start Town: bare bt, bt -d and the hidden serve alias.
+// runFlagNames start Town: bare bt in the foreground, or bt -d.
 var runFlagNames = []string{"config", "d", "listen"}
+
+// rootCommand is bare bt, which runs Town rather than a client command.
+var rootCommand = commandInfo{flags: runFlagNames}
 
 var cliCommands = []commandInfo{
 	{name: "status", short: "Show whether Town is running and its towns", long: "Show whether Town is running, where, and which towns it serves. Use --json for the full town state.", args: "[flags]", flags: []string{"json"}},
@@ -156,7 +157,6 @@ var cliCommands = []commandInfo{
 	{name: "undefer", short: "Clear a task's snooze", long: "Clear a task's snooze so its house can take it up at once.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "admit", short: "Admit a Mayoral decision", long: "Admit a pending Mayoral decision, or admit work Simplifier declined in auto mode.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "decline", short: "Decline a Mayoral decision", long: "Decline a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
-	{name: "serve", short: "Run Town in the foreground", long: "Run Town in the foreground, as bare bt does.", args: "[flags]", flags: runFlagNames, hidden: true},
 	{name: "version", short: "Print the version", long: "Print the bt version.", args: "", flags: nil},
 }
 
@@ -258,13 +258,6 @@ func writeFlagSectionWithHelp(out io.Writer, fs *flag.FlagSet, names []string, h
 
 func writeCommands(out io.Writer, cmds []commandInfo) {
 	width := 0
-	shown := cmds[:0:0]
-	for _, c := range cmds {
-		if !c.hidden {
-			shown = append(shown, c)
-		}
-	}
-	cmds = shown
 	for _, c := range cmds {
 		if len(c.name) > width {
 			width = len(c.name)

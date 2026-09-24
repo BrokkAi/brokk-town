@@ -29,16 +29,14 @@ var version = "dev"
 
 // connection advertises the running local service and its identity.
 type connection struct {
-	URL        string    `json:"url"`
-	Token      string    `json:"token"`
-	PID        int       `json:"pid"`
-	Version    string    `json:"version,omitempty"`
-	Executable string    `json:"executable,omitempty"`
-	Started    time.Time `json:"started,omitempty"`
+	URL     string `json:"url"`
+	Token   string `json:"token"`
+	PID     int    `json:"pid"`
+	Version string `json:"version,omitempty"`
 }
 
 // executablePath resolves the real binary behind any launcher symlink, such as
-// the npm shim, so registrations and restarts never depend on PATH.
+// the npm shim, so bt -d starts the binary itself.
 var executablePath = func() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -121,14 +119,15 @@ func main() {
 	}
 }
 func run(ctx context.Context, args []string) error {
-	command := "serve"
+	// Bare bt, with only flags, runs Town; a first word names a client command.
+	command := ""
 	explicit := false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command = args[0]
 		args = args[1:]
 		explicit = true
 	}
-	fs := flag.NewFlagSet("bt "+command, flag.ContinueOnError)
+	fs := flag.NewFlagSet(strings.TrimSpace("bt "+command), flag.ContinueOnError)
 	fl := addCLIFlags(fs)
 	dir, listen, demo := fl.dir, fl.listen, fl.demo
 	repo, role, task := fl.repo, fl.role, fl.task
@@ -154,7 +153,10 @@ func run(ctx context.Context, args []string) error {
 		}
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", args[0])
 	}
-	cmd := findCommand(command)
+	cmd := &rootCommand
+	if explicit {
+		cmd = findCommand(command)
+	}
 	if cmd == nil {
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
 	}
@@ -188,7 +190,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	abs := runtimeDir(base, *demo)
 	switch command {
-	case "serve":
+	case "":
 		if *fl.daemon {
 			return startBackground(ctx, base, *demo, *listen, *fl.config)
 		}
@@ -200,7 +202,7 @@ func run(ctx context.Context, args []string) error {
 		if !alive {
 			return errors.New("Town is not running")
 		}
-		if err := stopProcess(ctx, abs, conn); err != nil {
+		if err := stopProcess(ctx, conn); err != nil {
 			return err
 		}
 		fmt.Println("Town stopped")
@@ -688,8 +690,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	if err != nil {
 		return err
 	}
-	exe, _ := executablePath()
-	conn := connection{URL: "http://" + listener.Addr().String(), Token: token, PID: os.Getpid(), Version: buildVersion(), Executable: exe, Started: time.Now()}
+	conn := connection{URL: "http://" + listener.Addr().String(), Token: token, PID: os.Getpid(), Version: buildVersion()}
 	data, _ := json.Marshal(conn)
 	if err = os.WriteFile(filepath.Join(dir, "connection.json"), data, 0600); err != nil {
 		return err
@@ -750,10 +751,6 @@ func loopbackAddress(address string) error {
 	return nil
 }
 
-// decodeConfigFile accepts the original JSON array and the current object form
-// with one global max_workers value. Keeping the array form means existing town
-// files remain usable while the object form can persist service capacity beside
-// the town list.
 // townEntry is one town from a config file together with whether that file
 // stated a branch at all. An omitted branch keeps the town's current setting; an
 // explicit empty branch clears it, so the town follows the repository default
@@ -799,17 +796,12 @@ type fileService struct {
 
 func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
 	var none fileService
-	trimmed := strings.TrimSpace(string(data))
-	if strings.HasPrefix(trimmed, "[") {
-		entries, err := decodeTowns([]byte(trimmed))
-		return entries, none, err
-	}
 	var file struct {
 		MaxWorkers json.RawMessage `json:"max_workers"`
 		QuietHours json.RawMessage `json:"quiet_hours"`
 		Towns      json.RawMessage `json:"towns"`
 	}
-	d := json.NewDecoder(strings.NewReader(trimmed))
+	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
 	if err := d.Decode(&file); err != nil {
 		return nil, none, err

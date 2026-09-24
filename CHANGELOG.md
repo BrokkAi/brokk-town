@@ -7,9 +7,10 @@
   (`--json` prints the full state) and `bt shutdown` stops it. `bt capacity`
   is now `bt settings --max-workers N`, `bt check-request` is `bt request
   --check --request-id ID`, and `serve --repo` was removed in favour of
-  `bt add`. `serve` is a hidden alias for bare `bt`. Each command now rejects
+  `bt add`. `bt serve` is gone; bare `bt` runs Town. Each command now rejects
   flags it does not take, `delete` no longer accepts `--role`, and
-  `bt harnesses` works while Town is stopped.
+  `bt harnesses` works while Town is stopped. `--config` takes only the
+  object form with a `towns` array; the bare array form is gone.
 
 - Give the merge gate's `gh pr view` the same one-minute timeout as Town's
   other GitHub calls, so a stalled `gh` cannot hold the review house.

@@ -60,7 +60,7 @@ func TestServeConfigRestoresDeletedTown(t *testing.T) {
 	dir := t.TempDir()
 	deletedTown(t, dir, "acme/listed")
 	path := filepath.Join(t.TempDir(), "towns.json")
-	entry := `[{"repo":"acme/listed","harness":"custom","agent":{"command":["fake"]},"merge_policy":"manual","poll_seconds":60,"report_seconds":1800,"max_cycles":5}]`
+	entry := `{"towns":[{"repo":"acme/listed","harness":"custom","agent":{"command":["fake"]},"merge_policy":"manual","poll_seconds":60,"report_seconds":1800,"max_cycles":5}]}`
 	if err := os.WriteFile(path, []byte(entry), 0600); err != nil {
 		t.Fatal(err)
 	}
