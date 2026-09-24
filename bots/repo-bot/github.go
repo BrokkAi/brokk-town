@@ -82,6 +82,9 @@ func (g githubClient) snapshot(ctx context.Context) (Inventory, error) {
 	out.Branch = g.config.Branch
 	if out.Branch == "" {
 		out.Branch = metadata.Branch
+		if !validBranch(out.Branch) {
+			return out, fmt.Errorf("GitHub reported an unusable default branch %q; configure a branch explicitly", out.Branch)
+		}
 	}
 	var branch struct {
 		Commit struct {

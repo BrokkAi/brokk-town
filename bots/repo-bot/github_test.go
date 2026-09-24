@@ -168,6 +168,65 @@ func TestRunReportsInventoryAndReleaseAncestry(t *testing.T) {
 	}
 }
 
+func TestRunResolvesBranchBeforeReadingAndSavingState(t *testing.T) {
+	answers := repositoryAnswers()
+	answers["*/compare/v1.0.0...*"] = `{"status":"diverged","commits":[]}`
+	answers["*/compare/"+mergedSHA+"...*"] = `{"status":"ahead"}`
+	answers["*/check-runs\\?*"] = `{"total_count":0,"check_runs":[]}`
+	answers["*/commits/*/status"] = `{"state":"pending","statuses":[]}`
+	requests := fakeGitHub(t, answers)
+	cfg := inventoryConfig(t)
+	cfg.Agent.Command = nil
+	if err := writeState(cfg, &State{Head: failingHead, Attempts: 2}); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Branch = ""
+	for range 2 {
+		result, err := Run(t.Context(), cfg, Request{Commits: []string{mergedSHA}}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Inventory == nil || result.Inventory.Branch != "main" || !result.Inventory.Released[mergedSHA] {
+			t.Fatalf("inventory = %+v", result.Inventory)
+		}
+	}
+	cfg.Branch = "main"
+	saved, err := ReadState(cfg)
+	if err != nil || saved == nil || saved.Branch != "main" || saved.VainCompare != "v1.0.0" || saved.Attempts != 0 {
+		t.Fatalf("resolved branch state = %+v, error = %v", saved, err)
+	}
+	if n := requestsMatching(requests(), "/compare/v1.0.0..."); n != 1 {
+		t.Fatalf("saved ancestry observation was not reused: %d comparisons", n)
+	}
+}
+
+func TestRunRefusesAnUnusableDefaultBranch(t *testing.T) {
+	for _, branch := range []string{"", "../main", "-main", "main?query", "main.lock"} {
+		t.Run(branch, func(t *testing.T) {
+			answers := repositoryAnswers()
+			answers["repos/acme/orchard"] = fmt.Sprintf(`{"default_branch":%q}`, branch)
+			requests := fakeGitHub(t, answers)
+			cfg := inventoryConfig(t)
+			cfg.Branch = ""
+			result, err := Run(t.Context(), cfg, Request{}, nil, nil)
+			if err == nil || !strings.Contains(err.Error(), "default branch") || result.Inventory != nil {
+				t.Fatalf("unusable default returned inventory=%+v, error=%v", result.Inventory, err)
+			}
+			if got := requests(); len(got) != 1 || got[0] != "repos/acme/orchard" {
+				t.Fatalf("unusable default reached branch operations: %v", got)
+			}
+		})
+	}
+}
+
+func TestStandaloneConfigStillRequiresABranch(t *testing.T) {
+	cfg := inventoryConfig(t)
+	cfg.Branch = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("standalone watch must resolve its branch before taking its branch lock")
+	}
+}
+
 func TestRunReportsTheInventoryEvenWhenTheHealthDutyFails(t *testing.T) {
 	answers := repositoryAnswers()
 	answers["*/check-runs\\?*"] = ""

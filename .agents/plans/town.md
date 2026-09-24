@@ -997,3 +997,24 @@
   Found 47 / Supported 48. A compatible Linux/macOS runner is still required.
   Installer tests run from a temporary LF-normalized Linux copy because the
   Windows checkout's CRLF shell scripts cannot execute under /bin/sh.
+
+## Repo Bot default-branch startup error
+
+- A newly added town sends an empty branch to follow the repository default,
+  but Repo Bot rejected it before reading GitHub metadata. The browser stayed
+  at "Reading repository" with "invalid branch" and could never initialize.
+- Allow that unresolved branch in one-shot worker runs; standalone watches
+  still require a concrete branch before taking their branch lock. Validate
+  GitHub's default against Town's supported branch syntax, then use that
+  resolved branch for ancestry state, repair budgets, progress and Git writes.
+- Repo dispatch sends the configured branch, not the last observed default,
+  so subsequent inventories still discover the current default. Explicit
+  branch choices remain pinned; existing branch-state identity checks remain.
+- Added a real Repo Bot executable/protocol regression with fake GitHub for
+  first inventory, a changed default and an explicit branch. Bot regressions
+  cover resolved state reuse, invalid defaults, standalone validation and a
+  verified repair to a local Git origin with a fake agent.
+- Validation passed: Town and Repo Bot `go test -race ./...` and `go vet ./...`,
+  frontend syntax/tests, Repo Bot launcher and all 31 packaging tests, and the
+  isolated demo lifecycle smoke. All repository and agent fixtures stayed local.
+- User requested a pull request; changes are on fix/repo-default-branch.

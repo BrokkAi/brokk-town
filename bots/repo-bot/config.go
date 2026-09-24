@@ -172,11 +172,17 @@ func (c Config) resolved() (Config, error) {
 func (c Config) InventoryOnly() bool { return len(c.Agent.Command) == 0 || c.Agent.Command[0] == "" }
 
 func (c Config) Validate() error {
+	return c.validate(false)
+}
+
+// Only a Town run may leave the branch unresolved. Standalone watches need a
+// concrete branch before locking and loading their state.
+func (c Config) validate(allowDefaultBranch bool) error {
 	if c.Remote == "" || strings.HasPrefix(c.Remote, "-") {
 		return errors.New("remote is required")
 	}
-	if c.Branch == "" || strings.HasPrefix(c.Branch, "-") || strings.Contains(c.Branch, "..") {
-		return errors.New("invalid branch")
+	if !(allowDefaultBranch && c.Branch == "") && !validBranch(c.Branch) {
+		return fmt.Errorf("invalid branch %q", c.Branch)
 	}
 	if c.Directory == "" || c.StateDirectory == "" {
 		return errors.New("directory and state_directory are required")
@@ -214,4 +220,11 @@ func (c Config) Validate() error {
 		return errors.New("durations must be positive and max_repairs must be between 1 and 10")
 	}
 	return nil
+}
+
+var branchName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_./-]*$`)
+
+func validBranch(branch string) bool {
+	return branchName.MatchString(branch) && !strings.Contains(branch, "..") && !strings.Contains(branch, "//") &&
+		!strings.HasSuffix(branch, "/") && !strings.HasSuffix(branch, ".") && !strings.HasSuffix(branch, ".lock")
 }
