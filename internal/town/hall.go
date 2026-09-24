@@ -225,6 +225,15 @@ func (s *State) decideTask(t *Town, task *Task, action, by string, now time.Time
 			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" declined: "+task.Title, now)
 			return nil
 		}
+		if task.Kind == "pr" && !task.External {
+			// Town's own pull request is closed and its issue started over,
+			// as after a failed review. Left open, it kept the issue
+			// implemented with nothing working on it.
+			task.Detail = subject + " declined Town's own pull request. Town is closing it and starting the issue over."
+			t.Workers[Repo].Next = time.Time{}
+			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" declined: "+task.Title, now)
+			return nil
+		}
 		task.Detail = subject + " declined this outside work. Town will not act on it."
 		s.Event(t.ID, "decision", "hall", "outside", task.ID, by+" declined: "+task.Title, now)
 		return nil

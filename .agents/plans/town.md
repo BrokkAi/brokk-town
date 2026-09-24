@@ -479,9 +479,8 @@
   list), which clears the decline. A Mayoral decline stays final. Older state
   where a revision already carried the decline out of Town Hall (including a
   retired or reviewed pull request) has the stale decline cleared on the next
-  inventory. Town's own pull request declined by Simplifier is never closed and
-  strands its issue; tracked separately in #126. "Admit anyway" asks for
-  confirmation.
+  inventory. Town's own pull request declined by Simplifier is closed and its
+  issue started over (#126, below). "Admit anyway" asks for confirmation.
 - The declined-issue closer claims each issue under the store just before the
   GitHub write: it rechecks the decline, and an auto-declined issue moves to
   `closing`, which admission refuses. An accepted close settles it `closed`
@@ -836,3 +835,56 @@
   carries its request marker (e.g. a hand-copied dry-run body), never creating
   or claiming it.
 - The engine test fixture isolates Git from global and system configuration.
+
+## Declined own pull requests (#126)
+
+- A declined Town-owned pull request stayed open with nothing selecting it,
+  and reconcile kept its issue `implemented` while it was open. This held for
+  Simplifier's auto decline and for the Mayor's decline in suggest mode.
+- Decision: close it the way a failed second review does (`retirePull` already
+  closes Town's own work and leaves contributors' to the Mayor). Skipping
+  intake for own pull requests was rejected: the README documents that
+  implementation pull requests pass Simplifier, and the Mayor sees them in
+  suggest mode. Outside pull requests are still only ignored.
+- `applySimplification` and `decideTask` leave the own pull request
+  `hall/declined` and wake Repo Bot. After each inventory, outside quiet hours,
+  `claimDeclinedPulls` moves it to `closing` under the store just before
+  `closeRetiredPulls`, which closes it, comments, deletes Town's branch,
+  comments on the issue and requeues it (`Requeue`). Until the claim, the Mayor
+  can admit an auto decline; `closing` refuses admission. A snoozed pull request
+  is not claimed until its snooze ends.
+- The decline is kept through `closing` and `closed`: Simplifier's assessment,
+  and a Mayoral `declined` (state validation now allows `closing`). Comments,
+  events and the issue's detail name the cause.
+- Outcomes: a definite GitHub rejection (`RejectedError`) of the close
+  releases an auto decline back to `declined` for the Mayor; any other failure
+  keeps the claim. Reconcile no longer settles a `closing` pull request that
+  GitHub lists closed, so a close that happened with an uncertain outcome, or
+  whose later steps failed, is finished by the next inventory instead of
+  stranding the issue. A draft or lock change no longer overwrites `closing`.
+- Reopen: Town's own pull request closed on Simplifier's decline is an appeal
+  and waits for the Mayor with the assessment kept; one the Mayor declined is
+  closed again, as a Mayor-declined proposal issue is.
+- Review follow-ups: the issue is commented on and requeued only while live
+  state ties it to the pull request (`requeuedIssue`: the issue is
+  `implemented`, not already requeued for it, and no other open Town pull
+  request implements it). History is not consulted, so a reopened pull
+  request that fails review again requeues its issue again, while one closed
+  after Issue Bot opened a new pull request leaves the issue alone. The
+  requeue marker is `brokk-town:requeued pr=N close=K`, where `Task.Closes`
+  counts Town's close decisions, so a legitimate second requeue is explained
+  and an uncertain post of the same one is not repeated (`IssueComments`).
+  The pull request's closing comment carries `brokk-town:closed-after-review
+  pr=N close=K`; when GitHub already lists a `closing` pull request closed
+  (its close or comment had an uncertain outcome), the closer posts that
+  comment unless it is already there, instead of skipping it. After GitHub closed the pull request, a definite rejection of the PR or
+  issue comment is noted on the task and the close is finished; other
+  failures keep the claim. A refused branch delete finishes the close but
+  holds the issue, because Issue Bot pushes its next attempt to the same
+  branch name without force: the pull request is `closed` with `BranchKept`,
+  the issue explains the branch must be deleted by hand, and each inventory
+  retries the delete; once it succeeds (or the branch is gone) the issue is
+  requeued. `ClosePull`, `Comment` and `DeleteBranch` now classify
+  refusals as `RejectedError`, as `CloseIssue` does. The claim skips blocked
+  (including off-branch) pull requests, and validation allows a Mayoral
+  `declined` at `closing` only on Town's own pull request.

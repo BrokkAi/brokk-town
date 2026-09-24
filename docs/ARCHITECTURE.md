@@ -211,8 +211,10 @@ the exact issue/PR number plus the town's `suggest` or `auto` mode.
 In suggest mode, the worker returns a bounded admit/decline assessment that
 Town attaches to the subsequent Mayoral decision. In auto mode, Town applies
 that assessment itself: admitted work moves to Issue Bot or Review Bot, declined
-PRs are ignored, and declined issues are closed by Repo-bot through the normal
-idempotent closure path. A repository scan can file simplifier proposals using
+contributor PRs are ignored, and declined issues are closed by Repo-bot through
+the normal idempotent closure path. A declined Town-owned PR is claimed as
+`closing` and closed through the same path as one that failed review, which
+deletes its branch and starts its issue over. A repository scan can file simplifier proposals using
 the bot's durable request marker; those marked issues bypass recursive intake,
 then follow the mode's normal decision route.
 

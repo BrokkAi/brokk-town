@@ -145,6 +145,8 @@ type GitHub interface {
 	ClosePull(context.Context, string, int) error
 	// Comment posts one comment on an issue or pull request.
 	Comment(context.Context, string, int, string) error
+	// IssueComments lists the comment bodies on an issue or pull request.
+	IssueComments(context.Context, string, int) ([]string, error)
 	// DeleteBranch removes a branch Town's own bots created.
 	DeleteBranch(context.Context, string, string) error
 	// CreateIssue files a new issue.
@@ -320,11 +322,36 @@ func definiteRejection(err error) error {
 	}
 	return &RejectedError{Status: status, Err: err}
 }
+
+// The writes below classify a definite refusal as RejectedError, so the closer
+// can tell a step that will never succeed from one worth retrying.
 func (g GitHubClient) ClosePull(ctx context.Context, repo string, n int) error {
-	return g.api(ctx, "PATCH", fmt.Sprintf("repos/%s/pulls/%d", repo, n), map[string]string{"state": "closed"}, nil)
+	if err := g.api(ctx, "PATCH", fmt.Sprintf("repos/%s/pulls/%d", repo, n), map[string]string{"state": "closed"}, nil); err != nil {
+		return definiteRejection(err)
+	}
+	return nil
 }
 func (g GitHubClient) Comment(ctx context.Context, repo string, n int, body string) error {
-	return g.api(ctx, "POST", fmt.Sprintf("repos/%s/issues/%d/comments", repo, n), map[string]string{"body": body}, nil)
+	if err := g.api(ctx, "POST", fmt.Sprintf("repos/%s/issues/%d/comments", repo, n), map[string]string{"body": body}, nil); err != nil {
+		return definiteRejection(err)
+	}
+	return nil
+}
+
+// IssueComments returns the bodies of the comments on an issue or pull
+// request.
+func (g GitHubClient) IssueComments(ctx context.Context, repo string, n int) ([]string, error) {
+	items, err := pages[struct {
+		Body string `json:"body"`
+	}](ctx, g, fmt.Sprintf("repos/%s/issues/%d/comments", repo, n))
+	if err != nil {
+		return nil, definiteRejection(err)
+	}
+	bodies := make([]string, 0, len(items))
+	for _, item := range items {
+		bodies = append(bodies, item.Body)
+	}
+	return bodies, nil
 }
 func (g GitHubClient) DeleteBranch(ctx context.Context, repo, branch string) error {
 	if !ValidBranch(branch) {
@@ -334,7 +361,10 @@ func (g GitHubClient) DeleteBranch(ctx context.Context, repo, branch string) err
 	if err != nil && strings.Contains(err.Error(), "Reference does not exist") {
 		return nil
 	}
-	return err
+	if err != nil {
+		return definiteRejection(err)
+	}
+	return nil
 }
 func Digest(v any) string { b, _ := json.Marshal(v); return Key(string(b)) }
 

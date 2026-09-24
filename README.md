@@ -363,7 +363,9 @@ default **suggest** mode, its bounded assessment is attached to the resulting
 durable Mayoral decision: **Admit** sends the work to Issue Bot or Review Bot;
 **Decline** keeps Town from acting on it. In **auto** mode, Simplifier Bot can
 admit routine work and decline low-value complex work itself; a declined issue is
-closed through Repo-bot, while a declined PR is ignored rather than closed.
+closed through Repo-bot, while a contributor's declined PR is ignored rather than
+closed. Town's own declined implementation PR, by either the Mayor or Simplifier
+Bot, is closed like one that failed its second review, and its issue starts over.
 Simplifier Bot's own marked proposals do not recursively pass through intake.
 
 **Mayor Bot** lives in Town Hall. Start it like any other house and it judges

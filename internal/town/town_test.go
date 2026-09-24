@@ -256,6 +256,11 @@ type fakeGH struct {
 	comments    []string
 	filed       []RemoteIssue
 	fileError   error
+	// Failures for DeleteBranch, and for comments on one issue or pull
+	// request by number.
+	deleteError        error
+	commentErrors      map[int]error
+	issueCommentsError error
 }
 
 func newGH(n int) *fakeGH {
@@ -314,12 +319,33 @@ func (f *fakeGH) ClosePull(_ context.Context, _ string, n int) error {
 func (f *fakeGH) Comment(_ context.Context, _ string, n int, body string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.commentErrors[n]; err != nil {
+		return err
+	}
 	f.comments = append(f.comments, fmt.Sprintf("#%d: %s", n, body))
 	return nil
+}
+func (f *fakeGH) IssueComments(_ context.Context, _ string, n int) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.issueCommentsError != nil {
+		return nil, f.issueCommentsError
+	}
+	prefix := fmt.Sprintf("#%d: ", n)
+	bodies := []string{}
+	for _, c := range f.comments {
+		if strings.HasPrefix(c, prefix) {
+			bodies = append(bodies, strings.TrimPrefix(c, prefix))
+		}
+	}
+	return bodies, nil
 }
 func (f *fakeGH) DeleteBranch(_ context.Context, _ string, branch string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.deleteError != nil {
+		return f.deleteError
+	}
 	f.deleted = append(f.deleted, branch)
 	return nil
 }
