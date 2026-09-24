@@ -46,6 +46,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		s = newState(cfg)
 	}
 	e := engine{config: cfg, source: githubClient{cfg}, log: log, agent: func(c Config) Agent { return agentProcess{c, log} }, sleep: pause, observe: observe(ctx)}
+	e.report(s, "starting", "Loading saved proposals")
 	for {
 		// Worker dispatches are one scheduler step, not a command that bypasses
 		// this bot's own saved scan interval.
@@ -56,9 +57,9 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 		}
 		if err != nil {
 			log.Error("Simplifier scan paused", "error", err)
-			e.observe(Progress{Phase: "paused", Task: err.Error()})
+			e.report(s, "paused", err.Error())
 		} else {
-			e.observe(Progress{Phase: "waiting", Task: "Next simplification scan"})
+			e.report(s, "waiting", "Next simplification scan")
 		}
 		if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
 			return err
@@ -186,7 +187,7 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 		if p.Status != "posting" {
 			continue
 		}
-		e.observe(Progress{Phase: "reconciling", Task: "Checking an interrupted simplification issue"})
+		e.report(s, "reconciling", "Checking an interrupted simplification issue")
 		issues, err := e.source.issues(ctx)
 		if err != nil {
 			return err
@@ -206,10 +207,13 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 	if err := e.save(s); err != nil {
 		return err
 	}
-	if !force && !time.Now().Before(s.NextScan) {
+	// Scan only once the saved interval has passed; a fresh state has no next
+	// scan and is due at once.
+	if !force && time.Now().Before(s.NextScan) {
+		e.log.Info("Next simplification scan is not due yet", "next", s.NextScan.Local().Format(time.RFC3339))
 		return nil
 	}
-	e.observe(Progress{Phase: "loading", Task: "Refreshing repository and issue history"})
+	e.report(s, "loading", "Refreshing repository and issue history")
 	base := checkout{config: e.config}
 	if err := base.open(ctx); err != nil {
 		return err
@@ -230,29 +234,34 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 	if err != nil {
 		return err
 	}
-	instructions, err := instructionFiles(ctx, e.config)
+	// The clone's own working tree stays at its first checkout; the scan reads
+	// a detached worktree at the exact fetched head instead.
+	worktree, err := base.itemWorktree(ctx, "scan", commit)
 	if err != nil {
 		return err
 	}
-	e.observe(Progress{Phase: "scanning", Task: "Looking for disproportionate complexity and low-value subsystems"})
+	instructions, err := instructionFiles(ctx, worktree.config)
+	if err != nil {
+		return err
+	}
+	e.report(s, "scanning", "Looking for disproportionate complexity and low-value subsystems")
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(e.config.Timeout))
 	defer cancel()
 	snapshotText := string(snapshot)
 	if len(snapshotText) > 512<<10 {
 		snapshotText = strings.ToValidUTF8(snapshotText[:512<<10], "�") + "\n…issue history truncated by simplifier-bot…"
 	}
-	text, err := e.execute(ctx, agentProcess{e.config, e.log}, instructions+scanPrompt(snapshotText, e.config.MaxProposals))
+	text, err := e.execute(ctx, e.agent(worktree.config), instructions+scanPrompt(snapshotText, e.config.MaxProposals))
 	if err != nil {
 		return err
 	}
-	if err = base.verify(ctx, commit); err != nil {
+	if err = worktree.verify(ctx, commit); err != nil {
 		return err
 	}
 	proposals, summary, err := parseScan(text, e.config.MaxProposals)
 	if err != nil {
 		return err
 	}
-	e.observe(Progress{Phase: "reviewing", Task: summary})
 	for i := range proposals {
 		id, err := requestID()
 		if err != nil {
@@ -270,7 +279,9 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 	if err = e.save(s); err != nil {
 		return err
 	}
+	e.report(s, "reviewing", summary)
 	if e.config.DryRun {
+		e.report(s, "complete", summary)
 		return nil
 	}
 	for _, p := range s.Proposals {
@@ -281,7 +292,7 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 		if err = e.save(s); err != nil {
 			return err
 		}
-		e.observe(Progress{Phase: "filing", Task: "Filing " + p.Title})
+		e.report(s, "filing", "Filing "+p.Title)
 		created, err := e.source.create(ctx, p, commit)
 		if err != nil {
 			return err
@@ -291,6 +302,7 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 			return err
 		}
 	}
+	e.report(s, "complete", summary)
 	return nil
 }
 func instructionFiles(_ context.Context, cfg Config) (string, error) {

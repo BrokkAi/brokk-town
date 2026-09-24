@@ -4,6 +4,7 @@
   "directory": "var/checkout",
   "state_directory": "var/state",
   "timeout": "1h",
+  "poll": "24h",
   "max_items": 40,
   "instruction_files": ["AGENTS.md", "README.md"],
   "agent": {"command": ["codex-acp"]},

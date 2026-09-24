@@ -153,7 +153,7 @@ func (e engine) bulletin(ctx context.Context, s *State, window Window) (Report, 
 	if report.Bulletin, err = parseBulletin(text, report.Pulls, e.config.MaxItems); err != nil {
 		return report, err
 	}
-	s.record(BulletinRecord{Since: window.Since, Until: window.Until, At: time.Now(), Title: report.Title, Items: len(report.Items), Pulls: report.Pulls})
+	s.record(BulletinRecord{Since: window.Since, Until: window.Until, At: time.Now(), Title: report.Title, Items: len(report.Items), Pulls: report.Pulls, Summary: report.Summary, Entries: report.Items})
 	if err = writeState(e.config, s); err != nil {
 		return report, err
 	}

@@ -4,6 +4,7 @@
   "directory": "var/checkout",
   "state_directory": "var/state",
   "timeout": "1h",
+  "poll": "15m",
   "max_repairs": 3,
   "dry_run": false,
   "verify": [],

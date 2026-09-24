@@ -234,6 +234,44 @@
 - A discarded assessment records an event, so the operator sees the result was
   dropped rather than silently lost.
 
+## Every bot runs standalone
+
+- mayor-bot (`bmb`), repo-bot (`brp`) and simplifier-bot (`bsb`) served only
+  `worker --socket`. Each now has the same no-config CLI as the other five:
+  repository discovery (checkout, bare repository or URL) into a managed
+  workspace under `$XDG_STATE_HOME/<bot>`, agent resolution with the `npx`
+  fallback, and the shared `--config --branch --agent --agent-arg --model
+  --effort --poll --timeout --once --json --plain` options plus `status` and
+  `version`.
+- `bsb` scans on its poll interval and adds `assess --issue|--pr --mode`.
+  `brp` observes and repairs on its poll interval (`--agent ""` observes only).
+  `bmb` writes a bulletin each interval from where the last recorded one ended,
+  and adds `bulletin --since` and `judge --issue|--pr`; it still never writes to
+  GitHub. Mayor and Repo configs gain a `poll` setting (24h and 15m).
+- The worker protocol is unchanged.
+- All eight bots have the terminal dashboard: overview, item browser with detail,
+  activity, the same keys, `--plain`/`--json`, `NO_COLOR`, and an exit summary.
+  Simplifier browses saved proposals; Mayor browses recorded bulletins, whose
+  state now keeps each summary and item; Repo browses its last 100 standalone
+  observations, saved in its state. Worker runs still report only phase and
+  task. The PTY lifecycle tests pass for the three in a Linux container.
+- Review of #120 found two simplifier scan bugs that made standalone `bsb`
+  useless: the schedule check was inverted (a fresh workspace never scanned,
+  a scanned one rescanned regardless of interval), and scans ran in the base
+  clone, whose working tree never left its first checkout, so a scan after the
+  branch advanced read stale code and failed its own revision check. Scans now
+  run when due in a detached worktree at the fetched head. Town dispatches only
+  item assessments, so its behavior is unchanged.
+- A second review of #120 fixed three standalone gaps. `bmb` continued from
+  "one interval ago" after a window that recorded no bulletin, so an empty
+  window skipped the merges during its own run and a failed first window lost
+  its whole range; the next window now starts where the last covered or failed
+  one did. `brp` took no lock, so two standalone processes on one branch could
+  both spend its repair budget and push repairs; a standalone watch now holds a
+  per-branch and a per-state lock. Its saved history could outgrow the 1 MiB
+  state read limit (escaped check output) and leave a state it could not read;
+  the oldest observations now give way before the state is saved.
+
 ## Frontline theme (browser, presentation only)
 
 - 2026-09-23 per-base faction clarity: the overview cards display three

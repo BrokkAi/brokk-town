@@ -43,6 +43,62 @@ The bot pushes the repair directly to the branch it covers. Where that branch is
 protected, configure Town's merge policy and the branch's own rules
 accordingly — this bot does not open a pull request instead.
 
+## Run standalone
+
+```sh
+brp /path/to/your-repo                    # observe and repair every poll interval
+brp once /path/to/your-repo --dry-run     # one observation; commit a repair locally only
+brp /path/to/your-repo --agent ""         # observe and report, never repair
+brp status /path/to/your-repo
+```
+
+With no configuration file, the bot discovers the repository from a checkout
+(or a subdirectory), a bare repository, or a Git URL, watches the remote's
+default branch, and keeps its own checkout and state under
+`$XDG_STATE_HOME/repo-bot` (default `~/.local/state/repo-bot`). It uses an installed
+`codex-acp`, or provisions it with `npx` when absent.
+
+Every bot shares these options: `--config`, `--branch`, `--agent`,
+`--agent-arg` (repeatable), `--model`, `--effort`, `--poll`, `--timeout`,
+`--once`, `--json` (structured logs) and `--plain` (scrolling console output).
+`status` prints the saved state; `version` prints the release.
+
+Bot options: `--max-repairs` and `--dry-run`. Each observation is logged with the
+branch head, open issue and pull request counts, releases, new commits and the
+branch health. Without an agent the bot reports a failing branch and leaves it.
+
+## Terminal dashboard
+
+Interactive runs show a live dashboard by default. It fits the current terminal
+or tmux pane and adjusts when the pane is resized.
+
+```sh
+brp /path/to/repo           # live dashboard in an interactive terminal
+brp /path/to/repo --plain   # scrolling console output and agent transcript
+brp /path/to/repo --json    # structured logs for tools and log collectors
+```
+
+The overview shows the repository, branch and observed head, stage (inventory,
+checks, repair, verification, publication), active tool, uptime, and the next
+observation countdown; larger panes add the model and reasoning effort.
+**Branch** is the latest health with open issues, open pull requests and
+releases. **Saved** counts the last 100 observations kept in the workspace
+state, how many found the branch red, and how many published a repair. The
+observation browser shows each run's head, counts, failing checks, repair
+attempts, published commit and errors. On exit, new observations stay in the
+terminal, with full details for failures.
+
+- `1`, `2`, `3` or `Tab`: switch between overview, observations, and activity.
+- `↑` / `↓` or `k` / `j`: browse observations or scroll activity.
+- `Enter`: inspect the selected observation. `Esc` returns; `Page Up` / `Page Down` scroll.
+- `g` / `G`: jump to the start/end; `G` resumes following live activity.
+- `q` or `Ctrl+C`: stop the bot and its active agent, then restore the terminal.
+
+Piped input, redirected stderr, and `TERM=dumb` use scrolling output
+automatically. `--plain` and `--json` disable the dashboard and are mutually
+exclusive. `NO_COLOR` disables dashboard colors. `status`, `version` and help never open the
+dashboard.
+
 ## Worker protocol
 
 ```sh
