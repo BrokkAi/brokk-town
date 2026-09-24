@@ -34,6 +34,12 @@
   `--listen` shows only on startup; `delete` no longer offers `--role`.
 - `bt harnesses` reads (and `--refresh` updates) the local registry cache when
   Town is stopped, the same cache the next start loads.
+- `bt -d` re-executes bare `bt` with `setsid` and waits on a readiness pipe
+  (descriptor 3, named by `BT_READY_FD`, like sd_notify or s6's
+  notification-fd) instead of polling for 60 seconds. Town writes `ready` once
+  it serves; end of file means it exited, so a failed start is reported at once
+  with the error log's tail. The child marks the descriptor close-on-exec and
+  drops the variable before starting bots, so no descendant holds the pipe.
 - Dropped what only served earlier versions or nothing: the old-log access key
   scrubber, the array config form (`--config` takes only the object with a
   `towns` array), and the unread `executable`/`started` connection fields.

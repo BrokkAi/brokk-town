@@ -11,6 +11,9 @@
   flags it does not take, `delete` no longer accepts `--role`, and
   `bt harnesses` works while Town is stopped. `--config` takes only the
   object form with a `towns` array; the bare array form is gone.
+- Report a failed `bt -d` start immediately, with the end of the error log,
+  instead of after a one-minute timeout: the background Town now signals
+  readiness over a pipe rather than being polled.
 
 - Give the merge gate's `gh pr view` the same one-minute timeout as Town's
   other GitHub calls, so a stalled `gh` cannot hold the review house.

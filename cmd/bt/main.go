@@ -109,6 +109,7 @@ func buildVersion() string {
 var shutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 func main() {
+	readyPipe = takeReadyPipe()
 	ctx, cancel := signal.NotifyContext(context.Background(), shutdownSignals...)
 	defer cancel()
 	err := run(ctx, os.Args[1:])
@@ -714,6 +715,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	if demo {
 		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
 	}
+	signalReady()
 	select {
 	case <-ctx.Done():
 		err = ctx.Err()
