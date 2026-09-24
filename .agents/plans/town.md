@@ -977,12 +977,13 @@
   returns an error event without running an agent; brp covers the `--socket`
   requirement and its served identity. Agent-backed dispatch stays in the bot
   package suites, which own the fake harness fixtures.
-- Verified with Go 1.27.1: gofmt clean and `go vet` clean for all three
-  command packages; the new socket-free tests pass with `-race`. The
-  socket-binding worker tests fail in this sandbox only (`listen unix ...
-  socket: operation not permitted` — AF_UNIX is denied here, and the
-  pre-existing issue-bot worker socket test fails the same way), so they
-  need CI or an unrestricted host for a green run.
+- The socket-binding tests put the socket under `os.MkdirTemp("", ...)`, like
+  every other worker socket test: `t.TempDir()` embeds the test name and
+  overflows the 104-byte macOS socket path limit, which only master CI runs.
+  Startup failures report the worker's own error instead of a readiness
+  timeout.
+- Verified with Go 1.27.1: gofmt, `go vet` and the full `go test -race` suites
+  pass for Mayor, Repo and Simplifier, including the new socket tests.
 - Baseline root-package coverage: Simplifier 40.6%, Mayor 51.7%. Frontend syntax
   and all 74 browser tests pass, as does the isolated demo lifecycle smoke.
   Full ordinary Go tests and vet pass for Town and both affected modules; both

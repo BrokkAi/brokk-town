@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,54 +17,54 @@ import (
 	"github.com/BrokkAi/mayor-bot/internal/worker"
 )
 
+// startWorker serves the worker on a socket under a short temporary directory:
+// t.TempDir() embeds the test name and overflows the 104-byte macOS socket
+// path limit.
 func startWorker(t *testing.T, version string) (*http.Client, func()) {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "worker.sock")
+	dir, err := os.MkdirTemp("", "bmb-worker-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	socket := filepath.Join(dir, "worker.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- workerCommand(ctx, []string{"--socket", socket}, version) }()
 	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}}}
-	ready := false
-	for end := time.Now().Add(3 * time.Second); time.Now().Before(end); {
-		response, err := client.Get("http://worker/v1/initialize")
-		if err == nil {
-			response.Body.Close()
-			ready = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !ready {
-		cancel()
-		t.Fatal("worker not ready")
-	}
-	return client, func() {
+	stop := func() {
 		client.CloseIdleConnections()
 		cancel()
 		select {
 		case <-done:
 		case <-time.After(3 * time.Second):
-			t.Fatal("worker did not stop")
+			t.Error("worker did not stop")
 		}
+		_ = os.RemoveAll(dir)
 	}
+	for end := time.Now().Add(3 * time.Second); time.Now().Before(end); {
+		select {
+		case err := <-done:
+			cancel()
+			_ = os.RemoveAll(dir)
+			t.Fatalf("worker exited before serving: %v", err)
+		default:
+		}
+		response, err := client.Get("http://worker/v1/initialize")
+		if err == nil {
+			response.Body.Close()
+			return client, stop
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	stop()
+	t.Fatal("worker not ready")
+	return nil, nil
 }
 
-func TestWorkerCommandRequiresSocket(t *testing.T) {
-	ctx := context.Background()
-	if err := workerCommand(ctx, nil, "v1.0.0"); err == nil {
-		t.Fatal("worker without --socket accepted")
-	}
-	socket := filepath.Join(t.TempDir(), "worker.sock")
-	if err := workerCommand(ctx, []string{"--socket", socket, "extra"}, "v1.0.0"); err == nil {
-		t.Fatal("worker with a positional argument accepted")
-	}
-}
-
-func TestWorkerInitializeReportsIdentity(t *testing.T) {
-	client, stop := startWorker(t, "v1.0.0")
-	defer stop()
+func initialize(t *testing.T, client *http.Client) worker.Initialize {
+	t.Helper()
 	response, err := client.Get("http://worker/v1/initialize")
 	if err != nil {
 		t.Fatal(err)
@@ -72,18 +74,28 @@ func TestWorkerInitializeReportsIdentity(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&info); err != nil {
 		t.Fatal(err)
 	}
+	return info
+}
+
+func TestWorkerCommandRequiresSocket(t *testing.T) {
+	ctx := context.Background()
+	if err := workerCommand(ctx, nil, "v1.0.0"); err == nil {
+		t.Fatal("worker without --socket accepted")
+	}
+	if err := workerCommand(ctx, []string{"--socket", filepath.Join(t.TempDir(), "worker.sock"), "extra"}, "v1.0.0"); err == nil {
+		t.Fatal("worker with a positional argument accepted")
+	}
+}
+
+func TestWorkerInitializeReportsIdentity(t *testing.T) {
+	client, stop := startWorker(t, "v1.0.0")
+	defer stop()
+	info := initialize(t, client)
 	if info.Bot != "mayor-bot" || info.Version != "v1.0.0" {
 		t.Fatalf("identity %+v", info)
 	}
 	for _, want := range []string{"policy", "run", "progress", "mayor-judgment", "mayor-bulletin"} {
-		found := false
-		for _, capability := range info.Capabilities {
-			if capability == want {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(info.Capabilities, want) {
 			t.Fatalf("capabilities %v miss %q", info.Capabilities, want)
 		}
 	}
