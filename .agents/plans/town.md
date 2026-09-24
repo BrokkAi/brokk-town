@@ -968,8 +968,21 @@
   marker reconciliation now validates the same identity and rejects PR receipts.
   New scan proposals require evidence, while old saved state remains readable.
 - No public API, worker protocol, state format, dependency or bot-policy change.
-  Mayor's existing decision behavior is unchanged. No arbitrary coverage floor
-  or broader worker-wiring expansion.
+  Mayor's existing decision behavior is unchanged. No arbitrary coverage floor:
+  CI already runs every module's full suite, and a floor would reward gaming
+  the metric instead of covering decisions.
+- Worker wiring is covered at the dispatch boundary, mirroring the issue-bot
+  precedent: bsb tests `appendLabels` and the `--socket` requirement plus the
+  served bot identity and capabilities; bmb adds an unknown-mode refusal that
+  returns an error event without running an agent; brp covers the `--socket`
+  requirement and its served identity. Agent-backed dispatch stays in the bot
+  package suites, which own the fake harness fixtures.
+- Verified with Go 1.27.1: gofmt clean and `go vet` clean for all three
+  command packages; the new socket-free tests pass with `-race`. The
+  socket-binding worker tests fail in this sandbox only (`listen unix ...
+  socket: operation not permitted` — AF_UNIX is denied here, and the
+  pre-existing issue-bot worker socket test fails the same way), so they
+  need CI or an unrestricted host for a green run.
 - Baseline root-package coverage: Simplifier 40.6%, Mayor 51.7%. Frontend syntax
   and all 74 browser tests pass, as does the isolated demo lifecycle smoke.
   Full ordinary Go tests and vet pass for Town and both affected modules; both
