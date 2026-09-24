@@ -874,7 +874,10 @@
   requeue marker is `brokk-town:requeued pr=N close=K`, where `Task.Closes`
   counts Town's close decisions, so a legitimate second requeue is explained
   and an uncertain post of the same one is not repeated (`IssueComments`).
-  After GitHub closed the pull request, a definite rejection of the PR or
+  The pull request's closing comment carries `brokk-town:closed-after-review
+  pr=N close=K`; when GitHub already lists a `closing` pull request closed
+  (its close or comment had an uncertain outcome), the closer posts that
+  comment unless it is already there, instead of skipping it. After GitHub closed the pull request, a definite rejection of the PR or
   issue comment is noted on the task and the close is finished; other
   failures keep the claim. A refused branch delete finishes the close but
   holds the issue, because Issue Bot pushes its next attempt to the same

@@ -491,3 +491,38 @@ func TestClosingAnOldPullKeepsTheBranchANewerOneUses(t *testing.T) {
 		t.Fatalf("newer PR was disturbed: %+v", pr)
 	}
 }
+
+func TestUncertainClosingCommentIsPostedOnceTheCloseIsListed(t *testing.T) {
+	store, town, gh, sup := ownPullTown(t, "auto")
+	declineOwnPull(t, store, town)
+	ctx := context.Background()
+	// GitHub closes the pull request, but the closing comment's outcome is
+	// lost; the next inventory lists the pull request closed.
+	gh.commentErrors = map[int]error{5: errors.New("connection reset")}
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err == nil {
+		t.Fatal("a failed comment was not reported")
+	}
+	if pr := task(store, town, "pr:5"); pr.Stage != "closing" || len(gh.closedPulls) != 1 {
+		t.Fatalf("uncertain comment released the claim: %+v", pr)
+	}
+	gh.commentErrors = nil
+	if err := sup.reconcileNow(ctx, store.Snapshot().Towns[town.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if len(gh.comments) != 2 || !strings.HasPrefix(gh.comments[0], "#5: ") || !strings.Contains(gh.comments[0], "A registry for one caller.") {
+		t.Fatalf("the closed PR was never explained: %v", gh.comments)
+	}
+	// An explanation that did reach GitHub is not repeated.
+	store, town, gh, sup = ownPullTown(t, "auto")
+	declineOwnPull(t, store, town)
+	update(t, store, func(st *State) { claimDeclinedPulls(st, st.Towns[town.ID], time.Now()) })
+	gh.comments = []string{"#5: " + closingComment(task(store, town, "pr:5"), 3)}
+	gh.p.State = "closed"
+	gh.snapshot.Pulls = []Pull{gh.p}
+	if err := sup.closeRetiredPulls(ctx, store.Snapshot().Towns[town.ID], gh.snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(gh.comments) != 2 || !strings.HasPrefix(gh.comments[1], "#3: ") {
+		t.Fatalf("closing comment repeated: %v", gh.comments)
+	}
+}

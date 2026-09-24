@@ -214,7 +214,13 @@ func closingComment(task *Task, requeued int) string {
 	if requeued > 0 {
 		body += fmt.Sprintf("\n\nTown starts issue #%d over from the current base branch.", requeued)
 	}
-	return body + "\n\n<!-- brokk-town:closed-after-review -->"
+	return body + "\n\n" + closeMarker(task)
+}
+
+// closeMarker identifies one closing comment: the pull request and which of
+// Town's closes of it the comment explains, as requeueMarker does.
+func closeMarker(task *Task) string {
+	return fmt.Sprintf("<!-- brokk-town:closed-after-review pr=%d close=%d -->", task.Number, task.Closes)
 }
 
 // requeueMarker identifies one requeue comment: the pull request and which of
@@ -286,6 +292,21 @@ func (s *Supervisor) explainRequeue(ctx context.Context, repo string, issue int,
 	return s.GitHub.Comment(ctx, repo, issue, requeueComment(task))
 }
 
+// explainClose posts the closing comment on a pull request GitHub already lists
+// closed unless GitHub already has it, so an uncertain post is not repeated.
+func (s *Supervisor) explainClose(ctx context.Context, repo string, task *Task, requeued int) error {
+	comments, err := s.GitHub.IssueComments(ctx, repo, task.Number)
+	if err != nil {
+		return err
+	}
+	for _, body := range comments {
+		if strings.Contains(body, closeMarker(task)) {
+			return nil
+		}
+	}
+	return s.GitHub.Comment(ctx, repo, task.Number, closingComment(task, requeued))
+}
+
 // closeRetiredPulls performs the GitHub side of a closing decision: close the
 // pull request, delete Town's branch, tell the issue why, then queue the issue
 // again. Each step is idempotent, so a failed step is retried by the next
@@ -347,6 +368,14 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 				continue
 			}
 			err := s.GitHub.Comment(ctx, t.Config.Repo, n, closingComment(task, requeued))
+			if !postClose(&failures, &skipped, fmt.Sprintf("explain closing PR #%d", n), err) {
+				continue
+			}
+		} else {
+			// GitHub lists it closed: an earlier pass closed it, but its
+			// comment failed or its outcome was uncertain. The claim stays
+			// until the pull request is explained.
+			err := s.explainClose(ctx, t.Config.Repo, task, requeued)
 			if !postClose(&failures, &skipped, fmt.Sprintf("explain closing PR #%d", n), err) {
 				continue
 			}
