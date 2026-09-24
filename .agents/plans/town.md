@@ -968,8 +968,22 @@
   marker reconciliation now validates the same identity and rejects PR receipts.
   New scan proposals require evidence, while old saved state remains readable.
 - No public API, worker protocol, state format, dependency or bot-policy change.
-  Mayor's existing decision behavior is unchanged. No arbitrary coverage floor
-  or broader worker-wiring expansion.
+  Mayor's existing decision behavior is unchanged. No arbitrary coverage floor:
+  CI already runs every module's full suite, and a floor would reward gaming
+  the metric instead of covering decisions.
+- Worker wiring is covered at the dispatch boundary, mirroring the issue-bot
+  precedent: bsb tests `appendLabels` and the `--socket` requirement plus the
+  served bot identity and capabilities; bmb adds an unknown-mode refusal that
+  returns an error event without running an agent; brp covers the `--socket`
+  requirement and its served identity. Agent-backed dispatch stays in the bot
+  package suites, which own the fake harness fixtures.
+- The socket-binding tests put the socket under `os.MkdirTemp("", ...)`, like
+  every other worker socket test: `t.TempDir()` embeds the test name and
+  overflows the 104-byte macOS socket path limit, which only master CI runs.
+  Startup failures report the worker's own error instead of a readiness
+  timeout.
+- Verified with Go 1.27.1: gofmt, `go vet` and the full `go test -race` suites
+  pass for Mayor, Repo and Simplifier, including the new socket tests.
 - Baseline root-package coverage: Simplifier 40.6%, Mayor 51.7%. Frontend syntax
   and all 74 browser tests pass, as does the isolated demo lifecycle smoke.
   Full ordinary Go tests and vet pass for Town and both affected modules; both
