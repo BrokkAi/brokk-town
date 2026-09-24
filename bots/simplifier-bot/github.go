@@ -1,10 +1,14 @@
 package simplifierbot
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
 	"sort"
@@ -193,23 +197,35 @@ func createdResponse(out string, runErr error) (*Issue, error) {
 	if runErr != nil {
 		return nil, runErr
 	}
-	var headers, body string
-	if raw, rest, ok := strings.Cut(out, "\n\n"); ok {
-		headers, body = raw, strings.TrimPrefix(rest, "\n")
-	} else {
-		body = out
+	reader := textproto.NewReader(bufio.NewReader(strings.NewReader(out)))
+	line, err := reader.ReadLine()
+	if err != nil {
+		return nil, fmt.Errorf("missing create HTTP status: %w", err)
 	}
-	if !strings.Contains(strings.ToLower(headers), " http 2") && headers != "" {
-		return nil, errors.New("issue creation returned a non-success response")
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return nil, errors.New("invalid create HTTP status")
+	}
+	_, _, valid := http.ParseHTTPVersion(fields[0])
+	if !valid || fields[1] != "201" {
+		return nil, errors.New("issue creation did not return HTTP 201")
+	}
+	if _, err := reader.ReadMIMEHeader(); err != nil {
+		return nil, fmt.Errorf("invalid create HTTP headers: %w", err)
+	}
+	// gh already decoded transfer/content encodings; parse its printed JSON.
+	body, err := io.ReadAll(reader.R)
+	if err != nil {
+		return nil, err
 	}
 	var i Issue
-	if err := json.Unmarshal([]byte(body), &i); err != nil || i.Number < 1 {
+	if err := json.Unmarshal(body, &i); err != nil || i.Number < 1 {
 		return nil, errors.New("issue creation returned an incomplete response")
 	}
 	return &i, nil
 }
 func validateCreated(cfg Config, p *Proposal, i *Issue) error {
-	if i == nil || i.Number < 1 || (i.State != "open" && i.State != "closed") || !strings.Contains(i.Body, marker(p.RequestID)) ||
+	if i == nil || i.Number < 1 || (len(i.PullRequest) > 0 && string(i.PullRequest) != "null") || (i.State != "open" && i.State != "closed") || !strings.Contains(i.Body, marker(p.RequestID)) ||
 		!strings.EqualFold(i.URL, fmt.Sprintf("https://%s/%s/issues/%d", cfg.GitHub.Host, cfg.GitHubRepo(), i.Number)) || strings.TrimSpace(i.Title) == "" {
 		return errors.New("GitHub did not confirm the proposed issue")
 	}

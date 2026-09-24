@@ -949,3 +949,37 @@
   refusals as `RejectedError`, as `CloseIssue` does. The claim skips blocked
   (including off-branch) pull requests, and validation allows a Mayoral
   `declined` at `closing` only on Town's own pull request.
+
+## Simplifier and Mayor decision-path coverage (#142)
+
+- Exercise public Simplifier `Assess`/`Run` and Mayor `Judge`/`WriteBulletin`
+  through module-owned fake ACP and gh subprocesses, with local Git origins.
+  Cover independent assessment modes, invalid receipts, edited tracked files,
+  changed HEAD, cancellation, dry runs, scan scheduling, bulletin windows and
+  citations. Git fixtures ignore user/system configuration; tests use private
+  state and never dispatch a real coding harness.
+- Test complete GitHub pagination and failures on subsequent pages, configuration
+  defaults/invalid input, state identity and corruption, and exclusive locks.
+  A fake create checks the saved posting intent before returning or losing its
+  response. Restart tests retain unknown outcomes and reconcile without another
+  POST or agent attempt, including old evidence-free saved proposals.
+- Regression tests exposed and fixed Simplifier's rejection of normal gh HTTP
+  create responses (LF/CRLF, HTTP/1.1/2.0). Require HTTP 201 and a confirmed issue;
+  marker reconciliation now validates the same identity and rejects PR receipts.
+  New scan proposals require evidence, while old saved state remains readable.
+- No public API, worker protocol, state format, dependency or bot-policy change.
+  Mayor's existing decision behavior is unchanged. No arbitrary coverage floor
+  or broader worker-wiring expansion.
+- Baseline root-package coverage: Simplifier 40.6%, Mayor 51.7%. Frontend syntax
+  and all 74 browser tests pass, as does the isolated demo lifecycle smoke.
+  Full ordinary Go tests and vet pass for Town and both affected modules; both
+  bot launcher suites and their 29 packaging tests each pass. Root-package
+  coverage is now 77.6% for Simplifier and 72.6% for Mayor.
+- Fixed a validation-only web test hang by consuming large asset response
+  bodies before server cleanup. New bot fixtures prohibit non-local Git
+  transports, so even a broken recovery path cannot fetch a live repository.
+- Race checks were attempted for Town and both bots with CGO_ENABLED=1, but this
+  ARM64 WSL host aborts before tests: ThreadSanitizer unsupported VMA range,
+  Found 47 / Supported 48. A compatible Linux/macOS runner is still required.
+  Installer tests run from a temporary LF-normalized Linux copy because the
+  Windows checkout's CRLF shell scripts cannot execute under /bin/sh.

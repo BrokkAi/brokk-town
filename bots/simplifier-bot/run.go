@@ -195,6 +195,9 @@ func (e engine) scan(ctx context.Context, s *State, force bool) error {
 		found := false
 		for _, i := range issues {
 			if strings.Contains(i.Body, marker(p.RequestID)) {
+				if err := validateCreated(e.config, p, &i); err != nil {
+					return err
+				}
 				p.Status, p.URL = "submitted", i.URL
 				found = true
 				break

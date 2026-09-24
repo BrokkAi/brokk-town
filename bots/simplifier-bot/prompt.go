@@ -140,6 +140,11 @@ func parseScan(text string, maximum int) ([]Proposal, string, error) {
 		return nil, "", errors.New("scan requires a summary, proposals array, and max_proposals compliance")
 	}
 	for _, p := range r.Proposals {
+		// Require evidence for new agent output without making older saved
+		// proposals unreadable during uncertain-write reconciliation.
+		if len(p.Evidence) == 0 {
+			return nil, "", errors.New("proposal requires evidence")
+		}
 		if err := validateProposal(p); err != nil {
 			return nil, "", err
 		}

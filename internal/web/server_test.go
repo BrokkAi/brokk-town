@@ -96,6 +96,11 @@ func TestLocalAPIAuthenticationOriginAndStrictInput(t *testing.T) {
 		if r.Header.Get("Content-Security-Policy") == "" {
 			t.Fatal("missing CSP")
 		}
+		// Finish large asset responses before server cleanup; leaving them unread
+		// can strand the handler in a socket write even after the client closes.
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Fatal("reading embedded asset", path, err)
+		}
 	}
 }
 

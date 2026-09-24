@@ -30,6 +30,8 @@ func originGit(t *testing.T, dir string) func(...string) string {
 // without network access or a live agent.
 func originRepo(t *testing.T) (string, string) {
 	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 	dir := t.TempDir()
 	run := originGit(t, dir)
 	run("init", "--initial-branch", "master")
