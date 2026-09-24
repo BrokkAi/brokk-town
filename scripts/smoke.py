@@ -36,7 +36,7 @@ def pid_alive(pid):
 with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
     root = Path(directory)
     conn_path = root / 'demo' / 'connection.json'
-    service = subprocess.Popen([binary, 'serve', '--demo', '--state-dir', directory,
+    service = subprocess.Popen([binary, '--demo', '--state-dir', directory,
                                 '--listen', '127.0.0.1:0'], stdout=subprocess.DEVNULL)
     try:
         wait_for(conn_path.exists)
@@ -57,12 +57,12 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         assert snapshot()['demo'] is True
         initial_capacity = snapshot()['capacity']
         assert initial_capacity['limit'] == 4 and initial_capacity['active'] >= 0
-        capacity_cli = subprocess.check_output([binary, 'capacity', '--demo',
+        capacity_cli = subprocess.check_output([binary, 'settings', '--demo',
             '--state-dir', directory, '--max-workers', '2'], text=True)
         assert 'limit 2' in capacity_cli
         assert snapshot()['service_config']['max_workers'] == 2
         assert snapshot()['capacity']['limit'] == 2
-        invalid_capacity = subprocess.run([binary, 'capacity', '--demo',
+        invalid_capacity = subprocess.run([binary, 'settings', '--demo',
             '--state-dir', directory, '--max-workers', '65'],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert invalid_capacity.returncode != 0 and '--max-workers' in invalid_capacity.stderr
@@ -153,7 +153,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         service.wait(timeout=6)
         assert service.returncode == 0 and not conn_path.exists()
         # The lock is released and the isolated inventory can be reopened.
-        service = subprocess.Popen([binary, 'serve', '--demo', '--state-dir', directory,
+        service = subprocess.Popen([binary, '--demo', '--state-dir', directory,
                                     '--listen', '127.0.0.1:0'], stdout=subprocess.DEVNULL)
         wait_for(conn_path.exists)
         conn = json.loads(conn_path.read_text())
@@ -168,7 +168,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         assert all(not w['enabled'] for w in saved['towns']['brokkai/paper-trail']['workers'].values())
 
         # A foreground service names the process that holds the state directory.
-        clash = subprocess.run([binary, 'serve', '--demo', '--state-dir', directory,
+        clash = subprocess.run([binary, '--demo', '--state-dir', directory,
                                 '--listen', '127.0.0.1:0'], text=True,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
         assert clash.returncode != 0 and f'pid {conn["pid"]}' in clash.stderr, clash.stderr
@@ -178,21 +178,28 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         service.wait(timeout=10)
         assert service.returncode == 0 and not conn_path.exists()
 
-        service = subprocess.Popen([binary, 'serve', '--demo', '--state-dir', directory,
+        service = subprocess.Popen([binary, '--demo', '--state-dir', directory,
                                     '--listen', '127.0.0.1:0'], stdout=subprocess.DEVNULL)
         wait_for(conn_path.exists)
         service.send_signal(signal.SIGTERM)
         service.wait(timeout=10)
         assert service.returncode == 0 and not conn_path.exists()
 
+        # A background start that fails is reported at once, not after a timeout.
+        started = time.monotonic()
+        failed = subprocess.run([binary, '-d', '--demo', '--state-dir', directory,
+                                 '--listen', 'example.com:80'], text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+        assert failed.returncode != 0 and 'exited during startup' in failed.stderr, failed.stderr
+        assert time.monotonic() - started < 10
         # Background startup is explicit, and its token survives restart.
         subprocess.run([binary, '-d', '--demo', '--state-dir', directory,
                         '--listen', '127.0.0.1:0'], check=True, stdout=subprocess.DEVNULL, timeout=40)
         detached = json.loads(conn_path.read_text())
         assert detached['token'] == conn['token']
-        status_out = subprocess.check_output([binary, 'service', 'status', '--demo', '--state-dir', directory], text=True)
+        status_out = subprocess.check_output([binary, 'status', '--demo', '--state-dir', directory], text=True)
         assert 'running' in status_out
-        subprocess.run([binary, 'service', 'stop', '--demo', '--state-dir', directory], check=True, timeout=40)
+        subprocess.run([binary, 'shutdown', '--demo', '--state-dir', directory], check=True, timeout=40)
         assert not conn_path.exists()
         print('Demo smoke passed: browser assets, auth, SSE, registry, profiles, requests, foreground shutdown, explicit daemon lifecycle.')
     finally:

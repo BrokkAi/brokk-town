@@ -27,16 +27,17 @@ SIGHUP stops Town, its bots and their agent processes. Closing the browser does
 not stop the service. Demo mode is isolated and never invokes bots, agents or GitHub.
 
 ```sh
-bt -d                     # explicitly start in the background
-bt service status
+bt -d                     # start in the background instead
+bt status                 # running or stopped, and which towns it serves
 bt web                    # print the running service's browser URL
-bt service stop           # stop Town and its bots
+bt shutdown               # stop Town and its bots
 ```
 
-Client commands require a running service. There is no login registration,
+Client commands require a running Town and never start one; `bt status` and
+`bt harnesses` also work while it is stopped. There is no login registration,
 automatic service replacement, terminal UI, version polling or in-app installer.
-`bt serve` is an explicit alias for foreground operation. Use `--state-dir` for
-an independent installation and `--listen` for a loopback address.
+Use `--state-dir` for an independent installation and `--listen` for a loopback
+address. Each command accepts only its own flags: `bt COMMAND --help` lists them.
 
 ## Independent bot projects
 
@@ -90,7 +91,7 @@ bt
 # In another terminal:
 bt add --repo OWNER/REPO
 bt start --repo OWNER/REPO --role issue
-bt capacity --max-workers 4
+bt settings --max-workers 4
 ```
 
 Each configured town starts all eight bot processes immediately, including paused
@@ -224,7 +225,7 @@ reconciled. Town leaves closing declined issues and retired pull requests and
 filing review follow-ups for the first inventory after the window. Issues you
 submit yourself are still posted. Houses stay awake: the browser shows them as
 *quiet* rather than paused, the town header reads "Quiet hours · until …",
-Town Hall explains the hold, and `bt status` carries the same `quiet_hours`
+Town Hall explains the hold, and `bt status --json` carries the same `quiet_hours`
 state for each town. When the window ends, scheduling resumes on its own with
 each house's usual cadence; nothing missed is replayed. Pause and quiet hours
 are independent and both survive a restart: a paused house stays paused after
@@ -308,7 +309,7 @@ the confirmation status and a link to the issue. Demo submissions stay local.
 ```sh
 ./bin/bt request --repo BrokkAi/my-project --kind feature --title 'Add keyboard navigation' --body-file request.md
 # Use --kind bug for a bug report; --body-file - reads stdin.
-./bin/bt check-request --repo BrokkAi/my-project --request-id SAVED_ID
+./bin/bt request --repo BrokkAi/my-project --check --request-id SAVED_ID
 ```
 
 Requests have durable IDs, and the CLI prints the ID before sending. If the
@@ -331,8 +332,7 @@ Adding the same repository again restores that history and its previous
 settings, with automation paused and the reporter enabled. A merge policy or
 harness/agent choice given with the add replaces the previous one; budgets, work
 policies, bot profiles, funnels and the branch are kept. A deleted town listed in
-`bt serve --config` is restored with the file's settings, and one named by
-`bt serve --repo` with its previous settings; `bt serve` prints a notice. A town
+`bt --config` is restored with the file's settings, and Town prints a notice. A town
 that already worked on one branch cannot be restored onto another. Deleting a
 town that is already deleted reports `unknown town`. Wait for stopping workers to
 finish before restoring a town.
@@ -416,10 +416,11 @@ Copy [docs/config.example.json](docs/config.example.json), edit the repository,
 bot profiles, verification command, and policy, then run:
 
 ```sh
-./bin/bt serve --config /path/to/towns.json
+./bin/bt --config /path/to/towns.json
 ```
 
-Configuration is a JSON array for town-only files. Each entry supplies `repo`, optional `branch` and
+Configuration is one JSON object: optional `max_workers` and `quiet_hours` for
+the whole service, and a `towns` array. Each town supplies `repo`, optional `branch` and
 `harness`, `agent`, optional `bot_agents`, optional `verify` argument vector,
 `merge_policy`, `simplifier_mode`, optional `review_close_severity` (`P1`, `P2`
 or `P3`, default `P2`), optional `budget`, optional `bot_policies`,
@@ -427,11 +428,9 @@ or `P3`, default `P2`), optional `budget`, optional `bot_policies`,
 lists all required values. A config-file entry gets no defaults for
 `merge_policy`, `poll_seconds`, `report_seconds`, or `max_cycles`: omitting any
 of them rejects the file. The defaults quoted below apply to towns added with
-`bt add` or the browser. To persist global capacity alongside the town list,
-use the object form `{"max_workers": 2, "towns": [...]}`; the legacy array form
-remains accepted. When `serve --config` includes `max_workers`, that value
-overrides the persisted service setting in the same atomic state update; an
-array config without it preserves the saved limit. Town
+`bt add` or the browser. When `--config` includes `max_workers`, that value
+overrides the persisted service setting in the same atomic state update; a
+config without it preserves the saved limit. Town
 uses the repository's default branch when omitted, and keeps following it: the
 observed default is recorded as repository state, so renaming it moves the town
 with it and never overwrites a branch you chose. An initialized town's branch
@@ -571,7 +570,7 @@ resets the pending release's attempt budget in its own workspace, then resumes
 the same release. Unlike a task retry, a release retry also starts the release
 house if it was paused. Town never edits the bot's private state. The pinned Release
 Bot must advertise the `retry` capability; older pins report that plainly.
-Use `bt status` to inspect saved details and GitHub to resolve conflicts.
+Use `bt status --json` to inspect saved details and GitHub to resolve conflicts.
 
 ### Snoozing one task
 
@@ -593,7 +592,7 @@ it. A run already under way when you snooze finishes. The Mayor can still decide
 a snoozed arrival by hand.
 
 The task shows as **Snoozed** with its reason and resume time in the browser
-and in `bt status` (`deferred_until`, `defer_reason`). Snoozed is distinct from
+and in `bt status --json` (`deferred_until`, `defer_reason`). Snoozed is distinct from
 blocked and failed, so a snoozed task does not appear in the inbox. At the
 resume time Town clears the snooze, wakes the house and records the event; the
 snooze is saved state, so it survives a restart and repository reconciliation.

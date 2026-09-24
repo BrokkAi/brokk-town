@@ -35,7 +35,7 @@ documentation changes need a diff and link review. Tests should use temporary
 repositories and simulated agents, without publishing releases or requiring
 live credentials.
 
-Run `make build` and check `bin/bt serve --demo` and `bin/bt tui --demo`
+Run `make build` and check `bin/bt --demo` with its CLI and browser clients
 when changing the local service or clients. Never run live autonomous bots as
 a development test. For installer and release changes, run `make package-smoke` from a clean
 committed checkout. See [RELEASING.md](RELEASING.md) for the publishing pipeline.

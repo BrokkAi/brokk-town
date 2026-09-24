@@ -5,8 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -71,53 +69,5 @@ func TestBannersKeepAccessKeyOffRedirectedOutput(t *testing.T) {
 		if got := banner(true); !strings.Contains(got, "bt web --demo") {
 			t.Fatalf("%s redirected demo: %q", name, got)
 		}
-	}
-}
-
-func TestOpenLogsRedactsKeysFromEarlierVersions(t *testing.T) {
-	dir := t.TempDir()
-	key := strings.Repeat("ab", 32)
-	stdout, _ := logPaths(dir)
-	if err := os.MkdirAll(filepath.Dir(stdout), 0700); err != nil {
-		t.Fatal(err)
-	}
-	old := "Brokk Town v1\nBrowser: http://127.0.0.1:1/#token=" + key + "\nother line\n"
-	if err := os.WriteFile(stdout, []byte(old), 0600); err != nil {
-		t.Fatal(err)
-	}
-	out, errFile, err := openLogs(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = out.WriteString("new line\n")
-	out.Close()
-	errFile.Close()
-	data, _ := os.ReadFile(stdout)
-	want := "Brokk Town v1\nBrowser: http://127.0.0.1:1/#token=[redacted]\nother line\nnew line\n"
-	if string(data) != want {
-		t.Fatalf("%q", data)
-	}
-	if info, _ := os.Stat(stdout); info.Mode().Perm() != 0600 {
-		t.Fatal(info.Mode())
-	}
-}
-
-func TestOpenLogsTruncatesAnOversizedOldLog(t *testing.T) {
-	dir := t.TempDir()
-	stdout, _ := logPaths(dir)
-	if err := os.MkdirAll(filepath.Dir(stdout), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(stdout, make([]byte, maxScrubbedLog+1), 0600); err != nil {
-		t.Fatal(err)
-	}
-	out, errFile, err := openLogs(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out.Close()
-	errFile.Close()
-	if info, _ := os.Stat(stdout); info.Size() != 0 {
-		t.Fatal(info.Size())
 	}
 }

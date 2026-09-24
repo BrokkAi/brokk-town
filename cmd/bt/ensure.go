@@ -1,20 +1,20 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
 const (
-	startTimeout = 60 * time.Second
 	stopTimeout  = 30 * time.Second
 	pollInterval = 100 * time.Millisecond
 )
@@ -34,18 +34,13 @@ func logPaths(dir string) (string, string) {
 	return filepath.Join(dir, "logs", "serve.log"), filepath.Join(dir, "logs", "serve.err.log")
 }
 
-// openLogs creates the log files owner-only before any supervisor writes to
-// them: service output can name local paths and repository details. The banner
-// no longer carries the access key, but logs from earlier versions did, so the
-// stdout log is scrubbed before it is reopened for appending.
+// openLogs creates the log files owner-only before the background service
+// writes to them: its output can name local paths and repository details.
 func openLogs(dir string) (*os.File, *os.File, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0700); err != nil {
 		return nil, nil, err
 	}
 	stdout, stderr := logPaths(dir)
-	if err := scrubAccessKeys(stdout); err != nil {
-		return nil, nil, err
-	}
 	out, err := os.OpenFile(stdout, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, nil, err
@@ -58,40 +53,6 @@ func openLogs(dir string) (*os.File, *os.File, error) {
 	_ = os.Chmod(stdout, 0600)
 	_ = os.Chmod(stderr, 0600)
 	return out, errFile, nil
-}
-
-// maxScrubbedLog bounds the work of scrubbing an old log. A larger log is
-// truncated rather than read into memory.
-const maxScrubbedLog = 8 << 20
-
-var loggedAccessKey = regexp.MustCompile(`#token=[0-9a-f]{64}`)
-
-// scrubAccessKeys redacts browser links written by earlier versions, which
-// printed the long-lived access key into the service log.
-func scrubAccessKeys(path string) error {
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info.Size() > maxScrubbedLog {
-		return os.Truncate(path, 0)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if !loggedAccessKey.Match(data) {
-		return nil
-	}
-	data = loggedAccessKey.ReplaceAll(data, []byte("#token=[redacted]"))
-	temp := path + ".scrub"
-	if err = os.WriteFile(temp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(temp, path)
 }
 
 func processAlive(pid int) bool {
@@ -114,19 +75,9 @@ func serviceAlive(ctx context.Context, dir string) (connection, bool) {
 	return conn, request(probe, conn, "GET", "/api/state", nil, &state) == nil
 }
 
-// serviceArgs is the command line every launcher uses. The base directory is
-// absolute so the service never depends on the supervisor's environment.
-func serviceArgs(base string, demo bool, listen string) []string {
-	args := []string{"serve", "--state-dir", base, "--listen", listen}
-	if demo {
-		args = append(args, "--demo")
-	}
-	return args
-}
-
-// temporaryBinary recognizes go run and go test executables, which must not
-// be registered or restarted because they disappear. Both live in a go-build
-// work directory; the temp directory as a whole is not a signal, since on
+// temporaryBinary recognizes go run and go test executables, which cannot run
+// in the background because they disappear. Both live in a go-build work
+// directory; the temp directory as a whole is not a signal, since on
 // Linux every test's own directory is under /tmp.
 func temporaryBinary(exe string) bool {
 	for _, part := range strings.Split(filepath.ToSlash(exe), "/") {
@@ -137,13 +88,13 @@ func temporaryBinary(exe string) bool {
 	return false
 }
 
-func spawnDetached(base string, demo bool, listen, config, repo string) (*exec.Cmd, error) {
+func spawnDetached(base string, demo bool, listen, config string, notify *os.File) (*exec.Cmd, error) {
 	exe, err := executablePath()
 	if err != nil {
 		return nil, err
 	}
 	if temporaryBinary(exe) {
-		return nil, fmt.Errorf("%s is a temporary build that cannot run the town in the background; build bt or run bt serve in this terminal", exe)
+		return nil, fmt.Errorf("%s is a temporary build that cannot run the town in the background; build bt or run it in this terminal", exe)
 	}
 	dir := runtimeDir(base, demo)
 	out, errFile, err := openLogs(dir)
@@ -152,47 +103,49 @@ func spawnDetached(base string, demo bool, listen, config, repo string) (*exec.C
 	}
 	defer out.Close()
 	defer errFile.Close()
-	args := serviceArgs(base, demo, listen)
+	// Bare bt runs Town. The state directory is absolute so the child never
+	// depends on this process's working directory.
+	args := []string{"--state-dir", base, "--listen", listen}
+	if demo {
+		args = append(args, "--demo")
+	}
 	if config != "" {
 		args = append(args, "--config", config)
-	}
-	if repo != "" {
-		args = append(args, "--repo", repo)
 	}
 	cmd := exec.Command(exe, args...)
 	cmd.Dir = dir
 	cmd.Stdout = out
 	cmd.Stderr = errFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// ExtraFiles[0] is descriptor 3 in the child.
+	cmd.ExtraFiles = []*os.File{notify}
+	cmd.Env = append(os.Environ(), readyEnv+"=3")
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	return cmd, nil
 }
 
-// waitReady polls for a service newer than `after` that answers requests.
-func waitReady(ctx context.Context, dir string, after time.Time) (connection, error) {
-	deadline := time.Now().Add(startTimeout)
-	for {
-		conn, alive := serviceAlive(ctx, dir)
-		if alive && conn.Started.After(after) {
-			return conn, nil
-		}
-		if time.Now().After(deadline) {
-			return conn, fmt.Errorf("town service did not start within %s%s", startTimeout, logTail(dir))
-		}
-		select {
-		case <-ctx.Done():
-			return conn, ctx.Err()
-		case <-time.After(pollInterval):
-		}
+// logSize is the error log's length, so a failed start shows only what that
+// start wrote to a log that earlier runs appended to.
+func logSize(dir string) int64 {
+	_, stderr := logPaths(dir)
+	info, err := os.Stat(stderr)
+	if err != nil {
+		return 0
 	}
+	return info.Size()
 }
 
-func logTail(dir string) string {
+// logTail returns the last lines written to the error log after offset.
+func logTail(dir string, offset int64) string {
 	_, stderr := logPaths(dir)
 	b, err := os.ReadFile(stderr)
-	if err != nil || len(strings.TrimSpace(string(b))) == 0 {
+	if err != nil || int64(len(b)) < offset {
+		return ""
+	}
+	b = b[offset:]
+	if len(strings.TrimSpace(string(b))) == 0 {
 		return ""
 	}
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
@@ -204,7 +157,7 @@ func logTail(dir string) string {
 
 // stopProcess terminates a service and waits for it to release the state
 // lock after it has stopped its bot processes.
-func stopProcess(ctx context.Context, dir string, conn connection) error {
+func stopProcess(ctx context.Context, conn connection) error {
 	if !processAlive(conn.PID) {
 		return nil
 	}
@@ -225,17 +178,81 @@ func stopProcess(ctx context.Context, dir string, conn connection) error {
 	return nil
 }
 
-// requireService never starts or replaces a service.
-func ensureService(ctx context.Context, base string, demo bool) (connection, error) {
-	conn, alive := serviceAlive(ctx, runtimeDir(base, demo))
+// requireService finds the running service; clients never start one.
+func requireService(ctx context.Context, dir string) (connection, error) {
+	conn, alive := serviceAlive(ctx, dir)
 	if !alive {
 		return conn, errors.New("Town is not running; start bt or bt -d")
 	}
 	return conn, nil
 }
 
-func startBackground(ctx context.Context, base string, demo bool, listen, config, repo string) error {
-	if conn, alive := serviceAlive(ctx, runtimeDir(base, demo)); alive {
+// readyEnv names the descriptor on which a Town started by bt -d reports that
+// it is serving, in the manner of systemd's sd_notify or s6's notification-fd.
+// The parent blocks on the other end: a ready line means Town is up, and end
+// of file without one means it exited, so a failed start is reported at once.
+const readyEnv = "BT_READY_FD"
+
+// readyPipe is the notification descriptor this process was given, if any.
+var readyPipe *os.File
+
+// takeReadyPipe claims the notification descriptor before anything starts a
+// subprocess: it is marked close-on-exec and dropped from the environment, so
+// bots and agents never inherit it and a dead Town always closes the pipe.
+func takeReadyPipe() *os.File {
+	value, ok := os.LookupEnv(readyEnv)
+	if !ok {
+		return nil
+	}
+	os.Unsetenv(readyEnv)
+	fd, err := strconv.Atoi(value)
+	if err != nil || fd < 3 {
+		return nil
+	}
+	// Only a pipe is a notification descriptor; a stray variable must not make
+	// Town write to whatever file happens to be open at that number.
+	var st syscall.Stat_t
+	if syscall.Fstat(fd, &st) != nil || st.Mode&syscall.S_IFMT != syscall.S_IFIFO {
+		return nil
+	}
+	syscall.CloseOnExec(fd)
+	return os.NewFile(uintptr(fd), "ready")
+}
+
+// signalReady tells a waiting bt -d that Town is serving.
+func signalReady() {
+	if readyPipe == nil {
+		return
+	}
+	_, _ = readyPipe.WriteString("ready\n")
+	_ = readyPipe.Close()
+	readyPipe = nil
+}
+
+// awaitReady waits for the child's ready line. The parent's copy of the write
+// end must already be closed, so the child exiting ends the read.
+func awaitReady(ctx context.Context, cmd *exec.Cmd, ready *os.File) error {
+	done := make(chan bool, 1)
+	go func() {
+		line, _ := bufio.NewReader(ready).ReadString('\n')
+		done <- line == "ready\n"
+	}()
+	select {
+	case ok := <-done:
+		if ok {
+			return nil
+		}
+		return fmt.Errorf("Town exited during startup: %v", cmd.Wait())
+	case <-ctx.Done():
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = cmd.Wait()
+		return ctx.Err()
+	}
+}
+
+func startBackground(ctx context.Context, base string, demo bool, listen, config string) error {
+	dir := runtimeDir(base, demo)
+	if conn, alive := serviceAlive(ctx, dir); alive {
 		return fmt.Errorf("Town is already running (pid %d at %s)", conn.PID, conn.URL)
 	}
 	if config != "" {
@@ -245,22 +262,28 @@ func startBackground(ctx context.Context, base string, demo bool, listen, config
 			return err
 		}
 	}
-	cmd, err := spawnDetached(base, demo, listen, config, repo)
+	ready, notify, err := os.Pipe()
 	if err != nil {
 		return err
 	}
-	conn, err := waitReady(ctx, runtimeDir(base, demo), time.Time{})
+	defer ready.Close()
+	offset := logSize(dir)
+	cmd, err := spawnDetached(base, demo, listen, config, notify)
+	notify.Close()
 	if err != nil {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		_ = cmd.Wait()
 		return err
 	}
-	if conn.PID != cmd.Process.Pid {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		_ = cmd.Wait()
-		return fmt.Errorf("Town is already running (pid %d)", conn.PID)
+	if err := awaitReady(ctx, cmd, ready); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		return fmt.Errorf("%w%s", err, logTail(dir, offset))
+	}
+	conn, err := readConnection(dir)
+	if err != nil {
+		return err
 	}
 	_ = cmd.Process.Release()
-	fmt.Print(backgroundBanner(conn, demo, filepath.Join(runtimeDir(base, demo), "logs")))
+	fmt.Print(backgroundBanner(conn, demo, filepath.Join(dir, "logs")))
 	return nil
 }

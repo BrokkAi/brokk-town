@@ -14,7 +14,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-func TestCapacityCLIPostsRequiredBoundedLimit(t *testing.T) {
+func TestSettingsMaxWorkersPostsBoundedLimit(t *testing.T) {
 	seen := make(chan town.ServiceConfig, 1)
 	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/state" && r.Method == http.MethodGet {
@@ -38,16 +38,17 @@ func TestCapacityCLIPostsRequiredBoundedLimit(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "connection.json"), conn, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(context.Background(), []string{"capacity", "--state-dir", dir, "--max-workers", "7"}); err != nil {
+	if err := run(context.Background(), []string{"settings", "--state-dir", dir, "--max-workers", "7"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-seen; got.MaxWorkers != 7 {
 		t.Fatalf("got %+v", got)
 	}
 	for _, args := range [][]string{
-		{"capacity", "--state-dir", dir},
-		{"capacity", "--state-dir", dir, "--max-workers", "0"},
-		{"capacity", "--state-dir", dir, "--max-workers", "65"},
+		{"settings", "--state-dir", dir},
+		{"settings", "--state-dir", dir, "--max-workers", "0"},
+		{"settings", "--state-dir", dir, "--max-workers", "65"},
+		{"settings", "--state-dir", dir, "--repo", "acme/app", "--max-workers", "3"},
 	} {
 		if err := run(context.Background(), args); err == nil || !strings.Contains(err.Error(), "--max-workers") {
 			t.Fatalf("accepted invalid capacity args %v: %v", args, err)
@@ -55,14 +56,14 @@ func TestCapacityCLIPostsRequiredBoundedLimit(t *testing.T) {
 	}
 }
 
-func TestDecodeConfigFileSupportsCapacityObjectAndLegacyArray(t *testing.T) {
+func TestDecodeConfigFileReadsServiceSettingsAndTowns(t *testing.T) {
 	configs, limit, err := decodeConfigFile([]byte(`{"max_workers":9,"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]}`))
 	if err != nil || len(configs) != 1 || limit.MaxWorkers == nil || *limit.MaxWorkers != 9 {
 		t.Fatalf("object config: configs=%d limit=%v err=%v", len(configs), limit, err)
 	}
-	configs, limit, err = decodeConfigFile([]byte(`[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]`))
+	configs, limit, err = decodeConfigFile([]byte(`{"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]}`))
 	if err != nil || len(configs) != 1 || limit.MaxWorkers != nil || limit.QuietHours != nil {
-		t.Fatalf("legacy config: configs=%d limit=%v err=%v", len(configs), limit, err)
+		t.Fatalf("towns-only config: configs=%d limit=%v err=%v", len(configs), limit, err)
 	}
 	for _, raw := range []string{
 		`{"max_workers":null,"towns":[]}`,
@@ -70,6 +71,7 @@ func TestDecodeConfigFileSupportsCapacityObjectAndLegacyArray(t *testing.T) {
 		`{"max_workers":{},"towns":[]}`,
 		`{"max_workers":0,"towns":[]}`,
 		`{"max_workers":65,"towns":[]}`,
+		`[]`,
 	} {
 		if _, _, err := decodeConfigFile([]byte(raw)); err == nil {
 			t.Fatalf("accepted malformed capacity config %s", raw)
@@ -106,7 +108,7 @@ func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		return serve(ctx, dir, "127.0.0.1:0", false, path, "")
+		return serve(ctx, dir, "127.0.0.1:0", false, path)
 	}
 	readLimit := func(t *testing.T) int {
 		t.Helper()
@@ -125,12 +127,12 @@ func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 	if got := readLimit(t); got != 2 {
 		t.Fatalf("object config did not override persisted limit: %d", got)
 	}
-	// The legacy array has no service setting and therefore preserves it.
-	if err := serveConfig(t, writeConfig(t, `[]`)); err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatalf("serve legacy config: %v", err)
+	// A config without max_workers leaves the persisted setting alone.
+	if err := serveConfig(t, writeConfig(t, `{"towns":[]}`)); err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("serve towns-only config: %v", err)
 	}
 	if got := readLimit(t); got != 2 {
-		t.Fatalf("legacy config unexpectedly changed persisted limit: %d", got)
+		t.Fatalf("towns-only config unexpectedly changed persisted limit: %d", got)
 	}
 	// Applying a bad town and a new capacity is one store transaction: neither
 	// change may survive the validation error.
@@ -175,12 +177,12 @@ func TestServeConfigBranchOmittedKeepsPinAndEmptyClearsIt(t *testing.T) {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "towns.json")
 		entry := `{"repo":"acme/pinned","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":1800,"max_cycles":5` + branch + `}`
-		if e := os.WriteFile(path, []byte("["+entry+"]"), 0600); e != nil {
+		if e := os.WriteFile(path, []byte(`{"towns":[`+entry+`]}`), 0600); e != nil {
 			t.Fatal(e)
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		if e := serve(ctx, dir, "127.0.0.1:0", false, path, ""); e != nil && !errors.Is(e, context.Canceled) {
+		if e := serve(ctx, dir, "127.0.0.1:0", false, path); e != nil && !errors.Is(e, context.Canceled) {
 			return e
 		}
 		return nil

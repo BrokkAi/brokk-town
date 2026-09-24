@@ -180,7 +180,7 @@ func TestBudgetCLISendsEditsAndRejectsUnenforceableCombinations(t *testing.T) {
 }
 
 func TestConfigFileCarriesTownBudget(t *testing.T) {
-	entries, _, err := decodeConfigFile([]byte(`[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1,"budget":{"period":"month","max_agent_minutes":90}}]`))
+	entries, _, err := decodeConfigFile([]byte(`{"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1,"budget":{"period":"month","max_agent_minutes":90}}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestConfigFileCarriesTownBudget(t *testing.T) {
 		t.Fatalf("a valid config budget was rejected: %v", err)
 	}
 	// An unknown period decodes; validation is what rejects it.
-	bad, _, err := decodeConfigFile([]byte(`[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1,"budget":{"period":"never","max_attempts":1}}]`))
+	bad, _, err := decodeConfigFile([]byte(`{"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1,"budget":{"period":"never","max_attempts":1}}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

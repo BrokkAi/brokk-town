@@ -37,6 +37,8 @@ type cliFlags struct {
 	bodyFile             *string
 	requestID            *string
 	maxWorkers           *int
+	check                *bool
+	json                 *bool
 	budgetPeriod         *string
 	budgetAttempts       *int
 	budgetMinutes        *int
@@ -68,14 +70,14 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl := &cliFlags{}
 	fl.daemon = fs.Bool("d", false, "run Town in the background")
 	fl.dir = fs.String("state-dir", stateHome(), "private state directory")
-	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for service startup")
-	fl.demo = fs.Bool("demo", false, "isolated simulated town (serve only)")
+	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address to serve on")
+	fl.demo = fs.Bool("demo", false, "the isolated simulated town")
 	fl.repo = fs.String("repo", "", "GitHub OWNER/REPO")
 	fl.role = fs.String("role", "all", "bot to control or configure: bug, feature, issue, review, release, simplifier, hall (Mayor Bot); repo/all for controls (start all wakes every house, except release under manual merge policy); omit for town defaults in settings")
 	fl.task = fs.String("task", "", "task ID for retry, defer, undefer, admit or decline; omit with retry --role release to reset the release bot's exhausted attempt budget")
 	fl.until = fs.String("until", "", "resume time as RFC 3339 (2026-01-02T15:04:05Z) or a delay from now such as 90m, 4h or 2d (defer)")
 	fl.reason = fs.String("reason", "", "short note on why the task is snoozed, at most 200 characters (defer)")
-	fl.config = fs.String("config", "", "optional JSON array or object with max_workers and towns (serve only)")
+	fl.config = fs.String("config", "", "optional JSON array or object with max_workers, quiet_hours and towns, applied at startup")
 	fl.harness = fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
 	fl.harnessVersion = fs.String("harness-version", "", "select an exact catalog version (add/settings)")
 	fl.refresh = fs.Bool("refresh", false, "refresh the official ACP registry (harnesses)")
@@ -88,8 +90,10 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.kind = fs.String("kind", "feature", "feature or bug (request)")
 	fl.title = fs.String("title", "", "GitHub issue title (request)")
 	fl.bodyFile = fs.String("body-file", "", "issue description file, or - for stdin (request)")
-	fl.requestID = fs.String("request-id", "", "saved submission ID (request/check-request)")
-	fl.maxWorkers = fs.Int("max-workers", 0, "maximum active bot workers across all towns (capacity)")
+	fl.requestID = fs.String("request-id", "", "saved submission ID; reuse it to resubmit or --check (request)")
+	fl.check = fs.Bool("check", false, "check the submission named by --request-id instead of submitting (request)")
+	fl.json = fs.Bool("json", false, "print the full town state as JSON (status)")
+	fl.maxWorkers = fs.Int("max-workers", 0, "maximum active bot workers across all towns; omit --repo (settings)")
 	fl.budgetPeriod = fs.String("budget-period", "", "accounting period for this town's agent budget: day, week, month, or none to remove it (settings)")
 	fl.budgetAttempts = fs.Int("budget-attempts", 0, "agent attempts allowed per period; 0 leaves attempts uncapped (settings)")
 	fl.budgetMinutes = fs.Int("budget-agent-minutes", 0, "agent minutes allowed per period; 0 leaves time uncapped (settings)")
@@ -115,20 +119,6 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	return fl
 }
 
-type serviceFlags struct {
-	dir    *string
-	listen *string
-	demo   *bool
-}
-
-func addServiceFlags(fs *flag.FlagSet) *serviceFlags {
-	fl := &serviceFlags{}
-	fl.dir = fs.String("state-dir", stateHome(), "private state directory")
-	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address for service startup")
-	fl.demo = fs.Bool("demo", false, "the isolated simulated town")
-	return fl
-}
-
 type commandInfo struct {
 	name  string
 	short string
@@ -137,53 +127,43 @@ type commandInfo struct {
 	flags []string
 }
 
-// globalFlagNames are the persistent flags: they apply to every command.
-var globalFlagNames = []string{"demo", "listen", "state-dir"}
+// globalFlagNames are the persistent flags: they apply to every command and
+// select which service a client talks to.
+var globalFlagNames = []string{"demo", "state-dir"}
+
+// runFlagNames start Town: bare bt in the foreground, or bt -d.
+var runFlagNames = []string{"config", "d", "listen"}
+
+// rootCommand is bare bt, which runs Town rather than a client command.
+var rootCommand = commandInfo{flags: runFlagNames}
 
 var cliCommands = []commandInfo{
-	{name: "web", short: "Print the browser address for the town", long: "Print the browser address for the running town.", args: "[flags]", flags: nil},
-	{name: "status", short: "Show town state as JSON", long: "Show the town state as JSON.", args: "[flags]", flags: nil},
-	{name: "service", short: "Manage the town service", long: "Inspect or stop the town service. See bt service --help for the available actions.", args: "[command] [flags]", flags: nil},
-	{name: "capacity", short: "Set the maximum active bot workers", long: "Set the maximum active bot workers across all towns.", args: "--max-workers N [flags]", flags: []string{"max-workers"}},
+	{name: "status", short: "Show whether Town is running and its towns", long: "Show whether Town is running, where, and which towns it serves. Use --json for the full town state.", args: "[flags]", flags: []string{"json"}},
+	{name: "web", short: "Print the browser address for the town", long: "Print the browser address, with its access key, for the running town.", args: "[flags]", flags: nil},
+	{name: "shutdown", short: "Stop Town and its bots", long: "Stop the running Town service and all its bot processes. Use it for a town started with bt -d; Ctrl+C stops one in the foreground.", args: "[flags]", flags: nil},
 	{name: "add", short: "Add a town", long: "Add a town for a GitHub repository.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "model", "repo"}},
-	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
-	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog.", args: "[flags]", flags: []string{"refresh"}},
-	{name: "settings", short: "Configure a town or bot", long: "Configure a town's defaults or one bot house. Omit --role to edit town defaults.\n\n" +
+	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo"}},
+	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog. Works whether or not Town is running.", args: "[flags]", flags: []string{"refresh"}},
+	{name: "settings", short: "Configure Town, a town or a bot", long: "Configure service-wide settings, a town's defaults or one bot house. Omit --repo for service-wide settings (--max-workers, --quiet-hours); omit --role to edit town defaults.\n\n" +
 		"A budget bounds agent attempts and agent minutes per accounting period. Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol.\n\n" +
 		"Quiet hours are weekly windows on this machine's local clock in which Town starts no new agent work and makes none of its own GitHub writes; running work finishes and the repository is still watched. A window ending at or before its start runs past midnight. Without --repo, --quiet-hours sets the default every town follows unless it sets its own.\n\n" +
-		"With --role, the work-policy flags choose what that bot takes on: label filters, one selected issue or pull request, a discovery focus, per-run limits, attempts, and its own verification command. Each flag is refused by a bot that cannot honour it.", args: "[--repo OWNER/REPO] [flags]", flags: []string{"agent-command", "attempts", "budget-agent-minutes", "budget-attempts", "budget-period", "clear-policy", "effort", "exclude-labels", "focus", "harness", "harness-version", "inherit", "labels", "limit", "merge-policy", "model", "only", "release-burst", "release-burst-window-seconds", "release-daily-seconds", "release-minimum-gap-seconds", "release-assets", "release-preflight", "release-quiet-seconds", "release-triage", "release-verification-timeout-seconds", "release-workflows", "quiet-hours", "repo", "review-close-severity", "role", "verify"}},
-	{name: "request", short: "Submit a GitHub issue request", long: "Submit a GitHub issue as work for a town.", args: "--repo OWNER/REPO --title TITLE --body-file FILE [flags]", flags: []string{"body-file", "kind", "repo", "request-id", "title"}},
-	{name: "check-request", short: "Check a submitted request", long: "Check the status of a submitted request.", args: "--repo OWNER/REPO --request-id ID [flags]", flags: []string{"repo", "request-id"}},
+		"With --role, the work-policy flags choose what that bot takes on: label filters, one selected issue or pull request, a discovery focus, per-run limits, attempts, and its own verification command. Each flag is refused by a bot that cannot honour it.", args: "[--repo OWNER/REPO] [flags]", flags: []string{"agent-command", "attempts", "budget-agent-minutes", "budget-attempts", "budget-period", "clear-policy", "effort", "exclude-labels", "focus", "harness", "harness-version", "inherit", "labels", "limit", "max-workers", "merge-policy", "model", "only", "release-burst", "release-burst-window-seconds", "release-daily-seconds", "release-minimum-gap-seconds", "release-assets", "release-preflight", "release-quiet-seconds", "release-triage", "release-verification-timeout-seconds", "release-workflows", "quiet-hours", "repo", "review-close-severity", "role", "verify"}},
+	{name: "request", short: "Submit or check a GitHub issue request", long: "Submit a GitHub issue as work for a town, or check a submission with --check --request-id ID.", args: "--repo OWNER/REPO (--title TITLE --body-file FILE | --check --request-id ID) [flags]", flags: []string{"body-file", "check", "kind", "repo", "request-id", "title"}},
 	{name: "start", short: "Start a town or bot house", long: "Start a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "pause", short: "Pause a town or bot house", long: "Pause a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
-	{name: "stop", short: "Stop a town or bot house", long: "Stop a town or one bot house.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
+	{name: "stop", short: "Stop a town or bot house", long: "Stop a town or one bot house. Town itself keeps running; use bt shutdown to stop it.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role"}},
 	{name: "retry", short: "Retry a task", long: "Retry a task. Omit --task with --role release to reset the release bot's exhausted attempt budget.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role", "task"}},
 	{name: "defer", short: "Snooze a task until a chosen time", long: "Snooze one issue or pull request until a chosen time. Its house keeps working the rest of the queue; no agent starts and no merge happens for the snoozed task until the resume time, when it rejoins the queue on its own.", args: "--repo OWNER/REPO --task ID --until TIME [flags]", flags: []string{"reason", "repo", "task", "until"}},
 	{name: "undefer", short: "Clear a task's snooze", long: "Clear a task's snooze so its house can take it up at once.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "admit", short: "Admit a Mayoral decision", long: "Admit a pending Mayoral decision, or admit work Simplifier declined in auto mode.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
 	{name: "decline", short: "Decline a Mayoral decision", long: "Decline a pending Mayoral decision.", args: "--repo OWNER/REPO --task ID [flags]", flags: []string{"repo", "task"}},
-	{name: "serve", short: "Run the town service in the foreground", long: "Run the town service in the foreground.", args: "[flags]", flags: []string{"config", "repo"}},
 	{name: "version", short: "Print the version", long: "Print the bt version.", args: "", flags: nil},
-}
-
-var serviceCommands = []commandInfo{
-	{name: "status", short: "Show service status and logs", long: "Show service status and log locations.", args: "[flags]"},
-	{name: "stop", short: "Stop Town and its bots", long: "Stop Town and all its bot processes.", args: "[flags]"},
 }
 
 func findCommand(name string) *commandInfo {
 	for i := range cliCommands {
 		if cliCommands[i].name == name {
 			return &cliCommands[i]
-		}
-	}
-	return nil
-}
-
-func findServiceCommand(name string) *commandInfo {
-	for i := range serviceCommands {
-		if serviceCommands[i].name == name {
-			return &serviceCommands[i]
 		}
 	}
 	return nil
@@ -227,6 +207,9 @@ func flagRows(fs *flag.FlagSet, names []string) []flagRow {
 		}
 		typeName, usage := flag.UnquoteUsage(f)
 		spec := "--" + f.Name
+		if len(f.Name) == 1 {
+			spec = "-" + f.Name
+		}
 		if typeName != "" {
 			spec += " " + typeName
 		}
@@ -241,7 +224,11 @@ func flagRows(fs *flag.FlagSet, names []string) []flagRow {
 			}
 			text += fmt.Sprintf("(default %s)", def)
 		}
-		rows = append(rows, flagRow{left: "      " + spec, usage: text})
+		left := "      " + spec
+		if len(f.Name) == 1 {
+			left = "  " + spec
+		}
+		rows = append(rows, flagRow{left: left, usage: text})
 	}
 	return rows
 }
@@ -285,8 +272,8 @@ func writeCommands(out io.Writer, cmds []commandInfo) {
 // flags, and the --help pointer.
 func printRootHelp(out io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintln(out, "Brokk Town — a local service with a browser and CLI.")
-	fmt.Fprintln(out, "Run bt in the foreground, or bt -d in the background. Ctrl+C stops Town and its bots.")
-	fmt.Fprintln(out, "Use bt web for the browser address. Client commands require a running service.")
+	fmt.Fprintln(out, "Run bt in the foreground, or bt -d in the background. Ctrl+C or bt shutdown stops Town and its bots.")
+	fmt.Fprintln(out, "Use bt web for the browser address. Client commands need a running Town.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
 	fmt.Fprintln(out, "  bt [command] [flags]")
@@ -296,7 +283,7 @@ func printRootHelp(out io.Writer, fs *flag.FlagSet) {
 	withHelp := append(append([]commandInfo(nil), cliCommands...), commandInfo{name: "help", short: "Show help for a command"})
 	writeCommands(out, withHelp)
 	fmt.Fprintln(out)
-	writeFlagSection(out, fs, append([]string{"d", "config", "repo"}, globalFlagNames...), "Flags", "bt")
+	writeFlagSection(out, fs, append(append([]string(nil), runFlagNames...), globalFlagNames...), "Flags", "bt")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, `Use "bt [command] --help" for more information about a command.`)
 }
@@ -307,10 +294,6 @@ func printCommandHelp(out io.Writer, fs *flag.FlagSet, name string) {
 	c := findCommand(name)
 	if c == nil {
 		printRootHelp(out, fs)
-		return
-	}
-	if name == "service" {
-		printServiceHelp(out, fs)
 		return
 	}
 	fmt.Fprintln(out, c.long)
@@ -330,36 +313,4 @@ func printCommandHelp(out io.Writer, fs *flag.FlagSet, name string) {
 	}
 	fmt.Fprintln(out)
 	writeFlagSection(out, fs, globalFlagNames, "Global Flags", "bt "+c.name)
-}
-
-func printServiceHelp(out io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintln(out, "Inspect or stop the running Town service. Start it with bt or bt -d.")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Usage:")
-	fmt.Fprintln(out, "  bt service [command] [flags]")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Available Commands:")
-	writeCommands(out, serviceCommands)
-	fmt.Fprintln(out)
-	writeFlagSection(out, fs, globalFlagNames, "Flags", "bt service")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, `Use "bt service [command] --help" for more information about a command.`)
-}
-
-func printServiceVerbHelp(out io.Writer, fs *flag.FlagSet, verb string) {
-	c := findServiceCommand(verb)
-	if c == nil {
-		printServiceHelp(out, fs)
-		return
-	}
-	fmt.Fprintln(out, c.long)
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Usage:")
-	usage := "  bt service " + c.name
-	if c.args != "" {
-		usage += " " + c.args
-	}
-	fmt.Fprintln(out, usage)
-	fmt.Fprintln(out)
-	writeFlagSection(out, fs, globalFlagNames, "Flags", "bt service "+c.name)
 }

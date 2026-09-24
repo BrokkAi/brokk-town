@@ -14,13 +14,6 @@ func testFlagSet(t *testing.T) *flag.FlagSet {
 	return fs
 }
 
-func testServiceFlagSet(t *testing.T) *flag.FlagSet {
-	t.Helper()
-	fs := flag.NewFlagSet("bt service test", flag.ContinueOnError)
-	addServiceFlags(fs)
-	return fs
-}
-
 func TestRootHelpHasCobraSections(t *testing.T) {
 	var out strings.Builder
 	printRootHelp(&out, testFlagSet(t))
@@ -30,13 +23,13 @@ func TestRootHelpHasCobraSections(t *testing.T) {
 			t.Fatalf("root help missing %q:\n%s", section, help)
 		}
 	}
-	for _, cmd := range []string{"service", "add", "request", "serve", "help"} {
-		if !strings.Contains(help, cmd) {
+	for _, cmd := range []string{"status", "shutdown", "add", "request", "help"} {
+		if !strings.Contains(help, "  "+cmd+" ") {
 			t.Fatalf("root help omits command %q:\n%s", cmd, help)
 		}
 	}
-	// The root lists the shared connection flags once, with a --help row.
-	for _, f := range []string{"--state-dir", "--listen", "--demo", "-h, --help"} {
+	// The root lists the startup and shared connection flags, with a --help row.
+	for _, f := range []string{"--state-dir", "--listen", "--demo", "--config", "\n  -d ", "-h, --help"} {
 		if !strings.Contains(help, f) {
 			t.Fatalf("root help omits flag %q:\n%s", f, help)
 		}
@@ -58,36 +51,23 @@ func TestCommandHelpFiltersToRelevantFlags(t *testing.T) {
 		}
 	}
 
-	out.Reset()
-	printCommandHelp(&out, testFlagSet(t), "capacity")
-	capacity := out.String()
-	if !strings.Contains(capacity, "--max-workers") || strings.Contains(capacity, "--repo") {
-		t.Fatalf("capacity flags wrong:\n%s", capacity)
+	// --listen only starts Town; client commands never show it.
+	if strings.Contains(add, "--listen") {
+		t.Fatalf("add help shows --listen:\n%s", add)
 	}
-}
 
-func TestServiceHelpListsVerbs(t *testing.T) {
-	var out strings.Builder
-	printServiceHelp(&out, testServiceFlagSet(t))
-	help := out.String()
-	for _, section := range []string{"Usage:", "bt service [command]", "Available Commands:", "Flags:", `Use "bt service [command] --help"`} {
-		if !strings.Contains(help, section) {
-			t.Fatalf("service help missing %q:\n%s", section, help)
-		}
-	}
-	for _, verb := range []string{"status", "stop"} {
-		if !strings.Contains(help, verb) {
-			t.Fatalf("service help omits verb %q:\n%s", verb, help)
-		}
+	out.Reset()
+	printCommandHelp(&out, testFlagSet(t), "delete")
+	if strings.Contains(out.String(), "--role") {
+		t.Fatalf("delete help offers --role:\n%s", out.String())
 	}
 }
 
 func TestHelpRequestsNeedNoService(t *testing.T) {
 	ctx := context.Background()
 	for _, args := range [][]string{
-		{"--help"}, {"-h"}, {"help"}, {"help", "add"}, {"help", "service"}, {"help", "service", "status"},
-		{"add", "--help"}, {"capacity", "-h"}, {"service", "--help"}, {"service", "status", "--help"},
-		{"service", "help"}, {"version", "--help"},
+		{"--help"}, {"-h"}, {"help"}, {"help", "add"},
+		{"add", "--help"}, {"settings", "-h"}, {"shutdown", "--help"}, {"version", "--help"},
 	} {
 		if err := run(ctx, args); err != nil {
 			t.Fatalf("%v: %v", args, err)
@@ -103,10 +83,38 @@ func TestUnknownCommandsPointAtHelp(t *testing.T) {
 	if err := run(ctx, []string{"help", "bogus"}); err == nil || !strings.Contains(err.Error(), "unknown command") {
 		t.Fatalf("help bogus: %v", err)
 	}
-	if err := run(ctx, []string{"service", "bogus", "--state-dir", t.TempDir()}); err == nil || !strings.Contains(err.Error(), "unknown service command") || !strings.Contains(err.Error(), "bt service --help") {
-		t.Fatalf("bogus service verb: %v", err)
+	for _, removed := range []string{"service", "serve", "capacity", "check-request"} {
+		if err := run(ctx, []string{removed}); err == nil || !strings.Contains(err.Error(), "unknown command") {
+			t.Fatalf("removed command %s: %v", removed, err)
+		}
+	}
+	if err := run(ctx, []string{"--state-dir", t.TempDir(), "extra"}); err == nil || !strings.Contains(err.Error(), "Run 'bt --help'") {
+		t.Fatalf("extra arg to bare bt: %v", err)
 	}
 	if err := run(ctx, []string{"status", "extra"}); err == nil || !strings.Contains(err.Error(), "unexpected arguments") || !strings.Contains(err.Error(), "bt status --help") {
 		t.Fatalf("extra arg: %v", err)
+	}
+}
+
+// A flag the command does not take fails before any service is contacted,
+// instead of parsing and being silently ignored.
+func TestCommandsRejectFlagsTheyDoNotTake(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"start", "--state-dir", dir, "--repo", "a/b", "--harness", "x"}, "--harness: not a flag of bt start"},
+		{[]string{"add", "--state-dir", dir, "--repo", "a/b", "--listen", "127.0.0.1:1"}, "--listen: not a flag of bt add"},
+		{[]string{"delete", "--state-dir", dir, "--repo", "a/b", "--role", "bug"}, "--role: not a flag of bt delete"},
+		{[]string{"status", "--state-dir", dir, "-d"}, "-d: not a flag of bt status"},
+		{[]string{"--state-dir", dir, "--repo", "a/b"}, "--repo: not a flag of bt"},
+		{[]string{"--state-dir", dir, "--max-workers", "2"}, "--max-workers: not a flag of bt"},
+	} {
+		err := run(ctx, tc.args)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%v: got %v, want %q", tc.args, err, tc.want)
+		}
 	}
 }
