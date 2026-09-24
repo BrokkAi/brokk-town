@@ -180,7 +180,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected arguments: %s\nRun 'bt %s --help' for usage", strings.Join(fs.Args(), " "), command)
+		return fmt.Errorf("unexpected arguments: %s\nRun '%s --help' for usage", strings.Join(fs.Args(), " "), fs.Name())
 	}
 	if err := checkFlags(fs, cmd, explicit); err != nil {
 		return err
@@ -373,7 +373,7 @@ func run(ctx context.Context, args []string) error {
 		if err = request(ctx, conn, "POST", "/api/requests", map[string]string{"town": strings.ToLower(*repo), "id": *requestID, "kind": *kind, "title": *title, "body": string(data)}, &result); err != nil {
 			return err
 		}
-		fmt.Println("Submission:", result.Status, "— view its progress in Town or bt status")
+		fmt.Println("Submission:", result.Status, "— view its progress in Town or bt status --json")
 		return nil
 	case "defer", "undefer":
 		if *repo == "" || *task == "" {
@@ -773,7 +773,7 @@ func decodeTowns(raw []byte) ([]townEntry, error) {
 		return nil, err
 	}
 	if d.Decode(new(any)) != io.EOF {
-		return nil, errors.New("expected one config array")
+		return nil, errors.New("towns must be one array")
 	}
 	var fields []map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || len(fields) != len(configs) {

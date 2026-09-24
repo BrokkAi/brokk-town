@@ -75,9 +75,9 @@ func serviceAlive(ctx context.Context, dir string) (connection, bool) {
 	return conn, request(probe, conn, "GET", "/api/state", nil, &state) == nil
 }
 
-// temporaryBinary recognizes go run and go test executables, which must not
-// be registered or restarted because they disappear. Both live in a go-build
-// work directory; the temp directory as a whole is not a signal, since on
+// temporaryBinary recognizes go run and go test executables, which cannot run
+// in the background because they disappear. Both live in a go-build work
+// directory; the temp directory as a whole is not a signal, since on
 // Linux every test's own directory is under /tmp.
 func temporaryBinary(exe string) bool {
 	for _, part := range strings.Split(filepath.ToSlash(exe), "/") {
@@ -126,10 +126,26 @@ func spawnDetached(base string, demo bool, listen, config string, notify *os.Fil
 	return cmd, nil
 }
 
-func logTail(dir string) string {
+// logSize is the error log's length, so a failed start shows only what that
+// start wrote to a log that earlier runs appended to.
+func logSize(dir string) int64 {
+	_, stderr := logPaths(dir)
+	info, err := os.Stat(stderr)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+// logTail returns the last lines written to the error log after offset.
+func logTail(dir string, offset int64) string {
 	_, stderr := logPaths(dir)
 	b, err := os.ReadFile(stderr)
-	if err != nil || len(strings.TrimSpace(string(b))) == 0 {
+	if err != nil || int64(len(b)) < offset {
+		return ""
+	}
+	b = b[offset:]
+	if len(strings.TrimSpace(string(b))) == 0 {
 		return ""
 	}
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
@@ -193,6 +209,12 @@ func takeReadyPipe() *os.File {
 	if err != nil || fd < 3 {
 		return nil
 	}
+	// Only a pipe is a notification descriptor; a stray variable must not make
+	// Town write to whatever file happens to be open at that number.
+	var st syscall.Stat_t
+	if syscall.Fstat(fd, &st) != nil || st.Mode&syscall.S_IFMT != syscall.S_IFIFO {
+		return nil
+	}
 	syscall.CloseOnExec(fd)
 	return os.NewFile(uintptr(fd), "ready")
 }
@@ -245,6 +267,7 @@ func startBackground(ctx context.Context, base string, demo bool, listen, config
 		return err
 	}
 	defer ready.Close()
+	offset := logSize(dir)
 	cmd, err := spawnDetached(base, demo, listen, config, notify)
 	notify.Close()
 	if err != nil {
@@ -254,7 +277,7 @@ func startBackground(ctx context.Context, base string, demo bool, listen, config
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
-		return fmt.Errorf("%w%s", err, logTail(dir))
+		return fmt.Errorf("%w%s", err, logTail(dir, offset))
 	}
 	conn, err := readConnection(dir)
 	if err != nil {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -68,5 +70,55 @@ func TestTakeReadyPipeClearsTheEnvironment(t *testing.T) {
 	}
 	if _, ok := os.LookupEnv(readyEnv); ok {
 		t.Fatal("left the descriptor in the environment for subprocesses")
+	}
+}
+
+// Only a pipe is taken as the notification descriptor.
+func TestTakeReadyPipeAcceptsOnlyAPipe(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "not-a-pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	t.Setenv(readyEnv, strconv.Itoa(int(file.Fd())))
+	if f := takeReadyPipe(); f != nil {
+		t.Fatal("took a regular file as the notification descriptor")
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	t.Setenv(readyEnv, strconv.Itoa(int(w.Fd())))
+	if f := takeReadyPipe(); f == nil {
+		t.Fatal("refused a pipe")
+	}
+}
+
+// A failed start reports only what it wrote, not errors earlier runs left in
+// the appended log.
+func TestLogTailShowsOnlyThisStart(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr := logPaths(dir)
+	if err := os.MkdirAll(filepath.Dir(stderr), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stderr, []byte("bt: an old failure\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	offset := logSize(dir)
+	if got := logTail(dir, offset); got != "" {
+		t.Fatalf("a start that wrote nothing reported %q", got)
+	}
+	f, err := os.OpenFile(stderr, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("bt: this failure\n")
+	f.Close()
+	got := logTail(dir, offset)
+	if !strings.Contains(got, "this failure") || strings.Contains(got, "old failure") {
+		t.Fatalf("tail = %q", got)
 	}
 }

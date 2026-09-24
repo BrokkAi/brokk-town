@@ -88,6 +88,9 @@ func TestUnknownCommandsPointAtHelp(t *testing.T) {
 			t.Fatalf("removed command %s: %v", removed, err)
 		}
 	}
+	if err := run(ctx, []string{"--state-dir", t.TempDir(), "extra"}); err == nil || !strings.Contains(err.Error(), "Run 'bt --help'") {
+		t.Fatalf("extra arg to bare bt: %v", err)
+	}
 	if err := run(ctx, []string{"status", "extra"}); err == nil || !strings.Contains(err.Error(), "unexpected arguments") || !strings.Contains(err.Error(), "bt status --help") {
 		t.Fatalf("extra arg: %v", err)
 	}
