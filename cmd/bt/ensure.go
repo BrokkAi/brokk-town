@@ -137,7 +137,7 @@ func temporaryBinary(exe string) bool {
 	return false
 }
 
-func spawnDetached(base string, demo bool, listen, config, repo string) (*exec.Cmd, error) {
+func spawnDetached(base string, demo bool, listen, config string) (*exec.Cmd, error) {
 	exe, err := executablePath()
 	if err != nil {
 		return nil, err
@@ -155,9 +155,6 @@ func spawnDetached(base string, demo bool, listen, config, repo string) (*exec.C
 	args := serviceArgs(base, demo, listen)
 	if config != "" {
 		args = append(args, "--config", config)
-	}
-	if repo != "" {
-		args = append(args, "--repo", repo)
 	}
 	cmd := exec.Command(exe, args...)
 	cmd.Dir = dir
@@ -225,16 +222,16 @@ func stopProcess(ctx context.Context, dir string, conn connection) error {
 	return nil
 }
 
-// requireService never starts or replaces a service.
-func ensureService(ctx context.Context, base string, demo bool) (connection, error) {
-	conn, alive := serviceAlive(ctx, runtimeDir(base, demo))
+// requireService finds the running service; clients never start one.
+func requireService(ctx context.Context, dir string) (connection, error) {
+	conn, alive := serviceAlive(ctx, dir)
 	if !alive {
 		return conn, errors.New("Town is not running; start bt or bt -d")
 	}
 	return conn, nil
 }
 
-func startBackground(ctx context.Context, base string, demo bool, listen, config, repo string) error {
+func startBackground(ctx context.Context, base string, demo bool, listen, config string) error {
 	if conn, alive := serviceAlive(ctx, runtimeDir(base, demo)); alive {
 		return fmt.Errorf("Town is already running (pid %d at %s)", conn.PID, conn.URL)
 	}
@@ -245,7 +242,7 @@ func startBackground(ctx context.Context, base string, demo bool, listen, config
 			return err
 		}
 	}
-	cmd, err := spawnDetached(base, demo, listen, config, repo)
+	cmd, err := spawnDetached(base, demo, listen, config)
 	if err != nil {
 		return err
 	}

@@ -18,6 +18,23 @@
   packaging/license checks and isolated lifecycle integration. Commit on current
   branch; no publication, live automation, or original checkout changes.
 
+## CLI for the foreground lifecycle (complete)
+
+- The CLI surface was built around an always-running daemon; reshaped it for
+  foreground-by-default with `-d` as the option. Clean break, no aliases.
+- Removed `bt service status|stop`: `bt status` summarizes a running or stopped
+  Town (`--json` keeps the full state) and `bt shutdown` stops it.
+- `serve` stays only as the hidden alias bare `bt` and `-d` run. Removed
+  `serve --repo`, which duplicated `bt add` with different settings; `--config`
+  stays for declarative setup.
+- `capacity` folded into `bt settings --max-workers` (service-wide, no `--repo`),
+  beside the service default `--quiet-hours`; both are validated before either
+  is sent. `check-request` became `request --check --request-id ID`.
+- Every command rejects flags it does not declare instead of ignoring them.
+  `--listen` shows only on startup; `delete` no longer offers `--role`.
+- `bt harnesses` reads (and `--refresh` updates) the local registry cache when
+  Town is stopped, the same cache the next start loads.
+
 ## Validation and delivery
 
 - Imported all eight clean source checkouts with original commit provenance.
@@ -442,8 +459,8 @@
   agent settings are applied over it, so budget, policies, bot profiles,
   funnels (and their intents) and branch survive.
 - `serve --config` restores a listed deleted town with the file's config (the
-  same replacement a live town gets); `serve --repo` restores it with its kept
-  config. Both print a notice.
+  same replacement a live town gets) and prints a notice. (`serve --repo` was
+  removed with the CLI cleanup below.)
 - Deleting a deleted town returns `unknown town` and appends no event.
 
 ## CLI polish (#28)
@@ -458,7 +475,7 @@
 - Earlier versions wrote the key into `logs/serve.log`, and the key persists
   across restarts. Opening the service log redacts any `#token=<key>` link in
   place; a log over 8 MiB is truncated instead of read.
-- `check-request` on an unknown ID returns "unknown request" (404) rather than
+- `request --check` (formerly `check-request`) on an unknown ID returns "unknown request" (404) rather than
   "does not need reconciliation".
 - The stale `connection.json` PID was already handled by `processAlive`.
 

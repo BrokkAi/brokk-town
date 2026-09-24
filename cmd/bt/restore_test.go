@@ -44,11 +44,11 @@ func readTown(t *testing.T, dir, id string) *town.Town {
 	return store.Snapshot().Towns[id]
 }
 
-func serveOnce(t *testing.T, dir, configFile, repo string) error {
+func serveOnce(t *testing.T, dir, configFile string) error {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := serve(ctx, dir, "127.0.0.1:0", false, configFile, repo); err != nil && !errors.Is(err, context.Canceled) {
+	if err := serve(ctx, dir, "127.0.0.1:0", false, configFile); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
 	return nil
@@ -64,24 +64,11 @@ func TestServeConfigRestoresDeletedTown(t *testing.T) {
 	if err := os.WriteFile(path, []byte(entry), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := serveOnce(t, dir, path, ""); err != nil {
+	if err := serveOnce(t, dir, path); err != nil {
 		t.Fatal(err)
 	}
 	x := readTown(t, dir, "acme/listed")
 	if x.Deleted || x.Config.MergePolicy != "manual" || !x.Workers[town.Repo].Enabled || x.Workers[town.Issue].Enabled {
 		t.Fatal("config file did not restore the town", x.Deleted, x.Config.MergePolicy)
-	}
-}
-
-// serve --repo restores a deleted town with the settings it kept.
-func TestServeRepoRestoresDeletedTown(t *testing.T) {
-	dir := t.TempDir()
-	deletedTown(t, dir, "acme/named")
-	if err := serveOnce(t, dir, "", "acme/named"); err != nil {
-		t.Fatal(err)
-	}
-	x := readTown(t, dir, "acme/named")
-	if x.Deleted || !x.Workers[town.Repo].Enabled || x.Config.MergePolicy != "all" {
-		t.Fatal("serve --repo left the town deleted")
 	}
 }

@@ -21,7 +21,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/town"
 	"github.com/BrokkAi/brokk-town/internal/web"
 )
@@ -82,7 +81,7 @@ func describeLock(dir string, err error) error {
 		return err
 	}
 	if conn, e := readConnection(dir); e == nil && conn.PID > 0 {
-		return fmt.Errorf("%w (pid %d at %s; stop it with bt service stop, or Ctrl+C if it runs in a terminal)", err, conn.PID, conn.URL)
+		return fmt.Errorf("%w (pid %d at %s; stop it with bt shutdown, or Ctrl+C if it runs in a terminal)", err, conn.PID, conn.URL)
 	}
 	return err
 }
@@ -129,20 +128,14 @@ func run(ctx context.Context, args []string) error {
 		args = args[1:]
 		explicit = true
 	}
-	if command == "service" {
-		return runService(ctx, args)
-	}
 	fs := flag.NewFlagSet("bt "+command, flag.ContinueOnError)
 	fl := addCLIFlags(fs)
 	dir, listen, demo := fl.dir, fl.listen, fl.demo
 	repo, role, task := fl.repo, fl.role, fl.task
-	config := fl.config
 	agentHarness, harnessVersion := fl.harness, fl.harnessVersion
-	refreshHarnesses := fl.refresh
 	model, effort, agentCommand := fl.model, fl.effort, fl.agentCommand
 	inherit := fl.inherit
 	kind, title, bodyFile, requestID := fl.kind, fl.title, fl.bodyFile, fl.requestID
-	maxWorkers := fl.maxWorkers
 	fs.Usage = func() {
 		if !explicit {
 			printRootHelp(fs.Output(), fs)
@@ -155,23 +148,14 @@ func run(ctx context.Context, args []string) error {
 			printRootHelp(os.Stdout, fs)
 			return nil
 		}
-		if args[0] == "service" {
-			sfs := flag.NewFlagSet("bt service", flag.ContinueOnError)
-			addServiceFlags(sfs)
-			if len(args) > 1 && findServiceCommand(args[1]) != nil {
-				printServiceVerbHelp(os.Stdout, sfs, args[1])
-				return nil
-			}
-			printServiceHelp(os.Stdout, sfs)
-			return nil
-		}
 		if findCommand(args[0]) != nil {
 			printCommandHelp(os.Stdout, fs, args[0])
 			return nil
 		}
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", args[0])
 	}
-	if findCommand(command) == nil {
+	cmd := findCommand(command)
+	if cmd == nil {
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
 	}
 	if wantsHelp(args) {
@@ -195,34 +179,34 @@ func run(ctx context.Context, args []string) error {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %s\nRun 'bt %s --help' for usage", strings.Join(fs.Args(), " "), command)
 	}
+	if err := checkFlags(fs, cmd, explicit); err != nil {
+		return err
+	}
 	base, err := filepath.Abs(*dir)
 	if err != nil {
 		return err
 	}
 	abs := runtimeDir(base, *demo)
-	if *fl.daemon && command != "serve" {
-		return errors.New("-d is only valid when starting Town")
-	}
-	if command == "serve" {
+	switch command {
+	case "serve":
 		if *fl.daemon {
-			return startBackground(ctx, base, *demo, *listen, *config, *repo)
+			return startBackground(ctx, base, *demo, *listen, *fl.config)
 		}
-		return serve(ctx, abs, *listen, *demo, *config, *repo)
-	}
-	if command == "capacity" {
-		if *maxWorkers < 1 || *maxWorkers > town.MaximumMaxWorkers {
-			return fmt.Errorf("--max-workers is required and must be between 1 and %d", town.MaximumMaxWorkers)
+		return serve(ctx, abs, *listen, *demo, *fl.config)
+	case "status":
+		return printStatus(ctx, abs, *fl.json)
+	case "shutdown":
+		conn, alive := serviceAlive(ctx, abs)
+		if !alive {
+			return errors.New("Town is not running")
 		}
-		conn, err := ensureService(ctx, base, *demo)
-		if err != nil {
+		if err := stopProcess(ctx, abs, conn); err != nil {
 			return err
 		}
-		var capacity town.Capacity
-		if err := request(ctx, conn, "POST", "/api/capacity", map[string]int{"max_workers": *maxWorkers}, &capacity); err != nil {
-			return err
-		}
-		fmt.Printf("Capacity: %d active · limit %d\n", capacity.Active, capacity.Limit)
+		fmt.Println("Town stopped")
 		return nil
+	case "harnesses":
+		return listHarnesses(ctx, abs, *demo, *fl.refresh)
 	}
 	agent := map[string]any{}
 	roleSet := false
@@ -253,46 +237,13 @@ func run(ctx context.Context, args []string) error {
 		}
 		agent["inherit"] = true
 	}
-	conn, err := ensureService(ctx, base, *demo)
+	conn, err := requireService(ctx, abs)
 	if err != nil {
 		return err
 	}
 	switch command {
-	case "harnesses":
-		var catalog harness.Listing
-		method, path := "GET", "/api/harnesses"
-		var body any
-		if *refreshHarnesses {
-			method, path, body = "POST", "/api/harnesses/refresh", map[string]any{}
-		}
-		if err := request(ctx, conn, method, path, body, &catalog); err != nil {
-			return err
-		}
-		fmt.Println("Official ACP registry:", catalog.Source)
-		if catalog.Demo {
-			fmt.Println("Demo uses the bundled registry offline.")
-		} else if catalog.Stale {
-			fmt.Println("Using a bundled or cached catalog; run bt harnesses --refresh to update.")
-		}
-		for _, a := range catalog.Agents {
-			availability := ""
-			if !a.Available {
-				availability = " [unavailable on this platform]"
-			}
-			fmt.Printf("%-25s %-16s %s (%s)%s\n", a.ID, a.Version, a.Name, a.Source, availability)
-		}
-		fmt.Println("custom — supply an ACP command with --agent-command")
-		return nil
 	case "web":
 		fmt.Printf("%s/#token=%s\n", conn.URL, conn.Token)
-		return nil
-	case "status":
-		var state any
-		if err := request(ctx, conn, "GET", "/api/state", nil, &state); err != nil {
-			return err
-		}
-		b, _ := json.MarshalIndent(state, "", "  ")
-		fmt.Println(string(b))
 		return nil
 	case "add":
 		if *repo == "" {
@@ -301,13 +252,19 @@ func run(ctx context.Context, args []string) error {
 		var result any
 		return request(ctx, conn, "POST", "/api/towns", map[string]any{"repo": *repo, "agent": agent}, &result)
 	case "settings":
-		quietSet := false
-		fs.Visit(func(f *flag.Flag) { quietSet = quietSet || f.Name == "quiet-hours" })
+		quietSet, workersSet := false, false
+		fs.Visit(func(f *flag.Flag) {
+			quietSet = quietSet || f.Name == "quiet-hours"
+			workersSet = workersSet || f.Name == "max-workers"
+		})
 		if *repo == "" {
-			if !quietSet {
-				return errors.New("--repo OWNER/REPO is required")
+			if !quietSet && !workersSet {
+				return errors.New("--repo OWNER/REPO is required, or omit it to set --max-workers or --quiet-hours for the whole service")
 			}
-			return setServiceQuietHours(ctx, conn, fs, *fl.quietHours)
+			return setServiceSettings(ctx, conn, fs, fl)
+		}
+		if workersSet {
+			return errors.New("--max-workers applies to the whole service; omit --repo")
 		}
 		var result any
 		settingsRole := ""
@@ -373,6 +330,16 @@ func run(ctx context.Context, args []string) error {
 		}
 		return request(ctx, conn, "POST", "/api/settings", payload, &result)
 	case "request":
+		if *fl.check {
+			if *repo == "" || *requestID == "" {
+				return errors.New("--check needs --repo and --request-id")
+			}
+			if *title != "" || *bodyFile != "" {
+				return errors.New("--check takes no --title or --body-file")
+			}
+			var result any
+			return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
+		}
 		if *repo == "" || *title == "" || *bodyFile == "" {
 			return errors.New("--repo, --title, and --body-file are required")
 		}
@@ -405,12 +372,6 @@ func run(ctx context.Context, args []string) error {
 		}
 		fmt.Println("Submission:", result.Status, "— view its progress in Town or bt status")
 		return nil
-	case "check-request":
-		if *repo == "" || *requestID == "" {
-			return errors.New("--repo and --request-id are required")
-		}
-		var result any
-		return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
 	case "defer", "undefer":
 		if *repo == "" || *task == "" {
 			return errors.New("--repo OWNER/REPO and --task ID are required")
@@ -446,6 +407,9 @@ func run(ctx context.Context, args []string) error {
 		if decision {
 			*role = "hall"
 		}
+		if command == "delete" {
+			*role = "all"
+		}
 		var result any
 		return request(ctx, conn, "POST", "/api/control", map[string]string{"town": strings.ToLower(*repo), "role": *role, "action": command, "task": *task}, &result)
 	default:
@@ -474,21 +438,44 @@ func quietHoursEdit(value string, forTown bool) (map[string]any, error) {
 	return map[string]any{"windows": windows}, nil
 }
 
-// setServiceQuietHours edits the service default quiet hours. It is the only
-// setting bt settings takes without --repo.
-func setServiceQuietHours(ctx context.Context, conn connection, fs *flag.FlagSet, value string) error {
+// setServiceSettings edits the service-wide settings bt settings takes
+// without --repo: the worker capacity and the default quiet hours. Both are
+// validated before either is sent.
+func setServiceSettings(ctx context.Context, conn connection, fs *flag.FlagSet, fl *cliFlags) error {
 	var other []string
+	quietSet, workersSet := false, false
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name != "quiet-hours" && !isGlobalFlag(f.Name) {
+		switch {
+		case f.Name == "quiet-hours":
+			quietSet = true
+		case f.Name == "max-workers":
+			workersSet = true
+		case !isGlobalFlag(f.Name):
 			other = append(other, "--"+f.Name)
 		}
 	})
 	if len(other) > 0 {
-		return fmt.Errorf("without --repo, settings edits only the service default --quiet-hours; %s needs --repo", strings.Join(other, ", "))
+		return fmt.Errorf("without --repo, settings edits only --max-workers and the service default --quiet-hours; %s needs --repo", strings.Join(other, ", "))
 	}
-	edit, err := quietHoursEdit(value, false)
-	if err != nil {
-		return err
+	if workersSet && (*fl.maxWorkers < 1 || *fl.maxWorkers > town.MaximumMaxWorkers) {
+		return fmt.Errorf("--max-workers must be between 1 and %d", town.MaximumMaxWorkers)
+	}
+	var edit map[string]any
+	if quietSet {
+		var err error
+		if edit, err = quietHoursEdit(*fl.quietHours, false); err != nil {
+			return err
+		}
+	}
+	if workersSet {
+		var capacity town.Capacity
+		if err := request(ctx, conn, "POST", "/api/capacity", map[string]int{"max_workers": *fl.maxWorkers}, &capacity); err != nil {
+			return err
+		}
+		fmt.Printf("Capacity: %d active · limit %d\n", capacity.Active, capacity.Limit)
+	}
+	if !quietSet {
+		return nil
 	}
 	var saved town.ServiceConfig
 	if err := request(ctx, conn, "POST", "/api/quiet-hours", edit, &saved); err != nil {
@@ -598,7 +585,7 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
-func serve(ctx context.Context, dir, address string, demo bool, configFile, repo string) error {
+func serve(ctx context.Context, dir, address string, demo bool, configFile string) error {
 	if err := loopbackAddress(address); err != nil {
 		return err
 	}
@@ -678,32 +665,6 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, repo
 		}
 		for _, id := range restored {
 			fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with the config file's settings\n", id)
-		}
-	}
-	if repo != "" {
-		if demo {
-			return errors.New("real repository is not accepted in demo mode")
-		}
-		// --repo adds a town that is absent; a deleted one is restored with
-		// the settings it kept, since --repo supplies none of its own.
-		if t := store.Snapshot().Towns[strings.ToLower(repo)]; t == nil || t.Deleted {
-			if err = store.Update(func(s *town.State) error {
-				existing := s.Towns[strings.ToLower(repo)]
-				if existing == nil {
-					_, err := s.Add(town.DefaultConfig(repo))
-					return err
-				}
-				if err := existing.Restore(existing.Config); err != nil {
-					return err
-				}
-				s.Event(existing.ID, "town", "operator", "repo", "", "Town restored by serve --repo; recovery records retained", time.Now())
-				return nil
-			}); err != nil {
-				return err
-			}
-			if t != nil {
-				fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with its previous settings\n", t.ID)
-			}
 		}
 	}
 	listener, err := net.Listen("tcp", address)

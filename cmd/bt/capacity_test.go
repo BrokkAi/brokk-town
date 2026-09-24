@@ -14,7 +14,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-func TestCapacityCLIPostsRequiredBoundedLimit(t *testing.T) {
+func TestSettingsMaxWorkersPostsBoundedLimit(t *testing.T) {
 	seen := make(chan town.ServiceConfig, 1)
 	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/state" && r.Method == http.MethodGet {
@@ -38,16 +38,17 @@ func TestCapacityCLIPostsRequiredBoundedLimit(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "connection.json"), conn, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(context.Background(), []string{"capacity", "--state-dir", dir, "--max-workers", "7"}); err != nil {
+	if err := run(context.Background(), []string{"settings", "--state-dir", dir, "--max-workers", "7"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-seen; got.MaxWorkers != 7 {
 		t.Fatalf("got %+v", got)
 	}
 	for _, args := range [][]string{
-		{"capacity", "--state-dir", dir},
-		{"capacity", "--state-dir", dir, "--max-workers", "0"},
-		{"capacity", "--state-dir", dir, "--max-workers", "65"},
+		{"settings", "--state-dir", dir},
+		{"settings", "--state-dir", dir, "--max-workers", "0"},
+		{"settings", "--state-dir", dir, "--max-workers", "65"},
+		{"settings", "--state-dir", dir, "--repo", "acme/app", "--max-workers", "3"},
 	} {
 		if err := run(context.Background(), args); err == nil || !strings.Contains(err.Error(), "--max-workers") {
 			t.Fatalf("accepted invalid capacity args %v: %v", args, err)
@@ -106,7 +107,7 @@ func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		return serve(ctx, dir, "127.0.0.1:0", false, path, "")
+		return serve(ctx, dir, "127.0.0.1:0", false, path)
 	}
 	readLimit := func(t *testing.T) int {
 		t.Helper()
@@ -180,7 +181,7 @@ func TestServeConfigBranchOmittedKeepsPinAndEmptyClearsIt(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		if e := serve(ctx, dir, "127.0.0.1:0", false, path, ""); e != nil && !errors.Is(e, context.Canceled) {
+		if e := serve(ctx, dir, "127.0.0.1:0", false, path); e != nil && !errors.Is(e, context.Canceled) {
 			return e
 		}
 		return nil

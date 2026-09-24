@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Reshape the `bt` CLI for the foreground lifecycle (breaking). `bt service
+  status|stop` is gone: `bt status` now summarizes a running or stopped Town
+  (`--json` prints the full state) and `bt shutdown` stops it. `bt capacity`
+  is now `bt settings --max-workers N`, `bt check-request` is `bt request
+  --check --request-id ID`, and `serve --repo` was removed in favour of
+  `bt add`. `serve` is a hidden alias for bare `bt`. Each command now rejects
+  flags it does not take, `delete` no longer accepts `--role`, and
+  `bt harnesses` works while Town is stopped.
+
 - Give the merge gate's `gh pr view` the same one-minute timeout as Town's
   other GitHub calls, so a stalled `gh` cannot hold the review house.
 - Add `bt settings --merge-policy bot|manual|all`.

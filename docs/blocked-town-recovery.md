@@ -1,6 +1,6 @@
 # Recovering a blocked town
 
-Check `bt status` first. Worker capacity, queued tasks, per-task errors, and
+Check `bt status --json` first. Worker capacity, queued tasks, per-task errors, and
 `workers.<role>.recovery` distinguish scheduling delays from unfinished work.
 Keep the saved state and write intents: they prevent duplicate publication.
 
