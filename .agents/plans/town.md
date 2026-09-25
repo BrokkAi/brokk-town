@@ -1050,3 +1050,20 @@
 - Fix validation passed: 20 repeated race runs of the interruption regressions,
   full Town race tests and vet, frontend syntax/tests, complete bundle build,
   and isolated demo/worker lifecycle smoke checks.
+
+## Town 0.6.5 release (complete)
+
+- User requested latest master and a new Town release. Fast-forwarded to
+  a431b54, containing #160's inventory recovery fix and its concurrency
+  regression. No bot sources changed since 0.6.4; all eight pins are retained.
+- Master CI passed on Ubuntu and macOS. The local check-only publisher built
+  and validated all four native archives and five npm packages at that exact
+  commit; the native Town binary reports v0.6.5.
+- Published immutable tag v0.6.5-town at a431b54 through GitHub Actions run
+  36130844310. All checks and the publishing job passed; GitHub marks it as
+  the latest stable release. Added release notes describing the recovery fix.
+- Verified each native archive's size and GitHub SHA-256 digest against the
+  published manifest and checksum list, including the exact source commit.
+  npm accepted all five uploads with provenance, and after processing every
+  package reports 0.6.5 as latest; the launcher pins all four platform packages
+  to that version. No live repository automation was used for development tests.
