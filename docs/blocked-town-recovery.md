@@ -34,6 +34,14 @@ Town stops its workers when it exits. Interrupted dispatches retain their target
 and revision as an uncertain outcome. Reconcile saved results and GitHub before
 authorizing a retry.
 
+Repo Bot resumes repository inventory automatically after an interrupted read.
+Older recovery records and interrupted runs that could repair a branch also
+resume inventory, while retaining the uncertain repair and holding further
+repairs. A successful inventory clears the previous repository error; its log
+remains available. Paused repo houses stay paused. After checking the branch and
+saved bot result, `bt start --repo OWNER/REPO --role repo` authorizes repairs again.
+There is no need to delete state or clear a recovery record to refresh inventory.
+
 For Issue Bot, a matching saved `submitted` or `has_pr` outcome resolves the hold.
 Otherwise inspect the issue, its expected branch, open/closed PRs, and saved bot
 result. If work did not land, request a targeted retry:

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/BrokkAi/brokk-town/internal/harness"
+	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
 // checkFlags rejects any flag the command does not take, so a mistyped or
@@ -51,11 +52,9 @@ type statusView struct {
 		Limit  int `json:"limit"`
 	} `json:"capacity"`
 	Towns map[string]struct {
-		Deleted bool `json:"deleted"`
-		Workers map[string]struct {
-			Enabled bool `json:"enabled"`
-		} `json:"workers"`
-		Error string `json:"error"`
+		Deleted bool                   `json:"deleted"`
+		Workers map[string]town.Worker `json:"workers"`
+		Error   string                 `json:"error"`
 	} `json:"towns"`
 }
 
@@ -109,7 +108,15 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 			}
 		}
 		line := fmt.Sprintf("  %s  %d/%d houses on", id, on, len(t.Workers))
-		if t.Error != "" {
+		repo := t.Workers["repo"]
+		if repo.Recovery != nil {
+			line += "  recovery: " + repo.Recovery.Detail
+			if repo.Error != "" {
+				line += "  error: " + repo.Error
+			}
+		} else if repo.Status == "working" {
+			line += "  Reading repository…"
+		} else if t.Error != "" {
 			line += "  error: " + t.Error
 		}
 		fmt.Println(line)

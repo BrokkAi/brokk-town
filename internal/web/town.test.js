@@ -33,6 +33,7 @@ import {
   focusMatches,
   scheduleLabel,
   workerControls,
+  repositoryStatus,
   townControls,
   inbox,
   attentionGuidance,
@@ -49,6 +50,21 @@ import {
   reconnectDelay,
 } from "./town.js";
 import { registerTownTools } from "./tools.js";
+
+test("repository recovery replaces an old error and remains actionable between inventory reads", () => {
+  const worker = { enabled: true, status: "waiting", recovery: { detail: "Inventory continues; repairs are held." } };
+  const town = { id: "acme/repo", config: { repo: "acme/repo" }, error: "invalid branch", tasks: {}, workers: { repo: worker } };
+  assert.equal(repositoryStatus(town), worker.recovery.detail);
+  assert.equal(workerControls(worker).start, true);
+  const attention = inbox({ towns: { [town.id]: town } }).attention;
+  assert.equal(attention.length, 1);
+  assert.equal(attention[0].detail, worker.recovery.detail);
+  assert.equal(workerControls({ ...worker, status: "working" }).start, false);
+  assert.equal(workerControls({ ...worker, run: { mode: "inventory" } }).start, false);
+  assert.equal(repositoryStatus({ ...town, workers: { repo: { status: "working" } } }), "Reading repository…");
+  assert.equal(repositoryStatus({ ...town, workers: { repo: { status: "failed" } } }), "invalid branch");
+  assert.equal(repositoryStatus({ ...town, error: "", workers: {}, reports: [{ title: "Inventory is current" }] }), "Inventory is current");
+});
 test("deliveries resume after cursor and stay in their repository", () => {
   const events = [
     { seq: 1, town: "a" },

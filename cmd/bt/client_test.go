@@ -62,6 +62,35 @@ func TestStatusSummarizesRunningTown(t *testing.T) {
 	}
 }
 
+func TestStatusReportsCurrentInventoryInsteadOfHistoricalError(t *testing.T) {
+	for _, tc := range []struct{ worker, want string }{
+		{`{"enabled":true,"status":"waiting","recovery":{"detail":"Inventory continues; repairs are held."}}`, "Inventory continues; repairs are held."},
+		{`{"enabled":true,"status":"working"}`, "Reading repository"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			dir, _ := fakeService(t, `{"towns":{"acme/app":{"error":"invalid branch","workers":{"repo":`+tc.worker+`}}}}`)
+			output, err := os.CreateTemp(t.TempDir(), "status")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer output.Close()
+			previous := os.Stdout
+			os.Stdout = output
+			defer func() { os.Stdout = previous }()
+			if err := run(t.Context(), []string{"status", "--state-dir", dir}); err != nil {
+				t.Fatal(err)
+			}
+			text, err := os.ReadFile(output.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(text), tc.want) || strings.Contains(string(text), "invalid branch") {
+				t.Fatalf("status misreported the current condition: %s", text)
+			}
+		})
+	}
+}
+
 // The registry catalog is local data; listing it needs no running Town.
 func TestHarnessesListWithoutTown(t *testing.T) {
 	if err := run(context.Background(), []string{"harnesses", "--state-dir", t.TempDir()}); err != nil {

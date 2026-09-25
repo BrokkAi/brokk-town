@@ -81,19 +81,16 @@ func Open(dir string, demo bool) (*Store, error) {
 			return nil, fmt.Errorf("replace unreadable demo state: %w", err)
 		}
 	}
-	// External bot processes outlive a service restart; their handles stay so
-	// the supervisor can reconnect before it schedules anything new. Every other
-	// worker returns to its scheduled state, and durable intents are kept.
+	// A saved dispatch is interrupted, not a process to adopt. Preserve possible
+	// writes, while allowing repository reads to resume and reconcile them.
 	for _, t := range s.state.Towns {
 		for _, w := range t.Workers {
-			if w.Run != nil {
-				run := w.Run
-				target := workerRunTask(*run)
-				w.Recovery = &WorkerRecovery{TaskID: target, Base: run.BaseSHA, Head: run.HeadSHA, Started: run.Started, Detail: recoveryDetail(w.Role, target)}
-				w.Run = nil
-			}
+			recoverWorkerRun(w)
 			w.Agent = nil
 			if w.Recovery != nil {
+				if w.Role == Repo {
+					w.Next = time.Time{}
+				}
 				w.Status = "failed"
 				if !w.Enabled {
 					w.Status = "paused"
@@ -365,7 +362,7 @@ func (s *Store) dispatchEligibility(id string, role Role, now time.Time) (bool, 
 		return false, s.state.ServiceConfig.MaxWorkers
 	}
 	w := t.Workers[role]
-	return w != nil && w.Enabled && w.Run == nil && w.Recovery == nil && !w.Next.After(now), s.state.ServiceConfig.MaxWorkers
+	return w != nil && w.Enabled && w.Run == nil && (w.Recovery == nil || role == Repo) && !w.Next.After(now), s.state.ServiceConfig.MaxWorkers
 }
 
 // budgetExhausted reports whether this town has spent its accounting
