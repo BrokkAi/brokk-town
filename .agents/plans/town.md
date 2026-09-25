@@ -1039,3 +1039,14 @@
   syntax/tests, complete bundle build, and isolated demo/worker lifecycle checks.
   All regression GitHub responses and agents were fake; no live state was edited
   and no repository automation or release was started.
+- PR review found that merge confirmation could overwrite a finished repair's
+  dispatch before scheduled cleanup saved its uncertainty. Repo dispatches now
+  save recovery and retire their run under the reconciliation gate; scheduled
+  cleanup leaves any newer confirmation dispatch intact.
+- A deterministic concurrent regression checks the original repair identity,
+  a held replacement repair, blocked follow-up GitHub writes, the next read's
+  dispatch lifetime, and durable recovery after restart, using fake workers
+  and GitHub only. It fails on the original PR before the fix.
+- Fix validation passed: 20 repeated race runs of the interruption regressions,
+  full Town race tests and vet, frontend syntax/tests, complete bundle build,
+  and isolated demo/worker lifecycle smoke checks.

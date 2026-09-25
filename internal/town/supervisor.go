@@ -375,11 +375,15 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	s.update(func(st *State) error {
 		current := st.Towns[t.ID]
 		w := current.Workers[r]
-		var interrupted *WorkerInterruptedError
-		if w.Run != nil && errors.As(err, &interrupted) {
-			recoverWorkerRun(w)
+		// Repo dispatches finish under the reconciliation gate. A confirmation
+		// inventory may already own a newer run by the time this cleanup runs.
+		if r != Repo {
+			var interrupted *WorkerInterruptedError
+			if w.Run != nil && errors.As(err, &interrupted) {
+				recoverWorkerRun(w)
+			}
+			w.Run = nil
 		}
-		w.Run = nil
 		w.Agent = nil
 		w.Status = "waiting"
 		w.Updated = s.now()
@@ -883,6 +887,21 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 		t = s.Store.Snapshot().Towns[t.ID]
 	}
 	result, err := s.Workers.Observe(ctx, t, InventoryRequest{SinceHead: inventorySince(t), Commits: unprovenCommits(t), Health: health}, observe, log)
+	// Commit the outcome before releasing the gate: merge confirmation can
+	// dispatch another inventory as soon as this reconciliation returns. It
+	// must see an interrupted repair's hold and must not replace its identity.
+	if saveErr := s.Store.Update(func(st *State) error {
+		w := st.Towns[t.ID].Workers[Repo]
+		var interrupted *WorkerInterruptedError
+		if errors.As(err, &interrupted) {
+			recoverWorkerRun(w)
+		}
+		w.Run = nil
+		return nil
+	}); saveErr != nil {
+		s.fail(saveErr)
+		return errors.Join(err, fmt.Errorf("preserve repository dispatch outcome: %w", saveErr))
+	}
 	if err != nil {
 		return err
 	}
