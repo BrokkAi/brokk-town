@@ -298,23 +298,6 @@ func postWorkerRetry(ctx context.Context, client *http.Client, request workerReq
 	}
 }
 
-func shutdownWorker(ctx context.Context, client *http.Client) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://worker/v1/shutdown", nil)
-	if err != nil {
-		return err
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusAccepted {
-		detail, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
-		return fmt.Errorf("HTTP %d: %s", response.StatusCode, truncate(string(detail), 1024))
-	}
-	return nil
-}
-
 func getWorkerInitialize(ctx context.Context, client *http.Client, patience time.Duration) (workerInitialize, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://worker/v1/initialize", nil)
 	if err != nil {

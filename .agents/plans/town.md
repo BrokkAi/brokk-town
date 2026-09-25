@@ -1067,3 +1067,26 @@
   npm accepted all five uploads with provenance, and after processing every
   package reports 0.6.5 as latest; the launcher pins all four platform packages
   to that version. No live repository automation was used for development tests.
+
+## Remaining issue backlog: documentation and execution decisions
+
+- #141: corrected the protocol's persistent eight-worker lifecycle, process-group
+  ownership, parent pipe, cancellation and bounded shutdown. Keep the existing
+  optional standalone shutdown endpoint; remove Town's unused client helper.
+- #143: made the README a navigable quickstart, moved operator reference into
+  linked configuration, workflow, operations, funnels and recovery documents,
+  corrected all eight agent roles, combined the duplicate Hall entry, and
+  explained the still-required legacy max_cycles field without changing policy.
+- #142's requested Simplifier/Mayor decision-path and worker-boundary coverage
+  is already present on master; no duplicate implementation is needed.
+- #151: operator selected a town default with per-bot target overrides and
+  Mjolnir-owned execution capacity shown read-only in Town. Recorded inheritance,
+  explicit local selection, dispatched identity, mixed local/Mjolnir capacity,
+  and dependent #150/#152–155 design constraints in docs/mjolnir-execution.md.
+  These settings remain planned, not implemented.
+- Validation: root Go race tests and vet, frontend syntax/tests, complete bundle
+  build, local documentation link/anchor checks, and isolated demo and all-eight
+  worker lifecycle smoke checks passed. No live repository automation was used.
+- Next: #5 setup diagnostics and exact merge blockers. Attention hooks (#54),
+  retention/incremental sync (#7/#21), Town Guide (#40), and the Mjolnir execution
+  work remain separate implementation batches. No release requested for this work.

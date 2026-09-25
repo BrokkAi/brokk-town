@@ -58,7 +58,7 @@ private worktrees with automation disabled.
 
 Town config retains a default harness and ACP agent configuration, plus optional
 complete `bot_agents` profiles for the bug, feature, issue, review, release,
-simplifier, and repo roles.
+simplifier, repo, and hall (Mayor Bot) roles.
 An absent role inherits the town defaults; an explicit profile owns its harness,
 launch definition, model, effort, command, environment, authentication, and mode.
 Blank selectors use that profile's harness defaults. Repo Bot carries a profile
@@ -224,17 +224,19 @@ one reconciliation and write-intent path for closures.
 
 ## ACP relationship and future execution
 
-Brokk Town is an operations view and scheduler for released Brokk bot libraries.
-It consumes ACP-compatible bot runs through those libraries; it does not depend
+Brokk Town is an operations view and scheduler for independent Brokk bot executables.
+It dispatches their work through the worker protocol; each bot runs its ACP agent.
+Town does not depend
 on Mjolnir or `mj` as an executor and does not introduce a second ACP scheduler.
 Mjolnir remains an independent ACP control plane that can be used to run or
 inspect agents outside a town. Shared ACP conventions can improve interoperability,
 but a Town dispatch is owned by Town's durable state, worker reservation, and
 reconciliation rules.
 
-Adding a future general-purpose executor requires an explicit contract for
-ownership, cancellation, restart reconciliation, and the authority that owns
-capacity reservations. Until those rules are specified, Town keeps its fixed
-bot-role projection and does not expose programmable workflows. Usage quotas,
-budgets, and spending limits remain a separate issue-6 concern; the worker
-capacity setting is only a local concurrency bound.
+The planned Mjolnir integration uses a town target default with per-bot overrides.
+Mjolnir owns execution capacity for Mjolnir-backed work; Town displays that
+capacity read-only. Local work retains Town's concurrency bound. These are design
+decisions, not implemented settings. See [Mjolnir execution](mjolnir-execution.md)
+for inheritance, capacity ownership, and the dependent implementation work.
+Town keeps its fixed bot-role projection and does not expose programmable
+workflows. Usage quotas, budgets, and spending limits remain separate concerns.
