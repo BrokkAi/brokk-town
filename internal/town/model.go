@@ -461,6 +461,7 @@ type Task struct {
 	Description     string            `json:"description,omitempty"`
 	Updated         time.Time         `json:"updated"`
 	Audit           *Audit            `json:"audit,omitempty"`
+	MergeWait       *DiagnosticReport `json:"merge_wait,omitempty"`
 	Concerns        map[string]string `json:"concerns,omitempty"`
 	Cycles          int               `json:"cycles"`
 	Blocked         bool              `json:"blocked"`
@@ -585,10 +586,11 @@ type Town struct {
 	// Quiet records that the scheduler last saw this town inside its quiet
 	// hours, so entering and leaving them is announced once. The dispatch
 	// gate reads the clock, never this flag.
-	Quiet       bool      `json:"quiet,omitempty"`
-	LastSync    time.Time `json:"last_sync"`
-	LastRelease string    `json:"last_release"`
-	Error       string    `json:"error,omitempty"`
+	Quiet       bool              `json:"quiet,omitempty"`
+	LastSync    time.Time         `json:"last_sync"`
+	LastRelease string            `json:"last_release"`
+	Error       string            `json:"error,omitempty"`
+	Diagnostics *DiagnosticReport `json:"diagnostics,omitempty"`
 }
 
 // BranchHealth is Repo Bot's report on the branch this town covers: the checks

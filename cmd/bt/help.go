@@ -138,6 +138,7 @@ var runFlagNames = []string{"config", "d", "listen"}
 var rootCommand = commandInfo{flags: runFlagNames}
 
 var cliCommands = []commandInfo{
+	{name: "doctor", short: "Check a town's setup without starting work", long: "Read-only checks for commands, GitHub access, agent availability and verifier setup. Results are saved in Town and shown in the browser. Agents and verification commands are never run. Use --json for structured results.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "json"}},
 	{name: "status", short: "Show whether Town is running and its towns", long: "Show whether Town is running, where, and which towns it serves. Use --json for the full town state.", args: "[flags]", flags: []string{"json"}},
 	{name: "web", short: "Print the browser address for the town", long: "Print the browser address, with its access key, for the running town.", args: "[flags]", flags: nil},
 	{name: "shutdown", short: "Stop Town and its bots", long: "Stop the running Town service and all its bot processes. Use it for a town started with bt -d; Ctrl+C stops one in the foreground.", args: "[flags]", flags: nil},

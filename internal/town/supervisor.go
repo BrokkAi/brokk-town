@@ -84,6 +84,7 @@ type Supervisor struct {
 	Funnels     FunnelRegistry
 	Harnesses   *harness.Catalog
 	mu          sync.Mutex
+	diagnosing  bool
 	running     map[string]context.CancelFunc
 	retrying    map[string]bool
 	reconciling map[string]chan struct{}
@@ -1443,31 +1444,27 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 		}
 		p, err := s.GitHub.Pull(ctx, t.Config.Repo, n)
 		if err != nil {
-			return true, err
+			return true, s.unavailableMergeWait(t, task, Pull{Head: Ref{SHA: task.Head}, Base: Ref{SHA: task.Base}}, err)
 		}
 		if p.MergedAt != nil {
 			return true, s.reconcile(ctx, t, false, func(Progress) {}, log)
 		}
 		gate, err := s.GitHub.Gate(ctx, t.Config.Repo, n)
 		if err != nil {
-			return true, err
+			return true, s.unavailableMergeWait(t, task, p, err)
 		}
 		if !gate.Allows(p, task.Audit, t.Branch()) {
-			if err := s.Store.Update(func(st *State) error {
-				detail := "Waiting for current review, required checks, approvals, and mergeability."
-				if p.Base.Ref != t.Branch() || gate.BaseRef != t.Branch() {
-					detail = fmt.Sprintf("Targets %s, but this town covers %s. Town does not merge outside the branch it was configured for.", p.Base.Ref, t.Branch())
-				}
-				st.Towns[t.ID].Tasks[task.ID].Detail = detail
-				return nil
-			}); err != nil {
+			if err := s.saveMergeWait(t, task, p, gate.blockers(p, task.Audit, t.Branch(), t.Config.Repo)); err != nil {
 				return true, err
 			}
 			continue
 		}
+		if err := s.saveMergeWait(t, task, p, nil); err != nil {
+			return true, err
+		}
 		discussion, err := s.GitHub.Discussion(ctx, t.Config.Repo, n)
 		if err != nil {
-			return true, err
+			return true, s.unavailableMergeWait(t, task, p, err)
 		}
 		if task.Audit.Discussion != Digest(discussion) || task.Audit.Description != description(p) {
 			return true, s.Store.Update(func(st *State) error {
@@ -1481,7 +1478,7 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 		// Recheck metadata adjacent to intent, then submit an expected-head merge.
 		fresh, err := s.GitHub.Pull(ctx, t.Config.Repo, n)
 		if err != nil {
-			return true, err
+			return true, s.unavailableMergeWait(t, task, p, err)
 		}
 		if fresh.Head.SHA != p.Head.SHA || fresh.Base.SHA != p.Base.SHA || description(fresh) != description(p) || fresh.State != "open" || fresh.Draft || fresh.Locked {
 			continue

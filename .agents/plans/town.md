@@ -1090,3 +1090,32 @@
 - Next: #5 setup diagnostics and exact merge blockers. Attention hooks (#54),
   retention/incremental sync (#7/#21), Town Guide (#40), and the Mjolnir execution
   work remain separate implementation batches. No release requested for this work.
+
+## Setup diagnostics and exact merge blockers (#5)
+
+- Added authenticated on-demand setup diagnostics through `bt doctor --repo`,
+  a browser house control and the shared API. Save timestamped public results
+  so browser/CLI status and restart show the same facts. Probe Git/gh lookup,
+  GitHub account/repository metadata access, effective per-role commands,
+  verification overrides and release preflight setup. Never execute agents or
+  verifiers, install runtimes, or write to GitHub. Package/auth readiness that
+  cannot be established without starting a harness remains explicitly unknown.
+- Bound metadata reads, serialize setup probes, cancel them with the requester,
+  and reject results if settings changed or the town was deleted during the
+  read. Demo reports simulated setup without touching real services. Private
+  arguments, environment, credentials and raw process output stay out of reports.
+- Read the merge gate through GitHub GraphQL so older gh versions can supply
+  baseRefOid. Include squash policy, merge-queue presence and aggregate check
+  state. Preserve exact review/branch/revision checks; unsupported strategy,
+  queue, missing policy and conflicting check results cannot authorize a merge.
+- Persist actionable blockers for stale reviews, checks, approvals, conflicts,
+  behind branches and unavailable/unidentified GitHub requirements, with exact
+  observed revisions and PR/check links. Clear corrected or superseded waits;
+  a delayed read cannot overwrite a task already moved by fresh inventory.
+- Validation: full root Go race suite and vet, frontend syntax/tests, complete
+  bundle build, isolated demo lifecycle and all-eight worker shutdown checks
+  passed. New fake-GitHub/local-command regressions cover every blocker, zero
+  write intents before refusal, recovery after correction/restart, missing
+  commands, per-role inheritance, unknown authentication, secret exclusion,
+  cancellation, duplicate probes, stale settings and stale revision reads.
+  No live repository automation, release or remote Mjolnir job was started.

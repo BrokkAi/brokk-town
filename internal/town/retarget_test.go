@@ -40,7 +40,7 @@ func TestRetargetedPRIsNotMergedOutsideTheTownBranch(t *testing.T) {
 
 func TestMergeGateRequiresTheConfiguredBranch(t *testing.T) {
 	audit := clean()
-	gate := MergeGate{Base: baseSHA, BaseRef: "main", Head: headSHA, State: "OPEN", Mergeable: "MERGEABLE", MergeState: "CLEAN"}
+	gate := MergeGate{PolicyKnown: true, SquashAllowed: true, Base: baseSHA, BaseRef: "main", Head: headSHA, State: "OPEN", Mergeable: "MERGEABLE", MergeState: "CLEAN"}
 	if !gate.Allows(pull(1), audit, "main") {
 		t.Fatal("a pull request on the configured branch was refused")
 	}

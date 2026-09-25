@@ -190,6 +190,10 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		task.Labels = LabelNames(p.Labels)
 		task.Branch = p.Head.Ref
 		if (task.Head != "" && task.Head != p.Head.SHA) || (task.Base != "" && task.Base != p.Base.SHA) || (task.Description != "" && task.Description != description(p)) {
+			if task.MergeWait != nil {
+				task.MergeWait = nil
+				task.Detail = ""
+			}
 			if task.Head != "" && task.Head != p.Head.SHA && !isOwned {
 				t.RecordOutcome(OutcomeRecord{ID: "external-change:" + id + ":" + p.Head.SHA, At: now, Class: "outcome", Kind: "external_change", Status: "external", Role: Review, TaskID: id, Revision: p.Head.SHA, URL: p.URL, Detail: "Contributor changed the pull request revision"})
 			}

@@ -200,25 +200,39 @@ func TestFindRequestPaginatesAQueryPath(t *testing.T) {
 }
 
 func TestGateParsesEveryMergeField(t *testing.T) {
-	gh := fakeGitHubCLI(t, ghRoute{prefix: "pr view 9 --repo o/r --json ", stdout: `{"headRefOid":"` + headSHA + `","baseRefOid":"` + baseSHA + `","baseRefName":"main","isDraft":false,"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED"}`})
+	gh := fakeGitHubCLI(t, ghRoute{prefix: apiPrefix + "POST graphql --input ", stdout: `{"data":{"repository":{"squashMergeAllowed":true,"pullRequest":{"headRefOid":"` + headSHA + `","baseRefOid":"` + baseSHA + `","baseRefName":"main","isDraft":false,"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","mergeQueue":null,"statusCheckRollup":{"state":"SUCCESS"}}}}}`})
 	gate, err := GitHubClient{}.Gate(context.Background(), "o/r", 9)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := MergeGate{Head: headSHA, Base: baseSHA, BaseRef: "main", State: "OPEN", Mergeable: "MERGEABLE", MergeState: "CLEAN", Review: "APPROVED"}
-	if gate != want {
+	if gate.Head != headSHA || gate.Base != baseSHA || gate.BaseRef != "main" || !gate.PolicyKnown || !gate.SquashAllowed || gate.Checks == nil || gate.Checks.State != "SUCCESS" || !gate.Allows(pull(9), clean(), "main") {
 		t.Fatalf("gate = %+v", gate)
 	}
-	calls := gh.calls(t)
-	if len(calls) != 1 || !strings.HasSuffix(calls[0], "--json headRefOid,baseRefOid,baseRefName,isDraft,state,mergeable,mergeStateStatus,reviewDecision") {
-		t.Fatalf("gate did not ask for every field it decides on: %q", calls)
+	bodies := gh.bodies(t)
+	if len(bodies) != 1 {
+		t.Fatal(bodies)
+	}
+	query, _ := bodies[0]["query"].(string)
+	for _, field := range []string{"headRefOid", "baseRefOid", "baseRefName", "isDraft", "state", "mergeable", "mergeStateStatus", "reviewDecision", "mergeQueue", "squashMergeAllowed", "statusCheckRollup"} {
+		if !strings.Contains(query, field) {
+			t.Fatal("missing gate field", field)
+		}
+	}
+	variables := bodies[0]["variables"].(map[string]any)
+	if variables["owner"] != "o" || variables["name"] != "r" || variables["number"] != float64(9) {
+		t.Fatal(variables)
 	}
 }
 
-func TestGateRejectsMalformedOutput(t *testing.T) {
-	fakeGitHubCLI(t, ghRoute{prefix: "pr view 9 ", stdout: "not json"})
-	if _, err := (GitHubClient{}).Gate(context.Background(), "o/r", 9); err == nil {
-		t.Fatal("malformed gate output accepted")
+func TestGateRejectsIncompleteOutput(t *testing.T) {
+	for _, reply := range []string{"not json", `{}`, `{"data":{"repository":null}}`, `{"data":{"repository":{"squashMergeAllowed":true,"pullRequest":null}}}`, `{"data":{"repository":{"squashMergeAllowed":true,"pullRequest":{}}}}`, `{"errors":[{"message":"secret"}]}`} {
+		t.Run(reply, func(t *testing.T) {
+			fakeGitHubCLI(t, ghRoute{prefix: apiPrefix + "POST graphql --input ", stdout: reply})
+			gate, err := GitHubClient{}.Gate(context.Background(), "o/r", 9)
+			if err == nil || gate.Allows(pull(9), clean(), "main") {
+				t.Fatal("accepted incomplete gate", gate, err)
+			}
+		})
 	}
 }
 

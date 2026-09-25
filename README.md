@@ -117,7 +117,8 @@ repair limits, merge authority, release ancestry, and automation outcomes.
 - [Requests and task controls](docs/operations.md): create work, snooze a task,
   and delete or restore a town.
 - [Recovery and saved work](docs/recovery.md): interrupted workers, uncertain
-  writes, and explicit task or release retries.
+  writes, setup diagnostics with `bt doctor`, merge blockers, and explicit task
+  or release retries.
 - [Source funnels](docs/funnels.md): GitHub and Slack intake, credentials,
   selectors, and source lifecycle guarantees.
 - [Configuration example](docs/config.example.json).

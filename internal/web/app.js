@@ -1014,6 +1014,25 @@ function writeInspection(out, html) {
   }
   return true;
 }
+function diagnosticBlock(report, role) {
+  if (!report) return '<p class="muted">No saved diagnostic. Check setup to read command availability and GitHub access.</p>';
+  const checks = (report.checks || []).filter((check) => !role || !check.role || check.role === role);
+  return `<p class="muted">Checked ${esc(new Date(report.at).toLocaleString())}. Run again after changing settings.${report.head ? ` Head <code>${esc(report.head)}</code> · base <code>${esc(report.base)}</code>.` : ""}</p>${checks.map((check) => `<p><strong>${esc(check.status)} · ${esc(check.code.replaceAll("_", " "))}</strong><br>${esc(check.detail)}${check.action ? `<br>Next: ${esc(check.action)}` : ""}${safeURL(check.url) ? `<br><a href="${esc(check.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a>` : ""}</p>`).join("")}`;
+}
+function setupBlock(t, role) {
+  return `<section class="setup-diagnostics"><h3>Setup diagnostics</h3><p class="muted">Checks saved settings without starting agents or running verification commands.</p><button id="check-setup" type="button"${busy(writeKey("diagnostics", t.id))}>Check setup</button>${diagnosticBlock(t.diagnostics, role)}</section>`;
+}
+function bindSetup(out, townId) {
+  const button = out.querySelector("#check-setup");
+  if (button) button.onclick = () => trackWrite(writeKey("diagnostics", townId), async (signal) => {
+    try {
+      await api("/api/diagnostics", { town: townId }, signal);
+      await refreshState();
+      showError("");
+    } catch (error) { showError(error.message); }
+  });
+}
+
 function workerButtons(controls, role) {
   const button = (action, label, primary) => {
     const pending = busy(commandKey(selectedTown, role, action, ""));
@@ -1077,14 +1096,14 @@ function renderInspection() {
     const simplifier = task.simplification
       ? `<section class="advisor-note"><strong>Simplifier Bot · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
       : "";
-    const detailText = task.detail || (liveCapable ? "" : "Following the next step through town.");
+    const detailText = task.merge_wait && task.stage === "ready" ? "" : task.detail || (liveCapable ? "" : "Following the next step through town.");
     const snooze = projected.snooze;
     const snoozeBlock = snooze
       ? `<section class="snooze-note" aria-label="Snooze"><strong>${esc(snoozeLabel(task))}</strong>${snooze.reason ? `<p>${esc(snooze.reason)}</p>` : ""}<p class="muted">Resumes ${esc(snooze.until.toLocaleString())} without any action. Its house keeps working the rest of the queue; no agent starts and no merge happens for this task until then.</p><div class="inspector-actions"><button id="snooze-task" type="button">Change snooze…</button><button id="clear-snooze" type="button"${taskBusy("undefer", selectedHouse)}>Resume now</button></div></section>`
       : taskSnoozable(task)
         ? `<div class="inspector-actions"><button id="snooze-task" type="button">Snooze…</button></div>`
         : "";
-    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}${snoozeBlock}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? `<button id="retry-task" class="primary"${taskBusy("retry", selectedHouse)}>Reconcile and retry</button>${snooze ? '<p class="muted">Retry clears the block but keeps the snooze: the task still waits for its resume time unless you choose Resume now.</p>' : ""}` : ""}`))
+    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}${snoozeBlock}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${task.merge_wait && task.stage === "ready" ? `<section><h3>Last merge check</h3>${diagnosticBlock(task.merge_wait)}</section>` : ""}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? `<button id="retry-task" class="primary"${taskBusy("retry", selectedHouse)}>Reconcile and retry</button>${snooze ? '<p class="muted">Retry clears the block but keeps the snooze: the task still waits for its resume time unless you choose Resume now.</p>' : ""}` : ""}`))
       return;
     $("#back-house").onclick = () => {
       selectedTask = "";
@@ -1133,7 +1152,7 @@ function renderInspection() {
       mayorControls = workerControls(mayor);
     const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : projectedMayor.status === "failed" ? "blocked" : projectedMayor.status === "quiet" ? "quiet" : "waiting"}"></i>Mayor Bot ${esc(projectedMayor.status === "quiet" ? "quiet hours" : projectedMayor.status)}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div>${workerButtons(mayorControls, "hall")}<p class="muted">${mayor?.enabled ? "Mayor Bot judges each arrival below as it comes in, with its reason kept on the task, and writes the bulletin when work merges." : "Start Mayor Bot to have it judge arrivals for you and write the bulletin. Until then, decisions wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
     const bulletinRows = (t.bulletins || []).slice().reverse().slice(0, 20).map((b) => `<article class="bulletin"><h4>${esc(b.title)}</h4><p class="muted">${esc(new Date(b.since).toLocaleString())} – ${esc(new Date(b.until).toLocaleString())} · ${(b.pulls || []).length} merged</p><p>${esc(b.summary)}</p>${(b.items || []).map((item) => `<div class="bulletin-item"><span class="status-chip status-${esc(item.kind)}">${esc(item.kind)}</span> <strong>${esc(item.title)}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${(item.pulls || []).map((n) => `PR #${n}`).join(", ")}${(item.issues || []).length ? ` · ${item.issues.map((n) => `issue #${n}`).join(", ")}` : ""}</small></div>`).join("")}</article>`).join("");
-    if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}${overrulableBlock}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${quietBlock(t)}${budgetBlock(t)}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
+    if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}${overrulableBlock}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${quietBlock(t)}${budgetBlock(t)}${setupBlock(t, "hall")}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
       t.reports
         .slice()
         .reverse()
@@ -1145,6 +1164,7 @@ function renderInspection() {
       '<p class="muted">The first report will arrive after the repository check.</p>'
     }`))
       return;
+    bindSetup(out, t.id);
     out.querySelectorAll("[data-action]").forEach((b) => (b.onclick = () => command(b.dataset.action, "hall")));
     out.querySelectorAll("[data-task]").forEach((button) => {
       button.onclick = () => { selectedTask = button.dataset.task; renderInspection(); };
@@ -1200,7 +1220,7 @@ function renderInspection() {
           `<button class="task-card${task.policy_excluded ? " filtered" : ""}" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectedQueue.get(task.id).snooze ? snoozeLabel(task) : projectedQueue.get(task.id).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}${task.policy_excluded ? " · held by this house\u2019s filter" : ""}</small></button>`,
       )
       .join("") || '<p class="muted">Nothing waiting at the door.</p>'
-  }</div><h3>LATEST ACTIVITY</h3><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}${agentDetails}${healthDetails}${funnelDetails}<h3>WORKBENCH LOG</h3><div class="worker-logs">${
+  }</div><h3>LATEST ACTIVITY</h3><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}${agentDetails}${healthDetails}${funnelDetails}${setupBlock(t, selectedHouse)}<h3>WORKBENCH LOG</h3><div class="worker-logs">${
     esc(
       (w.logs || [])
         .slice(-35)
@@ -1209,6 +1229,7 @@ function renderInspection() {
     ) || "No activity yet."
   }</div>`))
     return;
+  bindSetup(out, t.id);
   const configure = out.querySelector("#configure-agent");
   if (configure) configure.onclick = () => document.dispatchEvent(
     new CustomEvent("open-settings", { detail: { role: selectedHouse } }),

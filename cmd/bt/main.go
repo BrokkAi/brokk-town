@@ -248,6 +248,21 @@ func run(ctx context.Context, args []string) error {
 	case "web":
 		fmt.Printf("%s/#token=%s\n", conn.URL, conn.Token)
 		return nil
+	case "doctor":
+		if *repo == "" {
+			return errors.New("--repo OWNER/REPO is required")
+		}
+		var report town.DiagnosticReport
+		if err := request(ctx, conn, "POST", "/api/diagnostics", map[string]string{"town": *repo}, &report); err != nil {
+			return err
+		}
+		if *fl.json {
+			b, _ := json.MarshalIndent(report, "", "  ")
+			fmt.Println(string(b))
+		} else {
+			printDiagnostics(*repo, &report)
+		}
+		return nil
 	case "add":
 		if *repo == "" {
 			return errors.New("--repo OWNER/REPO is required")

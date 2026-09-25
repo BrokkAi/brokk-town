@@ -6,6 +6,38 @@ Check `bt status --json` first. Worker capacity, queued tasks, per-task errors, 
 `workers.<role>.recovery` distinguish scheduling delays from unfinished work.
 Keep the saved state and write intents: they prevent duplicate publication.
 
+## Setup and merge diagnostics
+
+Run `bt doctor --repo OWNER/REPO` (or add `--json`) against the running service,
+or choose **Check setup** in a house inspector. Town checks the service's Git and
+`gh` availability, GitHub authentication and repository metadata access, each
+bot's effective agent executable, and its verification/preflight command setup.
+It never starts an agent, downloads a runtime, runs a verifier, or writes to
+GitHub. Authentication and package readiness that cannot be established without
+starting the harness remain **unknown**. Finding an executable does not prove its
+authentication or that its command will succeed in a checkout.
+
+The latest report is saved with its check time and appears in the browser and
+`bt status`/`bt status --json`, including after restart. Run diagnostics again
+after changing settings. Demo checks report simulated setup without contacting
+GitHub or inspecting real agent readiness. Raw subprocess output, agent arguments,
+environment values and credentials are excluded from diagnostic reports.
+
+For a reviewed PR awaiting merge, its inspector and CLI status show the last
+observed base/head, the specific blocker, a GitHub link and the next action.
+Town distinguishes stale review, failing/pending checks, missing approvals,
+conflicts, an outdated branch, merge queues and disabled squash merging. Missing
+information stays **unknown**, never a passed check. GitHub can report a generic
+branch-rule blocker without identifying the particular rule; in that case Town
+links to the PR merge panel instead of guessing. A fresh successful gate clears
+the old wait, and a new revision retires the previous revision's diagnostic.
+
+The gate reads GitHub's [pull request fields](https://docs.github.com/en/graphql/reference/pulls)
+and [repository merge policy](https://docs.github.com/en/graphql/reference/repos)
+directly through `gh api graphql`, including on `gh` versions whose `pr view`
+command does not expose the PR base SHA. Exact Town review evidence, current
+discussion and GitHub's merge requirements remain mandatory.
+
 ## Simplifier intake
 
 The scheduler uses the normal polling interval for intake. On startup, Town
