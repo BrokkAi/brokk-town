@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
@@ -319,4 +320,101 @@ func TestOldMergeObservationCannotOverwriteNewRevision(t *testing.T) {
 	if current.MergeWait != nil || current.Detail == "Old check failed " || current.Head != fixSHA {
 		t.Fatal("old observation overwrote new revision", current)
 	}
+}
+
+func TestSetupCallerDeadlinePreservesLastCompletedReport(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := testStore(t, false)
+		x := addTown(t, s)
+		fakeGitHubCLI(t)
+		previous := &DiagnosticReport{At: time.Now().UTC(), Checks: []Diagnostic{{Code: "previous", Status: "passed", Detail: "Last completed probe"}}}
+		update(t, s, func(st *State) { st.Towns[x.ID].Diagnostics = previous })
+		gh := &heldSetup{fakeGH: newGH(1), entered: make(chan struct{}), release: make(chan struct{})}
+		sup := NewSupervisor(s, gh, nil)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if report, err := sup.Diagnose(ctx, x.ID); !errors.Is(err, context.DeadlineExceeded) || report != nil {
+			t.Fatalf("expired caller was acknowledged: report=%+v err=%v", report, err)
+		}
+		if !reflect.DeepEqual(previous, s.Snapshot().Towns[x.ID].Diagnostics) {
+			t.Fatal("caller deadline replaced the last completed report")
+		}
+	})
+}
+
+func TestMergeDiagnosticsCannotReplaceRetargetExplanation(t *testing.T) {
+	for _, clear := range []bool{false, true} {
+		t.Run(strconv.FormatBool(clear), func(t *testing.T) {
+			s := testStore(t, false)
+			x := setupPR(t, s, 1)
+			sup := NewSupervisor(s, newGH(1), nil)
+			checks := []Diagnostic{{Code: "checks", Status: "blocked", Detail: "Old check failed", Action: "Inspect the check logs."}}
+			if err := sup.saveMergeWait(x, x.Tasks["pr:1"], pull(1), checks); err != nil {
+				t.Fatal(err)
+			}
+			x = s.Snapshot().Towns[x.ID]
+			update(t, s, func(st *State) { Reconcile(st, st.Towns[x.ID], inventory(retarget(pull(1), "release")), time.Now()) })
+			before := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+			if before.Head != x.Tasks["pr:1"].Head || before.Base != x.Tasks["pr:1"].Base || before.Stage != "ready" {
+				t.Fatal("fixture changed revision or stage")
+			}
+			if clear {
+				checks = nil
+			}
+			if err := sup.saveMergeWait(x, x.Tasks["pr:1"], pull(1), checks); err != nil {
+				t.Fatal(err)
+			}
+			after := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+			if after.Detail != before.Detail || !after.Offbranch || !after.Blocked || after.MergeWait != nil {
+				t.Fatalf("old gate replaced retarget explanation: %+v", after)
+			}
+		})
+	}
+}
+
+func TestRepositoryCompletionRetiresMergeDiagnostics(t *testing.T) {
+	for _, merged := range []bool{false, true} {
+		t.Run(strconv.FormatBool(merged), func(t *testing.T) {
+			s := testStore(t, false)
+			x := setupPR(t, s, 1)
+			sup := NewSupervisor(s, newGH(1), nil)
+			if err := sup.saveMergeWait(x, x.Tasks["pr:1"], pull(1), []Diagnostic{{Code: "checks", Status: "blocked", Detail: "Checks failed", Action: "Fix them."}}); err != nil {
+				t.Fatal(err)
+			}
+			p := pull(1)
+			p.State = "closed"
+			if merged {
+				now := time.Now()
+				p.MergedAt = &now
+				p.MergeCommit = fixSHA
+			}
+			update(t, s, func(st *State) { Reconcile(st, st.Towns[x.ID], inventory(p), time.Now()) })
+			task := s.Snapshot().Towns[x.ID].Tasks["pr:1"]
+			if task.MergeWait != nil || strings.Contains(task.Detail, "Checks failed") {
+				t.Fatal("completed task kept old blocker", task)
+			}
+		})
+	}
+}
+
+func TestSetupReadDeadlineStillSavesUnknownResult(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := testStore(t, false)
+		x := addTown(t, s)
+		fakeGitHubCLI(t)
+		gh := &heldSetup{fakeGH: newGH(1), entered: make(chan struct{}), release: make(chan struct{})}
+		sup := NewSupervisor(s, gh, nil)
+		report, err := sup.Diagnose(t.Context(), x.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, check := range report.Checks {
+			if check.Code == "github_auth" && check.Status != "unknown" {
+				t.Fatal("timed-out read passed", check)
+			}
+		}
+		if !reflect.DeepEqual(report, s.Snapshot().Towns[x.ID].Diagnostics) {
+			t.Fatal("completed report was not saved")
+		}
+	})
 }

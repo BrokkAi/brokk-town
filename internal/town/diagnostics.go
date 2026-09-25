@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -24,6 +25,22 @@ type DiagnosticReport struct {
 	Head   string       `json:"head,omitempty"`
 	Base   string       `json:"base,omitempty"`
 	Checks []Diagnostic `json:"checks"`
+}
+
+// Summary is the plain-text counterpart of a report's structured checks.
+func (r *DiagnosticReport) Summary() string {
+	parts := make([]string, 0, len(r.Checks))
+	for _, check := range r.Checks {
+		parts = append(parts, strings.TrimSpace(check.Detail+" "+check.Action))
+	}
+	return strings.Join(parts, " ")
+}
+
+func (t *Task) clearMergeWait() {
+	if t.MergeWait != nil && strings.TrimSpace(t.Detail) == t.MergeWait.Summary() {
+		t.Detail = ""
+	}
+	t.MergeWait = nil
 }
 
 func (g MergeGate) blockers(p Pull, a *Audit, branch, repo string) []Diagnostic {
@@ -103,25 +120,22 @@ func (g MergeGate) blockers(p Pull, a *Audit, branch, repo string) []Diagnostic 
 
 func (s *Supervisor) saveMergeWait(t *Town, task *Task, p Pull, checks []Diagnostic) error {
 	return s.Store.Update(func(st *State) error {
-		current := st.Towns[t.ID].Tasks[task.ID]
+		town := st.Towns[t.ID]
+		if town == nil || town.Deleted || town.Branch() != t.Branch() {
+			return nil
+		}
+		current := town.Tasks[task.ID]
 		// Inventory may have moved the task while the gate read was in flight.
 		// A result for that earlier state cannot replace its new explanation.
-		if current.Head != task.Head || current.Base != task.Base || current.Stage != task.Stage {
+		if current == nil || current.Head != task.Head || current.Base != task.Base || current.Stage != task.Stage || current.House != task.House || current.Description != task.Description || current.Blocked != task.Blocked || current.Offbranch != task.Offbranch || !reflect.DeepEqual(current.Audit, task.Audit) {
 			return nil
 		}
 		if len(checks) == 0 {
-			if current.MergeWait != nil {
-				current.Detail = ""
-			}
-			current.MergeWait = nil
+			current.clearMergeWait()
 			return nil
 		}
 		current.MergeWait = &DiagnosticReport{At: s.now(), Head: p.Head.SHA, Base: p.Base.SHA, Checks: checks}
-		parts := make([]string, 0, len(checks))
-		for _, check := range checks {
-			parts = append(parts, check.Detail+" "+check.Action)
-		}
-		current.Detail = strings.Join(parts, " ")
+		current.Detail = current.MergeWait.Summary()
 		return nil
 	})
 }

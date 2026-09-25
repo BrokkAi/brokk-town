@@ -16,6 +16,7 @@ import (
 // it never prepares a runtime, starts an agent, or executes a verifier. The
 // service handles it on demand, outside scheduling and client render loops.
 func (s *Supervisor) Diagnose(ctx context.Context, id string) (*DiagnosticReport, error) {
+	caller := ctx
 	id = strings.ToLower(id)
 	state := s.Store.Snapshot()
 	t := state.Towns[id]
@@ -38,11 +39,15 @@ func (s *Supervisor) Diagnose(ctx context.Context, id string) (*DiagnosticReport
 	} else {
 		report.Checks = s.setupChecks(ctx, t.Config)
 	}
-	// A client cancel must not overwrite the last completed diagnostic.
-	if err := ctx.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+	// Our own read deadlines produce unknown checks. A canceled or expired
+	// caller, however, must not replace the last completed diagnostic.
+	if err := caller.Err(); err != nil {
 		return nil, err
 	}
 	err := s.Store.Update(func(st *State) error {
+		if err := caller.Err(); err != nil {
+			return err
+		}
 		current := st.Towns[id]
 		if current == nil || current.Deleted {
 			return errors.New("town was deleted during diagnostics")

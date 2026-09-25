@@ -1480,7 +1480,7 @@ func (s *Supervisor) mergeReady(ctx context.Context, t *Town, log *slog.Logger) 
 		if err != nil {
 			return true, s.unavailableMergeWait(t, task, p, err)
 		}
-		if fresh.Head.SHA != p.Head.SHA || fresh.Base.SHA != p.Base.SHA || description(fresh) != description(p) || fresh.State != "open" || fresh.Draft || fresh.Locked {
+		if fresh.Head.SHA != p.Head.SHA || fresh.Base.SHA != p.Base.SHA || fresh.Base.Ref != t.Branch() || description(fresh) != description(p) || fresh.State != "open" || fresh.Draft || fresh.Locked {
 			continue
 		}
 		// Quiet hours may have begun since this review dispatch started. The

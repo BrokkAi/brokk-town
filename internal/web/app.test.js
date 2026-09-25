@@ -1309,3 +1309,30 @@ test("setup diagnostics run on request and render saved unknown facts for the se
   assert.doesNotMatch(elements.inspection.textContent, /Issue-only verifier detail/);
   assert.doesNotMatch(elements.inspection.innerHTML, /id="check-setup"[^>]*disabled/);
 });
+
+test("an older merge report does not hide the task's current explanation", async () => {
+  for (const detail of ["Checks failed. Fix them.", "Ready to retry. Review Bot is paused; start it to run this task."]) {
+    const elements = installFixture();
+    const live = structuredClone(state);
+    Object.assign(live.towns["acme/project"].tasks["pr:1"], {
+      stage: "ready", detail,
+      merge_wait: { at: "2026-09-25T10:00:00Z", head: "old-head", base: "old-base", checks: [
+        { code: "checks", status: "blocked", detail: "Checks failed.", action: "Fix them.", url: "https://github.com/acme/project/pull/1/checks" },
+      ] },
+    });
+    let served = false;
+    globalThis.fetch = async (url) => {
+      if (url === "/api/events") return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(`data: ${JSON.stringify(live)}\n\n`), done: false }) : { done: true }) }) } };
+      if (url === "/api/state") return { ok: true, json: async () => live };
+      return { ok: true, json: async () => ({}) };
+    };
+    await import(`./app.js?merge-report=${Date.now()}-${Math.random()}`);
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    elements.towns.querySelectorAll("[data-town]")[0].onclick();
+    elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
+    elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "pr:1").onclick();
+    assert.match(elements.inspection.textContent, /Last merge check.*old-head.*old-base.*Checks failed/s);
+    if (detail.startsWith("Ready to retry")) assert.ok(elements.inspection.textContent.includes(detail), "the latest pause/retry reason is visible alongside the historical check");
+    assert.equal(elements.inspection.textContent.match(/Checks failed\./g)?.length, 1, "the report's own summary is not duplicated");
+  }
+});

@@ -128,13 +128,19 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 		}
 		taskIDs := make([]string, 0, len(t.Tasks))
 		for taskID, task := range t.Tasks {
-			if task.MergeWait != nil && task.Stage == "ready" {
+			if task.Stage == "ready" && (task.MergeWait != nil || (task.Blocked && task.Detail != "")) {
 				taskIDs = append(taskIDs, taskID)
 			}
 		}
 		sort.Strings(taskIDs)
 		for _, taskID := range taskIDs {
-			printDiagnostics(id+" "+taskID, t.Tasks[taskID].MergeWait)
+			task := t.Tasks[taskID]
+			if task.Detail != "" && (task.MergeWait == nil || strings.TrimSpace(task.Detail) != task.MergeWait.Summary()) {
+				fmt.Printf("  %s %s · %s\n", id, taskID, task.Detail)
+			}
+			if task.MergeWait != nil {
+				printDiagnostics(id+" "+taskID, task.MergeWait)
+			}
 		}
 	}
 	if logs := filepath.Join(dir, "logs"); dirExists(logs) {

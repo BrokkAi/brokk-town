@@ -1019,6 +1019,9 @@ function diagnosticBlock(report, role) {
   const checks = (report.checks || []).filter((check) => !role || !check.role || check.role === role);
   return `<p class="muted">Checked ${esc(new Date(report.at).toLocaleString())}. Run again after changing settings.${report.head ? ` Head <code>${esc(report.head)}</code> · base <code>${esc(report.base)}</code>.` : ""}</p>${checks.map((check) => `<p><strong>${esc(check.status)} · ${esc(check.code.replaceAll("_", " "))}</strong><br>${esc(check.detail)}${check.action ? `<br>Next: ${esc(check.action)}` : ""}${safeURL(check.url) ? `<br><a href="${esc(check.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a>` : ""}</p>`).join("")}`;
 }
+function diagnosticSummary(report) {
+  return (report?.checks || []).map((check) => `${check.detail} ${check.action || ""}`.trim()).join(" ");
+}
 function setupBlock(t, role) {
   return `<section class="setup-diagnostics"><h3>Setup diagnostics</h3><p class="muted">Checks saved settings without starting agents or running verification commands.</p><button id="check-setup" type="button"${busy(writeKey("diagnostics", t.id))}>Check setup</button>${diagnosticBlock(t.diagnostics, role)}</section>`;
 }
@@ -1096,7 +1099,7 @@ function renderInspection() {
     const simplifier = task.simplification
       ? `<section class="advisor-note"><strong>Simplifier Bot · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
       : "";
-    const detailText = task.merge_wait && task.stage === "ready" ? "" : task.detail || (liveCapable ? "" : "Following the next step through town.");
+    const detailText = task.merge_wait && task.stage === "ready" && (task.detail || "").trim() === diagnosticSummary(task.merge_wait) ? "" : task.detail || (liveCapable ? "" : "Following the next step through town.");
     const snooze = projected.snooze;
     const snoozeBlock = snooze
       ? `<section class="snooze-note" aria-label="Snooze"><strong>${esc(snoozeLabel(task))}</strong>${snooze.reason ? `<p>${esc(snooze.reason)}</p>` : ""}<p class="muted">Resumes ${esc(snooze.until.toLocaleString())} without any action. Its house keeps working the rest of the queue; no agent starts and no merge happens for this task until then.</p><div class="inspector-actions"><button id="snooze-task" type="button">Change snooze…</button><button id="clear-snooze" type="button"${taskBusy("undefer", selectedHouse)}>Resume now</button></div></section>`

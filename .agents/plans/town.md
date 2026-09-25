@@ -1119,3 +1119,26 @@
   commands, per-role inheritance, unknown authentication, secret exclusion,
   cancellation, duplicate probes, stale settings and stale revision reads.
   No live repository automation, release or remote Mjolnir job was started.
+
+## PR #161 review corrections
+
+- Reviewed the complete PR and confirmed its queried fields against GitHub's
+  read-only GraphQL schema. Found caller deadlines were treated as internal
+  probe timeouts and could overwrite the last completed setup report. Preserve
+  the previous result on both caller cancellation and expiration, including
+  when waiting to commit; internal metadata timeouts still report unknown.
+- A retargeted PR can retain its head/base/stage while inventory invalidates
+  its audit. Guard delayed diagnostic writes against changed authority and
+  review state, retire obsolete diagnostics on retarget/close/merge, and only
+  remove a plain-text detail when it belongs to the old report. Browser/CLI
+  preserve newer task explanations alongside any historical merge report.
+- The final metadata recheck also omitted the target branch name: retargeting
+  after the gate passed could create an intent and merge outside the town's
+  configured branch. Compare that branch immediately before intent creation.
+- Deterministic fake-GitHub regressions reproduced caller-deadline replacement,
+  delayed retarget overwrites, completed-task stale blockers and the late
+  retarget merge on the prior PR head. Added browser/CLI display checks and
+  a separate internal-timeout test so unavailable results remain reportable.
+- Validation passed: full root race tests/vet, frontend syntax/tests, complete
+  bundle build, demo lifecycle and all-eight worker smoke checks.
+  User authorized updating the PR and merging its exact head once green.

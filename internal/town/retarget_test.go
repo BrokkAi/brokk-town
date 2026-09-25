@@ -117,3 +117,33 @@ func TestRetargetedPRIsNotDisturbedOnceMerged(t *testing.T) {
 		t.Fatalf("a completed PR was reopened as off-branch: %+v", task)
 	}
 }
+
+type retargetBeforeMerge struct {
+	*fakeGH
+	reads int
+}
+
+func (g *retargetBeforeMerge) Pull(ctx context.Context, repo string, n int) (Pull, error) {
+	g.reads++
+	p, err := g.fakeGH.Pull(ctx, repo, n)
+	if g.reads > 1 {
+		p.Base.Ref = "release"
+	}
+	return p, err
+}
+
+func TestMergeRechecksTargetBranchImmediatelyBeforeIntent(t *testing.T) {
+	s := testStore(t, false)
+	x := setupPR(t, s, 1)
+	gh := &retargetBeforeMerge{fakeGH: newGH(1)}
+	sup := NewSupervisor(s, gh, observing{gh: gh.fakeGH})
+	if _, err := sup.mergeReady(t.Context(), x, slog.Default()); err != nil {
+		t.Fatal(err)
+	}
+	if gh.reads != 2 {
+		t.Fatalf("expected both metadata reads, got %d", gh.reads)
+	}
+	if gh.merged != 0 || len(s.Snapshot().Towns[x.ID].Intents) != 0 {
+		t.Fatal("retargeting after the gate authorized a merge outside the town branch")
+	}
+}
