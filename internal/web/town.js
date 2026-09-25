@@ -307,7 +307,7 @@ export function inbox(state) {
       });
     }
     for (const [role, worker] of Object.entries(town.workers || {})) {
-      if (normalized(worker?.status) !== "failed") continue;
+      if (normalized(worker?.status) !== "failed" && !worker?.recovery) continue;
       counts.attention++;
       attention.push({
         town: town.id,
@@ -441,10 +441,21 @@ export function workerControls(worker, blocked = false) {
   const enabled = !!worker?.enabled;
   const active = activeWorkerStatuses.has(status) || !!worker?.agent;
   return {
-    start: !blocked && !worker?.recovery?.task_id && (!enabled || status === "failed"),
+    start: !blocked && !active && !worker?.run && !worker?.recovery?.task_id && (!enabled || status === "failed" || !!worker?.recovery),
     pause: enabled && status !== "pausing",
     stop: enabled || active,
   };
+}
+
+// The persisted town error belongs to the last unsuccessful inventory. A new
+// run or a recovery hold explains what is happening now; the old log is kept.
+export function repositoryStatus(town) {
+  const worker = town?.workers?.repo;
+  if (worker?.recovery) {
+    return [worker.error, worker.recovery.detail].filter(Boolean).join(" · ");
+  }
+  if (normalized(worker?.status) === "working") return "Reading repository…";
+  return town?.error || town?.reports?.at(-1)?.title || "Repo-bot is taking the first inventory";
 }
 
 // Town-wide wake state for the header controls. Repo-bot is excluded: it is

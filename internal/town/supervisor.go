@@ -233,6 +233,10 @@ func (s *Supervisor) activeWorkers() int {
 func (s *Supervisor) claimRepair(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	town := s.Store.Snapshot().Towns[id]
+	if town == nil || town.Workers[Repo].Recovery != nil {
+		return false
+	}
 	if _, limit := s.Store.dispatchEligibility(id, Repo, s.now()); s.activeWorkers() >= limit {
 		return false
 	}
@@ -371,13 +375,15 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	s.update(func(st *State) error {
 		current := st.Towns[t.ID]
 		w := current.Workers[r]
-		var interrupted *WorkerInterruptedError
-		if w.Run != nil && errors.As(err, &interrupted) {
-			run := w.Run
-			target := workerRunTask(*run)
-			w.Recovery = &WorkerRecovery{TaskID: target, Base: run.BaseSHA, Head: run.HeadSHA, Started: run.Started, Detail: recoveryDetail(r, target)}
+		// Repo dispatches finish under the reconciliation gate. A confirmation
+		// inventory may already own a newer run by the time this cleanup runs.
+		if r != Repo {
+			var interrupted *WorkerInterruptedError
+			if w.Run != nil && errors.As(err, &interrupted) {
+				recoverWorkerRun(w)
+			}
+			w.Run = nil
 		}
-		w.Run = nil
 		w.Agent = nil
 		w.Status = "waiting"
 		w.Updated = s.now()
@@ -512,6 +518,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		}
 		if w.Recovery != nil {
 			w.Task = w.Recovery.Detail
+			if w.Enabled {
+				w.Status = "failed"
+			}
 		}
 		if r != Repo {
 			current.Workers[Repo].Next = time.Time{}
@@ -865,6 +874,9 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 		}
 	}
 	t = s.Store.Snapshot().Towns[t.ID]
+	if t.Workers[Repo].Recovery != nil {
+		health = false
+	}
 	// Funnel synchronization is source-neutral and commits typed health before
 	// legacy repository reconciliation. Existing PR/release authority remains on
 	// the mature GitHub path while issue intake migrates incrementally.
@@ -875,6 +887,21 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 		t = s.Store.Snapshot().Towns[t.ID]
 	}
 	result, err := s.Workers.Observe(ctx, t, InventoryRequest{SinceHead: inventorySince(t), Commits: unprovenCommits(t), Health: health}, observe, log)
+	// Commit the outcome before releasing the gate: merge confirmation can
+	// dispatch another inventory as soon as this reconciliation returns. It
+	// must see an interrupted repair's hold and must not replace its identity.
+	if saveErr := s.Store.Update(func(st *State) error {
+		w := st.Towns[t.ID].Workers[Repo]
+		var interrupted *WorkerInterruptedError
+		if errors.As(err, &interrupted) {
+			recoverWorkerRun(w)
+		}
+		w.Run = nil
+		return nil
+	}); saveErr != nil {
+		s.fail(saveErr)
+		return errors.Join(err, fmt.Errorf("preserve repository dispatch outcome: %w", saveErr))
+	}
 	if err != nil {
 		return err
 	}
@@ -920,6 +947,9 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 		applyBranchHealth(st, current, result.Health, s.now())
 		w := current.Workers[Repo]
 		w.Task = branchHealthTask(current.Health)
+		if w.Recovery != nil {
+			w.Task = w.Recovery.Detail
+		}
 		w.Phase = "reporting"
 		return nil
 	}); err != nil {
@@ -929,6 +959,10 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 		if err := workers.SyncIssues(s.Store.Snapshot().Towns[t.ID]); err != nil {
 			return fmt.Errorf("preserve issue-bot jobs after inventory: %w", err)
 		}
+	}
+	// Recovery refreshes our view without authorizing any replacement writes.
+	if s.Store.Snapshot().Towns[t.ID].Workers[Repo].Recovery != nil {
+		return nil
 	}
 	// Closing declined issues and retired pull requests and filing follow-ups
 	// are Town's own GitHub writes. Quiet hours leave them for the first

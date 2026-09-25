@@ -171,6 +171,9 @@ func (b *BotWorkers) Observe(ctx context.Context, t *Town, request InventoryRequ
 	defer cancel()
 	t = clone(t)
 	t.Config = t.Config.ForRole(Repo)
+	if t.Workers[Repo] != nil && t.Workers[Repo].Recovery != nil {
+		request.Health = false
+	}
 	dir, state := Workspace(b.Root, t.ID, Repo)
 	agent := runner.AgentConfig{}
 	if request.Health {
@@ -183,7 +186,7 @@ func (b *BotWorkers) Observe(ctx context.Context, t *Town, request InventoryRequ
 		agent = resolved
 		t.Config.Agent = agent
 	}
-	d := dispatch{mode: inventoryMode(request.Health), sinceHead: request.SinceHead, commits: request.Commits}
+	d := dispatch{mode: inventoryMode(request.Health && len(agent.Command) > 0), sinceHead: request.SinceHead, commits: request.Commits}
 	result, err := b.runBot(ctx, t, Repo, agent, dir, state, b.remote(t.Config.Repo), d, deadline, observe)
 	return repoResult(result, err)
 }

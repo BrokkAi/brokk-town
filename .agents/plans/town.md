@@ -1018,3 +1018,35 @@
   frontend syntax/tests, Repo Bot launcher and all 31 packaging tests, and the
   isolated demo lifecycle smoke. All repository and agent fixtures stayed local.
 - User requested a pull request; changes are on fix/repo-default-branch.
+
+## Repository inventory after interrupted startup
+
+- The local fixed Repo Bot already accepted an empty branch, but the saved
+  town kept its earlier `invalid branch` error while a later interrupted scan
+  held every subsequent inventory. Recovery also appeared as a scheduled wait.
+- Resume repository reads automatically from existing recovery records and
+  interrupted dispatches. An explicitly inventory-only dispatch creates no
+  write hold; older records and runs that could repair retain their uncertainty.
+  Recovery inventories cannot start repair agents or perform Town's follow-up
+  GitHub writes, and an interrupted read preserves an existing repair record.
+- Keep pauses and historical logs. Successful inventory clears the old town
+  error; uncertain repairs remain visibly held until explicitly authorized.
+  Both browser and CLI show current inventory/recovery ahead of the old error,
+  and the browser offers recovery controls between reads.
+- Added saved-state restart, cancellation, pause, no-write and repeated-restart
+  regressions plus a real Repo Bot protocol case that must not launch an agent.
+- Validation passed: full Town `go test -race ./...` and `go vet ./...`, frontend
+  syntax/tests, complete bundle build, and isolated demo/worker lifecycle checks.
+  All regression GitHub responses and agents were fake; no live state was edited
+  and no repository automation or release was started.
+- PR review found that merge confirmation could overwrite a finished repair's
+  dispatch before scheduled cleanup saved its uncertainty. Repo dispatches now
+  save recovery and retire their run under the reconciliation gate; scheduled
+  cleanup leaves any newer confirmation dispatch intact.
+- A deterministic concurrent regression checks the original repair identity,
+  a held replacement repair, blocked follow-up GitHub writes, the next read's
+  dispatch lifetime, and durable recovery after restart, using fake workers
+  and GitHub only. It fails on the original PR before the fix.
+- Fix validation passed: 20 repeated race runs of the interruption regressions,
+  full Town race tests and vet, frontend syntax/tests, complete bundle build,
+  and isolated demo/worker lifecycle smoke checks.

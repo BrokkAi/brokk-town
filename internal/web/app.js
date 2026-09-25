@@ -31,6 +31,7 @@ import {
   scheduleLabel,
   branchHealthNote,
   workerControls,
+  repositoryStatus,
   townControls,
   decisionReason,
   inbox,
@@ -855,7 +856,7 @@ function renderOverview() {
           art = activeSkin.supportsFactions
             ? `<div class="town-card-houses frontline-card-art" aria-hidden="true"><span class="base-mini hall"></span><span class="base-mini bug"></span><span class="base-mini release"></span></div>`
             : `<div class="town-card-houses" aria-hidden="true"></div>`;
-        return `<button class="town-card" data-visit="${esc(t.id)}"${faction ? ` data-faction="${esc(faction)}"` : ""}><span class="eyebrow">${esc(t.config.repo.split("/")[0])}</span><h2>${esc(t.config.repo.split("/")[1])}</h2>${badge}${spread.distinct.length === 1 ? summaryChips(spread.distinct[0]) : `<span class="profile mixed" title="${esc(spread.distinct.map((p) => p.text).join("\n"))}">${esc(spread.label)}${spread.overrides ? ` · ${spread.overrides} custom` : ""}</span>`}${art}<div class="town-stats"><span><strong>${stats.busy}</strong> ${esc(activeSkin.stats.working)}</span><span><strong>${stats.queued}</strong> ${esc(activeSkin.stats.queued)}</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> ${esc(activeSkin.stats.decisions)}</span><span><strong>${stats.blocked + stats.failed}</strong> ${esc(activeSkin.stats.attention)}</span></div><p>${esc(t.error || t.reports.at(-1)?.title || "Repo-bot is taking the first inventory")}</p><small>${esc(stats.release)} · ${esc(activeSkin.visit)}</small></button>`;
+        return `<button class="town-card" data-visit="${esc(t.id)}"${faction ? ` data-faction="${esc(faction)}"` : ""}><span class="eyebrow">${esc(t.config.repo.split("/")[0])}</span><h2>${esc(t.config.repo.split("/")[1])}</h2>${badge}${spread.distinct.length === 1 ? summaryChips(spread.distinct[0]) : `<span class="profile mixed" title="${esc(spread.distinct.map((p) => p.text).join("\n"))}">${esc(spread.label)}${spread.overrides ? ` · ${spread.overrides} custom` : ""}</span>`}${art}<div class="town-stats"><span><strong>${stats.busy}</strong> ${esc(activeSkin.stats.working)}</span><span><strong>${stats.queued}</strong> ${esc(activeSkin.stats.queued)}</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> ${esc(activeSkin.stats.decisions)}</span><span><strong>${stats.blocked + stats.failed}</strong> ${esc(activeSkin.stats.attention)}</span></div><p>${esc(repositoryStatus(t))}</p><small>${esc(stats.release)} · ${esc(activeSkin.visit)}</small></button>`;
       })
       .join("") ||
     `<div class="overview-empty"><h2>Your world starts with one repository.</h2><p>${esc(activeSkin.text["overview-empty-body"])}</p></div>`;
