@@ -113,12 +113,20 @@ type MergeGate struct {
 	// BaseRef is the branch the pull request currently targets. Retargeting a
 	// pull request leaves its head and base commits untouched, so the SHAs
 	// alone cannot tell Town the merge would land somewhere it does not cover.
-	BaseRef    string `json:"baseRefName"`
-	Draft      bool   `json:"isDraft"`
-	State      string `json:"state"`
-	Mergeable  string `json:"mergeable"`
-	MergeState string `json:"mergeStateStatus"`
-	Review     string `json:"reviewDecision"`
+	BaseRef       string `json:"baseRefName"`
+	Draft         bool   `json:"isDraft"`
+	State         string `json:"state"`
+	Mergeable     string `json:"mergeable"`
+	MergeState    string `json:"mergeStateStatus"`
+	Review        string `json:"reviewDecision"`
+	PolicyKnown   bool   `json:"-"`
+	SquashAllowed bool   `json:"-"`
+	MergeQueue    *struct {
+		ID string `json:"id"`
+	} `json:"mergeQueue"`
+	Checks *struct {
+		State string `json:"state"`
+	} `json:"statusCheckRollup"`
 }
 
 // Allows reports whether this pull request may be merged by the town covering
@@ -126,10 +134,10 @@ type MergeGate struct {
 // merge that lands outside the configured branch is a write the operator never
 // authorized.
 func (g MergeGate) Allows(p Pull, a *Audit, branch string) bool {
-	if branch == "" || p.Base.Ref != branch || g.BaseRef != branch {
+	if branch == "" || p.Base.Ref != branch || g.BaseRef != branch || !g.PolicyKnown || !g.SquashAllowed || g.MergeQueue != nil {
 		return false
 	}
-	return a.Clean(g.Base, g.Head) && p.Head.SHA == g.Head && p.Base.SHA == g.Base && p.State == "open" && !p.Draft && !p.Locked && !g.Draft && g.State == "OPEN" && g.Mergeable == "MERGEABLE" && g.MergeState == "CLEAN" && (g.Review == "" || g.Review == "APPROVED")
+	return a.Clean(g.Base, g.Head) && p.Head.SHA == g.Head && p.Base.SHA == g.Base && p.State == "open" && !p.Draft && !p.Locked && !g.Draft && g.State == "OPEN" && g.Mergeable == "MERGEABLE" && g.MergeState == "CLEAN" && (g.Checks == nil || g.Checks.State == "SUCCESS") && (g.Review == "" || g.Review == "APPROVED")
 }
 
 // GitHub is what Town itself still needs from GitHub: the writes it authorizes,
@@ -261,14 +269,47 @@ func (g GitHubClient) Discussion(ctx context.Context, repo string, n int) ([]Dis
 	return out, nil
 }
 func (g GitHubClient) Gate(ctx context.Context, repo string, n int) (MergeGate, error) {
-	var gate MergeGate
-	raw, err := g.gh(ctx, "pr", "view", fmt.Sprint(n), "--repo", repo, "--json", "headRefOid,baseRefOid,baseRefName,isDraft,state,mergeable,mergeStateStatus,reviewDecision")
-	if err != nil {
-		return gate, err
+	owner, name, ok := strings.Cut(repo, "/")
+	if !ok || owner == "" || name == "" || n <= 0 {
+		return MergeGate{}, errors.New("merge gate requires a repository and pull request")
 	}
-	err = json.Unmarshal([]byte(raw), &gate)
-	return gate, err
+	var reply struct {
+		Data struct {
+			Repository *struct {
+				SquashAllowed *bool      `json:"squashMergeAllowed"`
+				Pull          *MergeGate `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+		Errors []json.RawMessage `json:"errors"`
+	}
+	// Query the API directly: older gh pr view versions do not expose
+	// baseRefOid. One observation also binds checks and repository policy to
+	// the PR revision, with no paginated list to mistake for complete evidence.
+	err := g.api(ctx, "POST", "graphql", map[string]any{
+		"query": mergeGateQuery, "variables": map[string]any{"owner": owner, "name": name, "number": n},
+	}, &reply)
+	if err != nil {
+		return MergeGate{}, err
+	}
+	r := reply.Data.Repository
+	if len(reply.Errors) != 0 || r == nil || r.Pull == nil || r.SquashAllowed == nil || !SHA(r.Pull.Head) || !SHA(r.Pull.Base) || r.Pull.BaseRef == "" {
+		return MergeGate{}, errors.New("GitHub merge gate returned incomplete information; check repository access and retry")
+	}
+	r.Pull.PolicyKnown, r.Pull.SquashAllowed = true, *r.SquashAllowed
+	return *r.Pull, nil
 }
+
+const mergeGateQuery = `query($owner:String!,$name:String!,$number:Int!) {
+  repository(owner:$owner,name:$name) {
+    squashMergeAllowed
+    pullRequest(number:$number) {
+      headRefOid baseRefOid baseRefName isDraft state mergeable mergeStateStatus reviewDecision
+      mergeQueue { id }
+      statusCheckRollup { state }
+    }
+  }
+}`
+
 func (g GitHubClient) Merge(ctx context.Context, repo string, n int, sha string) (string, error) {
 	var result struct {
 		Merged  bool   `json:"merged"`

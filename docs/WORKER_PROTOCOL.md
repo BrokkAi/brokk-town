@@ -2,24 +2,25 @@
 
 Brokk Town supervises the released Brokk bots as independent executables. They
 communicate through a local, versioned HTTP/JSON protocol rather than Go library
-calls or CLI log parsing for primary work. Protocol v1 does not yet carry all
-issue-job outcomes, so Town uses the pinned issue-bot release's validated public
-state and retry APIs for that scheduling metadata only.
+calls or CLI log parsing. Issue-job summaries and retries also cross the worker
+protocol; Town never reads or edits a bot's private state directly.
 
 ## Transport and security
 
-The initial transport is a Unix-domain socket created for one bot dispatch:
+The transport is a private Unix-domain socket for one persistent worker per
+house and town. Town starts all eight workers, including paused houses:
 
 ```text
-bbb|bfb|bib|brv|brb|bsb|brp worker --socket PATH
+bbb|bfb|bib|brv|brb|bsb|brp|bmb worker --socket PATH
 ```
 
 The socket's parent directory is private to the Town service and the socket is
 mode `0600`. Town connects with the Go standard library HTTP client and does not
-invoke a shell. The worker exits after a Town shutdown request. Town starts the
-worker in its own session; the worker must not depend on its parent process, a
-controlling terminal, or an open stdout/stderr pipe, and it must keep running
-when the Town service exits.
+invoke a shell. Town starts each worker in its own process group (`Setpgid`),
+captures bounded stdout/stderr tails, and owns the worker for the service's
+lifetime. Each worker receives `BROKK_TOWN_PARENT_PIPE=1` and a read-only pipe
+on descriptor 3. EOF cancels the worker and its active work, including when Town
+exits unexpectedly. Workers do not detach or survive a Town restart.
 
 The message schemas and methods are transport-independent. A self-signed
 TLS transport with mutual certificate authentication can therefore be added later
@@ -186,14 +187,25 @@ returns the updated summaries. Neither mode invokes an agent or writes to GitHub
 
 ## Shutdown
 
-After Town consumes the terminal event, it requests graceful shutdown:
+A terminal event ends one run, not the worker process. The same worker accepts
+subsequent runs. Pausing a house lets its current job finish and keeps the worker
+alive; stopping a running job cancels it and closes that worker. The supervisor
+replaces a stopped or failed process independently of whether its house is enabled.
+
+On service shutdown, Town cancels running work and closes every worker's parent
+pipe, sends SIGTERM, waits up to seven seconds, then kills the process group if
+needed. It reaps children and removes their socket directories. Deleting a town
+also stops its workers. Dispatch cancellation or its deadline closes the affected
+worker. An interrupted dispatch's possible writes remain uncertain in saved state.
+
+The standalone worker servers also support this explicit lifecycle endpoint for
+other local protocol clients and their tests; Town does not call it:
 
 ```text
 POST /v1/shutdown
 ```
 
-The worker returns HTTP 202, stops accepting runs, finishes response streaming,
-removes its socket, and exits. Town kills the process group only when graceful
-shutdown exceeds its bounded deadline, when an operator stops the house or
-deletes the town, or when the dispatch deadline passes. Service shutdown never
-kills a worker.
+The body must be empty. The worker returns HTTP 202, signals server shutdown,
+cancels active work, drains responses within its shutdown bound, removes its
+socket, and exits. This endpoint remains part of protocol v1; it is not sent after
+each run and does not replace the parent-liveness contract.

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/town"
@@ -52,9 +53,11 @@ type statusView struct {
 		Limit  int `json:"limit"`
 	} `json:"capacity"`
 	Towns map[string]struct {
-		Deleted bool                   `json:"deleted"`
-		Workers map[string]town.Worker `json:"workers"`
-		Error   string                 `json:"error"`
+		Deleted     bool                   `json:"deleted"`
+		Workers     map[string]town.Worker `json:"workers"`
+		Error       string                 `json:"error"`
+		Diagnostics *town.DiagnosticReport `json:"diagnostics"`
+		Tasks       map[string]*town.Task  `json:"tasks"`
 	} `json:"towns"`
 }
 
@@ -120,11 +123,50 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 			line += "  error: " + t.Error
 		}
 		fmt.Println(line)
+		if t.Diagnostics != nil {
+			printDiagnostics(id, t.Diagnostics)
+		}
+		taskIDs := make([]string, 0, len(t.Tasks))
+		for taskID, task := range t.Tasks {
+			if task.Stage == "ready" && (task.MergeWait != nil || (task.Blocked && task.Detail != "")) {
+				taskIDs = append(taskIDs, taskID)
+			}
+		}
+		sort.Strings(taskIDs)
+		for _, taskID := range taskIDs {
+			task := t.Tasks[taskID]
+			if task.Detail != "" && (task.MergeWait == nil || strings.TrimSpace(task.Detail) != task.MergeWait.Summary()) {
+				fmt.Printf("  %s %s · %s\n", id, taskID, task.Detail)
+			}
+			if task.MergeWait != nil {
+				printDiagnostics(id+" "+taskID, task.MergeWait)
+			}
+		}
 	}
 	if logs := filepath.Join(dir, "logs"); dirExists(logs) {
 		fmt.Println("Logs:", logs)
 	}
 	return nil
+}
+
+func printDiagnostics(label string, report *town.DiagnosticReport) {
+	fmt.Printf("  %s · checked %s\n", label, report.At.Format(time.RFC3339))
+	if report.Head != "" {
+		fmt.Printf("    Head %s · base %s\n", report.Head, report.Base)
+	}
+	for _, check := range report.Checks {
+		role := ""
+		if check.Role != "" {
+			role = string(check.Role) + " / "
+		}
+		fmt.Printf("    %s%s [%s] %s\n", role, check.Code, check.Status, check.Detail)
+		if check.Action != "" {
+			fmt.Printf("      Next: %s\n", check.Action)
+		}
+		if check.URL != "" {
+			fmt.Printf("      %s\n", check.URL)
+		}
+	}
 }
 
 func dirExists(path string) bool {

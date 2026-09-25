@@ -113,6 +113,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 					s.Event(t.ID, "delivery", string(task.House), "hall", id, fmt.Sprintf("PR retargeted to %s; outside this town", p.Base.Ref), now)
 				}
 				task.Audit = nil
+				task.clearMergeWait()
 				task.Offbranch = true
 				task.Blocked = true
 				task.Detail = fmt.Sprintf("Targets %s, but this town covers %s. Town stops work on it until it targets %s again.", p.Base.Ref, remote.Branch, remote.Branch)
@@ -190,6 +191,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		task.Labels = LabelNames(p.Labels)
 		task.Branch = p.Head.Ref
 		if (task.Head != "" && task.Head != p.Head.SHA) || (task.Base != "" && task.Base != p.Base.SHA) || (task.Description != "" && task.Description != description(p)) {
+			task.clearMergeWait()
 			if task.Head != "" && task.Head != p.Head.SHA && !isOwned {
 				t.RecordOutcome(OutcomeRecord{ID: "external-change:" + id + ":" + p.Head.SHA, At: now, Class: "outcome", Kind: "external_change", Status: "external", Role: Review, TaskID: id, Revision: p.Head.SHA, URL: p.URL, Detail: "Contributor changed the pull request revision"})
 			}
@@ -205,6 +207,9 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		task.Description = description(p)
 		task.Head = p.Head.SHA
 		task.Base = p.Base.SHA
+		if p.MergedAt != nil || p.State == "closed" {
+			task.clearMergeWait()
+		}
 		if intent := t.Intents[p.Number]; intent != nil && intent.Kind == "repair" && p.Head.SHA == intent.NewHead {
 			if intent.Status != "confirmed" {
 				intent.Status = "confirmed"

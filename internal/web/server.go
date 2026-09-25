@@ -69,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/requests", s.submitRequest)
 	mux.HandleFunc("POST /api/requests/check", s.checkRequest)
 	mux.HandleFunc("POST /api/task-detail", s.taskDetail)
+	mux.HandleFunc("POST /api/diagnostics", s.diagnostics)
 	mux.HandleFunc("GET /api/outcomes", s.outcomes)
 	mux.HandleFunc("POST /api/outcomes/judgment", s.outcomeJudgment)
 	mux.Handle("/", http.FileServerFS(files))
@@ -98,6 +99,22 @@ func (s *Server) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Town string `json:"town"`
+	}
+	if err := decode(w, r, &input); err != nil {
+		rejectInput(w, err)
+		return
+	}
+	report, err := s.Supervisor.Diagnose(r.Context(), input.Town)
+	if err != nil {
+		problem(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	respond(w, report)
 }
 
 func (s *Server) outcomes(w http.ResponseWriter, r *http.Request) {

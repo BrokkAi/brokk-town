@@ -1067,3 +1067,78 @@
   npm accepted all five uploads with provenance, and after processing every
   package reports 0.6.5 as latest; the launcher pins all four platform packages
   to that version. No live repository automation was used for development tests.
+
+## Remaining issue backlog: documentation and execution decisions
+
+- #141: corrected the protocol's persistent eight-worker lifecycle, process-group
+  ownership, parent pipe, cancellation and bounded shutdown. Keep the existing
+  optional standalone shutdown endpoint; remove Town's unused client helper.
+- #143: made the README a navigable quickstart, moved operator reference into
+  linked configuration, workflow, operations, funnels and recovery documents,
+  corrected all eight agent roles, combined the duplicate Hall entry, and
+  explained the still-required legacy max_cycles field without changing policy.
+- #142's requested Simplifier/Mayor decision-path and worker-boundary coverage
+  is already present on master; no duplicate implementation is needed.
+- #151: operator selected a town default with per-bot target overrides and
+  Mjolnir-owned execution capacity shown read-only in Town. Recorded inheritance,
+  explicit local selection, dispatched identity, mixed local/Mjolnir capacity,
+  and dependent #150/#152–155 design constraints in docs/mjolnir-execution.md.
+  These settings remain planned, not implemented.
+- Validation: root Go race tests and vet, frontend syntax/tests, complete bundle
+  build, local documentation link/anchor checks, and isolated demo and all-eight
+  worker lifecycle smoke checks passed. No live repository automation was used.
+- Next: #5 setup diagnostics and exact merge blockers. Attention hooks (#54),
+  retention/incremental sync (#7/#21), Town Guide (#40), and the Mjolnir execution
+  work remain separate implementation batches. No release requested for this work.
+
+## Setup diagnostics and exact merge blockers (#5)
+
+- Added authenticated on-demand setup diagnostics through `bt doctor --repo`,
+  a browser house control and the shared API. Save timestamped public results
+  so browser/CLI status and restart show the same facts. Probe Git/gh lookup,
+  GitHub account/repository metadata access, effective per-role commands,
+  verification overrides and release preflight setup. Never execute agents or
+  verifiers, install runtimes, or write to GitHub. Package/auth readiness that
+  cannot be established without starting a harness remains explicitly unknown.
+- Bound metadata reads, serialize setup probes, cancel them with the requester,
+  and reject results if settings changed or the town was deleted during the
+  read. Demo reports simulated setup without touching real services. Private
+  arguments, environment, credentials and raw process output stay out of reports.
+- Read the merge gate through GitHub GraphQL so older gh versions can supply
+  baseRefOid. Include squash policy, merge-queue presence and aggregate check
+  state. Preserve exact review/branch/revision checks; unsupported strategy,
+  queue, missing policy and conflicting check results cannot authorize a merge.
+- Persist actionable blockers for stale reviews, checks, approvals, conflicts,
+  behind branches and unavailable/unidentified GitHub requirements, with exact
+  observed revisions and PR/check links. Clear corrected or superseded waits;
+  a delayed read cannot overwrite a task already moved by fresh inventory.
+- Validation: full root Go race suite and vet, frontend syntax/tests, complete
+  bundle build, isolated demo lifecycle and all-eight worker shutdown checks
+  passed. New fake-GitHub/local-command regressions cover every blocker, zero
+  write intents before refusal, recovery after correction/restart, missing
+  commands, per-role inheritance, unknown authentication, secret exclusion,
+  cancellation, duplicate probes, stale settings and stale revision reads.
+  No live repository automation, release or remote Mjolnir job was started.
+
+## PR #161 review corrections
+
+- Reviewed the complete PR and confirmed its queried fields against GitHub's
+  read-only GraphQL schema. Found caller deadlines were treated as internal
+  probe timeouts and could overwrite the last completed setup report. Preserve
+  the previous result on both caller cancellation and expiration, including
+  when waiting to commit; internal metadata timeouts still report unknown.
+- A retargeted PR can retain its head/base/stage while inventory invalidates
+  its audit. Guard delayed diagnostic writes against changed authority and
+  review state, retire obsolete diagnostics on retarget/close/merge, and only
+  remove a plain-text detail when it belongs to the old report. Browser/CLI
+  preserve newer task explanations alongside any historical merge report.
+- The final metadata recheck also omitted the target branch name: retargeting
+  after the gate passed could create an intent and merge outside the town's
+  configured branch. Compare that branch immediately before intent creation.
+- Deterministic fake-GitHub regressions reproduced caller-deadline replacement,
+  delayed retarget overwrites, completed-task stale blockers and the late
+  retarget merge on the prior PR head. Added browser/CLI display checks and
+  a separate internal-timeout test so unavailable results remain reportable.
+- Validation passed: full root race tests/vet, frontend syntax/tests, complete
+  bundle build, demo lifecycle and all-eight worker smoke checks.
+  User authorized updating the PR and merging its exact head once green.
