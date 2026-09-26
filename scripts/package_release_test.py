@@ -21,7 +21,7 @@ class ReleaseAssets(unittest.TestCase):
         for target in release.TARGETS:
             name = release.archive_name(self.tag, target)
             release.archive(self.assets / name, {
-                **{name: b"#!/bin/sh\nexit 0\n" for name in release.build_bundle.executables()}, "bundle.json": (release.ROOT / "bundle.json").read_bytes(), **release.build_bundle.legal_files(), **release.licenses.legal_files(), "README.md": b"readme",
+                "bt": b"#!/bin/sh\nexit 0\n", **release.licenses.legal_files(), "README.md": b"readme",
                 "BUILD.json": json.dumps({"tag": self.tag, "commit": self.sha, "target": target}).encode(),
             }, 0)
             data = (self.assets / name).read_bytes()

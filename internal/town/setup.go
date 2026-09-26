@@ -66,7 +66,7 @@ func (s *Supervisor) setupChecks(ctx context.Context, c Config) []Diagnostic {
 	add := func(code string, role Role, status, detail, action string) {
 		checks = append(checks, Diagnostic{Code: code, Role: role, Status: status, Detail: detail, Action: action})
 	}
-	for _, bin := range []string{"git", "gh"} {
+	for _, bin := range []string{"git", "gh", "npx"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			add(bin, "", "blocked", bin+" is unavailable on the Town service PATH.", "Install "+bin+" and restart Town with a PATH that includes it.")
 		} else {

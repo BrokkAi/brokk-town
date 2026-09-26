@@ -102,6 +102,7 @@ class Handler(BaseHTTPRequestHandler):
             while not os.path.exists(INIT_BLOCK + '.release'):
                 time.sleep(0.02)
         capabilities = ['run', 'progress', 'issue-result', 'exact-issue']
+        capabilities.append('parent-socket')
         if os.environ.get('TOWN_WORKER_TEST_POLICY'):
             capabilities.append('policy')
         self.send_json(200, {
@@ -177,6 +178,14 @@ if len(sys.argv) == 2 and sys.argv[1] == 'version':
 if len(sys.argv) != 4 or sys.argv[1] != 'worker' or sys.argv[2] != '--socket':
     print('invalid fake worker arguments', file=sys.stderr)
     sys.exit(64)
+parent_path = os.environ.get('BROKK_TOWN_PARENT_SOCKET')
+if parent_path:
+    parent = socket.socket(socket.AF_UNIX)
+    parent.connect(parent_path)
+    def parent_closed():
+        parent.recv(1)
+        os._exit(0)
+    threading.Thread(target=parent_closed, daemon=True).start()
 socket_path = sys.argv[3]
 try: os.unlink(socket_path)
 except FileNotFoundError: pass

@@ -13,13 +13,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	bundle "github.com/BrokkAi/brokk-town"
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
@@ -39,14 +39,14 @@ var workerBotNames = map[Role]string{
 	Bug: "bug-bot", Feature: "feature-bot", Issue: "issue-bot", Review: "review-bot", Release: "release-bot", Simplifier: "simplifier-bot", Repo: "repo-bot", Hall: "mayor-bot",
 }
 var workerCapabilities = map[Role][]string{
-	Bug:        {"run", "progress", "bug-scan"},
-	Feature:    {"run", "progress", "feature-research"},
-	Issue:      {"run", "progress", "issue-result", "exact-issue"},
-	Review:     {"run", "progress", "exact-revision-review"},
-	Release:    {"run", "progress", "release"},
-	Simplifier: {"run", "progress", "simplifier-review"},
-	Repo:       {"run", "progress", "repo-inventory", "branch-health"},
-	Hall:       {"run", "progress", "mayor-judgment", "mayor-bulletin"},
+	Bug:        {"parent-socket", "run", "progress", "bug-scan"},
+	Feature:    {"parent-socket", "run", "progress", "feature-research"},
+	Issue:      {"parent-socket", "run", "progress", "issue-result", "exact-issue"},
+	Review:     {"parent-socket", "run", "progress", "exact-revision-review"},
+	Release:    {"parent-socket", "run", "progress", "release"},
+	Simplifier: {"parent-socket", "run", "progress", "simplifier-review"},
+	Repo:       {"parent-socket", "run", "progress", "repo-inventory", "branch-health"},
+	Hall:       {"parent-socket", "run", "progress", "mayor-judgment", "mayor-bulletin"},
 }
 var workerVersionPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 
@@ -58,6 +58,7 @@ type externalBot struct {
 	role    Role
 	command string
 	args    []string
+	dir     string
 	version string
 	hash    string
 }
@@ -189,24 +190,43 @@ type workerEvent struct {
 	Error    string          `json:"error,omitempty"`
 }
 
-func (b *BotWorkers) externalBot(ctx context.Context, cfg Config, role Role) (externalBot, error) {
-	spec, ok := bundle.Bots()[string(role)]
+// workerBot reuses the running worker's identity. Ordinary dispatch and job
+// summaries must not query npm or switch versions during a worker lifetime.
+func (b *BotWorkers) workerBot(ctx context.Context, id string, role Role) (externalBot, error) {
+	b.poolMu.Lock()
+	p := b.pool[id+":"+string(role)]
+	if p != nil && p.alive() {
+		bot := p.bot
+		b.poolMu.Unlock()
+		return bot, nil
+	}
+	b.poolMu.Unlock()
+	return b.externalBot(ctx, role)
+}
+
+func (b *BotWorkers) externalBot(ctx context.Context, role Role) (externalBot, error) {
+	project, ok := workerBotNames[role]
 	if !ok {
 		return externalBot{}, fmt.Errorf("unsupported worker %s", role)
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		return externalBot{}, err
-	}
-	exe, err = filepath.EvalSymlinks(exe)
-	if err != nil {
-		return externalBot{}, err
-	}
-	path := filepath.Join(filepath.Dir(exe), spec.Command)
+	name := "npx"
+	packageName := "@brokkai/" + project
+	args := []string{"--yes", "--registry=https://registry.npmjs.org", "--", packageName + "@latest"}
+	dir := ""
 	if b.botCommands[role] != "" {
-		path = b.botCommands[role]
+		name, args = b.botCommands[role], nil
+	} else {
+		// Do not let a repository's local node_modules choose the worker.
+		dir = filepath.Join(b.Root, "packages")
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return externalBot{}, err
+		}
+		args = append([]string{"--prefix=" + dir}, args...)
 	}
-	var args []string
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return externalBot{}, fmt.Errorf("start %s bot: %q is unavailable on the Town service PATH; install Node.js/npm", role, name)
+	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return externalBot{}, fmt.Errorf("resolve %s bot: %w", role, err)
@@ -215,19 +235,23 @@ func (b *BotWorkers) externalBot(ctx context.Context, cfg Config, role Role) (ex
 	if err != nil || !info.Mode().IsRegular() {
 		return externalBot{}, fmt.Errorf("%s bot is not a regular executable", role)
 	}
-	bot := externalBot{role: role, command: resolved, args: args}
+	bot := externalBot{role: role, command: resolved, args: args, dir: dir}
 	if bot.hash, err = fileHash(resolved); err != nil {
 		return externalBot{}, err
 	}
-	version, err := osrun.Run(ctx, "", nil, append([]string{resolved}, append(args, "version")...)...)
+	probe, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	version, err := osrun.Run(probe, dir, nil, append([]string{resolved}, append(append([]string{}, args...), "version")...)...)
 	if err != nil {
 		return externalBot{}, fmt.Errorf("read %s bot version: %w", role, err)
 	}
 	if !workerVersionPattern.MatchString(version) {
 		return externalBot{}, fmt.Errorf("%s bot returned an invalid version %q", role, truncate(version, 128))
 	}
-	if b.botCommands[role] == "" && strings.TrimPrefix(version, "v") != spec.Version {
-		return externalBot{}, fmt.Errorf("%s bundle version mismatch: got %s, expected %s", role, version, spec.Version)
+	if b.botCommands[role] == "" {
+		// Resolve latest once. Publication between this probe and worker startup
+		// must not silently change the version we record or validate.
+		bot.args[len(bot.args)-1] = packageName + "@" + strings.TrimPrefix(version, "v")
 	}
 	bot.version = version
 	return bot, bot.unchanged()
@@ -335,7 +359,7 @@ func validateWorkerInitialize(bot externalBot, info workerInitialize) error {
 	if info.Version != bot.version {
 		return fmt.Errorf("%s worker version changed during startup: CLI %s, service %s", bot.role, bot.version, info.Version)
 	}
-	if info.Protocol != workerProtocolVersion || info.MinimumProtocol > workerProtocolVersion || info.MinimumProtocol < 1 {
+	if info.Protocol < workerProtocolVersion || info.MinimumProtocol > workerProtocolVersion || info.MinimumProtocol < 1 {
 		return fmt.Errorf("%s worker protocol is incompatible: supports %d through %d", bot.role, info.MinimumProtocol, info.Protocol)
 	}
 	for _, capability := range workerCapabilities[bot.role] {

@@ -11,11 +11,22 @@ builds native assets and npm packages, then publishes from the exact tagged
 commit. Only stable Town releases can update GitHub's repository-wide latest
 pointer. Installers resolve each project's npm stable version explicitly.
 
-Town packages include all eight bots built independently from that same checkout.
-Update a changed bot's version in `bundle.json` before a Town release; unchanged
-bots retain their versions. A bot release must match that bot's manifest version.
-Standalone bot releases publish only their own package family. The original bot
-repositories are no longer release sources.
+Town packages contain only bt. Bots retain independent versions and npm package
+families; Town resolves the latest stable release at worker startup and records
+that exact version for the worker lifetime. Bot releases do not require a Town
+release or a shared version manifest. Publish a bot's platform packages before
+its launcher advances the stable channel.
+
+Every bot release must keep the existing `/v1` API and capabilities working for
+older Town clients. Breaking APIs get a new endpoint alongside the old one;
+never repurpose `/v1` or raise its minimum version to retire existing clients.
+The inherited parent-pipe contract also remains supported for existing Town
+releases. CI runs the v1 protocol, lifecycle and local npm integration checks on
+every bot release. Add tests for an API before adopting it, retain the older
+contract tests, and fail the release if either contract regresses.
+
+For this transition, release the bots with parent-socket support before releasing
+Town's npx startup change. Release publication remains an explicit user action.
 
 For local builds use `make build`. For a non-publishing release build after
 committing preparation changes:

@@ -144,7 +144,7 @@ func (b *BotWorkers) queryIssueJobs(t *Town, mode string, issue int) (map[int]*i
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	bot, err := b.externalBot(ctx, t.Config, Issue)
+	bot, err := b.workerBot(ctx, t.ID, Issue)
 	if err != nil {
 		return nil, err
 	}

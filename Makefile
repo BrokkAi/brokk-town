@@ -1,6 +1,6 @@
 .PHONY: build test check licenses smoke
 build:
-	python3 scripts/build_bundle.py
+	python3 scripts/build.py
 test:
 	go test -race ./...
 	@for project in bots/*; do (cd "$$project" && go test -race ./...) || exit; done

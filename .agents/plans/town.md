@@ -1,5 +1,37 @@
 # Brokk Town implementation plan
 
+## Restore independently released bots through npx (in progress)
+
+- User chose independent bot releases and npx startup; the proposed unified
+  version/release change was canceled before any files changed.
+- Town installs/builds only bt. Resolve each independent bot's latest stable npm
+  release at worker startup, then launch that exact resolved version for the
+  worker lifetime. Record its identity and check the API before dispatch.
+  Every new bot retains older APIs; Town continues using v1 even when a bot
+  advertises newer versions. Keep independent modules, persistent processes
+  and uncertain-write recovery.
+- Add a private liveness socket that survives the npm launcher chain. Keep
+  inherited parent descriptors working for existing Town releases. Bound package
+  preparation, cancellation and shutdown.
+- Keep bot version numbers and release workflows independent from Town. The
+  latest-release policy replaces the earlier proposed Town dependency pins.
+- CI now propagates each failed module check instead of letting a later passing
+  shell command mask it. A pre-existing live Muse test is now explicitly opt-in;
+  its automatically started adapter probe was interrupted during validation.
+- Ordinary dispatch and issue-job summaries reuse the running worker's recorded
+  identity without querying npm again. Future bots advertising v2 alongside v1
+  successfully serve the existing client's v1 request in the protocol fixture.
+- All nine modules pass race tests, vet, license checks, Python packaging tests,
+  npm launcher tests and installer syntax checks. Frontend checks/tests,
+  actionlint and local demo lifecycle integration pass. The remote-head polling
+  success fixture now allows three seconds for its Git subprocesses; the
+  never-catches-up fixture retains its short deadline and uncertainty assertions.
+- Real offline npx fixtures launch all eight independently built bots and check
+  v1 initialization and shutdown on parent loss. Retain explicit checks for every
+  existing capability, including policy, retries and issue summaries.
+- Finish the expanded capability smoke and verify complete native/npm packaging
+  from the committed checkout. Commit validation results; no release publication.
+
 ## Standalone projects and explicit lifecycle (complete)
 
 - Import eight standalone bot projects under bots/, preserving independent modules,

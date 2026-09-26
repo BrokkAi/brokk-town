@@ -163,6 +163,11 @@ func TestRepairConfirmsFromRemoteRefWhenPullRequestHeadLags(t *testing.T) {
 			gh := &laggingGH{gitFixtureGH: b.GitHub.(gitFixtureGH), stale: task.Head, lag: lag}
 			b.GitHub = gh
 			b.confirmWait = 50 * time.Millisecond
+			if scenario == "catches_up" {
+				// This case waits for Git subprocesses, not a timeout. Leave
+				// enough time under the race detector and concurrent CI load.
+				b.confirmWait = 3 * time.Second
+			}
 			b.confirmInterval = time.Millisecond
 			b.executeAgent = repairAgent()
 			if e := b.repair(context.Background(), x, task, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil))); e != nil {

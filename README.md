@@ -22,18 +22,22 @@ to GitHub.
 
 ```sh
 npm install -g @brokkai/brokk-town
-# Or install a published complete native bundle:
+# Or install the native Town executable:
 sh install.sh vX.Y.Z-town
 ```
 
-Both installation paths include Town and all eight supported bots. To install a
-new version, stop Town, install the complete package, and start Town again.
+Both installation paths install Town only. Node.js/npm (including `npx`) must
+be available on the Town service PATH. Town starts each bot through its separately
+published npm package, resolving `@latest` when a worker starts and using that
+exact version for its lifetime. Restart Town to pick up new bot releases.
+To update Town itself, stop it, install the new package, and start it again.
 The shell installer requires Python 3 and keeps each complete installation in
 its own directory under `INSTALL_DIR/.brokk-town`, with `bt` pointing to it.
 
 Projects have independent versions and suffix release tags: `vX.Y.Z-town`,
-`vX.Y.Z-issue-bot`, and equivalent tags for the other bots. A Town release bundles
-the versions in its manifest without publishing unchanged standalone bots.
+`vX.Y.Z-issue-bot`, and equivalent tags for the other bots. Bot releases retain
+older versioned worker APIs, so a newer bot continues to serve the API an existing
+Town uses.
 See [RELEASING.md](RELEASING.md) for workflows and publishing configuration.
 
 To build from source, use the Go version declared in [go.mod](go.mod):
@@ -43,8 +47,7 @@ make build
 export PATH="$PWD/bin:$PATH"
 ```
 
-This builds all nine executables into `bin/`. A standalone `go install` of only
-`bt` is not a complete Town installation.
+This builds `bin/bt`. Bot source builds and releases are independent.
 
 ## First run
 
@@ -144,10 +147,12 @@ Build any bot by running `go build ./cmd/<command>` inside its directory.
 Town never imports bot Go packages. Each module chooses its own released acp-go
 dependency. The only integration boundary is the local worker protocol.
 
-`bundle.json` records the exact bot versions supported by this Town build and
-original source commits. `make build` builds all nine executables into `bin/`.
-Town resolves its bots beside its own executable and verifies their versions.
-A standalone `go install` of only `bt` is not a complete Town installation.
+Town uses `npx --yes -- @brokkai/PROJECT@latest version` to resolve a bot, then
+starts the exact reported version with `worker --socket PATH`. Protocol ranges,
+required capabilities and the worker identity are checked before dispatch.
+The running version is recorded with each job; a worker never updates mid-job.
+Initial package preparation requires registry access. Bot binaries are held in
+npm's cache, not installed beside `bt`.
 
 ## Development
 

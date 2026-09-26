@@ -87,16 +87,13 @@ main() {
     mkdir -p "$install_dir/.brokk-town"
     staged=$(mktemp -d "$install_dir/.brokk-town/$version.XXXXXX")
     python3 - "$temporary/$asset" "$staged" <<'EXTRACT'
-import json, pathlib, sys, tarfile
+import pathlib, sys, tarfile
 with tarfile.open(sys.argv[1], 'r:gz') as archive:
-    manifest = json.load(archive.extractfile('bundle.json'))
-    commands = {'bt', *(bot['command'] for bot in manifest['bots'].values())}
-    if len(commands) != 9 or any('/' in name or name in ('.','..') for name in commands):
-        raise ValueError('invalid executable manifest')
+    expected = {'bt', 'README.md', 'BUILD.json', 'LICENSE', 'NOTICE', 'licenses/THIRD_PARTY_NOTICES.txt'}
     members = archive.getmembers()
     names = {m.name for m in members}
-    if len(names) != len(members) or not commands <= names:
-        raise ValueError('incomplete bundle')
+    if len(names) != len(members) or names != expected:
+        raise ValueError('unexpected Town archive contents')
     for member in members:
         name = pathlib.PurePosixPath(member.name)
         if not member.isfile() or name.is_absolute() or '..' in name.parts:
@@ -104,7 +101,7 @@ with tarfile.open(sys.argv[1], 'r:gz') as archive:
         target = pathlib.Path(sys.argv[2]) / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(archive.extractfile(member).read())
-        target.chmod(0o755 if member.name in commands else 0o644)
+        target.chmod(0o755 if member.name == 'bt' else 0o644)
 EXTRACT
     ln -s "$staged/bt" "$staged/entrypoint"
     mv -f "$staged/entrypoint" "$install_dir/bt"

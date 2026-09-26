@@ -2,6 +2,7 @@ package town
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"testing"
 )
@@ -10,8 +11,8 @@ import (
 // discovery session even when the installed settings name a profile whose
 // reviewer `muse serve` cannot reach.
 func TestProbeMuseLive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("live harness probe")
+	if testing.Short() || os.Getenv("BROKK_TOWN_LIVE_TESTS") != "1" {
+		t.Skip("live harness probe requires explicit BROKK_TOWN_LIVE_TESTS=1")
 	}
 	if _, err := exec.LookPath("muse-acp"); err != nil {
 		t.Skip("muse-acp is not installed")
