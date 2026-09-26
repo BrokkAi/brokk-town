@@ -61,7 +61,7 @@ func TestManagedChoicesUseRolePlacementAndPreserveLocalPins(t *testing.T) {
 	})
 	before := store.Snapshot().Towns[x.ID].Config
 	for _, settings := range []AgentSettings{{Model: ptr("chosen-model")}, {Inherit: true}} {
-		choices, err := s.ChoicesForRole(context.Background(), x.ID, Review, settings)
+		choices, err := s.ChoicesForRole(context.Background(), strings.ToUpper(x.ID), Review, settings)
 		want := "default-model"
 		if settings.Model != nil {
 			want = *settings.Model

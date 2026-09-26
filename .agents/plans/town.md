@@ -1203,3 +1203,6 @@
   build, isolated demo, all-eight worker lifecycle and fake-Mjolnir/offline
   restart smoke checks passed. CLI additions separately passed race tests and
   vet. No live repository automation or real remote acceptance run was used.
+- PR #163 review reproduced a mixed-case repository discovery failure with a
+  failing regression. Normalize repository IDs in the shared ChoicesForRole
+  boundary, matching persisted town identities; browser and CLI both benefit.

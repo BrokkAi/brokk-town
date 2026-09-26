@@ -606,6 +606,7 @@ func (s *Supervisor) Choices(ctx context.Context, id string, settings AgentSetti
 }
 
 func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, settings AgentSettings) (AgentChoices, error) {
+	id = strings.ToLower(id)
 	if err := settings.validateRole(role); err != nil {
 		return AgentChoices{}, err
 	}
