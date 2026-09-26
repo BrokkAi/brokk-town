@@ -170,6 +170,30 @@ test("one local target and one profile add no picker noise", async () => {
   assert.equal(elements["execution-settings"].hidden, true);
 });
 
+test("managed model choices and saves omit local harness pins and commands", async () => {
+  const app = fixture(null, executionCatalog);
+  app.town.config.execution = { target_id: "builder", profile_id: "coder" };
+  await open("review");
+  assert.equal(elements["local-harness-settings"].hidden, true);
+  assert.equal(elements["local-choices-note"].hidden, true);
+  assert.equal(elements["remote-harness-note"].hidden, false);
+  edit("model-input", "remote-model");
+  await elements["load-choices"].onclick();
+  const request = app.calls.find((c) => c.url === "/api/choices");
+  assert.deepEqual(request.body.agent, { model: "remote-model", effort: "high" });
+  await save();
+  assert.deepEqual(app.saves()[0].body.agent, request.body.agent);
+  assert.equal(app.town.config.bot_agents.review.harness_version, "1.5");
+  edit("execution-mode", "local", "onchange");
+  await elements["save-execution"].onclick();
+  assert.equal(elements["local-harness-settings"].hidden, false);
+  assert.equal(elements["local-choices-note"].hidden, false);
+  assert.equal(elements["remote-harness-note"].hidden, true);
+  assert.equal(elements["model-choices"].children.length, 0);
+  await save();
+  assert.equal(app.saves()[1].body.agent.version, "1.5");
+});
+
 test("stale and missing saved targets remain visible with an actionable error", async () => {
   const app = fixture(null, { ...executionCatalog, stale: true, error: "Cannot reach Mjolnir; start its daemon.", targets: [] });
   app.town.config.execution = { target_id: "missing", profile_id: "coder" };

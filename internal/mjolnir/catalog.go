@@ -266,12 +266,34 @@ func writeCache(path string, data []byte) error {
 	return os.Rename(f.Name(), path)
 }
 func (c *Catalog) fetch(ctx context.Context) (Options, error) {
-	fail := func(s string) (Options, error) { return Options{}, errors.New(s) }
+	var options Options
+	if err := c.get(ctx, "/options", "options", &options); err != nil {
+		return options, err
+	}
+	if validate(options) != nil {
+		return Options{}, errors.New("Mjolnir returned invalid launch options; check its API version.")
+	}
+	return options, nil
+}
+
+// get reads only the public API. Error bodies may contain credentials, paths or
+// commands, so callers receive status-specific instructions instead.
+func (c *Catalog) get(ctx context.Context, path, resource string, out any) error {
+	fail := errors.New
+	if c.listing.Demo {
+		return fail("Mjolnir is offline in demo mode.")
+	}
+	if c.setupError != "" {
+		return fail(c.setupError)
+	}
+	if c.client == nil {
+		return fail("Configure BT_MJOLNIR_API_URL and BT_MJOLNIR_TOKEN_FILE to read Mjolnir profiles.")
+	}
 	token, err := readBounded(c.connection.TokenFile, 4096)
 	if err != nil || len(strings.TrimSpace(string(token))) == 0 {
 		return fail("Cannot read Mjolnir's API token; check BT_MJOLNIR_TOKEN_FILE and its permissions.")
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(c.connection.URL, "/")+"/options", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(c.connection.URL, "/")+path, nil)
 	if err != nil {
 		return fail("Invalid Mjolnir API URL; check BT_MJOLNIR_API_URL.")
 	}
@@ -288,17 +310,16 @@ func (c *Catalog) fetch(ctx context.Context) (Options, error) {
 		return fail("Mjolnir rejected authentication; check its API token file.")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fail(fmt.Sprintf("Mjolnir options returned HTTP %d; check the daemon.", resp.StatusCode))
+		return fail(fmt.Sprintf("Mjolnir %s returned HTTP %d; check the selected profile, its runtime and authentication in Mjolnir.", resource, resp.StatusCode))
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil || len(data) > maxBytes {
-		return fail("Mjolnir options exceeded the response limit or could not be read.")
+		return fail("Mjolnir " + resource + " exceeded the response limit or could not be read.")
 	}
-	var options Options
-	if json.Unmarshal(data, &options) != nil || validate(options) != nil {
-		return fail("Mjolnir returned invalid launch options; check its API version.")
+	if json.Unmarshal(data, out) != nil {
+		return fail("Mjolnir returned invalid " + resource + "; check its API version.")
 	}
-	return options, nil
+	return nil
 }
 func validate(o Options) error {
 	if o.Profiles == nil || o.Targets == nil || o.Bundles == nil {

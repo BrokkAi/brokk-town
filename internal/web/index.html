@@ -361,49 +361,52 @@
           </div>
           <p id="execution-result" role="status"></p>
         </section>
-        <label for="harness-input">Coding harness</label>
-        <select id="harness-input">
-          <option value="custom">Custom ACP command</option>
-        </select>
-        <div class="choice-actions">
-          <button id="refresh-harnesses" type="button">Refresh registry</button
-          ><span id="registry-status" class="muted" role="status"></span>
-        </div>
-        <p class="muted">
-          Agents from the
-          <a
-            href="https://agentclientprotocol.com/get-started/registry"
-            target="_blank"
-            rel="noopener noreferrer"
-            >official ACP registry</a
-          >, plus Anvil, Muse ACP, and Draupnir.
-        </p>
-        <p id="harness-detail" class="muted"></p>
-        <p class="muted">
-          <span id="harness-version"></span>
-          <a
-            id="harness-project"
-            target="_blank"
-            rel="noopener noreferrer"
-            hidden
-            >Project and installation ↗</a
-          >
-        </p>
-        <button id="update-harness" type="button" hidden>
-          Use registry version
-        </button>
-        <div id="custom-agent" hidden>
-          <label for="command-input">Command and arguments (JSON array)</label>
-          <textarea
-            id="command-input"
-            rows="2"
-            spellcheck="false"
-            placeholder='["my-agent", "--acp"]'
-          ></textarea>
+        <div id="local-harness-settings">
+          <label for="harness-input">Coding harness</label>
+          <select id="harness-input">
+            <option value="custom">Custom ACP command</option>
+          </select>
+          <div class="choice-actions">
+            <button id="refresh-harnesses" type="button">Refresh registry</button
+            ><span id="registry-status" class="muted" role="status"></span>
+          </div>
           <p class="muted">
-            A saved command stays private. Leave this blank to keep it.
+            Agents from the
+            <a
+              href="https://agentclientprotocol.com/get-started/registry"
+              target="_blank"
+              rel="noopener noreferrer"
+              >official ACP registry</a
+            >, plus Anvil, Muse ACP, and Draupnir.
           </p>
+          <p id="harness-detail" class="muted"></p>
+          <p class="muted">
+            <span id="harness-version"></span>
+            <a
+              id="harness-project"
+              target="_blank"
+              rel="noopener noreferrer"
+              hidden
+              >Project and installation ↗</a
+            >
+          </p>
+          <button id="update-harness" type="button" hidden>
+            Use registry version
+          </button>
+          <div id="custom-agent" hidden>
+            <label for="command-input">Command and arguments (JSON array)</label>
+            <textarea
+              id="command-input"
+              rows="2"
+              spellcheck="false"
+              placeholder='["my-agent", "--acp"]'
+            ></textarea>
+            <p class="muted">
+              A saved command stays private. Leave this blank to keep it.
+            </p>
+          </div>
         </div>
+        <p id="remote-harness-note" class="muted" hidden></p>
         <div class="form-columns">
           <div>
             <label for="model-input">Model</label
@@ -428,7 +431,7 @@
           <button id="load-choices" type="button">Load available choices</button
           ><span id="choices-status" class="muted" role="status"></span>
         </div>
-        <p class="muted">
+        <p id="local-choices-note" class="muted">
           Load choices prepares and briefly starts the harness without assigning
           work. It may need you to log in through its CLI first. Leave model or
           effort blank to use its default. Use the exact model and effort IDs

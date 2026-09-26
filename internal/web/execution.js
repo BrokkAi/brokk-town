@@ -2,7 +2,7 @@ const $ = (id) => document.querySelector(`#${id}`);
 
 // Rendering consumes a snapshot only. Catalog reads and refresh polling live in
 // cancellable async handlers; selecting placement never edits an agent profile.
-export function executionControls({ api, getConfig, refresh }) {
+export function executionControls({ api, getConfig, refresh, onSaved = () => {} }) {
   let town = "", role = "", config = {}, listing = null;
   let generation = 0, abort = null, timer = null, saving = false;
   const own = () => role ? config.bot_execution?.[role] : config.execution;
@@ -101,6 +101,7 @@ export function executionControls({ api, getConfig, refresh }) {
         config = getConfig(id) || config;
         $("execution-result").textContent = "Execution location saved for future work.";
         render(true);
+        onSaved();
       })()]);
       if (result === expired && generation === version)
         $("execution-result").textContent = "Town did not answer within 30 seconds. The request may still have been applied; check its state before trying again.";

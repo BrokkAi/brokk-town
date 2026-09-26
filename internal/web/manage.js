@@ -36,7 +36,18 @@ function agentDraft(config, role) {
 }
 
 export function management({ api, getTown, getState, refresh }) {
-const execution = executionControls({ api, getConfig: (id) => getState()?.towns[id]?.config, refresh });
+  const execution = executionControls({
+    api, getConfig: (id) => getState()?.towns[id]?.config, refresh,
+    onSaved: () => {
+      settingsConfig = getState()?.towns[settingsTown]?.config || settingsConfig;
+      cancelChoices();
+      loaded = false;
+      $("#model-choices").replaceChildren();
+      $("#effort-choices").replaceChildren();
+      $("#choices-status").textContent = "Execution changed. Load choices for the saved profile.";
+      renderProfileStatus();
+    },
+  });
   let settingsTown = "",
     settingsRole = "",
     settingsVersion = 0,
@@ -57,7 +68,16 @@ const execution = executionControls({ api, getConfig: (id) => getState()?.towns[
     selectedVersion = null;
   const pendingReset = () =>
     !!drafts[settingsRole]?.inherited && drafts[settingsRole].dirty;
+  const managedExecution = () => {
+    const config = getState()?.towns[settingsTown]?.config || settingsConfig;
+    return (config?.bot_execution?.[settingsRole] ?? config?.execution)?.target_id;
+  };
   function syncProfileControls() {
+    const managed = !!managedExecution();
+    $("#local-harness-settings").hidden = managed;
+    $("#local-choices-note").hidden = managed;
+    $("#remote-harness-note").hidden = !managed;
+    $("#remote-harness-note").textContent = "The saved Mjolnir execution profile selects the harness. Load choices reads Mjolnir’s profile catalog without starting a local harness. Local commands and version pins are kept for direct local execution. Remote runs remain held until checkout, runtime identity and evidence support are ready.";
     for (const id of ["harness-input", "model-input", "effort-input", "command-input", "update-harness"])
       $("#" + id).disabled = settingsSaving || pendingReset();
     $("#load-choices").disabled = settingsSaving || pendingReset() || choicesLoading;
@@ -107,7 +127,7 @@ const execution = executionControls({ api, getConfig: (id) => getState()?.towns[
     $("#load-choices").disabled = settingsSaving || pendingReset();
   };
   $("#settings-dialog").addEventListener("close", cancelChoices);
-$("#settings-dialog").addEventListener("close", () => execution.close());
+  $("#settings-dialog").addEventListener("close", () => execution.close());
   $("#settings-dialog").addEventListener("close", () => {
     catalogVersion++;
     catalogAbort?.abort();
@@ -220,10 +240,11 @@ $("#settings-dialog").addEventListener("close", () => execution.close());
     if (settingsRole && drafts[settingsRole].inherited)
       return { inherit: true };
     const agent = {
-      harness: $("#harness-input").value,
       model: $("#model-input").value.trim(),
       effort: $("#effort-input").value.trim(),
     };
+    if (managedExecution()) return agent;
+    agent.harness = $("#harness-input").value;
     if (selectedVersion && agent.harness !== "custom")
       agent.version = selectedVersion;
     if (agent.harness === "custom" && $("#command-input").value.trim()) {
@@ -266,7 +287,7 @@ $("#settings-dialog").addEventListener("close", () => execution.close());
 
   function showProfile(role) {
     settingsRole = role;
-execution.show(settingsTown, role, settingsConfig);
+    execution.show(settingsTown, role, settingsConfig);
     const draft = drafts[role];
     savedHarness = draft.harness;
     savedVersion = draft.version;
@@ -385,7 +406,7 @@ execution.show(settingsTown, role, settingsConfig);
     $("#load-choices").disabled = true;
     choicesLoading = true;
     $("#choices-status").textContent =
-      "Preparing the harness and loading choices…";
+      managedExecution() ? "Loading choices from Mjolnir…" : "Preparing the harness and loading choices…";
     $("#settings-error").textContent = "";
     choicesAbort = new AbortController();
     try {
