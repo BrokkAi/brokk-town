@@ -1,3 +1,4 @@
+import { executionControls } from "./execution.js";
 import { safeURL, parseQuietHours, formatQuietHours } from "./town.js";
 
 const $ = (s) => document.querySelector(s);
@@ -35,6 +36,7 @@ function agentDraft(config, role) {
 }
 
 export function management({ api, getTown, getState, refresh }) {
+const execution = executionControls({ api, getConfig: (id) => getState()?.towns[id]?.config, refresh });
   let settingsTown = "",
     settingsRole = "",
     settingsVersion = 0,
@@ -105,6 +107,7 @@ export function management({ api, getTown, getState, refresh }) {
     $("#load-choices").disabled = settingsSaving || pendingReset();
   };
   $("#settings-dialog").addEventListener("close", cancelChoices);
+$("#settings-dialog").addEventListener("close", () => execution.close());
   $("#settings-dialog").addEventListener("close", () => {
     catalogVersion++;
     catalogAbort?.abort();
@@ -263,6 +266,7 @@ export function management({ api, getTown, getState, refresh }) {
 
   function showProfile(role) {
     settingsRole = role;
+execution.show(settingsTown, role, settingsConfig);
     const draft = drafts[role];
     savedHarness = draft.harness;
     savedVersion = draft.version;

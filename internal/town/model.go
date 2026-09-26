@@ -11,6 +11,7 @@ import (
 
 	"github.com/BrokkAi/acp-go/runner"
 	"github.com/BrokkAi/brokk-town/internal/harness"
+	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
 type Role string
@@ -102,6 +103,9 @@ func SHA(v string) bool {
 }
 
 type Config struct {
+	Execution    *mjolnir.Selection         `json:"execution,omitempty"`
+	BotExecution map[Role]mjolnir.Selection `json:"bot_execution,omitempty"`
+
 	Repo              string                  `json:"repo"`
 	Branch            string                  `json:"branch,omitempty"`
 	Harness           string                  `json:"harness,omitempty"`
@@ -155,6 +159,8 @@ func (c Config) withAgent(a BotAgentConfig) Config {
 // one bot dispatch. Call it on the town configuration, before resolving a harness.
 func (c Config) ForRole(role Role) Config {
 	c = clone(c)
+	selection := c.ExecutionForRole(role)
+	c.Execution = &selection
 	if a, ok := c.BotAgents[role]; ok {
 		c = c.withAgent(a)
 	}
@@ -211,6 +217,9 @@ func Blocking(severity, threshold string) bool {
 	return rank(severity) <= rank(threshold)
 }
 func (c Config) Validate() error {
+	if err := c.validateExecution(); err != nil {
+		return err
+	}
 	if err := validateAgent(c); err != nil {
 		return err
 	}
@@ -267,6 +276,9 @@ func (c Config) Validate() error {
 
 // PublicConfig deliberately excludes agent environment values and command arguments.
 type PublicConfig struct {
+	Execution    *mjolnir.Selection         `json:"execution,omitempty"`
+	BotExecution map[Role]mjolnir.Selection `json:"bot_execution,omitempty"`
+
 	Repo            string                        `json:"repo"`
 	Branch          string                        `json:"branch"`
 	MergePolicy     string                        `json:"merge_policy"`
@@ -297,6 +309,8 @@ type PublicBotAgentConfig struct {
 	Inherited      bool   `json:"inherited"`
 }
 type Worker struct {
+	Execution *mjolnir.Selection `json:"execution,omitempty"`
+
 	Recovery *WorkerRecovery       `json:"recovery,omitempty"`
 	Agent    *PublicBotAgentConfig `json:"agent,omitempty"`
 	Run      *WorkerRun            `json:"run,omitempty"`
@@ -317,6 +331,8 @@ type Worker struct {
 // WorkerRecovery preserves an unresolved dispatch without exposing its private
 // process paths or pretending that an absent process proves no write occurred.
 type WorkerRecovery struct {
+	Execution *mjolnir.Selection `json:"execution,omitempty"`
+
 	TaskID  string    `json:"task_id,omitempty"`
 	Base    string    `json:"base,omitempty"`
 	Head    string    `json:"head,omitempty"`
@@ -327,6 +343,8 @@ type WorkerRecovery struct {
 // WorkerRun records dispatch identity before sending work. An interrupted
 // dispatch becomes a recovery hold; it is never used to adopt a process.
 type WorkerRun struct {
+	Execution *mjolnir.Selection `json:"execution,omitempty"`
+
 	Bot      string    `json:"bot"`
 	Version  string    `json:"version"`
 	Command  string    `json:"command"`
@@ -345,6 +363,11 @@ type WorkerRun struct {
 func (r *WorkerRun) Validate(role Role) error {
 	if r == nil {
 		return nil
+	}
+	if r.Execution != nil {
+		if err := r.Execution.Validate(); err != nil {
+			return err
+		}
 	}
 	if !ValidAgentRole(role) {
 		return fmt.Errorf("%s worker cannot own an external run", role)
@@ -833,5 +856,5 @@ func (c Config) Public() PublicConfig {
 	for _, funnel := range c.Funnels {
 		funnels = append(funnels, funnel.Public())
 	}
-	return PublicConfig{Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies(), QuietHours: c.QuietHours}
+	return PublicConfig{Execution: clone(c.Execution), BotExecution: clone(c.BotExecution), Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies(), QuietHours: c.QuietHours}
 }

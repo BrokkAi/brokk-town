@@ -79,6 +79,9 @@ type dispatch struct {
 }
 
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
+	if err := requireLocalExecution(t.Config.ForRole(r)); err != nil {
+		return result, err
+	}
 	if r == Release && t.Config.MergePolicy == "manual" {
 		return result, manualReleaseError()
 	}
@@ -171,7 +174,7 @@ func (b *BotWorkers) Observe(ctx context.Context, t *Town, request InventoryRequ
 	defer cancel()
 	t = clone(t)
 	t.Config = t.Config.ForRole(Repo)
-	if t.Workers[Repo] != nil && t.Workers[Repo].Recovery != nil {
+	if t.Config.ExecutionForRole(Repo).Managed() || (t.Workers[Repo] != nil && t.Workers[Repo].Recovery != nil) {
 		request.Health = false
 	}
 	dir, state := Workspace(b.Root, t.ID, Repo)
@@ -409,6 +412,9 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 	// Record dispatch provenance before sending work so an interrupted write
 	// remains uncertain until it is reconciled.
 	started := func(run WorkerRun) error {
+		if role != Repo || d.mode != "inventory" {
+			run.Execution = clone(t.Config.Execution)
+		}
 		if b.Store == nil {
 			return nil
 		}

@@ -59,7 +59,7 @@ const catalog = {
     id, name: id, source: "registry", available: true, version: "2.0",
   })),
 };
-function fixture(extraAPI) {
+function fixture(extraAPI, executionOptions = { configured: false, targets: [], profiles: [] }) {
   const town = {
     id: "acme/project",
     config: {
@@ -81,6 +81,17 @@ function fixture(extraAPI) {
   const api = async (url, body, signal) => {
     calls.push({ url, body, signal });
     if (url === "/api/harnesses") return catalog;
+    if (url === "/api/execution-options") return executionOptions;
+    if (url === "/api/execution") {
+      if (extraAPI) await extraAPI(url, body, signal);
+      if (!body.role) town.config.execution = body.selection;
+      else {
+        town.config.bot_execution ||= {};
+        if (body.selection === null) delete town.config.bot_execution[body.role];
+        else town.config.bot_execution[body.role] = body.selection;
+      }
+      return {};
+    }
     if (url === "/api/settings") {
       if (extraAPI) await extraAPI(url, body, signal);
       const { role, agent, merge_policy, simplifier_mode } = body;
@@ -117,6 +128,72 @@ async function save() {
     preventDefault() {}, target: elements["settings-form"], submitter: elements["save-agent"],
   });
 }
+
+const executionCatalog = {
+  configured: true, stale: false, fetched: "2026-09-26T12:00:00Z",
+  targets: [
+    { id: "localhost", kind: "local-bare", availability: "ready" },
+    { id: "builder", kind: "ssh-bare", availability: "unavailable", unavailable_reason: "Start the build host." },
+  ],
+  profiles: [{ id: "coder", harness: "codex" }],
+  default: { target_id: "localhost", profile_id: "coder" },
+};
+
+test("execution selection stores IDs independently of unsaved agent edits", async () => {
+  const app = fixture(null, executionCatalog);
+  await open("review");
+  edit("model-input", "unsaved-model");
+  edit("execution-mode", "mjolnir", "onchange");
+  edit("execution-target", "builder", "onchange");
+  assert.match(elements["execution-detail"].textContent, /Start the build host/);
+  assert.match(elements["execution-note"].textContent, /holds agent work/);
+  assert.equal(elements["execution-profile-field"].hidden, true);
+  await elements["save-execution"].onclick();
+  const call = app.calls.find((c) => c.url === "/api/execution");
+  assert.deepEqual(call.body, { town: app.town.id, role: "review", selection: { target_id: "builder", profile_id: "coder" } });
+  assert.equal(elements["model-input"].value, "unsaved-model");
+  assert.equal(app.saves().length, 0);
+  await save();
+  assert.equal(app.town.config.bot_execution.review.target_id, "builder");
+  edit("execution-mode", "local", "onchange");
+  await elements["save-execution"].onclick();
+  assert.deepEqual(app.town.config.bot_execution.review, { target_id: "", profile_id: "" });
+  edit("execution-mode", "inherit", "onchange");
+  await elements["save-execution"].onclick();
+  assert.equal(app.town.config.bot_execution.review, undefined);
+  assert.equal(app.town.config.bot_agents.review.model, "unsaved-model");
+});
+
+test("one local target and one profile add no picker noise", async () => {
+  fixture(null, { ...executionCatalog, targets: [executionCatalog.targets[0]] });
+  await open();
+  assert.equal(elements["execution-settings"].hidden, true);
+});
+
+test("stale and missing saved targets remain visible with an actionable error", async () => {
+  const app = fixture(null, { ...executionCatalog, stale: true, error: "Cannot reach Mjolnir; start its daemon.", targets: [] });
+  app.town.config.execution = { target_id: "missing", profile_id: "coder" };
+  await open("issue");
+  assert.equal(elements["execution-settings"].hidden, false);
+  assert.match(elements["execution-status"].textContent, /Cannot reach Mjolnir/);
+  assert.equal(elements["execution-target"].value, "missing");
+  assert.match(elements["execution-detail"].textContent, /missing from catalog/);
+  assert.equal(elements["execution-mode"].value, "inherit");
+  assert.equal(app.calls.some((c) => c.url === "/api/execution"), false);
+});
+
+test("an execution save from an old role cannot overwrite the current form", async () => {
+  let finish;
+  fixture((url) => url === "/api/execution" ? new Promise((resolve) => { finish = resolve; }) : undefined, executionCatalog);
+  await open("review");
+  edit("execution-mode", "mjolnir", "onchange");
+  const pending = elements["save-execution"].onclick();
+  select("issue");
+  finish();
+  await pending;
+  assert.equal(elements["execution-mode"].value, "inherit");
+  assert.equal(elements["execution-result"].textContent, "");
+});
 
 test("bot drafts keep independent harnesses, models, effort and pinned versions", async () => {
   const app = fixture();

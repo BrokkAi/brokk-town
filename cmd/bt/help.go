@@ -13,6 +13,9 @@ import (
 // help, and a help command. Flag parsing stays on the standard library.
 
 type cliFlags struct {
+	executionTarget, executionProfile *string
+	localExecution, inheritExecution  *bool
+
 	daemon               *bool
 	closeSeverity        *string
 	mergePolicy          *string
@@ -80,6 +83,10 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.config = fs.String("config", "", "optional JSON array or object with max_workers, quiet_hours and towns, applied at startup")
 	fl.harness = fs.String("harness", "", "ACP registry ID, anvil, muse-acp, draupnir, or custom (add/settings)")
 	fl.harnessVersion = fs.String("harness-version", "", "select an exact catalog version (add/settings)")
+	fl.executionTarget = fs.String("target", "", "Mjolnir target ID from bt execution")
+	fl.executionProfile = fs.String("profile", "", "Mjolnir profile ID from bt execution")
+	fl.localExecution = fs.Bool("local-execution", false, "select direct local execution")
+	fl.inheritExecution = fs.Bool("inherit-execution", false, "remove this bot execution override (requires --role)")
 	fl.refresh = fs.Bool("refresh", false, "refresh the official ACP registry (harnesses)")
 	fl.model = fs.String("model", "", "ACP model ID; empty uses harness default (add/settings)")
 	fl.effort = fs.String("effort", "", "ACP reasoning effort; empty uses harness default (add/settings)")
@@ -144,6 +151,7 @@ var cliCommands = []commandInfo{
 	{name: "shutdown", short: "Stop Town and its bots", long: "Stop the running Town service and all its bot processes. Use it for a town started with bt -d; Ctrl+C stops one in the foreground.", args: "[flags]", flags: nil},
 	{name: "add", short: "Add a town", long: "Add a town for a GitHub repository.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "model", "repo"}},
 	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo"}},
+	{name: "execution", short: "List or select execution targets", long: "List cached Mjolnir launch options. --refresh queues a background refresh. Use --repo and --target/--profile to save a selection, --local-execution to run directly here, or --inherit-execution --role BOT to restore inheritance. Mjolnir-backed execution is held until remote checkout and evidence support are available.", args: "[flags]", flags: []string{"json", "refresh", "repo", "role", "target", "profile", "local-execution", "inherit-execution"}},
 	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog. Works whether or not Town is running.", args: "[flags]", flags: []string{"refresh"}},
 	{name: "settings", short: "Configure Town, a town or a bot", long: "Configure service-wide settings, a town's defaults or one bot house. Omit --repo for service-wide settings (--max-workers, --quiet-hours); omit --role to edit town defaults.\n\n" +
 		"A budget bounds agent attempts and agent minutes per accounting period. Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol.\n\n" +

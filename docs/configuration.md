@@ -4,6 +4,7 @@
 
 - [Agent profiles](#agent-profiles)
 - [Harnesses and model choices](#harnesses-and-model-choices)
+- [Mjolnir execution selections](mjolnir-execution.md#connect-and-select)
 - [Work policies](#work-policies)
 - [Agent budgets](#agent-budgets)
 - [Quiet hours](#quiet-hours)

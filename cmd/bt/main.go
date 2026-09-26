@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 	"github.com/BrokkAi/brokk-town/internal/town"
 	"github.com/BrokkAi/brokk-town/internal/web"
 )
@@ -208,6 +209,8 @@ func run(ctx context.Context, args []string) error {
 		}
 		fmt.Println("Town stopped")
 		return nil
+	case "execution":
+		return executionCommand(ctx, abs, fl, fs)
 	case "harnesses":
 		return listHarnesses(ctx, abs, *demo, *fl.refresh)
 	}
@@ -696,6 +699,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	gh := town.GitHubClient{}
 	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh}
 	supervisor := town.NewSupervisor(store, gh, workers)
+	supervisor.Mjolnir = mjolnir.New(dir, demo, mjolnir.Environment())
 	defer workers.Close()
 	if !demo {
 		if err := workers.SyncProcesses(ctx, store.Snapshot()); err != nil {

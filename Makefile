@@ -18,3 +18,4 @@ check: test licenses
 smoke: build
 	python3 scripts/smoke.py
 	python3 scripts/smoke_workers.py
+	python3 scripts/smoke_mjolnir.py
