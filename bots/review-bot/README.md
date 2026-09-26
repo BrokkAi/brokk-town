@@ -185,6 +185,9 @@ TLS transport to be added later without changing worker semantics.
 The additive `remote-agent-v1` capability accepts `remote_agent`, an absolute
 path to the parent's private Unix socket. Investigation and verification each
 POST `{protocol: 1, head, prompt}` to `/v1/agent`, with inline repository context.
+The context includes complete discussion and exact commits; the remote agent
+reads the full diff from its checkout. Prompts over 65,536 characters are refused
+before contacting the parent, without truncating review input.
 The parent must return `{protocol: 1, head, text, evidence}` only after validating
 the exact revision and retaining its execution evidence. Missing or mismatched
 evidence is a refusal; the bot never falls back to a local agent. The bot still

@@ -5,17 +5,37 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
+
+// The remote session already owns the exact checkout. Reconstruct the complete
+// diff there rather than spending the transport's prompt budget on a second copy.
+// Discussion and review metadata remain complete; never truncate review input.
+func remoteSnapshotContext(snapshot Snapshot) (string, error) {
+	if !validCommit(snapshot.MergeBase) || !validCommit(snapshot.PR.Head.SHA) {
+		return "", errors.New("remote snapshot requires exact merge-base and head commits")
+	}
+	snapshot.Diff = fmt.Sprintf("Read the complete diff from the exact checkout: git diff --no-ext-diff --no-textconv --no-color --find-renames %s %s -- .\nRun this command from the repository root. If either commit is unavailable, stop and report the limitation; never substitute another revision.", snapshot.MergeBase, snapshot.PR.Head.SHA)
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return "", err
+	}
+	return "in the following inline data (paths are repository-relative; the diff field gives the command for the complete diff):\n" + string(data) + "\nEnd of snapshot data. Remove temporary reproductions before finishing.", nil
+}
 
 // The parent owns target execution and artifact validation. Review Bot retains
 // investigation, independent finding verification and exact-revision publication.
 func executeRemote(ctx context.Context, c Config, prompt string) (string, error) {
-	if len(prompt) == 0 || len(prompt) > 4<<20 || len(c.RemoteHead) != 40 || strings.Trim(c.RemoteHead, "0123456789abcdef") != "" {
+	if !utf8.ValidString(prompt) || strings.TrimSpace(prompt) == "" || utf8.RuneCountInString(prompt) > 65536 {
+		return "", errors.New("remote review prompt exceeds the 65536-character limit or is empty; no session was requested")
+	}
+	if !validCommit(c.RemoteHead) {
 		return "", errors.New("remote review requires a bounded prompt and exact head")
 	}
 	body, _ := json.Marshal(struct {

@@ -336,7 +336,10 @@ func (e *engine) review(ctx context.Context, s *State, j *Job) error {
 	contextRef := "at " + inputPath
 	verificationContext := inputPath
 	if e.config.RemoteAgent != "" {
-		contextRef = "in the following inline data (paths are repository-relative):\n" + string(data) + "\nEnd of snapshot data. Remove temporary reproductions before finishing."
+		contextRef, err = remoteSnapshotContext(snapshot)
+		if err != nil {
+			return err
+		}
 		verificationContext = contextRef
 	}
 	text, err := e.session(ctx, g, j, investigationPromptContext(contextRef, e.config.MaxFindings))

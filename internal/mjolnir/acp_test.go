@@ -18,6 +18,19 @@ import (
 
 const managedAnswer = `REVIEW_RESULT {"summary":"Checked the exact revision","findings":[]}`
 
+func TestManagedACPRejectsInvalidPromptBeforeProvisioning(t *testing.T) {
+	for _, prompt := range []string{strings.Repeat("x", 65537), strings.Repeat("界", 65537), " \n\t", "!shell", string([]byte{0xff})} {
+		e, plan, record := executorFixture(t, "success")
+		answer, err := e.Execute(t.Context(), plan, prompt, false)
+		if err == nil || !strings.Contains(err.Error(), "no session was created") || answer.Run != nil {
+			t.Fatalf("invalid prompt was not rejected before creation: %v", err)
+		}
+		if _, err := os.Stat(record); !os.IsNotExist(err) {
+			t.Fatal("invalid prompt invoked the adapter")
+		}
+	}
+}
+
 type acpFixtureConfig struct {
 	URL, Token, Directory, Record, Scenario string
 }

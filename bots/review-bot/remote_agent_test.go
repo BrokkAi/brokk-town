@@ -13,6 +13,27 @@ import (
 	"time"
 )
 
+func TestRemoteSnapshotUsesCompleteExactDiffWithoutEmbeddingIt(t *testing.T) {
+	s := Snapshot{MergeBase: strings.Repeat("a", 40), Diff: strings.Repeat("large-diff", 100000), Focus: "all changed code", Discussion: []Discussion{{ID: "comment:9", Body: "Keep this complete discussion"}}}
+	s.PR.Head.SHA = strings.Repeat("b", 40)
+	text, err := remoteSnapshotContext(s)
+	if err != nil || len(text) > 65536 || strings.Contains(text, "large-diff") || !strings.Contains(text, s.MergeBase+" "+s.PR.Head.SHA) || !strings.Contains(text, s.Discussion[0].Body) || !strings.Contains(text, s.Focus) {
+		t.Fatalf("remote snapshot lost exact diff or metadata: %v", err)
+	}
+	if !strings.HasPrefix(s.Diff, "large-diff") {
+		t.Fatal("remote context changed the local snapshot")
+	}
+}
+
+func TestRemotePromptLimitRefusesBeforeContactingParent(t *testing.T) {
+	for _, prompt := range []string{strings.Repeat("x", 65537), strings.Repeat("界", 65537), " \n", string([]byte{0xff})} {
+		_, err := executeRemote(t.Context(), Config{RemoteHead: strings.Repeat("a", 40), RemoteAgent: "/does/not/exist"}, prompt)
+		if err == nil || !strings.Contains(err.Error(), "no session was requested") {
+			t.Fatalf("invalid prompt reached remote transport: %v", err)
+		}
+	}
+}
+
 func remoteFixture(t *testing.T, handler http.HandlerFunc) string {
 	t.Helper()
 	// Keep the socket below Unix's platform-specific pathname limit.

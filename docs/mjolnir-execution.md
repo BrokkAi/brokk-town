@@ -397,6 +397,10 @@ Review Bot advertises the additive `remote-agent-v1` capability. Town supplies a
 private mode-0600 callback socket for one dispatched head. The bot sends inline
 review context instead of a controller filesystem path, retaining its existing
 investigation, independent verification, strict receipts and GitHub write gates.
+The inline metadata retains all discussion; the agent reads the complete diff
+from the exact merge-base and head in its target checkout. Prompts exceeding
+Mjolnir's 65,536-character limit are refused before session creation, never
+truncated into a partial review.
 Each callback creates a separate guarded Mjolnir session. Town also runs its
 independent merge certification through this path. Old workers remain compatible
 with local execution and are refused before managed work if the capability is

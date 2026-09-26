@@ -6,9 +6,8 @@
   automatic resumption once fixed. Upstream PR #1167 merged as c107232 after
   green CI (head 07e76c4; 29 passed, one intentional skip), closing #1166.
   Resume implementation and fake-service checks under the existing authorization.
-  Real container verification still awaits the fixed upstream binary: v2.23.1
-  release workflow 36254212898 is queued, and the green branch CI runs do not
-  retain binary artifacts. Do not duplicate the upstream release work.
+  Verified the fixed worker in a fresh container using digest-checked artifacts
+  from v2.23.1 release workflow 36254212898. Do not duplicate upstream release work.
 - User withdrew the suggestion to cut an early release. Finish all remaining
   issues and reviewed, green PRs first, then release each changed component.
   During upstream monitoring the first CI runs were explicitly cancelled by the
@@ -17,7 +16,7 @@
 - PRs #175, #176 and #177 are merged after review fixes and green CI; latest
   merged base is d2f3f07. No release has been published. #149/#153–155 remain
   open pending integrated acceptance. Current branch is
-  `codex/mjolnir-worker-dispatch` with uncommitted, unfinished ACP executor,
+  `codex/mjolnir-worker-dispatch` with PR #178 containing the ACP executor,
   Review Bot remote-agent-v1/dry-run protocol and Town review/repair routing.
   The integration now passes root and Review Bot race tests/vet, 99 frontend
   tests/syntax, both modules' Python release and npm launcher tests, build,
@@ -25,8 +24,7 @@
   New fixtures cover ACP intent ordering, uncertain creation/settings/evidence,
   cancellation, strict callback identities, old worker capabilities, frozen
   configuration, independent remote finding verification and dry-run writes.
-  Next: open/review the integration PR, run the separate real-container dry-run
-  against that PR once the fixed upstream binary is available, fix findings,
+  Next: finish the separate real-container dry-run against that PR, fix findings,
   merge green, close acceptance issues, then release Review Bot and Town.
 - Integration PR #178 is open at 92ff9de. The exact-head COMMENT review found
   successful worker dry-runs misleadingly returned `stale`; return `dry_run`
@@ -34,8 +32,8 @@
   Regression and full Review Bot race/vet checks pass. Added an opt-in
   `mjolnir_acceptance` harness (compiled/vetted, default skips) for an existing
   real PR; it only dispatches dry-run review and checks guarded evidence, CLI
-  session/index visibility and confirmed cleanup. Real invocation is pending
-  the upstream binary; do not count its compiled/skipped run as acceptance.
+  session/index visibility and confirmed cleanup. Do not count its compiled/
+  skipped run as acceptance.
 - Upstream blocker is verified fixed on a fresh container: downloaded CLI and
   worker artifacts from release run 36254212898 at 07e76c4, verified their GitHub
   SHA-256 digests, and restarted only the isolated acceptance daemon as 2.23.1.
@@ -44,6 +42,14 @@
   bridge 1.13.3 and provider 0.156.1. Next is the real PR #178 dry-run through
   the separately gated worker/ACP acceptance harness. The dry-run status fix
   is committed as 9e3d147; no Town or bot release has been published.
+- First real dry-run at 6aa138a reached the exact checkout and pinned runtime,
+  but Mjolnir refused the prompt before starting any agent turn: its API limits
+  prompts to 65,536 characters. Session 55d44032c0a5046ad7ca5b587cdb6eb5 and run
+  run-93a059eca1f43656ce6548df7c1192be remain retained under proof-pr178. Adapter
+  log confirms HTTP 400; transcript contains only the harness-started event.
+  Fix Town/Review Bot to refuse oversized prompts before creating a session and
+  include complete metadata with an exact-checkout diff command instead of a
+  duplicate inline diff. No truncation, GitHub writes or prompt replay occurred.
 - Isolated acceptance data and two idle, prompt-free discovery sessions are
   retained under ignored `var/mjolnir-acceptance`. The released v2.23.0 binary
   was checksum-verified. Both cached and explicitly installed Docker runtimes
