@@ -17,6 +17,7 @@ func (s *Store) PrepareHistory(ctx context.Context, id string, remote *RepoSnaps
 	t := s.state.Towns[id]
 	index := s.history[id]
 	cold := map[string]historyEntry{}
+	dependencies := map[int]string{}
 	consider := func(key string) {
 		if t != nil && t.Tasks[key] == nil {
 			if e, ok := index[key]; ok {
@@ -30,6 +31,11 @@ func (s *Store) PrepareHistory(ctx context.Context, id string, remote *RepoSnaps
 	for _, p := range remote.Pulls {
 		consider(fmt.Sprintf("pr:%d", p.Number))
 		consider("commit:" + p.MergeCommit)
+		if t != nil && p.State != "closed" && p.MergedAt == nil && t.Owned[p.Number].Issue > 0 {
+			key := fmt.Sprintf("issue:%d", t.Owned[p.Number].Issue)
+			consider(key)
+			dependencies[p.Number] = key
+		}
 	}
 	for _, c := range remote.Commits {
 		consider("commit:" + c.SHA)
@@ -62,6 +68,11 @@ func (s *Store) PrepareHistory(ctx context.Context, id string, remote *RepoSnaps
 	pulls := remote.Pulls[:0]
 	for _, p := range remote.Pulls {
 		key := fmt.Sprintf("pr:%d", p.Number)
+		if e, ok := cold[dependencies[p.Number]]; ok {
+			if err := restore(e); err != nil {
+				return nil, err
+			}
+		}
 		if e, ok := cold["commit:"+p.MergeCommit]; ok && e.Stage == "shipped" {
 			remote.Archived[e.ID] = true
 		}

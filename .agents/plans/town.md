@@ -1409,3 +1409,9 @@
 - Validation passed: full root race tests/vet, frontend syntax and 92 tests,
   Town build, isolated demo, all-eight offline npm-worker lifecycle and fake
   Mjolnir smoke. No live agents, GitHub automation, release or deployment.
+- PR #169 self-review reproduced a missing related-task restoration: reopening
+  an archived owned PR left its originating issue cold. Restore both before
+  reconciliation and retain the issue while the PR is live. A failing regression
+  demonstrated the omission; the corrected case joins the full race suite.
+- Rebased onto concurrent npm startup fix #167 and merged incremental #168;
+  complete root race/vet and offline integration checks passed on that base.

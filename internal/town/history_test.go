@@ -361,3 +361,41 @@ func TestHistoryNewFunnelRestoresExistingIssueIdentity(t *testing.T) {
 		t.Fatal("source cursor identity archived")
 	}
 }
+
+func TestHistoryReopenedOwnedPullRestoresItsIssue(t *testing.T) {
+	s, id, now := historyFixture(t, 1)
+	update(t, s, func(st *State) {
+		x := st.Towns[id]
+		x.Tasks["pr:2"] = &Task{ID: "pr:2", Kind: "pr", Number: 2, Title: "Owned", House: Review, Stage: "closed", Head: headSHA, Base: baseSHA, Updated: now.Add(-40 * 24 * time.Hour)}
+		x.Owned[2] = Ownership{Issue: 1, Branch: "town/1"}
+	})
+	if err := s.ArchiveCompleted(context.Background(), id, now); err != nil {
+		t.Fatal(err)
+	}
+	if s.Snapshot().Towns[id].ArchivedTasks != 2 {
+		t.Fatal("fixture not archived")
+	}
+	p := pull(2)
+	p.State = "open"
+	remote := RepoSnapshot{Branch: "main", Head: baseSHA, Pulls: []Pull{p}}
+	restored, err := s.PrepareHistory(context.Background(), id, &remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored["issue:1"] == nil || restored["pr:2"] == nil {
+		t.Fatal("reopened ownership lost its originating issue", restored)
+	}
+	update(t, s, func(st *State) {
+		x := st.Towns[id]
+		if err := restoreHistory(x, restored); err != nil {
+			t.Fatal(err)
+		}
+		Reconcile(st, x, remote, now)
+	})
+	if err := s.ArchiveCompleted(context.Background(), id, now); err != nil {
+		t.Fatal(err)
+	}
+	if s.Snapshot().Towns[id].Tasks["issue:1"] == nil {
+		t.Fatal("active dependency rearchived")
+	}
+}
