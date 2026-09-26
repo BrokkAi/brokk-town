@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -95,4 +96,51 @@ esac
 			}
 		})
 	}
+
+	t.Run("upgrade from saved default-branch failure", func(t *testing.T) {
+		// Exercise the whole scheduler, including the real Issue Bot summaries
+		// before and after the real Repo Bot inventory. Direct Observe calls
+		// alone do not prove an upgraded service can reconcile saved state.
+		issueWorker := filepath.Join(bin, "bib")
+		build := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-ldflags", "-X main.version=0.0.0", "-o", issueWorker, "./cmd/bib")
+		build.Dir = "../../bots/issue-bot"
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build issue worker: %v\n%s", err, out)
+		}
+		dir := t.TempDir()
+		before := legacyBranchFailure(t, dir, true, true)
+		store, err := Open(dir, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		if x := store.Snapshot().Towns[before.ID]; x.Error != "" || x.Initialized {
+			t.Fatalf("upgrade did not retire only the obsolete error: error=%q initialized=%v", x.Error, x.Initialized)
+		}
+		workers := &BotWorkers{Root: t.TempDir(), Store: store, botCommands: map[Role]string{Repo: worker, Issue: issueWorker}}
+		defer workers.Close()
+		sup := NewSupervisor(store, newGH(1), workers)
+		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+		defer cancel()
+		sup.schedule(ctx)
+		sup.wg.Wait()
+		check := func(x *Town) {
+			t.Helper()
+			if !x.Initialized || x.Error != "" || x.Branch() != "main" || x.Head != baseSHA || x.Config.Branch != "" {
+				t.Fatalf("upgraded scheduler did not finish inventory: initialized=%v error=%q branch=%q head=%q", x.Initialized, x.Error, x.Branch(), x.Head)
+			}
+			w := x.Workers[Repo]
+			if w.Run != nil || !reflect.DeepEqual(w.Recovery, before.Workers[Repo].Recovery) || !reflect.DeepEqual(w.Logs, before.Workers[Repo].Logs) {
+				t.Fatalf("inventory changed the repair hold or historical evidence: %+v", w)
+			}
+		}
+		check(store.Snapshot().Towns[before.ID])
+		store.Close()
+		reopened, err := Open(dir, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reopened.Close()
+		check(reopened.Snapshot().Towns[before.ID])
+	})
 }

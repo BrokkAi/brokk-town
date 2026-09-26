@@ -15,6 +15,11 @@
 
 ## Unreleased
 
+- Retire the persisted `invalid branch` startup failure on upgrade for towns
+  still awaiting default-branch discovery. Save the recovery before starting
+  workers and retry enabled inventory promptly, preserving pauses, historical
+  logs and uncertain repair holds. Initialization still requires fresh inventory.
+
 - Reshape the `bt` CLI for the foreground lifecycle (breaking). `bt service
   status|stop` is gone: `bt status` now summarizes a running or stopped Town
   (`--json` prints the full state) and `bt shutdown` stops it. `bt capacity`

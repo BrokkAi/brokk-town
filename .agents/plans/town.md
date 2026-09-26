@@ -1,5 +1,27 @@
 # Brokk Town implementation plan
 
+## Retire the persisted default-branch startup failure (complete)
+
+- Read-only inspection of local state confirms an uninitialized town following
+  the default branch, with `invalid branch` saved on September 24, followed by
+  canceled inventory attempts and an uncertain repair recovery record. No
+  later successful inventory or new branch-validation failure is recorded.
+- Previously startup preserved the obsolete error until inventory succeeded.
+  Added a narrowly scoped, durable startup repair for that legacy empty-branch
+  failure. Retry enabled inventory promptly and preserve pauses, logs, saved
+  work and uncertainty. Initialization still requires actual inventory.
+- Four enabled/paused and recovery/no-recovery cases failed before the fix.
+  Tests now cover immediate persistence, repeated restarts, cancellation, new
+  failures, and successful scheduler inventory with real Repo/Issue Bot protocol
+  executables and fake GitHub. Other errors and invalid configuration stay visible.
+- Replayed a temporary copy of the actual local state: the obsolete error was
+  removed from memory and disk before workers started; another restart was
+  stable. Configuration, tasks, ownership, intents, logs, pauses and recovery
+  records were preserved. Verified the original file's hash was unchanged.
+- Full root `go test -race ./...`, `go vet ./...`, frontend syntax/tests, Town
+  build and isolated demo lifecycle smoke pass. Local socket tests used the
+  approved sandbox escalation. No release or live automation was started.
+
 ## Publish independent bot releases and Town 0.7.0 (in progress)
 
 - User requested releases on 2026-09-26 for every bot changed since its last

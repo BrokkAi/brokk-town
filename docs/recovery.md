@@ -70,6 +70,13 @@ and revision as an uncertain outcome. Reconcile saved results and GitHub before
 authorizing a retry.
 
 Repo Bot resumes repository inventory automatically after an interrupted read.
+On startup after an upgrade, Town also retires the old `invalid branch` startup
+error for an uninitialized town whose default branch has not yet been discovered.
+It saves that repair immediately and makes enabled inventory due now. Historical
+logs and uncertain repair records remain; paused houses stay paused, and the town
+remains uninitialized until a fresh inventory succeeds. Canceling that inventory
+does not bring the obsolete error back. Other failures remain visible.
+
 Older recovery records and interrupted runs that could repair a branch also
 resume inventory, while retaining the uncertain repair and holding further
 repairs. A successful inventory clears the previous repository error; its log
