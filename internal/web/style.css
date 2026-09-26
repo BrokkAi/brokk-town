@@ -1988,3 +1988,7 @@ body[data-skin="frontline"] .base-mini.release { background-position: 66.667% 10
   font-size: 12px;
   letter-spacing: .04em;
 }
+
+.storage-table { overflow-x: auto; max-height: 50vh; overflow-y: auto; }
+.storage-table td, .storage-table th { padding: .5rem; text-align: left; overflow-wrap: anywhere; vertical-align: top; }
+#storage-status { white-space: pre-wrap; }

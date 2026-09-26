@@ -1,3 +1,4 @@
+import { storagePanel } from "./storage.js";
 import {
   positions,
   houseNames,
@@ -722,7 +723,10 @@ function chooseHouse(role) {
   $("#inspector").classList.add("open");
   render();
 }
+storagePanel({ api, getTown: town });
+
 function renderTownControls(t) {
+ $("#town-storage").disabled = !t;
   const toggle = $("#town-toggle"),
     pauseAll = $("#pause-all"),
     chip = $("#town-state"),

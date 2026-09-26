@@ -689,77 +689,32 @@ func (b *BotWorkers) confirmRepair(id, taskID string, i *Intent) error {
 	})
 }
 
-// CollectWorktrees removes repair worktrees, and the town-repair branches that
-// belong to them, once no saved intent needs them. A repair worktree is retained
-// only while its intent is unresolved, because the saved commit may still have
-// to be published or verified against GitHub; the rest were left behind by every
-// failed repair and every resumed one.
-//
-// Only the repair extension is collected, and only the issue house calls this,
-// immediately before it may create a repair worktree of its own. Removal is
-// forced, so it would take a live worktree with it: the review house's audit
-// trees run concurrently with this house and are released by their own dispatch.
+// CollectWorktrees reclaims only clean repair trees with a confirmed exact
+// commit receipt. Unknown or dirty trees and unreferenced branches are retained
+// for inspection; an orphan is not proof that its work is disposable.
 func (b *BotWorkers) CollectWorktrees(ctx context.Context, t *Town) error {
-	needed := map[string]bool{}
-	for _, intent := range t.Intents {
-		if intent != nil && intent.Kind == "repair" && intent.Status != "confirmed" && intent.Directory != "" {
-			needed[resolvedPath(intent.Directory)] = true
-		}
-	}
 	repository := filepath.Join(b.Root, "towns", Key(t.ID), "extensions", "repair", "repository.git")
-	if info, err := os.Stat(repository); err != nil || !info.IsDir() {
+	if !storagePathSafe(b.Root, repository) {
 		return nil
 	}
-	return b.collectRepository(ctx, repository, needed)
-}
-
-func (b *BotWorkers) collectRepository(ctx context.Context, repository string, needed map[string]bool) error {
-	run := func(args ...string) (string, error) {
-		return git(ctx, "", append([]string{"--git-dir", repository}, args...)...)
-	}
-	// Drop administrative records of worktrees whose directories are already
-	// gone, so the listing below only reports real ones.
-	if _, err := run("worktree", "prune"); err != nil {
-		return err
-	}
-	listing, err := run("worktree", "list", "--porcelain")
-	if err != nil {
-		return err
-	}
-	kept := map[string]bool{}
 	var failures error
-	for _, block := range strings.Split(listing, "\n\n") {
-		path, bare := "", false
-		for _, line := range strings.Split(block, "\n") {
-			if value, ok := strings.CutPrefix(line, "worktree "); ok {
-				path = resolvedPath(value)
-			}
-			if line == "bare" {
-				bare = true
-			}
-		}
-		if path == "" || bare || path == resolvedPath(repository) {
+	for _, intent := range t.Intents {
+		if intent == nil || intent.Kind != "repair" || intent.Status != "confirmed" {
 			continue
 		}
-		if needed[path] {
-			kept[repairBranch(path)] = true
+		path := intent.Directory
+		if !storagePathSafe(b.Root, path) {
 			continue
 		}
-		if _, err := run("worktree", "remove", "--force", path); err != nil {
+		_, head, reason := repairRetention(ctx, t, path, repository)
+		if reason != "" {
+			continue
+		}
+		if _, err := git(ctx, "", "--git-dir", repository, "worktree", "remove", path); err != nil {
 			failures = errors.Join(failures, err)
-			kept[repairBranch(path)] = true
-		}
-	}
-	branches, err := run("branch", "--list", "town-repair-*", "--format", "%(refname:short)")
-	if err != nil {
-		return errors.Join(failures, err)
-	}
-	for _, branch := range strings.Split(branches, "\n") {
-		branch = strings.TrimSpace(branch)
-		if branch == "" || kept[branch] {
 			continue
 		}
-		if _, err := run("branch", "-D", branch); err != nil {
+		if _, err := git(ctx, "", "--git-dir", repository, "update-ref", "-d", "refs/heads/"+repairBranch(path), head); err != nil {
 			failures = errors.Join(failures, err)
 		}
 	}

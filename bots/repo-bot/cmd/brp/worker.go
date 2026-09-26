@@ -30,7 +30,7 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 	bot.Version = version
 	return worker.Serve(ctx, *socket, worker.Initialize{
 		Protocol: worker.ProtocolVersion, MinimumProtocol: worker.MinimumProtocol,
-		Bot: "repo-bot", Version: version, Capabilities: []string{"policy", "run", "progress", "repo-inventory", "branch-health"},
+		Bot: "repo-bot", Version: version, Capabilities: []string{"policy", "run", "progress", "repo-inventory", "branch-health", "incremental-inventory"},
 	}, func(ctx context.Context, request worker.Request, progress func(worker.Progress)) (worker.Result, error) {
 		cfg := bot.DefaultConfig()
 		cfg.Remote = request.Remote
@@ -52,6 +52,6 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 		ctx = bot.WithProgress(ctx, func(p bot.Progress) {
 			progress(worker.Progress{Phase: p.Phase, Task: p.Task})
 		})
-		return bot.Run(ctx, cfg, bot.Request{SinceHead: request.SinceHead, Commits: request.Commits}, nil, slog.Default())
+		return bot.Run(ctx, cfg, bot.Request{SinceHead: request.SinceHead, Commits: request.Commits, InventorySince: request.InventorySince, InventoryBranch: request.InventoryBranch}, nil, slog.Default())
 	}, slog.Default())
 }

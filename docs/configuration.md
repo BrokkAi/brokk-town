@@ -339,3 +339,71 @@ without replay. Failed deliveries are not retried automatically. A later new
 attention transition can notify again. Disabling drops pending notices and lets
 an already started command finish within its time limit. Keep `state.json` in
 backups to preserve configuration and delivery records.
+
+## Inspecting and cleaning local storage
+
+Use a town's **Storage** button or `bt storage --repo OWNER/REPO` to inspect local
+worker storage. This is a dry run: it lists logical bytes, files and artifact
+counts by bot, relative paths, last modification times, task references and the
+reason each artifact is retained or eligible. Shared/hard-linked files can count
+more than once; these are logical sizes rather than filesystem allocation totals.
+The browser requests this inventory only when you open or refresh the panel;
+ordinary snapshots and rendering do not scan disk or run Git.
+
+The default minimum age is seven days (168 hours). Change it per inspection with
+`--older-than-hours HOURS` or the browser field. This is not a scheduled deletion
+policy. Select eligible rows and press **Delete selected artifacts**, or pass
+exact inventory IDs explicitly:
+
+```sh
+bt storage --repo OWNER/REPO --json
+bt storage --repo OWNER/REPO --cleanup ID_FROM_INVENTORY,ANOTHER_ID
+```
+
+Pause every worker, including Repo Bot, and let running work finish first.
+Cleanup holds the town's scheduler reservation and each existing bot's state
+lock, and refuses active/recovering workers, independent bot activity, or pending
+and uncertain writes/submissions. It rebuilds the inventory and verifies every
+selection before deletion. A changed receipt requires a fresh inspection. If a
+request disconnects, refresh the inventory to inspect the outcome before retrying.
+Demo cleanup is disabled.
+
+Transcripts become eligible only when Town recorded a completed worker run,
+its referenced task is terminal, the retention age has passed, and the file's
+size and SHA-256 still match that receipt. Old transcripts without a receipt,
+failed or interrupted runs, unmapped tasks, oversized transcripts and changed
+files stay retained. A clean repair worktree requires a confirmed durable intent,
+its exact saved commit and its private branch; tracked, untracked and ignored
+edits all prevent removal. Unknown worktrees and unreferenced branches stay
+retained. Automatic repair collection uses those same ownership, completion and
+cleanliness checks; it no longer force-removes abandoned repair trees.
+
+Cleanup preserves task identities, ownership, write intents, bot state, private
+checkouts and repositories. These records prevent completed external actions
+from being repeated and allow uncertain writes to be reconciled after restart.
+Artifact receipts stay private and are not sent in ordinary browser snapshots.
+An incomplete or timed-out scan cannot authorize removal; inventory is bounded
+at 10,000 artifacts, 200,000 entries per artifact and 20 seconds, with transcript
+verification bounded at 128 MiB per file.
+
+Before reclaiming evidence you might need, stop Town and independent bots and
+back up the **whole private state directory**, including `state.json`, bot state,
+repositories, worktrees and transcripts. Keep the backup private. Restore it as
+one consistent directory at the same path (saved repair intents contain absolute
+paths), then start Town and resolve interrupted outcomes before enabling workers.
+Do not restore only the main snapshot or manually delete write intents to make
+cleanup eligible. Deletion is permanent; backup is the recovery path for removed
+evidence.
+
+
+## Repository polling
+
+Repo Bot releases advertising `incremental-inventory` read historical issue/PR
+changes since the last completed scan, with five minutes of overlap, and refresh
+open work on every poll. The cursor records when a scan started so changes made
+while pagination is running are eligible next time. Failed reads preserve both
+the cursor and current tasks. A full scan runs at least daily and whenever the
+covered branch or baseline changes; items omitted from a delta are retained.
+Older Repo Bot releases remain compatible and perform full scans. Town uses a
+new worker capability once that independent bot release is installed/launched;
+updating source here does not publish a bot release.

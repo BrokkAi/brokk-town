@@ -445,8 +445,7 @@ func TestUncertainRepairKeepsItsWorktreeUntilTheIntentResolves(t *testing.T) {
 	}
 }
 
-// Collection is forced, so it must never reach a worktree another house is
-// working in. The review house audits a PR in its own extension repository at
+// Collection must never reach a worktree another house is working in. The review house audits a PR in its own extension repository at
 // the same time as the issue house collects finished repairs.
 func TestCollectionLeavesAnotherHousesWorktreeAlone(t *testing.T) {
 	b, x, _, _ := fixtureWorkers(t)

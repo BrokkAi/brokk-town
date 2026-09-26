@@ -81,20 +81,22 @@ func (i workerInitialize) has(capability string) bool {
 }
 
 type workerRequest struct {
-	Protocol       int                `json:"protocol"`
-	Remote         string             `json:"remote"`
-	Branch         string             `json:"branch"`
-	Directory      string             `json:"directory"`
-	StateDirectory string             `json:"state_directory"`
-	Repo           string             `json:"repo"`
-	Host           string             `json:"host"`
-	Agent          runner.AgentConfig `json:"agent"`
-	Verify         []string           `json:"verify,omitempty"`
-	Issue          int                `json:"issue,omitempty"`
-	PR             int                `json:"pr,omitempty"`
-	BaseSHA        string             `json:"base_sha,omitempty"`
-	HeadSHA        string             `json:"head_sha,omitempty"`
-	Mode           string             `json:"mode,omitempty"`
+	InventorySince  *time.Time         `json:"inventory_since,omitempty"`
+	InventoryBranch string             `json:"inventory_branch,omitempty"`
+	Protocol        int                `json:"protocol"`
+	Remote          string             `json:"remote"`
+	Branch          string             `json:"branch"`
+	Directory       string             `json:"directory"`
+	StateDirectory  string             `json:"state_directory"`
+	Repo            string             `json:"repo"`
+	Host            string             `json:"host"`
+	Agent           runner.AgentConfig `json:"agent"`
+	Verify          []string           `json:"verify,omitempty"`
+	Issue           int                `json:"issue,omitempty"`
+	PR              int                `json:"pr,omitempty"`
+	BaseSHA         string             `json:"base_sha,omitempty"`
+	HeadSHA         string             `json:"head_sha,omitempty"`
+	Mode            string             `json:"mode,omitempty"`
 	// SinceHead and Commits are the repo worker's inventory inputs: the branch
 	// head Town last observed, and the revisions it still needs release
 	// ancestry for. Town's task graph never crosses the protocol.
@@ -158,6 +160,8 @@ type workerResult struct {
 // fields are the remote types Town already reconciles, so one observation is
 // read once and applied without a translation layer in between.
 type workerInventory struct {
+	Incremental   bool            `json:"incremental,omitempty"`
+	StartedAt     time.Time       `json:"started_at,omitempty"`
 	Branch        string          `json:"branch"`
 	DefaultBranch string          `json:"default_branch"`
 	Head          string          `json:"head"`
@@ -170,7 +174,7 @@ type workerInventory struct {
 
 func (i workerInventory) snapshot() RepoSnapshot {
 	return RepoSnapshot{
-		Branch: i.Branch, DefaultBranch: i.DefaultBranch, Head: i.Head,
+		Branch: i.Branch, DefaultBranch: i.DefaultBranch, Head: i.Head, Incremental: i.Incremental, StartedAt: i.StartedAt,
 		Issues: i.Issues, Pulls: i.Pulls, Releases: i.Releases, Commits: i.Commits, Released: i.Released,
 	}
 }

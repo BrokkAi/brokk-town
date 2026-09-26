@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/BrokkAi/repo-bot/internal/worker"
 )
@@ -11,6 +12,8 @@ import (
 // Request is what Town asks for: one complete observation of the repository,
 // and the branch-health duty that goes with it.
 type Request struct {
+	InventorySince  *time.Time
+	InventoryBranch string
 	// SinceHead is the branch head Town last observed. The inventory names the
 	// commits the branch gained beyond it.
 	SinceHead string
@@ -35,7 +38,7 @@ func Run(ctx context.Context, cfg Config, request Request, agent Agent, log *slo
 	report := observe(ctx)
 	gh := githubClient{config: cfg}
 	report(Progress{Phase: "inventorying", Task: "Reading " + cfg.GitHubRepo()})
-	inventory, err := gh.snapshot(ctx)
+	inventory, err := gh.snapshotSince(ctx, request.InventorySince, request.InventoryBranch)
 	if err != nil {
 		return worker.Result{}, fmt.Errorf("read repository inventory: %w", err)
 	}

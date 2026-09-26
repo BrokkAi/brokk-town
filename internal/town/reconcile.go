@@ -6,7 +6,8 @@ import (
 	"time"
 )
 
-// Reconcile consumes a complete remote inventory. First inventory is a baseline,
+// Reconcile consumes a completed full scan or explicitly marked incremental scan.
+// Absence in an incremental scan never means deletion. First inventory is a baseline,
 // subsequent transitions generate deliveries exactly once, irrespective of polls.
 func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 	initial := !t.Initialized
@@ -92,7 +93,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		listed[i.Number] = true
 	}
 	for _, task := range t.Tasks {
-		if task.Kind == "issue" && task.Stage == "closing" && task.MayoralDecision == "" && !listed[task.Number] {
+		if task.Kind == "issue" && task.Stage == "closing" && task.MayoralDecision == "" && !remote.Incremental && !listed[task.Number] {
 			// The inventory lists every issue, so one Town was closing that is
 			// gone (deleted or transferred) has nothing left to close. The
 			// claim is released; the decline stands.
@@ -351,7 +352,14 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		s.Event(t.ID, "report", "repo", "hall", "", title, now)
 	}
 	t.Initialized = true
+	t.SyncBranch = remote.Branch
 	t.LastSync = now
+	if !remote.StartedAt.IsZero() && !remote.StartedAt.After(now) {
+		t.LastSync = remote.StartedAt
+	}
+	if !remote.Incremental {
+		t.LastFullSync = t.LastSync
+	}
 	t.Error = ""
 }
 

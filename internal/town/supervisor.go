@@ -59,6 +59,8 @@ type Workers interface {
 // task graph never crosses the worker protocol: the worker is told only which
 // revisions to compare, never what they mean.
 type InventoryRequest struct {
+	Since  *time.Time
+	Branch string
 	// SinceHead is the branch head Town last observed. The worker names the
 	// commits the branch gained beyond it.
 	SinceHead string
@@ -165,7 +167,7 @@ func (s *Supervisor) schedule(ctx context.Context) {
 		state = s.Store.Snapshot()
 	}
 	for _, t := range state.Towns {
-		if t.Deleted {
+		if t.Deleted || s.Store.storageHeld(t.ID) {
 			continue
 		}
 		s.scheduleRequests(ctx, t)
@@ -257,7 +259,7 @@ func (s *Supervisor) claimRepair(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	town := s.Store.Snapshot().Towns[id]
-	if town == nil || town.Workers[Repo].Recovery != nil || town.Config.ExecutionForRole(Repo).Managed() {
+	if s.Store.storageHeld(id) || town == nil || town.Workers[Repo].Recovery != nil || town.Config.ExecutionForRole(Repo).Managed() {
 		return false
 	}
 	if _, limit := s.Store.dispatchEligibility(id, Repo, s.now()); s.activeWorkers() >= limit {
@@ -927,7 +929,7 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 		}
 		t = s.Store.Snapshot().Towns[t.ID]
 	}
-	result, err := s.Workers.Observe(ctx, t, InventoryRequest{SinceHead: inventorySince(t), Commits: unprovenCommits(t), Health: health}, observe, log)
+	result, err := s.Workers.Observe(ctx, t, InventoryRequest{SinceHead: inventorySince(t), Commits: unprovenCommits(t), Health: health, Since: inventoryCursor(t, s.now()), Branch: t.SyncBranch}, observe, log)
 	// Commit the outcome before releasing the gate: merge confirmation can
 	// dispatch another inventory as soon as this reconciliation returns. It
 	// must see an interrupted repair's hold and must not replace its identity.
@@ -1349,7 +1351,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 	if s.retrying == nil {
 		s.retrying = map[string]bool{}
 	}
-	if s.retrying[key] {
+	if s.retrying[key] || s.Store.storageHeld(id) {
 		s.mu.Unlock()
 		return errors.New("issue retry is already in progress")
 	}
