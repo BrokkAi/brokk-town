@@ -59,7 +59,7 @@ const catalog = {
     id, name: id, source: "registry", available: true, version: "2.0",
   })),
 };
-function fixture(extraAPI, executionOptions = { configured: false, targets: [], profiles: [] }) {
+function fixture(extraAPI, executionOptions = { configured: false, targets: [], profiles: [] }, refresh = async () => {}) {
   const town = {
     id: "acme/project",
     config: {
@@ -108,7 +108,7 @@ function fixture(extraAPI, executionOptions = { configured: false, targets: [], 
     if (extraAPI) return extraAPI(url, body, signal);
     return { models: [], efforts: [] };
   };
-  management({ api, getTown: () => town, getState: () => ({ towns: { [town.id]: town } }), refresh: async () => {} });
+  management({ api, getTown: () => town, getState: () => ({ towns: { [town.id]: town } }), refresh });
   return { town, calls, saves: () => calls.filter((c) => c.url === "/api/settings") };
 }
 async function open(role = "") {
@@ -193,6 +193,39 @@ test("an execution save from an old role cannot overwrite the current form", asy
   await pending;
   assert.equal(elements["execution-mode"].value, "inherit");
   assert.equal(elements["execution-result"].textContent, "");
+});
+
+for (const stage of ["save", "refresh"]) test(`execution ${stage} timeout releases controls and preserves uncertainty`, async () => {
+  const original = AbortSignal.timeout;
+  const deadline = new AbortController();
+  const durations = [];
+  AbortSignal.timeout = (ms) => { durations.push(ms); return deadline.signal; };
+  let finishWrite, finishRefresh, requestSignal;
+  try {
+    const app = fixture((url, body, signal) => {
+      if (url !== "/api/execution") return;
+      requestSignal = signal;
+      return new Promise((resolve) => { finishWrite = resolve; });
+    }, executionCatalog, () => new Promise((resolve) => { finishRefresh = resolve; }));
+    await open("review");
+    edit("execution-mode", "mjolnir", "onchange");
+    const pending = elements["save-execution"].onclick();
+    assert.deepEqual(durations, [30000]);
+    assert.equal(requestSignal, deadline.signal);
+    assert.equal(elements["save-execution"].disabled, true);
+    const duplicate = elements["save-execution"].onclick();
+    assert.equal(app.calls.filter((c) => c.url === "/api/execution").length, 1);
+    if (stage === "refresh") { finishWrite(); await tick(); }
+    deadline.abort(new DOMException("deadline", "TimeoutError"));
+    await pending;
+    await duplicate;
+    assert.equal(elements["save-execution"].disabled, false);
+    assert.match(elements["execution-result"].textContent, /may still have been applied/);
+    if (stage === "save") finishWrite();
+    else finishRefresh();
+    await tick();
+    assert.match(elements["execution-result"].textContent, /may still have been applied/, "late completion must not claim success");
+  } finally { AbortSignal.timeout = original; }
 });
 
 test("bot drafts keep independent harnesses, models, effort and pinned versions", async () => {

@@ -78,6 +78,7 @@ export function executionControls({ api, getConfig, refresh }) {
   $("execution-profile").onchange = detail;
   $("refresh-execution").onclick = () => load(true);
   $("save-execution").onclick = async () => {
+    if (saving) return;
     const version = generation, id = town, selectedRole = role;
     const mode = $("execution-mode").value;
     const selection = mode === "inherit" ? null : mode === "local" ? { target_id: "", profile_id: "" }
@@ -85,16 +86,29 @@ export function executionControls({ api, getConfig, refresh }) {
     saving = true;
     $("execution-result").textContent = "";
     detail();
+    const signal = AbortSignal.timeout(30000), expired = Symbol("expired execution save");
+    let active = true, onTimeout;
+    const timeout = new Promise((resolve) => {
+      onTimeout = () => resolve(expired);
+      signal.addEventListener("abort", onTimeout, { once: true });
+    });
     try {
-      await api("/api/execution", { town: id, role: selectedRole, selection });
-      await refresh();
-      if (generation !== version) return;
-      config = getConfig(id) || config;
-      $("execution-result").textContent = "Execution location saved for future work.";
-      render(true);
+      const result = await Promise.race([timeout, (async () => {
+        await api("/api/execution", { town: id, role: selectedRole, selection }, signal);
+        if (!active) return;
+        await refresh();
+        if (!active || generation !== version) return;
+        config = getConfig(id) || config;
+        $("execution-result").textContent = "Execution location saved for future work.";
+        render(true);
+      })()]);
+      if (result === expired && generation === version)
+        $("execution-result").textContent = "Town did not answer within 30 seconds. The request may still have been applied; check its state before trying again.";
     } catch (error) {
       if (generation === version) $("execution-result").textContent = error.message;
     } finally {
+      active = false;
+      signal.removeEventListener("abort", onTimeout);
       if (generation === version) { saving = false; detail(); }
     }
   };
