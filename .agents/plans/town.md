@@ -36,6 +36,14 @@
   real PR; it only dispatches dry-run review and checks guarded evidence, CLI
   session/index visibility and confirmed cleanup. Real invocation is pending
   the upstream binary; do not count its compiled/skipped run as acceptance.
+- Upstream blocker is verified fixed on a fresh container: downloaded CLI and
+  worker artifacts from release run 36254212898 at 07e76c4, verified their GitHub
+  SHA-256 digests, and restarted only the isolated acceptance daemon as 2.23.1.
+  Prompt-free session 0afdc5c5493216994a5b93ec4f9eb62e on acceptance-known now
+  has target_installation identity mj-runtime-v1:4622601d622949c3ce7b37515d9520ba05ff10340fc0064ce3727627d5462538,
+  bridge 1.13.3 and provider 0.156.1. Next is the real PR #178 dry-run through
+  the separately gated worker/ACP acceptance harness. The dry-run status fix
+  is committed as 9e3d147; no Town or bot release has been published.
 - Isolated acceptance data and two idle, prompt-free discovery sessions are
   retained under ignored `var/mjolnir-acceptance`. The released v2.23.0 binary
   was checksum-verified. Both cached and explicitly installed Docker runtimes

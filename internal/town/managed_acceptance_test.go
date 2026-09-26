@@ -84,10 +84,13 @@ func TestMjolnirReadOnlyAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Review == nil || result.Review.Status != "dry_run" || result.Review.Complete || result.Review.ExactHead != pull.Head.SHA || result.Review.ExactBase != pull.Base.SHA || len(managed.runs) == 0 {
+	managed.mu.Lock()
+	runs := append([]*mjolnir.Run{}, managed.runs...)
+	managed.mu.Unlock()
+	if result.Review == nil || result.Review.Status != "dry_run" || result.Review.Complete || result.Review.ExactHead != pull.Head.SHA || result.Review.ExactBase != pull.Base.SHA || len(runs) == 0 {
 		t.Fatal("worker did not confirm an exact-revision dry-run review")
 	}
-	for _, run := range managed.runs {
+	for _, run := range runs {
 		record := run.Record()
 		if record.State != "evidence" || record.Evidence == "" || record.Plan.Checkout.Commit != pull.Head.SHA || record.Receipt.Runtime.ID != pin.Runtime.ID {
 			t.Fatal("remote run lacks guarded exact-revision evidence")
@@ -122,7 +125,7 @@ func TestMjolnirReadOnlyAcceptance(t *testing.T) {
 	if err := managed.finish(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, run := range managed.runs {
+	for _, run := range runs {
 		if run.Record().State != "destroyed" {
 			t.Fatal("cleanup was not confirmed")
 		}
