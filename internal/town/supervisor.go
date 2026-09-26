@@ -128,6 +128,8 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	defer func() { cancel(); s.wg.Wait() }()
 	s.wg.Add(1)
 	go func() { defer s.wg.Done(); s.Mjolnir.Run(ctx) }()
+	s.wg.Add(1)
+	go func() { defer s.wg.Done(); s.watchAttention(ctx) }()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	// Reconnect to bot processes left by the previous service before scheduling

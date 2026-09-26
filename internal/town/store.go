@@ -83,6 +83,7 @@ func Open(dir string, demo bool) (*Store, error) {
 	}
 	// A saved dispatch is interrupted, not a process to adopt. Preserve possible
 	// writes, while allowing repository reads to resume and reconcile them.
+	beforeRecovery := State{AttentionSeen: s.state.AttentionSeen}
 	for _, t := range s.state.Towns {
 		for _, w := range t.Workers {
 			recoverWorkerRun(w)
@@ -106,6 +107,7 @@ func Open(dir string, demo bool) (*Store, error) {
 			}
 		}
 	}
+	queueAttention(beforeRecovery, &s.state, time.Now())
 	return s, nil
 }
 
@@ -150,6 +152,14 @@ func setAside(path string) (string, error) {
 }
 
 func validateState(s State, demo bool) error {
+	for key, notice := range s.AttentionPending {
+		if key != notice.key() || !notice.valid() {
+			return errors.New("invalid attention hook notice")
+		}
+	}
+	if s.AttentionActive != nil && !s.AttentionActive.valid() {
+		return errors.New("invalid attention hook claim")
+	}
 	if err := s.ServiceConfig.Validate(); err != nil {
 		return err
 	}
@@ -405,6 +415,7 @@ func (s *Store) Update(fn func(*State) error) error {
 	if err := validateState(next, s.state.Demo); err != nil {
 		return err
 	}
+	queueAttention(s.state, &next, time.Now())
 	b, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
 		return err

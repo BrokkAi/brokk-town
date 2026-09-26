@@ -657,12 +657,16 @@ const DefaultMaxWorkers = 4
 const MaximumMaxWorkers = 64
 
 type ServiceConfig struct {
-	MaxWorkers int `json:"max_workers"`
+	MaxWorkers    int           `json:"max_workers"`
+	AttentionHook AttentionHook `json:"attention_hook"`
 	// QuietHours is the default quiet schedule for towns that set none.
 	QuietHours []QuietWindow `json:"quiet_hours,omitempty"`
 }
 
 func (c ServiceConfig) Validate() error {
+	if err := c.AttentionHook.Validate(); err != nil {
+		return err
+	}
 	if c.MaxWorkers < 1 || c.MaxWorkers > MaximumMaxWorkers {
 		return fmt.Errorf("max_workers must be between 1 and %d", MaximumMaxWorkers)
 	}
@@ -675,13 +679,16 @@ type Capacity struct {
 }
 
 type State struct {
-	ServiceConfig ServiceConfig    `json:"service_config"`
-	Capacity      *Capacity        `json:"capacity,omitempty"`
-	Format        int              `json:"format"`
-	Seq           uint64           `json:"seq"`
-	Demo          bool             `json:"demo"`
-	Towns         map[string]*Town `json:"towns"`
-	Events        []Event          `json:"events"`
+	AttentionSeen    map[string]bool            `json:"attention_seen,omitempty"`
+	AttentionPending map[string]AttentionNotice `json:"attention_pending,omitempty"`
+	AttentionActive  *AttentionNotice           `json:"attention_active,omitempty"`
+	ServiceConfig    ServiceConfig              `json:"service_config"`
+	Capacity         *Capacity                  `json:"capacity,omitempty"`
+	Format           int                        `json:"format"`
+	Seq              uint64                     `json:"seq"`
+	Demo             bool                       `json:"demo"`
+	Towns            map[string]*Town           `json:"towns"`
+	Events           []Event                    `json:"events"`
 }
 
 func NewState(demo bool) State {
@@ -810,6 +817,10 @@ func (s State) PublicAt(now time.Time) map[string]any {
 	b, _ := json.Marshal(s)
 	var public map[string]any
 	_ = json.Unmarshal(b, &public)
+	delete(public, "attention_pending")
+	delete(public, "attention_active")
+	delete(public, "attention_seen")
+	public["service_config"] = s.ServiceConfig.Public()
 	for id, t := range s.Towns {
 		if t.Deleted {
 			delete(public["towns"].(map[string]any), id)

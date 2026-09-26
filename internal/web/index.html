@@ -29,7 +29,7 @@
         <button type="button" data-view="compact" role="tab" aria-selected="false" title="&quot;No Fun Dave&quot; mode — Compact">Compact</button>
       </div>
       <span id="capacity-summary" class="capacity-summary" role="status"></span>
-      <button id="capacity-settings" class="quiet" type="button">Capacity</button>
+      <button id="capacity-settings" class="quiet" type="button">Service settings</button>
       <button
         id="inbox-toggle"
         class="quiet inbox-toggle"
@@ -259,6 +259,17 @@
         <div class="dialog-actions">
           <button type="submit" class="primary">Save quiet hours</button>
         </div>
+      </form>
+      <form id="attention-hook-form">
+        <h3>Local attention hook</h3>
+        <p class="muted">Run a local command when a new task needs attention. It receives public task identities and a reason code as JSON on stdin, with a ten-second limit. Hooks run independently of quiet hours. Demo never runs them.</p>
+        <p id="attention-hook-status" class="muted" role="status"></p>
+        <label><input id="attention-hook-enabled" type="checkbox" /> Enable attention hook</label>
+        <label for="attention-hook-command">Command and arguments (JSON array)</label>
+        <textarea id="attention-hook-command" rows="2" spellcheck="false" autocomplete="off" placeholder='["/path/to/notify-town"]'></textarea>
+        <p class="muted">The saved command stays private. Leave blank to keep it. To remove it, disable the hook and enter []. Output stays with your command; Town discards it.</p>
+        <div id="attention-hook-error" class="form-error" role="alert"></div>
+        <div class="actions"><button id="save-attention-hook" type="submit" class="primary">Save attention hook</button></div>
       </form>
     </dialog>
     <dialog id="snooze-dialog" aria-labelledby="snooze-heading">
