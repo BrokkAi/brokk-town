@@ -1,6 +1,6 @@
 # Brokk Town implementation plan
 
-## Publish independent bot releases and Town 0.7.0 (in progress)
+## Publish independent bot releases and Town 0.7.0 (complete)
 
 - User requested releases on 2026-09-26 for every bot changed since its last
   release, then Town using the new npx lifecycle. All eight bots have source
@@ -8,17 +8,17 @@
   npm stable versions. Preserve independent versions and never reuse a version
   already distributed inside a Town bundle.
 
-| Project | Published stable | Previously bundled | New release |
+| Project | Previous stable | Previously bundled | New release |
 | --- | --- | --- | --- |
-| bug-bot | 0.3.5 | 0.6.0 | 0.6.2 |
-| feature-bot | 0.1.2 | 0.4.0 | 0.4.2 |
-| issue-bot | 0.5.4 | 0.5.9 | 0.5.11 |
-| mayor-bot | 0.1.1 | 0.1.2 | 0.1.5 |
-| release-bot | 0.6.1 | 0.8.0 | 0.8.2 |
-| repo-bot | 0.1.0 | 0.1.2 | 0.1.5 |
-| review-bot | 0.2.4 | 0.2.9 | 0.2.11 |
-| simplifier-bot | 0.1.1 | 0.1.3 | 0.1.6 |
-| Town | 0.6.5 | — | 0.7.0 |
+| bug-bot | 0.3.5 | 0.6.0 | [0.6.2](https://github.com/BrokkAi/brokk-town/releases/tag/v0.6.2-bug-bot) |
+| feature-bot | 0.1.2 | 0.4.0 | [0.4.2](https://github.com/BrokkAi/brokk-town/releases/tag/v0.4.2-feature-bot) |
+| issue-bot | 0.5.4 | 0.5.9 | [0.5.11](https://github.com/BrokkAi/brokk-town/releases/tag/v0.5.11-issue-bot) |
+| mayor-bot | 0.1.1 | 0.1.2 | [0.1.5](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.5-mayor-bot) |
+| release-bot | 0.6.1 | 0.8.0 | [0.8.2](https://github.com/BrokkAi/brokk-town/releases/tag/v0.8.2-release-bot) |
+| repo-bot | 0.1.0 | 0.1.2 | [0.1.5](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.5-repo-bot) |
+| review-bot | 0.2.4 | 0.2.9 | [0.2.12](https://github.com/BrokkAi/brokk-town/releases/tag/v0.2.12-review-bot) |
+| simplifier-bot | 0.1.1 | 0.1.3 | [0.1.6](https://github.com/BrokkAi/brokk-town/releases/tag/v0.1.6-simplifier-bot) |
+| Town | 0.6.5 | — | [0.7.0](https://github.com/BrokkAi/brokk-town/releases/tag/v0.7.0-town) |
 
 - Integrate master through ce49c44, retaining its Mjolnir model/effort discovery,
   execution selections and fake-daemon smoke alongside the npx compatibility
@@ -63,6 +63,37 @@
   published worker's v1 initialization and parent-loss lifecycle without jobs.
   Only then publish Town and verify its four native archives and five npm
   packages. Use the configured Actions publishers; do not bypass checks.
+
+- PR #170 passed CI and merged as 3cfe01a. The exact tested candidate 492c6a1
+  passed integrated root and Repo Bot race tests/vet, frontend checks/tests,
+  demo isolation, all-eight npm worker compatibility and fake-Mjolnir smoke.
+  All three corrected native/npm packaging builds also passed from that source.
+- Review Bot's macOS runs at dbafc82 repeatedly hit an HTTP EOF in a CLI fixture.
+  The integrated source already contains #168's readiness-pipe test correction:
+  duplicate the descriptor so finalization cannot close a later unrelated socket.
+  Preserve the failed 0.2.11 tag and release 0.2.12 from 492c6a1. Use that same
+  validated source for Town; its complete non-publishing packaging build passes.
+- All eight final bot releases passed Linux/macOS CI and are published. Bug,
+  Feature, Issue and Release Bot use dbafc82; Mayor, Repo, Review and Simplifier
+  Bot use 492c6a1. All forty npm packages pass version, integrity, payload and
+  source checks. Each actual latest-to-exact npx worker serves the retained v1
+  capabilities and exits on parent loss. All native manifests, asset sizes and
+  GitHub digests match. Release notes are published for each bot.
+- Waited for npm's latest/full/install metadata to agree. An early Repo Bot
+  install saw stale native-package metadata; after propagation a fresh isolated
+  npx installation passed. No repository jobs or live agents were dispatched.
+- Only after all bots were verified, pushed v0.7.0-town at 492c6a1. Town release
+  workflow 36236599175 passed and published the release. All four downloaded
+  native archives pass checksum, payload and source checks and contain only bt.
+  All five npm packages pass version, integrity, payload and exact-source checks;
+  the actual npx latest launcher reports v0.7.0. GitHub's latest stable pointer
+  is v0.7.0-town. Town release notes link all eight independent bot releases.
+- Final audit: nine successful release workflows, forty-five verified npm
+  packages, thirty-six native archives checked against source manifests and
+  GitHub asset digests, and eight successful published-worker v1/lifecycle
+  checks. Earlier failed tags remain unchanged and produced no published
+  releases. No GitHub checks were bypassed and no live repository automation
+  was used for tests.
 
 ## Restore independently released bots through npx (complete)
 
