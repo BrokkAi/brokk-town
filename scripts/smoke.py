@@ -63,6 +63,14 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         hook_cli = subprocess.check_output([binary, 'attention-hook', '--demo',
             '--state-dir', directory, '--json'], text=True)
         assert json.loads(hook_cli) == {'enabled': True, 'configured': True}
+        storage_cli = subprocess.check_output([binary, 'storage', '--demo',
+            '--state-dir', directory, '--repo', 'BrokkAi/orchard', '--json'], text=True)
+        storage = json.loads(storage_cli)
+        assert storage['town'] == 'brokkai/orchard' and storage['minimum_age_hours'] == 168
+        refused_cleanup = subprocess.run([binary, 'storage', '--demo', '--state-dir', directory,
+            '--repo', 'BrokkAi/orchard', '--cleanup', 'fixture'], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert refused_cleanup.returncode != 0 and 'demo storage cleanup is disabled' in refused_cleanup.stderr
         initial_capacity = snapshot()['capacity']
         assert initial_capacity['limit'] == 4 and initial_capacity['active'] >= 0
         capacity_cli = subprocess.check_output([binary, 'settings', '--demo',
@@ -79,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
                             '--repo', 'BrokkAi/orchard', '--role', 'feature'],
                            check=True, stdout=subprocess.DEVNULL)
             assert snapshot()['towns']['brokkai/orchard']['workers']['feature']['enabled'] == (action == 'start')
-        for path in ['/', '/app.js', '/town.js', '/tools.js', '/manage.js', '/attention.js', '/scenery.js', '/style.css',
+        for path in ['/', '/app.js', '/town.js', '/tools.js', '/manage.js', '/attention.js', '/storage.js', '/scenery.js', '/style.css',
                      '/assets/buildings-atlas.png', '/assets/actors-atlas.png',
                      '/assets/feature-study.png', '/assets/feature-reader.png',
                      '/assets/simplifier-clarifier.png']:

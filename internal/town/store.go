@@ -13,13 +13,14 @@ import (
 )
 
 type Store struct {
-	active  int // Runtime reservations, never persisted or inferred from worker status.
-	mu      sync.RWMutex
-	state   State
-	path    string
-	lock    *os.File
-	changed chan struct{}
-	notice  string
+	storageBusy map[string]bool // Runtime cleanup reservations, never persisted.
+	active      int             // Runtime reservations, never persisted or inferred from worker status.
+	mu          sync.RWMutex
+	state       State
+	path        string
+	lock        *os.File
+	changed     chan struct{}
+	notice      string
 }
 
 // ErrServiceRunning means another process holds this state directory's lock.
@@ -303,6 +304,11 @@ func validateState(s State, demo bool) error {
 				return errors.New("invalid saved repair")
 			}
 		}
+		for key, a := range t.Artifacts {
+			if key != Key(a.Path) || !a.valid() {
+				return errors.New("invalid artifact retention receipt")
+			}
+		}
 		for key, i := range t.FunnelIntents {
 			if i == nil || i.ID != key || i.Validate() != nil {
 				return errors.New("invalid funnel write intent")
@@ -355,7 +361,7 @@ func (s *Store) dispatchEligibility(id string, role Role, now time.Time) (bool, 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	t := s.state.Towns[id]
-	if t == nil || t.Deleted || (role != Repo && !t.Initialized) {
+	if s.storageBusy[id] || t == nil || t.Deleted || (role != Repo && !t.Initialized) {
 		return false, s.state.ServiceConfig.MaxWorkers
 	}
 	if role == Release && t.Config.MergePolicy == "manual" {
@@ -407,6 +413,18 @@ func (s *Store) Update(fn func(*State) error) error {
 	next := clone(s.state)
 	if err := fn(&next); err != nil {
 		return err
+	}
+	for id := range s.storageBusy {
+		if t := next.Towns[id]; t != nil {
+			if storageHold(t) != "" {
+				return errors.New("storage cleanup is running; wait before starting work")
+			}
+			for key, old := range s.state.Towns[id].Tasks {
+				if terminalStorageTask(old) && !terminalStorageTask(t.Tasks[key]) {
+					return errors.New("storage cleanup is running; wait before reopening completed work")
+				}
+			}
+		}
 	}
 	for _, town := range next.Towns {
 		enforceManualReleasePolicy(town)

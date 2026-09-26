@@ -582,18 +582,19 @@ type Event struct {
 	Title string    `json:"title"`
 }
 type Town struct {
-	ID            string                   `json:"id"`
-	Deleted       bool                     `json:"deleted,omitempty"`
-	Config        Config                   `json:"config"`
-	Initialized   bool                     `json:"initialized"`
-	Workers       map[Role]*Worker         `json:"workers"`
-	Tasks         map[string]*Task         `json:"tasks"`
-	Owned         map[int]Ownership        `json:"owned"`
-	Intents       map[int]*Intent          `json:"intents"`
-	FunnelIntents map[string]*WriteIntent  `json:"funnel_intents,omitempty"`
-	FunnelSyncs   map[FunnelID]*FunnelSync `json:"funnel_syncs,omitempty"`
-	Requests      map[string]*IssueRequest `json:"requests,omitempty"`
-	Reports       []Report                 `json:"reports"`
+	Artifacts     map[string]ArtifactRecord `json:"artifacts,omitempty"`
+	ID            string                    `json:"id"`
+	Deleted       bool                      `json:"deleted,omitempty"`
+	Config        Config                    `json:"config"`
+	Initialized   bool                      `json:"initialized"`
+	Workers       map[Role]*Worker          `json:"workers"`
+	Tasks         map[string]*Task          `json:"tasks"`
+	Owned         map[int]Ownership         `json:"owned"`
+	Intents       map[int]*Intent           `json:"intents"`
+	FunnelIntents map[string]*WriteIntent   `json:"funnel_intents,omitempty"`
+	FunnelSyncs   map[FunnelID]*FunnelSync  `json:"funnel_syncs,omitempty"`
+	Requests      map[string]*IssueRequest  `json:"requests,omitempty"`
+	Reports       []Report                  `json:"reports"`
 	// Bulletins is the work-completed feed Mayor Bot writes, oldest first.
 	Bulletins []Bulletin      `json:"bulletins"`
 	Outcomes  []OutcomeRecord `json:"outcomes"`
@@ -826,6 +827,7 @@ func (s State) PublicAt(now time.Time) map[string]any {
 			delete(public["towns"].(map[string]any), id)
 			continue
 		}
+		delete(public["towns"].(map[string]any)[id].(map[string]any), "artifacts")
 		public["towns"].(map[string]any)[id].(map[string]any)["config"] = t.PublicConfig()
 		public["towns"].(map[string]any)[id].(map[string]any)["budget"] = t.BudgetState(now)
 		quiet := t.QuietState(now, s.ServiceConfig.QuietHours)

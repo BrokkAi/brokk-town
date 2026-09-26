@@ -1309,3 +1309,30 @@
   fake-Mjolnir smoke passed. The first race attempt exhausted the shared /tmp
   filesystem; rerunning with private temporary files on the workspace volume
   passed. No unrelated files were removed. No live automation or release.
+
+## Inspectable local retention (#7)
+
+- Add on-demand shared storage inventory/cleanup APIs, `bt storage` and a browser
+  Storage panel. Report logical byte/file/artifact counts by town and role, age,
+  task reference and an explicit retention reason; no disk/Git work in rendering.
+- Record private transcript completion provenance after worker execution. Require
+  a terminal task, age threshold and unchanged SHA-256/size before reclamation.
+  Older, unmapped, failed, interrupted or changed evidence remains retained.
+- Explicit cleanup accepts opaque inspection IDs, rebuilds the inventory and
+  rechecks each removal under a scheduler reservation and cooperative bot locks.
+  Refuse active workers, recovery and unresolved writes. Preserve all task,
+  ownership, intent and worker-state identities; disable cleanup in demo mode.
+- Replace forced orphan repair collection with exact confirmed commit/private
+  branch ownership checks and tracked/untracked/ignored cleanliness checks.
+  Unknown worktrees and branches remain available for inspection and recovery.
+- Defaults, bounded inventory/verification, explicit deletion, uncertain cleanup
+  outcomes and consistent private-directory backup/restore are documented.
+- Validation passed: full root Go race suite and vet, frontend syntax/tests,
+  full bundle build, isolated demo, all-eight worker lifecycle and fake-Mjolnir
+  smoke checks. Local-Git/fake-service/browser regressions cover changed evidence,
+  dirty/ignored edits, uncertainty, worker locks, stale receipts, cancellation,
+  privacy, demo isolation and retained restart identities. An unrelated CLI EOF
+  did not reproduce in 20 repeats or the final full run.
+- Pre-PR review fixed incomplete transcript discovery being treated as an empty
+  baseline and blocked terminal-task reopening during cleanup. No live agents,
+  repository automation, release or deployment was used.

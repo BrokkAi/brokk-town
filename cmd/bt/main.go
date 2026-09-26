@@ -209,6 +209,8 @@ func run(ctx context.Context, args []string) error {
 		}
 		fmt.Println("Town stopped")
 		return nil
+	case "storage":
+		return storageCommand(ctx, abs, fl)
 	case "attention-hook":
 		return attentionHookCommand(ctx, abs, fl, fs)
 	case "execution":

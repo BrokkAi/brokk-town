@@ -85,6 +85,8 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	if r == Release && t.Config.MergePolicy == "manual" {
 		return result, manualReleaseError()
 	}
+	before := transcriptPaths(b.Root, t.ID, r)
+	defer func() { b.recordTranscripts(t.ID, r, before, result, err == nil, log) }()
 	if r == Issue {
 		defer func() { err = errors.Join(err, b.SyncIssues(t)) }()
 	}
