@@ -9,6 +9,16 @@ import (
 )
 
 func TestRepairBundleImportVerifiesHistoryExactCommitAndOperatorChecks(t *testing.T) {
+	// The importer also starts Git, so isolate every child process, including
+	// those outside the fixture helper. Detached maintenance can otherwise keep
+	// writing .git/objects/pack while t.TempDir removes the private repository.
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	t.Setenv("GIT_CONFIG_KEY_0", "maintenance.auto")
+	t.Setenv("GIT_CONFIG_VALUE_0", "false")
+	t.Setenv("GIT_CONFIG_KEY_1", "gc.auto")
+	t.Setenv("GIT_CONFIG_VALUE_1", "0")
 	for _, scenario := range []string{"success", "wrong head", "corrupt", "rewritten", "verification dirty", "verification head", "verification failure", "contributor branch"} {
 		t.Run(scenario, func(t *testing.T) {
 			root := t.TempDir()
