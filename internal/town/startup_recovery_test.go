@@ -33,11 +33,10 @@ func legacyBranchFailure(t *testing.T, dir string, enabled, recovery bool) *Town
 		w.Recovery = &WorkerRecovery{Started: time.Now().Add(-24 * time.Hour).Round(0), Detail: recoveryDetail(Repo, "")}
 		w.Task = w.Recovery.Detail
 	}
-	writeStartupState(t, dir, st)
-	return x
+	return writeStartupState(t, dir, st).Towns[x.ID]
 }
 
-func writeStartupState(t *testing.T, dir string, st State) {
+func writeStartupState(t *testing.T, dir string, st State) State {
 	t.Helper()
 	data, err := json.Marshal(st)
 	if err != nil {
@@ -46,6 +45,14 @@ func writeStartupState(t *testing.T, dir string, st State) {
 	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
+	// Compare recovery against the persisted evidence. JSON timestamps retain
+	// the instant and offset, but not Go's local-zone or monotonic metadata.
+	// In particular, a UTC host's time.Local decodes as time.UTC.
+	var saved State
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	return saved
 }
 
 func TestOpenRetiresLegacyDefaultBranchFailure(t *testing.T) {

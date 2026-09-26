@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.7.1 — 2026-09-26
+## 0.7.2 — 2026-09-26
+
+Version 0.7.1 was not published: its recovery tests failed in UTC environments.
+The tests now compare saved evidence consistently across time zones.
 
 - Preserve cancellation causes and the last worker phase in durable logs and
   outcome history, including operator stops, service signals/failures and
