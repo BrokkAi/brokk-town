@@ -59,9 +59,15 @@ func (s SessionIdentity) validate() error {
 // SessionState excludes diagnostic text, runtime configuration and private
 // paths. Idle alone does not prove successful work or an unchanged checkout.
 type SessionState struct {
-	Identity SessionIdentity
-	State    string
-	Idle     bool
+	Identity                SessionIdentity `json:"identity"`
+	State                   string          `json:"state"`
+	Idle                    bool            `json:"is_idle"`
+	Lifecycle               string          `json:"lifecycle,omitempty"`
+	ChatPhase               string          `json:"chat_phase,omitempty"`
+	HasError                *bool           `json:"has_error,omitempty"`
+	Checkout                *ExactCheckout  `json:"checkout,omitempty"`
+	ExpectedRuntimeIdentity string          `json:"expected_runtime_identity,omitempty"`
+	Runtime                 *RuntimeReceipt `json:"runtime,omitempty"`
 }
 
 func (c *Catalog) ReadSession(ctx context.Context, expected SessionIdentity) (SessionState, error) {
@@ -74,13 +80,19 @@ func (c *Catalog) ReadSession(ctx context.Context, expected SessionIdentity) (Se
 	}
 	// Explicit tags keep this projection independent of the daemon's extra fields.
 	var record struct {
-		ID        string `json:"id"`
-		Workspace string `json:"workspace_id"`
-		Bundle    string `json:"bundle_id"`
-		Target    string `json:"target_id"`
-		Profile   string `json:"profile_id"`
-		State     string `json:"state"`
-		Idle      *bool  `json:"is_idle"`
+		ID                      string          `json:"id"`
+		Workspace               string          `json:"workspace_id"`
+		Bundle                  string          `json:"bundle_id"`
+		Target                  string          `json:"target_id"`
+		Profile                 string          `json:"profile_id"`
+		State                   string          `json:"state"`
+		Idle                    *bool           `json:"is_idle"`
+		Lifecycle               string          `json:"lifecycle"`
+		ChatPhase               string          `json:"chat_phase"`
+		HasError                *bool           `json:"has_error"`
+		Checkout                *ExactCheckout  `json:"checkout"`
+		ExpectedRuntimeIdentity string          `json:"expected_runtime_identity"`
+		Runtime                 json.RawMessage `json:"runtime"`
 	}
 	if json.Unmarshal(data, &record) != nil || record.Idle == nil || !ValidID(record.State) {
 		return SessionState{}, errors.New("Mjolnir returned incomplete session identity")
@@ -89,7 +101,22 @@ func (c *Catalog) ReadSession(ctx context.Context, expected SessionIdentity) (Se
 	if actual != expected {
 		return SessionState{}, errors.New("Mjolnir session identity does not match the saved launch receipt")
 	}
-	return SessionState{actual, record.State, *record.Idle}, nil
+	if record.Checkout != nil && record.Checkout.Validate() != nil {
+		return SessionState{}, errors.New("Mjolnir returned an invalid exact checkout receipt")
+	}
+	if (record.ExpectedRuntimeIdentity != "" && !validRuntimeID(record.ExpectedRuntimeIdentity)) ||
+		(record.Lifecycle != "" && !ValidID(record.Lifecycle)) || (record.ChatPhase != "" && !ValidID(record.ChatPhase)) {
+		return SessionState{}, errors.New("Mjolnir returned invalid launch receipt fields")
+	}
+	runtime, err := readRuntimeReceipt(record.Runtime)
+	if err != nil {
+		return SessionState{}, err
+	}
+	return SessionState{
+		Identity: actual, State: record.State, Idle: *record.Idle,
+		Lifecycle: record.Lifecycle, ChatPhase: record.ChatPhase, HasError: record.HasError,
+		Checkout: record.Checkout, ExpectedRuntimeIdentity: record.ExpectedRuntimeIdentity, Runtime: runtime,
+	}, nil
 }
 
 // DiffEvidence contains private repository content. Do not put the patch in a

@@ -1,5 +1,33 @@
 # Brokk Town implementation plan
 
+## Mjolnir launch receipts (#153/#154, first part implemented)
+
+- User asked whether the four remaining issues can be started or are blocked.
+  Rechecked GitHub on September 26: upstream #1162/#1163 are closed, implemented
+  by merged Mjolnir PRs #1164/#1165. Audit their public contract at adf1304.
+  The latest published upstream release, v2.22.0, predates those changes;
+  development is unblocked while deployment needs a release containing them.
+- Added Town's consumption of exact-checkout and runtime receipts. Preserve
+  the target's opaque identity and component versions, provenance, event ordinal
+  and observation time. Keep unknown provenance explicit and private diagnostics
+  out of projections. Missing additive fields remain readable for older daemons,
+  but cannot satisfy launch readiness.
+- Require a matching checkout declaration and a live idle session without errors.
+  Match the selected runtime against both the actual receipt and Mjolnir's saved
+  expected-identity constraint, which guards prompt admission and replacement.
+  A lookup alone is not a runtime pin or proof of unchanged HEAD; current diff
+  evidence and repository mapping remain necessary before dispatch.
+- Added fake-daemon coverage for preparation failures, replacement races, receipt
+  retention, missing/invalid fields, partial responses, cancellation and demo
+  isolation. Full root race tests/vet, frontend syntax/tests, Town build, demo
+  and fake-Mjolnir smoke all pass. Keep build scratch directories hidden so Go
+  package discovery does not include concurrently generated cgo files.
+- The supplied checkout had detached HEAD; keep this coherent change on the
+  local codex/mjolnir-launch-receipts branch without changing master.
+- Keep #149/#153–155 open. Durable launch intents, runtime selection controls,
+  worker protocol/ACP integration, complete remote review/repair and confirmed
+  retention/cleanup remain follow-up work. No live automation or release.
+
 ## Mjolnir artifact evidence (#155, first part implemented)
 
 - User asked to start the remaining repository issues after repairing the PR and

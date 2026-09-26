@@ -99,13 +99,13 @@ command and registry version; attempts to change a local harness definition
 are refused with instructions to choose an execution profile instead. Switching
 back to direct local execution restores those local controls and pins.
 
-Discovery is not runtime readiness or a runtime pin. Mjolnir's public profile
-and session responses currently omit the resolved harness version. Town must
-not silently treat a mutable profile ID or the options projection revision as
-an immutable runtime identity. Before enabling dispatch, the contract needs a
-daemon-owned runtime identity which can be selected, checked at launch and
-recorded with the session. A changed identity must require an explicit operator
-update; Town must not copy Mjolnir's launch definitions into its local registry.
+Discovery is not runtime readiness or a runtime pin. Mjolnir's merged session
+API now reports a target-owned runtime receipt and accepts an expected identity
+at launch. Town can read and check those receipts as described below; saving an
+operator's runtime selection and integrating guarded launches remain pending.
+A mutable profile ID or options revision is never a runtime pin. A changed
+identity requires an explicit operator update; Town must not copy Mjolnir's
+launch definitions into its local registry.
 
 ## Placement
 
@@ -203,19 +203,27 @@ complete the real-target acceptance in #149.
 
 ## Remaining execution contract
 
-The following audit uses Mjolnir source at
-[`4d6c0ce`](https://github.com/BrokkAi/mjolnir/tree/4d6c0ce9c58efe76cdaa098de1b735eded5e871b).
-It records requirements for #153–155; it does not claim those issues or the
-real-target acceptance in #149 are complete.
+The updated audit uses Mjolnir source at
+[`adf1304`](https://github.com/BrokkAi/mjolnir/tree/adf1304e533ba5564c2225763c136606d7649ffd).
+The former upstream blockers are merged:
+[#1164](https://github.com/BrokkAi/mjolnir/pull/1164) implements exact bundle
+checkouts, and [#1165](https://github.com/BrokkAi/mjolnir/pull/1165) implements
+runtime receipts and expected-identity enforcement. At the September 26 audit,
+the latest published Mjolnir release was v2.22.0, which predates these changes.
+Town implementation can proceed against the merged contract; installed older
+daemons will not provide the new evidence. #153–155 and the real-target
+acceptance in #149 are still incomplete.
 
 - `mj acp` accepts target, profile, bundle, workspace and an exit policy, but
-  does not pass launch base/branch, model or effort. The HTTP API supports those
-  selectors, but `launch_base` only sets the diff baseline for a fresh bundle
-  checkout; it does not move HEAD to that commit. A new exact-checkout contract
-  and supported ACP launch path are tracked in Mjolnir #1162. The adapter does
-  not currently allow attaching a session created outside its process. Its ACP
-  session ID already equals the Mjolnir session ID. Runtime identity and expected
-  identity enforcement remain upstream work in Mjolnir #1163.
+  does not pass model or effort at creation. The HTTP API supports those
+  selectors and configuring them before prompting. Exact checkout now uses
+  `checkout: {repository_id, commit, branch}` on HTTP creation or the ACP flags
+  `--checkout-repository`, `--checkout-commit`, and `--checkout-branch`. It is
+  distinct from `launch_base`, which still only records the diff baseline.
+  `--expected-runtime-identity` forwards the saved runtime constraint; Mjolnir
+  enforces it before prompting and during worker replacement/recovery. The
+  adapter does not allow attaching a session created outside its process.
+  Its ACP session ID already equals the Mjolnir session ID.
 - Session creation returns a server-assigned ID. Town needs to save a dispatch
   intent before submission and its session receipt before prompting. A lost
   creation receipt must remain uncertain, with no automatic resubmission.
@@ -254,3 +262,35 @@ These are design constraints, not tests of a running remote integration. The
 remaining work includes protocol changes, fake-daemon review/repair integration,
 interrupted submission and retention tests, and a separately authorized real
 remote acceptance demonstration.
+
+## Launch receipt validation (#153/#154, first part)
+
+`ReadSession` now retains the exact checkout declaration, lifecycle/readiness
+fields, enforced runtime constraint and the target's runtime receipt. Runtime
+receipts preserve the opaque identity, harness, platform, provenance, readable
+component versions/digests, event ordinal and observation time. Unknown component
+versions/digests remain null. Unknown runtime provenance remains explicit; raw
+unavailability diagnostics and undocumented session/runtime fields are discarded.
+The identity is compared as an opaque value, never rebuilt from component
+versions or the controller's release. These reads use the existing bounded,
+authenticated transport and stay offline in demo mode.
+
+`CheckLaunchReceipt` requires a matching repository/commit/branch declaration,
+a live idle session with an affirmative no-error field, and a known runtime
+matching both the selected identity and the daemon's saved launch constraint.
+Checking the observed identity without that constraint would allow a worker
+replacement to change the runtime between lookup and prompting. Missing fields,
+unfinished preparation, unavailable runtime provenance and mismatched identities
+all refuse readiness. Existing artifact identity reads remain compatible with
+older daemons that omit these additive fields.
+
+This check validates launch declarations, not the current repository tree or a
+completed review. A recovered session can retain its original checkout intent
+while its actual HEAD has changed. Before dispatch, Town must still verify the
+bundle/repository mapping, read exact-base diff evidence, save the receipt and
+configure model/effort. Each accepted initialization receipt must be retained
+with its run, rather than replaced by a later session lookup. Fixture tests cover
+the launch guard, changed checkout evidence, retained receipt serialization,
+runtime replacement, malformed/partial reads, cancellation and demo isolation.
+Durable dispatch/recovery, runtime selection controls, worker integration and
+confirmed cleanup remain pending; the scheduler's execution hold stays in place.
