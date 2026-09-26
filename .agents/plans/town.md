@@ -1,6 +1,6 @@
 # Brokk Town implementation plan
 
-## Mjolnir artifact evidence (#155, first part; in progress)
+## Mjolnir artifact evidence (#155, first part implemented)
 
 - User asked to start the remaining repository issues after repairing the PR and
   release. The only open Town issues are #149 and #153–155. Upstream Mjolnir
@@ -23,8 +23,9 @@
   fixture imports a returned bundle and verifies its exact repair head/ancestry.
 - Full root race/vet, frontend syntax/tests, demo isolation and fake-Mjolnir
   integration passed. Final deadline and byte-preservation cases also pass with
-  the complete artifact race suite. Keep #149/#153–155 open: durable remote launch/artifact receipts,
-  worker integration and complete review/repair dispatch remain follow-up work.
+  the complete artifact race suite. PR #174 contains this first part. Keep
+  #149/#153–155 open: durable remote launch/artifact receipts, worker integration
+  and complete review/repair dispatch remain follow-up work.
 
 ## Repair PR #172 and publish Town 0.7.2 (complete)
 
