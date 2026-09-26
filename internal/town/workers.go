@@ -367,7 +367,7 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 }
 
 func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, d dispatch, deadline time.Time, observe func(Progress)) (workerResult, error) {
-	bot, err := b.externalBot(ctx, t.Config, role)
+	bot, err := b.workerBot(ctx, t.ID, role)
 	if err != nil {
 		return workerResult{}, err
 	}

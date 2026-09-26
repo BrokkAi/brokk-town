@@ -108,7 +108,7 @@ func TestWorkerReusesProcessRejectsOverlapAndCancelsActiveRun(t *testing.T) {
 	}
 	<-result
 }
-func TestWorkerParentPipeChild(t *testing.T) {
+func TestWorkerParentSocketChild(t *testing.T) {
 	socket := os.Getenv("WORKER_LIFECYCLE_CHILD_SOCKET")
 	if socket == "" {
 		return
@@ -120,6 +120,46 @@ func TestWorkerParentPipeChild(t *testing.T) {
 	}
 	os.Exit(0)
 }
+func TestWorkerExitsWhenParentSocketCloses(t *testing.T) {
+	dir, err := os.MkdirTemp("", "worker-parent-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	parentPath := filepath.Join(dir, "parent.sock")
+	listener, err := net.Listen("unix", parentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	_ = listener.(*net.UnixListener).SetDeadline(time.Now().Add(3 * time.Second))
+	socket := filepath.Join(dir, "w.sock")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestWorkerParentSocketChild$")
+	cmd.Env = append(os.Environ(), "BROKK_TOWN_PARENT_SOCKET="+parentPath, "WORKER_LIFECYCLE_CHILD_SOCKET="+socket)
+	if err = cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Process.Kill()
+	client := lifecycleClient(socket)
+	defer client.CloseIdleConnections()
+	lifecycleReady(t, client)
+	parent, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent.Close()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker survived its parent")
+	}
+}
+
 func TestWorkerExitsWhenParentPipeCloses(t *testing.T) {
 	dir, err := os.MkdirTemp("", "worker-parent-")
 	if err != nil {
@@ -132,7 +172,7 @@ func TestWorkerExitsWhenParentPipeCloses(t *testing.T) {
 	}
 	defer w.Close()
 	socket := filepath.Join(dir, "w.sock")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestWorkerParentPipeChild$")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestWorkerParentSocketChild$")
 	cmd.Env = append(os.Environ(), "BROKK_TOWN_PARENT_PIPE=1", "WORKER_LIFECYCLE_CHILD_SOCKET="+socket)
 	cmd.ExtraFiles = []*os.File{r}
 	if err = cmd.Start(); err != nil {

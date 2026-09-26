@@ -10,7 +10,6 @@ import tarfile
 import tempfile
 
 import licenses
-import build_bundle
 
 import package_release as release
 
@@ -84,13 +83,13 @@ def package(tag, assets, output, sha):
         for target in release.TARGETS:
             name = release.archive_name(tag, target)
             with tarfile.open(assets / name, "r:gz") as bundle:
-                files = {member: bundle.extractfile(member).read() for member in (*build_bundle.executables(), "bundle.json", "README.md", "BUILD.json", *licenses.LEGAL_FILES, *build_bundle.legal_files())}
+                files = {member: bundle.extractfile(member).read() for member in ("bt", "README.md", "BUILD.json", *licenses.LEGAL_FILES)}
             system, go_arch = target.split("-")
             arch = {"amd64": "x64", "arm64": "arm64"}[go_arch]
             package_name = f"{NPM_ROOT}-{system}-{arch}"
             dependencies[package_name] = npm_version
             npm_pack(package_name, {"os": [system], "cpu": [arch], "description": f"Brokk Town native binary for {system}/{arch}"},
-                     {("bin/" + name if name in build_bundle.executables() else name): data for name, data in files.items()})
+                     {("bin/" + name if name == "bt" else name): data for name, data in files.items()})
         npm_pack(NPM_ROOT, {
             "description": "Brokk Town: a local multi-repository agent town with browser and CLI clients",
             "bin": {"bt": "bin/bt.cjs"}, "engines": {"node": ">=18"},

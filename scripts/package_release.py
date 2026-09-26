@@ -14,7 +14,7 @@ import tarfile
 import tempfile
 
 import licenses
-import build_bundle
+import build
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,7 +52,7 @@ def archive(path, files, timestamp):
             for name, data in sorted(files.items()):
                 entry = tarfile.TarInfo(name)
                 entry.size = len(data)
-                entry.mode = 0o755 if name in build_bundle.executables() else 0o644
+                entry.mode = 0o755 if name == "bt" else 0o644
                 entry.mtime = timestamp
                 tar.addfile(entry, io.BytesIO(data))
 
@@ -61,8 +61,6 @@ def package(tag, directory):
     if run("git", "status", "--porcelain").strip():
         raise ValueError("commit all preparation changes before packaging a release")
     licenses.check()
-    for bot in build_bundle.bots().values():
-        subprocess.run(["python3", "scripts/licenses.py"], cwd=ROOT / "bots" / bot["project"], check=True)
     directory.mkdir(parents=True, exist_ok=True)
     if any(directory.iterdir()):
         raise ValueError("package output directory must be empty")
@@ -71,13 +69,11 @@ def package(tag, directory):
     manifest = {"tag": tag, "commit": sha, "assets": []}
     with tempfile.TemporaryDirectory() as temp:
         for target in TARGETS:
-            build_bundle.build(Path(temp), version_tag(tag), target)
+            build.build(Path(temp), version_tag(tag), target)
             metadata = {"tag": tag, "commit": sha, "target": target}
             name = archive_name(tag, target)
             archive(directory / name, {
-                **{name: (Path(temp) / name).read_bytes() for name in build_bundle.executables()},
-                "bundle.json": (ROOT / "bundle.json").read_bytes(),
-                **build_bundle.legal_files(),
+                "bt": (Path(temp) / "bt").read_bytes(),
                 **licenses.legal_files(),
                 "README.md": (ROOT / "README.md").read_bytes(),
                 "BUILD.json": json.dumps(metadata, sort_keys=True).encode() + b"\n",
@@ -109,14 +105,14 @@ def verify_local(tag, directory, sha):
             raise ValueError(f"corrupt release asset: {path.name}")
         with tarfile.open(path, "r:gz") as tar:
             entries = tar.getmembers()
-            expected_entries = {*build_bundle.executables(), "bundle.json", "README.md", "BUILD.json", *licenses.LEGAL_FILES, *build_bundle.legal_files()}
+            expected_entries = {"bt", "README.md", "BUILD.json", *licenses.LEGAL_FILES}
             if len(entries) != len(expected_entries) or {m.name for m in entries} != expected_entries:
                 raise ValueError("archive has missing or unexpected contents")
             if any(not m.isfile() or m.size <= 0 for m in entries):
                 raise ValueError("archive contains an invalid entry")
-            if any(tar.getmember(name).mode & 0o111 == 0 for name in build_bundle.executables()):
+            if tar.getmember("bt").mode & 0o111 == 0:
                 raise ValueError("release binary is not executable")
-            for filename, expected_text in {**licenses.legal_files(), **build_bundle.legal_files(), "bundle.json": (ROOT / "bundle.json").read_bytes()}.items():
+            for filename, expected_text in licenses.legal_files().items():
                 if tar.extractfile(filename).read() != expected_text:
                     raise ValueError(f"archive legal file does not match the checkout: {filename}")
             metadata = json.load(tar.extractfile("BUILD.json"))

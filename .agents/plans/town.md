@@ -1,5 +1,78 @@
 # Brokk Town implementation plan
 
+## Publish independent bot releases and Town 0.7.0 (in progress)
+
+- User requested releases on 2026-09-26 for every bot changed since its last
+  release, then Town using the new npx lifecycle. All eight bots have source
+  changes, confirmed against their published standalone GitHub tag trees and
+  npm stable versions. Preserve independent versions and never reuse a version
+  already distributed inside a Town bundle.
+
+| Project | Published stable | Previously bundled | New release |
+| --- | --- | --- | --- |
+| bug-bot | 0.3.5 | 0.6.0 | 0.6.1 |
+| feature-bot | 0.1.2 | 0.4.0 | 0.4.1 |
+| issue-bot | 0.5.4 | 0.5.9 | 0.5.10 |
+| mayor-bot | 0.1.1 | 0.1.2 | 0.1.3 |
+| release-bot | 0.6.1 | 0.8.0 | 0.8.1 |
+| repo-bot | 0.1.0 | 0.1.2 | 0.1.3 |
+| review-bot | 0.2.4 | 0.2.9 | 0.2.10 |
+| simplifier-bot | 0.1.1 | 0.1.3 | 0.1.4 |
+| Town | 0.6.5 | — | 0.7.0 |
+
+- Integrate master through ce49c44, retaining its Mjolnir model/effort discovery,
+  execution selections and fake-daemon smoke alongside the npx compatibility
+  checks. Validate the integration, then merge the release PR after its checks.
+- Integrated root race tests/vet, frontend checks/tests, workflow lint, Town build,
+  demo and fake-Mjolnir smoke pass. The bots are unchanged from the already-passing
+  nine-module validation. All forty-five target npm versions are available.
+- Release PR #165 includes the integration. Its initial module checks passed.
+  Publisher review found Release Bot still builds its retained Python artifact
+  alongside npm; add pinned setup-uv/uv versions so its publishing runner has
+  the required build tool. Python publication remains a separate action.
+- Publish immutable per-project suffix tags from the exact merged revision.
+  Wait for bot workflows and all forty bot npm packages, then verify each
+  published worker's v1 initialization and parent-loss lifecycle without jobs.
+  Only then publish Town and verify its four native archives and five npm
+  packages. Use the configured Actions publishers; do not bypass checks.
+
+## Restore independently released bots through npx (complete)
+
+- User chose independent bot releases and npx startup; the proposed unified
+  version/release change was canceled before any files changed.
+- Town installs/builds only bt. Resolve each independent bot's latest stable npm
+  release at worker startup, then launch that exact resolved version for the
+  worker lifetime. Record its identity and check the API before dispatch.
+  Every new bot retains older APIs; Town continues using v1 even when a bot
+  advertises newer versions. Keep independent modules, persistent processes
+  and uncertain-write recovery.
+- Add a private liveness socket that survives the npm launcher chain. Keep
+  inherited parent descriptors working for existing Town releases. Bound package
+  preparation, cancellation and shutdown.
+- Keep bot version numbers and release workflows independent from Town. The
+  latest-release policy replaces the earlier proposed Town dependency pins.
+- CI now propagates each failed module check instead of letting a later passing
+  shell command mask it. A pre-existing live Muse test is now explicitly opt-in;
+  its automatically started adapter probe was interrupted during validation.
+- Ordinary dispatch and issue-job summaries reuse the running worker's recorded
+  identity without querying npm again. Future bots advertising v2 alongside v1
+  successfully serve the existing client's v1 request in the protocol fixture.
+- All nine modules pass race tests, vet, license checks, Python packaging tests,
+  npm launcher tests and installer syntax checks. Frontend checks/tests,
+  actionlint and local demo lifecycle integration pass. The remote-head polling
+  success fixture now allows three seconds for its Git subprocesses; the
+  never-catches-up fixture retains its short deadline and uncertainty assertions.
+- Real offline npx fixtures pass for all eight independently built bots, checking
+  v1 initialization, every existing capability and shutdown on parent loss.
+  Retain those capability checks, including policy, retries and issue summaries.
+- Implementation committed as 07dab9b. Non-publishing v0.0.0-town packaging from
+  that exact commit built and verified all four native archives and five npm
+  packages. Content checks confirm only Town is packaged; the native executable,
+  offline npm installation and npx launcher version checks pass.
+- No release or tag was published. For the transition, publish bot releases with
+  the additive parent-socket capability before the new Town release; publication
+  still requires a release request.
+
 ## Standalone projects and explicit lifecycle (complete)
 
 - Import eight standalone bot projects under bots/, preserving independent modules,

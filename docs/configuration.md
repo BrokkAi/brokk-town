@@ -132,7 +132,7 @@ Town applies the same filters to its own queue that it sends to the bot, so the
 queue you read is the queue the house will take from. Filtered work is not
 hidden: each house's inspector states its policy, counts the inventory it holds
 back, and marks each held item, so you can always see what your own filter
-excluded. A house whose bundled bot is too old to read a policy is refused the
+excluded. A house whose bot is too old to read a policy is refused the
 dispatch with the bot and version named, instead of running unfiltered.
 
 ## Agent budgets

@@ -49,13 +49,7 @@ def context(tag_arg=None, sha_arg=None):
         raise ValueError(f"refusing to publish {tag} from {actual_ref}")
     if not tag.endswith("-repo-bot"):
         raise ValueError("release tag must end in -repo-bot")
-    version = release.version_tag(tag)[1:]
-    manifest_path = Path(__file__).resolve().parents[3] / "bundle.json"
-    if manifest_path.exists():
-        entries = json.loads(manifest_path.read_text())["bots"].values()
-        entry = next(b for b in entries if b["project"] == "repo-bot")
-        if version != entry["version"]:
-            raise ValueError("bot tag does not match the bundle manifest version")
+    release.version_tag(tag)
     return tag, sha
 
 

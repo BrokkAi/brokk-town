@@ -58,9 +58,10 @@ failure closes Town's own pull request and queues the issue for a fresh attempt
 from the current branch, which also leaves the stale base behind. A
 contributor's pull request goes to the Mayor instead.
 
-Install the complete Town bundle to update its supported bots together. Town
-verifies the bot versions against `bundle.json`; there is no per-town bot-version
-setting. Building the repositories locally does not publish a release.
+Restart Town to pick up the latest stable bot packages through npx. Running
+workers retain the version they started with; each dispatch records it. Bot
+releases preserve older versioned APIs, so updating bots does not require
+updating Town. Building bot source locally does not publish a release.
 
 ## Interrupted workers
 

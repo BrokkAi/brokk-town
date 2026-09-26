@@ -151,7 +151,16 @@ type server struct {
 func Serve(ctx context.Context, socketPath string, info Initialize, run RunFunc, log *slog.Logger) error {
 	ctx, cancelRoot := context.WithCancel(ctx)
 	defer cancelRoot()
-	if os.Getenv("BROKK_TOWN_PARENT_PIPE") == "1" {
+	if parentPath := os.Getenv("BROKK_TOWN_PARENT_SOCKET"); parentPath != "" {
+		// A socket survives npm's launcher chain; inherited descriptors do not.
+		parent, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", parentPath)
+		if err != nil {
+			return fmt.Errorf("connect to Town parent: %w", err)
+		}
+		defer parent.Close()
+		go func() { _, _ = io.Copy(io.Discard, parent); cancelRoot() }()
+	} else if os.Getenv("BROKK_TOWN_PARENT_PIPE") == "1" {
+		// Retain the lifecycle contract used by existing Town releases.
 		parent := os.NewFile(3, "town-parent")
 		if parent == nil {
 			return errors.New("missing Town parent pipe")
@@ -177,6 +186,7 @@ func Serve(ctx context.Context, socketPath string, info Initialize, run RunFunc,
 	if info.Capabilities == nil {
 		info.Capabilities = []string{"run", "progress"}
 	}
+	info.Capabilities = append(info.Capabilities, "parent-socket")
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		return fmt.Errorf("listen on worker socket: %w", err)

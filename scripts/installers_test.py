@@ -1,6 +1,4 @@
 import hashlib
-import json
-import build_bundle
 import io
 import os
 from pathlib import Path
@@ -23,8 +21,8 @@ class InstallerTests(unittest.TestCase):
             asset = directory / f"brokk-town-v0.1.0-town-{system}-{arch}.tar.gz"
             payload = b"#!/bin/sh\nprintf 'fixture bt\\n'\n"
             with tarfile.open(asset, "w:gz") as archive:
-                files = {name: payload for name in build_bundle.executables()}
-                files["bundle.json"] = (ROOT / "bundle.json").read_bytes()
+                files = {"bt": payload, "README.md": b"Town", "BUILD.json": b"{}",
+                         "LICENSE": b"license", "NOTICE": b"notice", "licenses/THIRD_PARTY_NOTICES.txt": b"notices"}
                 for name, data in files.items():
                     info = tarfile.TarInfo(name)
                     info.mode, info.size = 0o755, len(data)
@@ -42,8 +40,8 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((destination / "bt").read_bytes(), payload)
             self.assertTrue((destination / "bt").is_symlink())
-            for name in build_bundle.executables():
-                self.assertEqual(((destination / "bt").resolve().parent / name).read_bytes(), payload)
+            installed = (destination / "bt").resolve().parent
+            self.assertEqual({p.relative_to(installed).as_posix() for p in installed.rglob("*") if p.is_file()}, set(files))
             asset.write_bytes(b"damaged")
             result = subprocess.run(command, env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)

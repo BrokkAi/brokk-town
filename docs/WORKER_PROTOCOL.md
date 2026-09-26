@@ -11,16 +11,19 @@ The transport is a private Unix-domain socket for one persistent worker per
 house and town. Town starts all eight workers, including paused houses:
 
 ```text
-bbb|bfb|bib|brv|brb|bsb|brp|bmb worker --socket PATH
+npx --yes -- @brokkai/BOT@RESOLVED_VERSION worker --socket PATH
 ```
 
 The socket's parent directory is private to the Town service and the socket is
 mode `0600`. Town connects with the Go standard library HTTP client and does not
 invoke a shell. Town starts each worker in its own process group (`Setpgid`),
 captures bounded stdout/stderr tails, and owns the worker for the service's
-lifetime. Each worker receives `BROKK_TOWN_PARENT_PIPE=1` and a read-only pipe
-on descriptor 3. EOF cancels the worker and its active work, including when Town
-exits unexpectedly. Workers do not detach or survive a Town restart.
+lifetime. Town resolves `@latest` once before startup, and records the exact
+version it launches. Each worker connects to the private socket named by
+`BROKK_TOWN_PARENT_SOCKET`. EOF cancels the worker and its active work, including
+when Town exits unexpectedly. This works through npm launchers, which do not
+forward arbitrary inherited file descriptors. Workers do not detach or survive
+a Town restart.
 
 The message schemas and methods are transport-independent. A self-signed
 TLS transport with mutual certificate authentication can therefore be added later
@@ -43,7 +46,7 @@ The worker returns:
   "minimum_protocol": 1,
   "bot": "review-bot",
   "version": "0.2.0",
-  "capabilities": ["run", "progress", "exact-revision-review"]
+  "capabilities": ["policy", "run", "progress", "exact-revision-review", "finding-severity", "parent-socket"]
 }
 ```
 
@@ -55,10 +58,16 @@ A connection is compatible only when:
 - all capabilities required for that role are advertised;
 - required result schemas are implied by the role capability.
 
-Town records the executable path, executable hash, and release version before
-starting the service and rechecks them after the run. A mid-dispatch replacement
-fails the dispatch as uncertain; the next dispatch starts the newly installed
-executable and negotiates again.
+Town records the package runner path/hash and resolved bot release version. The
+runner hash is not a hash of the npm payload; npm verifies package integrity.
+Initialization must report the exact resolved bot version. Town rechecks its
+runner before and after dispatch and preserves uncertain outcomes on changes.
+
+Bot releases preserve every previously supported API. A future `/v2` is added
+alongside `/v1`; existing clients continue using `/v1` without changing Town or
+pinning a bot. New capabilities are additive. CI retains v1 contract tests and
+runs them for every independent bot release. The protocol range/capability check
+catches release regressions before a job starts; it is not an upgrade policy.
 
 ## Starting one run
 
@@ -171,9 +180,12 @@ protocol mismatches are rejected exactly as for `/v1/runs`.
 
 Town starts every worker at service startup, even for paused houses. A worker
 handles sequential runs until Town stops. Concurrent jobs receive HTTP 409.
-Each process receives `BROKK_TOWN_PARENT_PIPE=1` and a read-only pipe at descriptor
-3. EOF means the parent died; cancel the server and all active work. Request
-cancellation also cancels work. There is no detach/attach or adoption protocol.
+Each process receives `BROKK_TOWN_PARENT_SOCKET` and connects to that Unix socket
+before serving. It advertises `parent-socket` support. EOF means Town died; cancel
+the server and all active work. Existing clients may instead supply
+`BROKK_TOWN_PARENT_PIPE=1` and a read-only pipe at descriptor 3; that lifecycle
+contract remains supported. Request cancellation also cancels work. There is no
+detach/attach or adoption protocol.
 
 Before dispatch, Town records the exact target and revision. An interrupted stream
 preserves that provenance as an uncertain outcome for reconciliation.
@@ -193,10 +205,12 @@ alive; stopping a running job cancels it and closes that worker. The supervisor
 replaces a stopped or failed process independently of whether its house is enabled.
 
 On service shutdown, Town cancels running work and closes every worker's parent
-pipe, sends SIGTERM, waits up to seven seconds, then kills the process group if
-needed. It reaps children and removes their socket directories. Deleting a town
-also stops its workers. Dispatch cancellation or its deadline closes the affected
-worker. An interrupted dispatch's possible writes remain uncertain in saved state.
+connection, lets the worker cancel and drain for up to seven seconds, then kills
+the process group if needed. Failed startup without a parent connection first
+sends SIGTERM to the group. It reaps children and removes their socket directories.
+Deleting a town also stops its workers. Dispatch cancellation or its deadline
+closes the affected worker. An interrupted dispatch's possible writes remain
+uncertain in saved state.
 
 The standalone worker servers also support this explicit lifecycle endpoint for
 other local protocol clients and their tests; Town does not call it:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,7 +16,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
-// workerProcess belongs to one Town lifetime. The pipe also cancels the worker
+// workerProcess belongs to one Town lifetime. The liveness socket cancels the worker
 // when Town dies without a chance to send a shutdown request.
 type WorkerInterruptedError struct{ Err error }
 
@@ -29,7 +30,7 @@ type workerProcess struct {
 	cmd       *exec.Cmd
 	client    *http.Client
 	dir       string
-	parent    *os.File
+	parent    net.Conn
 	done      chan struct{}
 	gate      chan struct{}
 	closeOnce sync.Once
@@ -45,34 +46,44 @@ func startWorkerProcess(ctx context.Context, bot externalBot) (*workerProcess, e
 		return nil, err
 	}
 	p := &workerProcess{bot: bot, dir: dir, done: make(chan struct{}), gate: make(chan struct{}, 1), output: &osrun.Tail{Capacity: 64 << 10}}
-	read, write, err := os.Pipe()
+	parentPath := filepath.Join(dir, "parent.sock")
+	listener, err := net.Listen("unix", parentPath)
 	if err != nil {
 		os.RemoveAll(dir)
 		return nil, err
 	}
-	p.parent = write
+	defer listener.Close()
+	if err = os.Chmod(parentPath, 0600); err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+	probe, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	stopAccept := context.AfterFunc(probe, func() { _ = listener.Close() })
+	defer stopAccept()
 	args := append(append([]string{}, bot.args...), "worker", "--socket", filepath.Join(dir, "worker.sock"))
 	p.cmd = exec.Command(bot.command, args...)
-	p.cmd.Env = append(os.Environ(), "BROKK_TOWN_PARENT_PIPE=1")
-	p.cmd.ExtraFiles = []*os.File{read}
+	p.cmd.Dir = bot.dir
+	p.cmd.Env = append(os.Environ(), "BROKK_TOWN_PARENT_SOCKET="+parentPath)
 	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	p.cmd.Stdout = p.output
 	p.cmd.Stderr = p.output
 	p.cmd.WaitDelay = time.Second
 	if err = p.cmd.Start(); err != nil {
-		read.Close()
-		write.Close()
 		os.RemoveAll(dir)
 		return nil, err
 	}
-	read.Close()
 	go func() { _ = p.cmd.Wait(); close(p.done) }()
 	p.client = workerClient(filepath.Join(dir, "worker.sock"))
-	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	p.info, err = getWorkerInitialize(probe, p.client, 10*time.Second)
+	p.info, err = getWorkerInitialize(probe, p.client, 30*time.Second)
 	if err == nil {
 		err = validateWorkerInitialize(bot, p.info)
+	}
+	if err == nil {
+		p.parent, err = listener.Accept()
+		if err != nil {
+			err = fmt.Errorf("worker did not connect its Town liveness socket: %w", err)
+		}
 	}
 	if err != nil {
 		p.close()
@@ -95,13 +106,20 @@ func (p *workerProcess) close() {
 			_ = p.parent.Close()
 		}
 		if p.cmd != nil && p.cmd.Process != nil {
-			_ = p.cmd.Process.Signal(syscall.SIGTERM)
+			// Let the worker cancel and drain before its npm parent exits.
+			// Signaling npx first can leave a still-running native child behind.
+			if p.parent == nil {
+				_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGTERM)
+			}
 			select {
 			case <-p.done:
 			case <-time.After(7 * time.Second):
 				_ = osrun.KillGroup(p.cmd.Process.Pid)
 				<-p.done
 			}
+			// npx may exit before its launcher or native worker. Reaping the
+			// package runner alone does not prove its descendants have stopped.
+			_ = osrun.KillGroup(p.cmd.Process.Pid)
 		}
 		if p.client != nil {
 			p.client.CloseIdleConnections()
@@ -197,7 +215,7 @@ func (b *BotWorkers) SyncProcesses(ctx context.Context, state State) error {
 					continue
 				}
 			}
-			bot, err := b.externalBot(ctx, t.Config, role)
+			bot, err := b.externalBot(ctx, role)
 			var p *workerProcess
 			if err == nil {
 				p, err = startWorkerProcess(ctx, bot)

@@ -54,12 +54,12 @@ jobs:
                 echo "$unformatted"
                 exit 1
               fi
-              go test -race ./...
-              go vet ./...
-              python3 scripts/licenses.py
-              python3 -m unittest discover -s scripts -p '*_test.py'
-              node --test --test-isolation=none npm/*.test.cjs
-              sh -n install.sh
+              go test -race ./... || exit
+              go vet ./... || exit
+              python3 scripts/licenses.py || exit
+              python3 -m unittest discover -s scripts -p '*_test.py' || exit
+              node --test --test-isolation=none npm/*.test.cjs || exit
+              sh -n install.sh || exit
             ) || failed="$failed $project"
             echo '::endgroup::'
           done
@@ -67,7 +67,7 @@ jobs:
             echo "failed modules:$failed"
             exit 1
           fi
-      - name: Build the bundle and smoke the workers
+      - name: Build Town and check worker API compatibility through local npm packages
         run: npm run check && npm test && make build && python3 scripts/smoke.py && python3 scripts/smoke_workers.py && python3 scripts/smoke_mjolnir.py
   workflows:
     runs-on: ubuntu-latest

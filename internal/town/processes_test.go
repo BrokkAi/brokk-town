@@ -77,7 +77,7 @@ func TestProcessCancellationPreservesUncertainOutcome(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "worker")
 	writeFakeWorker(t, path, pythonFakeWorker)
 	b := &BotWorkers{botCommands: map[Role]string{Issue: path}}
-	bot, err := b.externalBot(context.Background(), Config{}, Issue)
+	bot, err := b.externalBot(context.Background(), Issue)
 	if err != nil {
 		t.Fatal(err)
 	}

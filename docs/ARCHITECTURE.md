@@ -4,9 +4,11 @@
 connection file and CLI. Browser and CLI consume the same committed state.
 Clients never auto-start or replace a service. There is no terminal UI.
 
-Each `bots/<project>` is an independent Go module and executable. The root
-`bundle.json` selects their supported versions; installation bundles all binaries.
-Town does not import any bot's Go packages or resolve bots through npm at runtime.
+Each `bots/<project>` is an independent Go module and executable. Town installs only
+its own executable and starts independent npm bot packages through npx. Each
+worker resolves the latest stable version once, then launches that exact version.
+Town uses the worker API version it supports; bot releases retain older APIs.
+Town does not import any bot's Go packages.
 
 Town starts eight persistent workers per configured town on private Unix sockets.
 Idle and paused workers remain alive; only dispatched jobs start agent processes.
@@ -15,8 +17,8 @@ Each worker serializes jobs and may handle many sequential runs during its lifet
 Issue Bot also serves read-only job summaries while a job is running; its retry
 operation owns its state changes.
 
-Worker processes have bounded output, private sockets and a parent-liveness pipe.
-Shutdown cancels work, closes parent pipes, terminates workers with bounded
+Worker processes have bounded output, private sockets and a parent-liveness socket.
+Shutdown cancels work, closes parent connections, terminates workers with bounded
 escalation, and reaps children before releasing the state lock. Workers cancel
 active work when Town dies unexpectedly. Restart preserves interrupted dispatch
 provenance and uncertain write intents; it never adopts an old process or blindly
