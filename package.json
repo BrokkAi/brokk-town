@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check internal/web/app.js && node --check internal/web/town.js && node --check internal/web/tools.js && node --check internal/web/manage.js && node --check internal/web/storage.js && node --check internal/web/attention.js && node --check internal/web/execution.js && node --check internal/web/scenery.js && node --check internal/web/skins.js && node --check internal/web/frontline.js",
+    "check": "node --check internal/web/app.js && node --check internal/web/town.js && node --check internal/web/tools.js && node --check internal/web/manage.js && node --check internal/web/history.js && node --check internal/web/storage.js && node --check internal/web/attention.js && node --check internal/web/execution.js && node --check internal/web/scenery.js && node --check internal/web/skins.js && node --check internal/web/frontline.js",
     "test": "node --test internal/web/*.test.js"
   }
 }

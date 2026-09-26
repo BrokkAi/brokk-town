@@ -978,14 +978,26 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 		}
 		remote.Issues = issues
 	}
+	restored, err := s.Store.PrepareHistory(ctx, t.ID, &remote)
+	if err != nil {
+		return err
+	}
 	remote.ObservedHeads = map[int]string{}
 	for _, task := range t.Tasks {
 		if task.Kind == "pr" {
 			remote.ObservedHeads[task.Number] = task.Head
 		}
 	}
+	for _, task := range restored {
+		if task.Kind == "pr" {
+			remote.ObservedHeads[task.Number] = task.Head
+		}
+	}
 	if err := s.Store.Update(func(st *State) error {
 		current := st.Towns[t.ID]
+		if err := restoreHistory(current, restored); err != nil {
+			return err
+		}
 		Reconcile(st, current, remote, s.now())
 		applyBranchHealth(st, current, result.Health, s.now())
 		w := current.Workers[Repo]
@@ -1003,6 +1015,13 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 			return fmt.Errorf("preserve issue-bot jobs after inventory: %w", err)
 		}
 	}
+	// Archival is a bounded local maintenance step after committed inventory.
+	// Failure retains hot tasks and must not replay successful repository work.
+	archiveCtx, archiveCancel := context.WithTimeout(ctx, 10*time.Second)
+	if err := s.Store.ArchiveCompleted(archiveCtx, t.ID, s.now()); err != nil {
+		log.Warn("Task history archival did not finish; retained active state and saved evidence")
+	}
+	archiveCancel()
 	// Recovery refreshes our view without authorizing any replacement writes.
 	if s.Store.Snapshot().Towns[t.ID].Workers[Repo].Recovery != nil {
 		return nil

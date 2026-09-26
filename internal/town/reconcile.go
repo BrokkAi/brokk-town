@@ -35,6 +35,11 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		}
 		id := fmt.Sprintf("issue:%d", i.Number)
 		task := t.Tasks[id]
+		newTask := task == nil
+		previousStage := ""
+		if task != nil {
+			previousStage = task.Stage
+		}
 		if task == nil {
 			from := "outside"
 			if strings.Contains(i.Body, "<!-- feature-bot:") {
@@ -87,6 +92,12 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			// house that never selects queued work.
 			resume(t, task)
 		}
+		if task.Stage != previousStage {
+			task.Updated = now
+		}
+		if newTask && i.State == "closed" && !i.Updated.IsZero() && i.Updated.Before(now) {
+			task.Updated = i.Updated
+		}
 	}
 	listed := map[int]bool{}
 	for _, i := range remote.Issues {
@@ -123,6 +134,11 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			continue
 		}
 		task := t.Tasks[id]
+		newTask := task == nil
+		previousStage := ""
+		if task != nil {
+			previousStage = task.Stage
+		}
 		// A repair may finish while the remote inventory is in flight. Do not
 		// overwrite its confirmed head with the older observation; poll again.
 		if remote.ObservedHeads != nil && task != nil && task.Head != remote.ObservedHeads[p.Number] {
@@ -240,7 +256,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			t.RecordOutcome(OutcomeRecord{ID: "merge:" + id + ":" + p.MergeCommit, At: *p.MergedAt, Class: "outcome", Kind: "merge", Status: "confirmed", TaskID: id, RelatedTaskID: fmt.Sprintf("issue:%d", owned.Issue), Revision: p.MergeCommit, URL: p.URL, Detail: p.Title})
 			if SHA(p.MergeCommit) {
 				cid := "commit:" + p.MergeCommit
-				if t.Tasks[cid] == nil {
+				if t.Tasks[cid] == nil && !remote.Archived[cid] {
 					t.Tasks[cid] = &Task{ID: cid, Kind: "commit", Title: p.Title, URL: p.URL, Stage: "unreleased", House: Release, Head: p.MergeCommit, Updated: *p.MergedAt}
 				}
 			}
@@ -285,12 +301,21 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				it.Stage = "implemented"
 			}
 		}
+		if task.Stage != previousStage {
+			task.Updated = now
+		}
+		if newTask && (p.State == "closed" || p.MergedAt != nil) && !p.Updated.IsZero() && p.Updated.Before(now) {
+			task.Updated = p.Updated
+		}
 	}
 	for _, c := range remote.Commits {
 		if !SHA(c.SHA) {
 			continue
 		}
 		id := "commit:" + c.SHA
+		if remote.Archived[id] {
+			continue
+		}
 		title := strings.SplitN(c.Commit.Message, "\n", 2)[0]
 		if t.Tasks[id] == nil {
 			t.Tasks[id] = &Task{ID: id, Kind: "commit", Title: title, URL: c.URL, Stage: "unreleased", House: Release, Head: c.SHA, External: true, Updated: now}
@@ -317,7 +342,11 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 		t.RecordOutcome(OutcomeRecord{ID: "release:" + latest.Tag, At: latest.At, Class: "outcome", Kind: "release", Status: "confirmed", Role: Release, TaskID: "release:" + latest.Tag, Revision: latest.Tag, URL: latest.URL, Detail: latest.Name})
 	}
 	for _, task := range t.Tasks {
-		if task.Kind == "commit" && remote.Released[task.Head] {
+		if task.Kind == "commit" && remote.Released[task.Head] && task.Stage != "shipped" {
+			task.Updated = now
+			if initial && latest != nil && !latest.At.IsZero() && latest.At.Before(now) {
+				task.Updated = latest.At
+			}
 			task.Stage = "shipped"
 		}
 	}

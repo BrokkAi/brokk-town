@@ -13,6 +13,8 @@ import (
 )
 
 type Store struct {
+	historyMu   sync.Mutex
+	history     map[string]map[string]historyEntry
 	storageBusy map[string]bool // Runtime cleanup reservations, never persisted.
 	active      int             // Runtime reservations, never persisted or inferred from worker status.
 	mu          sync.RWMutex
@@ -81,6 +83,10 @@ func Open(dir string, demo bool) (*Store, error) {
 			s.Close()
 			return nil, fmt.Errorf("replace unreadable demo state: %w", err)
 		}
+	}
+	if err := s.loadHistory(); err != nil {
+		s.Close()
+		return nil, err
 	}
 	// A saved dispatch is interrupted, not a process to adopt. Preserve possible
 	// writes, while allowing repository reads to resume and reconcile them.
@@ -164,7 +170,7 @@ func validateState(s State, demo bool) error {
 	if err := s.ServiceConfig.Validate(); err != nil {
 		return err
 	}
-	if s.Format != 1 || s.Demo != demo || s.Towns == nil {
+	if (s.Format != 1 && s.Format != 2) || s.Demo != demo || s.Towns == nil {
 		return errors.New("state format or demo mode mismatch; use a separate state directory")
 	}
 	var last uint64
@@ -177,6 +183,9 @@ func validateState(s State, demo bool) error {
 	for id, t := range s.Towns {
 		if t == nil || t.ID != id || id != strings.ToLower(t.Config.Repo) || t.Config.Validate() != nil || t.Tasks == nil || t.Workers == nil || t.Owned == nil || t.Intents == nil {
 			return errors.New("invalid town state")
+		}
+		if t.ArchivedTasks < 0 || (t.HistoryCreated && s.Format != 2) || (t.ArchivedTasks > 0 && !t.HistoryCreated) {
+			return errors.New("invalid task history metadata")
 		}
 		if len(t.Bulletins) > maxBulletins {
 			return errors.New("too many bulletins")

@@ -273,7 +273,8 @@ Private state defaults to `$XDG_STATE_HOME/brokk-town` or
 `~/.local/state/brokk-town`. `--state-dir` selects another directory; `--demo`
 appends `demo`. A single writer lock, atomic snapshots, per-role bot state, and
 private worktrees keep towns separate. Events, logs, and repo-bot reports have
-bounded recent histories; task, intent, and automation outcome history persists.
+bounded recent histories. Old terminal tasks move to local history; ownership,
+write intents, source cursor identities and automation outcomes remain in state.
 A worker's own log lines and phase changes are committed in batches of at most a
 couple of seconds, because every commit rewrites and fsyncs the whole snapshot;
 the newest line and phase always win, and everything buffered is committed before
@@ -388,7 +389,7 @@ verification bounded at 128 MiB per file.
 
 Before reclaiming evidence you might need, stop Town and independent bots and
 back up the **whole private state directory**, including `state.json`, bot state,
-repositories, worktrees and transcripts. Keep the backup private. Restore it as
+repositories, worktrees, transcripts and task history. Keep the backup private. Restore it as
 one consistent directory at the same path (saved repair intents contain absolute
 paths), then start Town and resolve interrupted outcomes before enabling workers.
 Do not restore only the main snapshot or manually delete write intents to make
@@ -407,3 +408,45 @@ covered branch or baseline changes; items omitted from a delta are retained.
 Older Repo Bot releases remain compatible and perform full scans. Town uses a
 new worker capability once that independent bot release is installed/launched;
 updating source here does not publish a bot release.
+
+## Completed task history
+
+After a successful repository inventory, Town archives native GitHub issues and
+pull requests in `closed`/`merged` stages and `shipped` commits after 30 days.
+It moves at most 500 tasks per inventory. Newly observed old closed tasks use
+GitHub's update time; a task Town observes transitioning to completion starts
+its retention period then. Active, blocked, recovery-held, pending-claim,
+follow-up and branch-cleanup work stays active. Unresolved writes or active
+non-repository workers hold archival. Source-funnel tasks keep their cursor
+identities in active state. Demo mode does not archive.
+
+Use **History** in the browser or the shared local API through the CLI:
+
+```sh
+bt history --repo OWNER/REPO
+bt history --repo OWNER/REPO --after 'CURSOR_FROM_PREVIOUS_PAGE' --limit 50 --json
+bt history --repo OWNER/REPO --task issue:123 --json
+```
+
+Pages contain 50 summaries by default (maximum 100); inspect loads one full
+saved task. Ordinary snapshots and SSE contain the archived count, not the
+archived task bodies. Repeated historical inventory does not recreate these
+tasks. Reopened work restores its full saved identity and decisions before
+normal reconciliation. These reads are local and do not query GitHub.
+
+History lives under `towns/<town-key>/history` in the private state directory.
+Town fsyncs immutable task records and a digest/size index before removing
+anything from active state. A failed state commit leaves the active task intact;
+a restart safely tolerates the extra archived copy. Missing or changed evidence
+blocks restoration instead of treating the task as new. Objects are bounded at
+8 MiB, the index at 64 MiB, and automatic maintenance has a ten-second deadline;
+tasks exceeding those limits stay active. The small index remains in memory,
+while full task records are read only when requested or reopened.
+
+The first archival upgrades the state format to **2**. Older Town versions
+refuse that state; use a compatible version, or restore a complete pre-upgrade
+backup to roll back. Stop Town and bots before backing up the **whole private
+directory** and restore it consistently at the same path. A missing or mismatched
+history index prevents startup. Storage cleanup retains history, ownership,
+write intents, source identities and outcomes; archival is not deletion of
+external-action memory or a cap on all durable state.

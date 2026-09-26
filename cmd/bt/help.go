@@ -13,6 +13,7 @@ import (
 // help, and a help command. Flag parsing stays on the standard library.
 
 type cliFlags struct {
+	historyAfter                      *string
 	storageAge                        *int
 	storageCleanup                    *string
 	hookEnable, hookDisable           *bool
@@ -75,6 +76,7 @@ type cliFlags struct {
 // flags relevant to each command.
 func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl := &cliFlags{}
+	fl.historyAfter = fs.String("after", "", "saved cursor from the previous history page")
 	fl.storageAge = fs.Int("older-than-hours", 168, "minimum completed artifact age for storage cleanup (default 7 days)")
 	fl.storageCleanup = fs.String("cleanup", "", "explicit comma-separated artifact IDs from a fresh storage inventory to remove")
 	fl.hookEnable = fs.Bool("enable", false, "enable the local attention hook")
@@ -118,7 +120,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.excludeLabels = fs.String("exclude-labels", "", "comma-separated labels that exclude work from this bot (settings --role issue|review)")
 	fl.only = fs.Int("only", 0, "restrict this bot to one issue (--role issue) or pull request (--role review) number (settings)")
 	fl.focus = fs.String("focus", "", "what a discovery scan should concentrate on (settings --role bug|feature|review)")
-	fl.limit = fs.Int("limit", 0, "most items one run may produce: issues filed, findings, proposals, repairs or bulletin items depending on the bot (settings --role BOT)")
+	fl.limit = fs.Int("limit", 0, "page size for history (1–100; default 50), or most items one run may produce: issues filed, findings, proposals, repairs or bulletin items depending on the bot (settings --role BOT)")
 	fl.attempts = fs.Int("attempts", 0, "tries this bot gives one item before giving up (settings --role BOT)")
 	fl.verify = fs.String("verify", "", "verification command for this bot as a JSON argument array; overrides the town command (settings --role BOT)")
 	fl.clearPolicy = fs.Bool("clear-policy", false, "remove this bot's work policy and take every item again (settings --role BOT)")
@@ -161,6 +163,7 @@ var cliCommands = []commandInfo{
 	{name: "add", short: "Add a town", long: "Add a town for a GitHub repository.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "model", "repo"}},
 	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo"}},
 	{name: "choices", short: "List a saved profile’s models and efforts", long: "Read model and effort choices for a town or bot profile. Mjolnir selections use the daemon catalog; direct local selections prepare a prompt-free local harness session. --model selects which model’s effort choices to read. This does not save settings.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role", "model", "json"}},
+	{name: "history", short: "Inspect archived terminal tasks", long: "Read completed tasks saved outside the active snapshot. Reopened tasks return automatically with their previous decisions and identities. Use --task for one archived task, or --after with a page cursor. This command never starts workers or writes to GitHub.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "task", "after", "limit", "json"}},
 	{name: "storage", short: "Inspect and clean completed local artifacts", long: "Read a dry-run disk inventory by town and bot. Cleanup requires explicit artifact IDs from that inventory, all workers paused, and no unresolved writes. Changed, dirty, unknown or active artifacts are retained. Task and write identities are never removed. Demo cleanup is disabled.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "older-than-hours", "cleanup", "json"}},
 	{name: "attention-hook", short: "Configure the local attention hook", long: "Show whether the service attention hook is configured and enabled. --enable/--disable changes it; --command-file FILE saves a private JSON command/argv array (- reads stdin). Disabled by default. The hook receives public identities and a reason code as JSON on stdin, runs for at most ten seconds independently of quiet hours, and never runs in demo. Command output is discarded.", args: "[flags]", flags: []string{"enable", "disable", "command-file", "json"}},
 	{name: "execution", short: "List or select execution targets", long: "List cached Mjolnir launch options. --refresh queues a background refresh. Use --repo and --target/--profile to save a selection, --local-execution to run directly here, or --inherit-execution --role BOT to restore inheritance. Mjolnir-backed execution is held until remote checkout and evidence support are available.", args: "[flags]", flags: []string{"json", "refresh", "repo", "role", "target", "profile", "local-execution", "inherit-execution"}},

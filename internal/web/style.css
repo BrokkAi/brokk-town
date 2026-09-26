@@ -1992,3 +1992,5 @@ body[data-skin="frontline"] .base-mini.release { background-position: 66.667% 10
 .storage-table { overflow-x: auto; max-height: 50vh; overflow-y: auto; }
 .storage-table td, .storage-table th { padding: .5rem; text-align: left; overflow-wrap: anywhere; vertical-align: top; }
 #storage-status { white-space: pre-wrap; }
+
+#history-detail { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow-y: auto; }

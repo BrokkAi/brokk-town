@@ -146,6 +146,7 @@ func (s *Supervisor) Storage(ctx context.Context, id string, ageHours int) (Stor
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	s.Store.historyForStorage(t)
 	return storageInventory(ctx, filepath.Dir(s.Store.path), t, ageHours), nil
 }
 func storageInventory(ctx context.Context, root string, t *Town, ageHours int) StorageInventory {
@@ -285,6 +286,9 @@ func storageInventory(ctx context.Context, root string, t *Town, ageHours int) S
 			}
 			add(path, kind, extension.role)
 		}
+	}
+	if path := filepath.Join(base, "history"); storagePathSafe(root, path) {
+		add(path, "task history (retained)", Hall)
 	}
 	if ctx.Err() != nil || out.Incomplete {
 		out.Incomplete = true
@@ -442,6 +446,7 @@ func (s *Supervisor) CleanupStorage(ctx context.Context, id string, ageHours int
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	t := s.Store.Snapshot().Towns[id]
+	s.Store.historyForStorage(t)
 	inventory := storageInventory(ctx, root, t, ageHours)
 	selected := map[string]StorageArtifact{}
 	for _, a := range inventory.Artifacts {
