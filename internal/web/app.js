@@ -1,4 +1,6 @@
 import { historyPanel } from "./history.js";
+
+import { guidePanel, paintGuide } from "./guide.js";
 import { storagePanel } from "./storage.js";
 import {
   positions,
@@ -225,7 +227,9 @@ async function api(path, body, signal) {
     const error = await response
       .json()
       .catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || response.statusText);
+    const failure = new Error(error.error || response.statusText);
+    failure.status = response.status;
+    throw failure;
   }
   return response.json();
 }
@@ -727,6 +731,8 @@ function chooseHouse(role) {
 storagePanel({ api, getTown: town });
 historyPanel({ api, getTown: town });
 
+const guideUI = guidePanel({api, getTown:town, getState:()=>state, onOpen:()=>chooseHouse("hall")});
+
 function renderTownControls(t) {
  $("#town-storage").disabled = !t;
  $("#town-history").disabled = !t;
@@ -774,6 +780,7 @@ function render() {
   $("#demo-note").hidden = !state.demo;
   $("#empty").hidden = !!t;
   renderTownControls(t);
+  guideUI.render();
   $("#repo-owner").textContent = t ? t.config.repo.split("/")[0] : "WELCOME TO";
   $("#town-name").textContent = t
     ? t.config.repo.split("/")[1]
@@ -1565,6 +1572,7 @@ function draw(now) {
     }
   }
 
+  paintGuide(ctx, {town:t, now, motion, visual:guideUI.visual(), positions});
   const travel = activeSkin.travelMs;
   moving = moving.filter((m) => now - m.start < travel + activeSkin.impactMs);
   if (motion)

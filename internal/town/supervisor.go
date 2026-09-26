@@ -80,6 +80,7 @@ type IssueRetrier interface {
 	RetryIssue(*Town, int) error
 }
 type Supervisor struct {
+	GuideRunner GuideRunner
 	Store       *Store
 	GitHub      GitHub
 	Workers     Workers
@@ -132,6 +133,8 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	go func() { defer s.wg.Done(); s.Mjolnir.Run(ctx) }()
 	s.wg.Add(1)
 	go func() { defer s.wg.Done(); s.watchAttention(ctx) }()
+	s.wg.Add(1)
+	go func() { defer s.wg.Done(); s.runGuide(ctx) }()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	// Reconnect to bot processes left by the previous service before scheduling
@@ -1165,6 +1168,9 @@ func closableDecline(task *Task) bool {
 	return task.MayoralDecision == "" && task.House == Hall && autoDeclined(task) && (task.Stage == "declined" || task.Stage == "closing" || task.Stage == "locked")
 }
 func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
+	return s.control(id, role, action, taskID, nil)
+}
+func (s *Supervisor) control(id string, role Role, action, taskID string, guard func(*Town) error) error {
 	if action == "delete" {
 		if role != "all" {
 			return errors.New("delete applies to the entire town")
@@ -1207,6 +1213,11 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
 			return errors.New("unknown town")
+		}
+		if guard != nil {
+			if err := guard(t); err != nil {
+				return err
+			}
 		}
 		if decision {
 			return st.decideTask(t, t.Tasks[taskID], action, "Mayor", s.now())
@@ -1260,6 +1271,9 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 		st.Event(id, "control", "operator", string(role), "", action+" "+string(role), s.now())
 		return nil
 	})
+	if errors.Is(err, errGuideAlreadyConfirmed) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

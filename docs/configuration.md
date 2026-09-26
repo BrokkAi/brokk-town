@@ -450,3 +450,63 @@ directory** and restore it consistently at the same path. A missing or mismatche
 history index prevents startup. Storage cleanup retains history, ownership,
 write intents, source identities and outcomes; archival is not deletion of
 external-action memory or a cap on all durable state.
+
+## Town Guide
+
+**Ask Town Guide** opens the Town Hall conversation. Ask about worker status,
+queued or blocked tasks, recent failures and relevant settings. Answers stream
+from the same local service state used by the terminal:
+
+```sh
+bt guide --repo OWNER/REPO --ask 'What needs attention?'
+bt guide --repo OWNER/REPO
+bt guide --repo OWNER/REPO --check --request-id SAVED_ID
+bt guide --repo OWNER/REPO --cancel --request-id SAVED_ID
+```
+
+`--json` returns the current committed conversation immediately. Without it,
+`--ask` and `--check` watch the saved answer as it arrives. Ctrl-C or closing the
+browser panel stops watching; **Cancel answer** (or `--cancel`) stops the work.
+The browser keeps an unacknowledged submission ID in session storage. Retry uses
+that same ID and sequence. Reconnecting and rendering never resubmit questions.
+Town retains the latest 20 turns; expired sequence numbers cannot replay pruned
+submissions. Answers interrupted by service restart stay marked interrupted and
+are not automatically rerun.
+
+The Guide inherits the town default harness, model and effort, captured for each
+answer. It uses a separate ACP conversation, not an execution bot or Mayor Bot.
+The configured harness must advertise a `read-only`, `readonly` or `plan` mode;
+otherwise Town fails before sending the question. Execution permission overrides
+are not reused. The ACP client offers no file, terminal or mutation tools and
+denies every permission request. The executable is still trusted local code,
+not an OS sandbox; use a harness whose advertised read-only mode you trust.
+Current Mjolnir-backed town defaults hold Guide execution until remote execution
+support exists. Demo always uses the built-in fake Guide and starts no agent.
+
+One answer runs at a time for the service, with a two-minute deadline, process
+group cancellation, 4 KiB questions and 16 KiB answers. Context contains worker
+summaries, counts, up to 30 recent/blocked tasks and public settings. It omits
+private commands, environment, credential references, raw transcripts and
+process handles; known private values and common token formats are redacted.
+GitHub and Town credential environment variables are not inherited by the Guide.
+Answers describe saved observations, not a fresh GitHub read. Missing reviews
+or zero new comments never establish a clean review, and uncertain writes remain
+unresolved. Do not put credentials into questions.
+
+A Guide may propose pausing one named worker after its current work finishes.
+The exact action is inert until **Confirm this pause**, or:
+
+```sh
+bt guide --repo OWNER/REPO --confirm --request-id SAVED_ID --proposal-digest SHOWN_DIGEST
+```
+
+Confirmation validates the saved action against the current worker state and
+commits through the ordinary worker-control transaction. A stale proposal is
+rejected; repeated confirmation does not dispatch another control. Other changes
+use the existing inspector and settings controls. The Guide cannot publish,
+merge, approve a review or execute arbitrary commands.
+
+The Guide waits at Town Hall, waves when chat opens, and lights the windows while
+answering. Gathering context draws dotted paths from relevant houses. These
+visuals use conversation state only and do not create delivery carts. Reduced
+motion shows static highlights and status text.

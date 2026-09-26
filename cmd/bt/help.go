@@ -13,7 +13,10 @@ import (
 // help, and a help command. Flag parsing stays on the standard library.
 
 type cliFlags struct {
-	historyAfter                      *string
+	historyAfter *string
+
+	guideAsk, guideDigest             *string
+	guideCancel, guideConfirm         *bool
 	storageAge                        *int
 	storageCleanup                    *string
 	hookEnable, hookDisable           *bool
@@ -77,6 +80,11 @@ type cliFlags struct {
 func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl := &cliFlags{}
 	fl.historyAfter = fs.String("after", "", "saved cursor from the previous history page")
+
+	fl.guideAsk = fs.String("ask", "", "ask Town Guide a question using town defaults")
+	fl.guideCancel = fs.Bool("cancel", false, "cancel the saved Town Guide question")
+	fl.guideConfirm = fs.Bool("confirm", false, "confirm the exact saved Town Guide pause proposal")
+	fl.guideDigest = fs.String("proposal-digest", "", "digest printed beside the exact Town Guide proposal")
 	fl.storageAge = fs.Int("older-than-hours", 168, "minimum completed artifact age for storage cleanup (default 7 days)")
 	fl.storageCleanup = fs.String("cleanup", "", "explicit comma-separated artifact IDs from a fresh storage inventory to remove")
 	fl.hookEnable = fs.Bool("enable", false, "enable the local attention hook")
@@ -156,6 +164,7 @@ var runFlagNames = []string{"config", "d", "listen"}
 var rootCommand = commandInfo{flags: runFlagNames}
 
 var cliCommands = []commandInfo{
+	{name: "guide", short: "Talk to Town Guide", long: "Read Town Hall conversation history, ask a contextual question, or reconnect with --check --request-id ID. Answers stream from the same service state as the browser. Proposals remain inert until --confirm with their exact digest. Ctrl-C stops watching; use --cancel to stop the answer.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "ask", "check", "request-id", "cancel", "confirm", "proposal-digest", "json"}},
 	{name: "doctor", short: "Check a town's setup without starting work", long: "Read-only checks for commands, GitHub access, agent availability and verifier setup. Results are saved in Town and shown in the browser. Agents and verification commands are never run. Use --json for structured results.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "json"}},
 	{name: "status", short: "Show whether Town is running and its towns", long: "Show whether Town is running, where, and which towns it serves. Use --json for the full town state.", args: "[flags]", flags: []string{"json"}},
 	{name: "web", short: "Print the browser address for the town", long: "Print the browser address, with its access key, for the running town.", args: "[flags]", flags: nil},

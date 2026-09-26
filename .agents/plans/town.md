@@ -1431,3 +1431,45 @@
   demonstrated the omission; the corrected case joins the full race suite.
 - Rebased onto concurrent npm startup fix #167 and merged incremental #168;
   complete root race/vet and offline integration checks passed on that base.
+
+## Conversational Town Guide (#40)
+
+- Add a separate bounded ACP conversation using the town's saved default
+  harness/model/effort. Require an advertised read-only/plan mode, expose no
+  workspace tools and deny all permissions. Keep worker permission overrides,
+  process output and GitHub/Town credential variables out of the Guide path.
+- Commit bounded shared conversation state with sequence-based submission
+  idempotency, explicit cancellation, restart interruption and monotonic updates.
+  Background execution streams sanitized chunks; rendering only consumes state.
+- Build context from worker summaries, recent failures, task counts and up to 30
+  tasks, with public settings. Preserve unknown/recovery outcomes and exact
+  review revision context. Redact private configuration values and token formats.
+- Browser Town Hall chat and bt guide use the same authenticated commands and
+  conversation. Guide may propose one pause; exact confirmation validates current
+  worker state and commits through the existing control transaction. Other
+  mutations remain in their established controls.
+- Place Town Hall nearer the center and render an idle/waving Guide, window glow,
+  contextual dotted paths and static reduced-motion status. No Guide deliveries
+  or render-driven writes. Demo uses an internal fake and never calls ACP/GitHub.
+- Validation passed: full root Go race tests/vet, fake ACP protocol tests,
+  frontend syntax and 93 tests, Town build, demo marker-isolation/reconnect smoke,
+  all-eight offline npm worker lifecycle and fake-Mjolnir smoke. The real demo
+  smoke exposed its separate simulation loop missing the Guide queue; add a
+  fake-only loop there and a startup regression. No live agents, GitHub
+  automation or release has been used.
+- Integrated merged archival #169 (da32cc5), retained both client controls and
+  state validations, and passed full root race/vet, 96 frontend tests, build,
+  demo Guide isolation/reconnect, fake-Mjolnir and offline npm lifecycle checks.
+- Audited #150's configuration-specific acceptance against merged #162/#163 and
+  existing inheritance, picker, frozen dispatch/recovery and demo tests; closed
+  #150 with that evidence. Managed execution remains held under #149/#153–155;
+  no non-local acceptance run has been claimed.
+- PR #171 review added failing regressions for a model/effort change resetting
+  the ACP mode and for SSE/HTTP acknowledgement ordering losing or retaining
+  browser drafts incorrectly. Select read-only mode immediately before prompting
+  and acknowledge a draft by exact submission identity without erasing edits.
+- Concurrent #170 changed bot license validation only; integrated it and passed
+  Repo, Mayor and Simplifier packaging/license tests with mocked publication.
+- After the review fixes, the full root race suite/vet and all 98 frontend tests
+  pass. The fake ACP fixture resets mode during model/effort selection, proving
+  the final read-only selection precedes every prompt.

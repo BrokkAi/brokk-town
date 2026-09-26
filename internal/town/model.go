@@ -582,6 +582,7 @@ type Event struct {
 	Title string    `json:"title"`
 }
 type Town struct {
+	Guide          *GuideConversation        `json:"guide,omitempty"`
 	ArchivedTasks  int                       `json:"archived_tasks,omitempty"`
 	HistoryCreated bool                      `json:"history_created,omitempty"`
 	SyncBranch     string                    `json:"sync_branch,omitempty"`
