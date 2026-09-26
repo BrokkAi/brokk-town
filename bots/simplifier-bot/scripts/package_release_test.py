@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import tarfile
@@ -32,6 +33,29 @@ class ReleaseAssets(unittest.TestCase):
         (self.assets / "release.json").write_text(json.dumps(self.manifest))
         (self.assets / "checksums.txt").write_text("".join(
             f"{a['sha256']}  {a['name']}\n" for a in self.manifest["assets"]))
+
+    def test_verified_assets_build_all_npm_packages_with_project_license(self):
+        output = self.root / "packages"
+        npm_config = self.root / "npmrc"
+        npm_config.write_text("")
+        env = {
+            "npm_config_userconfig": str(npm_config),
+            "npm_config_globalconfig": str(self.root / "global-npmrc"),
+            "npm_config_cache": str(self.root / "npm-cache"),
+            "npm_config_offline": "true",
+            "npm_config_update_notifier": "false",
+        }
+        with patch.dict(os.environ, env):
+            package_installers.package(self.tag, self.assets, output, self.sha)
+        manifest = json.loads((output / "npm/manifest.json").read_text())
+        self.assertEqual(len(manifest["packages"]), 5)
+        self.assertEqual(manifest["commit"], self.sha)
+        for record in manifest["packages"]:
+            package = output / "npm" / record["filename"]
+            release.licenses.check_npm(package)
+            with tarfile.open(package, "r:gz") as archive:
+                metadata = json.load(archive.extractfile("package/package.json"))
+            self.assertEqual(metadata["license"], "MIT")
 
     def test_verified_assets_must_match_the_checkout(self):
         release.verify_local(self.tag, self.assets, self.sha)
