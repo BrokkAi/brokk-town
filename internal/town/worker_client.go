@@ -96,6 +96,8 @@ type workerRequest struct {
 	PR              int                `json:"pr,omitempty"`
 	BaseSHA         string             `json:"base_sha,omitempty"`
 	HeadSHA         string             `json:"head_sha,omitempty"`
+	RemoteAgent     string             `json:"remote_agent,omitempty"`
+	DryRun          bool               `json:"dry_run,omitempty"`
 	Mode            string             `json:"mode,omitempty"`
 	// SinceHead and Commits are the repo worker's inventory inputs: the branch
 	// head Town last observed, and the revisions it still needs release

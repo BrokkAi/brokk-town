@@ -10,7 +10,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
-const executionPending = "Mjolnir execution is not available yet; remote checkout and evidence support are still required. Select direct local execution to run this bot here."
+const executionPending = "This duty does not support Mjolnir execution yet. Managed review and repair are supported; select direct local execution for other duties."
 
 // ExecutionForRole resolves placement independently of the agent profile.
 // A missing override inherits; an explicit empty selection runs directly here.

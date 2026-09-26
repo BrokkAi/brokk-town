@@ -31,7 +31,7 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 	}
 	return worker.Serve(ctx, *socket, worker.Initialize{
 		Protocol: worker.ProtocolVersion, MinimumProtocol: worker.MinimumProtocol,
-		Bot: "review-bot", Version: version, Capabilities: []string{"policy", "run", "progress", "exact-revision-review", "finding-severity"},
+		Bot: "review-bot", Version: version, Capabilities: []string{"policy", "run", "progress", "exact-revision-review", "finding-severity", "remote-agent-v1", "dry-run"},
 	}, func(ctx context.Context, request worker.Request, progress func(worker.Progress)) (worker.Result, error) {
 		if request.PR < 1 {
 			return worker.Result{}, fmt.Errorf("review worker requires a positive PR number")
@@ -42,6 +42,8 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 		cfg.Directory = request.Directory
 		cfg.StateDirectory = request.StateDirectory
 		cfg.Agent = request.Agent
+		cfg.RemoteAgent = request.RemoteAgent
+		cfg.DryRun = request.DryRun
 		cfg.GitHub.Repo = request.Repo
 		cfg.GitHub.Host = request.Host
 		cfg.PR = request.PR
@@ -92,10 +94,16 @@ func findingID(value string) string {
 func reviewResult(saved *bot.State, request worker.Request) worker.ReviewResult {
 	result := worker.ReviewResult{Status: "stale", Detail: "No submitted review matches the requested revision; refresh PR eligibility and revisions", Findings: map[string]string{}, Severities: map[string]string{}, ExactBase: request.BaseSHA, ExactHead: request.HeadSHA}
 	for _, job := range saved.Jobs {
-		if job.PR.Number != request.PR || job.DryRun || job.PR.Head.SHA != request.HeadSHA || job.PR.Base.SHA != request.BaseSHA {
+		if job.PR.Number != request.PR || job.DryRun != request.DryRun || job.PR.Head.SHA != request.HeadSHA || job.PR.Base.SHA != request.BaseSHA {
 			continue
 		}
 		result.Status, result.Detail = job.Status, job.Failure
+		if job.DryRun {
+			if job.Status == "dry_run" {
+				result.Detail = "Review completed in dry-run mode; no review was published"
+			}
+			continue // A dry-run result never grants publication or merge authority.
+		}
 		if job.Status != "submitted" {
 			continue
 		}

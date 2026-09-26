@@ -2,56 +2,64 @@
 
 ## Finish Mjolnir issues, review/merge PRs, then release changed components
 
-- User explicitly authorized one PR per remaining issue, review and fixes,
-  normal merge after passing checks, and releases for each changed bot and Town
-  after the whole sequence. Use available test infrastructure without asking
-  the user to choose target/profile details. Docker is available; installed
-  Mjolnir 2.23.0 now contains the new contracts; downloaded and checksum-verified
-  its released Linux binary for an isolated Docker acceptance. Keep it apart from live
-  repository automation and preserve all existing worker APIs/capabilities.
-- PR #175 covers #153: guarded launch receipts plus explicit runtime selection
-  through shared browser/CLI API. Save target-owned versions by target/profile,
-  preserve old pins on failed discovery, freeze dispatched and recovery copies,
-  and never start a local harness for managed discovery. No silent upgrades.
-- Reviewed #175 at bdb34e1, fixed runtime-save timeout/late-response handling,
-  passed all root/frontend/local checks and the nine-module CI plus worker smoke,
-  then merged normally as 2440dfe. Runtime dispatch acceptance remains pending
-  the later PRs, so #153 stays open until the integrated path is validated.
-- #154 now has a durable Mjolnir run lifecycle. Resolve an unambiguous configured
-  single-repository bundle; reuse one stable workspace; save exact private-branch
-  and runtime intent before HTTP or ACP creation. Never retry a lost create
-  receipt. Confirm readiness and unchanged exact-base diff before returning a
-  usable session. Store complete private evidence before cleanup and confirm
-  destruction with a session 404; lost cleanup is reconciled by reads only.
-  Regression caught shared runtime-component pointers in the launch plan; decode
-  into a fresh value to freeze all nested configuration. Demo remains offline.
-- Opened PR #176. Review reproduced cleanup accepting a changed runtime ID when
-  the event ordinal stayed the same. Revalidate the full launch receipt before
-  destruction; keep the session if checkout, runtime guard or readiness changed.
-  Full root race/vet, frontend syntax and 99 tests, build and demo/fake-Mjolnir
-  smoke passed before review; repeat root checks after this fix.
-- PR #176 passed all CI and merged normally at b72f499 after the exact-head
-  review. PR #177 contains the artifact/evidence layer. Its review found missing
-  transcript positions defaulting to zero and ambiguous duplicate positions;
-  both now refuse evidence rather than choosing a potentially wrong final answer.
-- Next PR #154: reusable bundle/workspace mapping, exact checkout, durable
-  creation/cleanup intents and uncertain-outcome recovery. Then #155: remote
-  evidence and verified bundle import through independent worker boundaries.
-  Finally #149: scheduler/ACP integration, local fixtures and isolated real-target
-  acceptance. Keep incomplete issues open until their acceptance is met.
-- #155 implementation: bind each finished answer to a complete stable private
-  transcript, unchanged review tree or committed descendant repair, and the
-  original runtime initialization. Refuse missing artifacts and resumed workers.
-  Save an export intent before checkpointing, never retry an uncertain export,
-  retain bundle/diff/transcript with digests, and recheck artifacts after export.
-  Import only the advertised exact repair commit into a clean private local
-  branch, verify history/nonempty diff, run operator checks there and require the
-  same clean commit afterwards. Existing semantic review and GitHub gates remain
-  required; dispatch wiring is the following #149 PR.
-  Root race/vet, frontend syntax/99 tests, build and both local smoke checks pass.
-- Review each exact PR head, fix findings, pass required checks and merge without
-  bypass. Release only changed components, bots before Town where needed, using
-  immutable project tags and Actions publishers; verify published assets/npm.
+- User authorized one PR per remaining issue (#149, #153, #154, #155), review,
+  fixes, normal merge when green, and independent releases of changed components
+  only after all four issues are fixed. No early release. Review Bot and Town
+  are the changed projects; no Town or bot release has been published yet.
+- PR #175 (#153) merged as 2440dfe after review fixes and green CI. PR #176
+  (#154) merged as b72f499 after the runtime-drift cleanup review fix and green
+  CI. PR #177 (#155) merged as d2f3f07 after transcript-position fixes and green
+  CI. Integration PR #178 (#149) is open on codex/mjolnir-worker-dispatch.
+- #178 production code is validated at 1a7867c. Exact-head COMMENT reviews found
+  and fixed misleading dry-run worker results (9e3d147), oversized remote review
+  prompts (d97425a), oversized certification prompts (9c6f475), and stale model/
+  effort snapshots after PATCH (1a7867c). Completion waits for a bounded idle
+  snapshot; mutations are never repeated. Confirmed ACP answers are saved before
+  artifact collection, and managed failures retain their actionable causes.
+- Validation: full Town and Review Bot race suites/vet; 99 frontend tests/syntax;
+  both projects' Python release tests, npm launcher tests and license checks;
+  build, demo/fake-Mjolnir smoke and all eight offline npm worker v1/parent-loss
+  checks. CI is green at 1a7867c. Both independent local release preflights built
+  four native archives and five npm packages at that commit without publishing.
+- Real acceptance completed on PR #178 at exact head
+  1a7867cf8472971e7e0221f9bbc42a1023901126 using official Mjolnir v2.23.1.
+  Digest-checked release assets contain byte-identical CLI/worker binaries to
+  the workflow artifacts used by the isolated daemon. Target acceptance-known,
+  profile acceptance, bridge 1.13.3 and provider 0.156.1 report runtime identity
+  mj-runtime-v1:4622601d622949c3ce7b37515d9520ba05ff10340fc0064ce3727627d5462538.
+- Actual Review Bot worker dry-run passed exact runtime/revision/transcript and
+  semantic receipt checks, with no new concrete findings. Session
+  54b94a0848cf1dcc8096ee9b95d6fb05 was visible in mj sessions. Its run
+  run-99740a6511a1e2d6040b4f392fa53cce retained validated private evidence.
+  The harness initially failed index lookup because a point lookup does not
+  refresh Mjolnir's index. The documented search read triggered refresh; the
+  exact session/profile/target then appeared. Fixed the opt-in harness to use
+  that read. No prompt was replayed to resolve this harness-only failure.
+- An explicitly gated follow-up verified the retained evidence/index and called
+  the production Run.Destroy path, confirming destruction. The private proof is
+  var/mjolnir-acceptance/proof-pr178-snapshots/acceptance.json, with the one-off
+  completion source retained beside it in the ignored acceptance directory.
+  The full harness was not rerun after its index-only fix; its compilation and
+  vet pass, and all acceptance stages were observed on that same actual run.
+- The model catalogue exposes seven models and six efforts. Its initial 503 was
+  isolated setup: NVM Node was absent from Mjolnir's clean login PATH. An explicit
+  PATH on the private acceptance profile resolved it; no upstream bug or Town
+  harness install was involved. Target execution still uses its own runtime.
+- Earlier failed acceptance attempts remain retained for diagnosis: the first
+  prompt was rejected for size before any turn; the second finished but its
+  immediate evidence refusal discarded the detailed cause. Later readback of
+  that second session passed all evidence decoders. Do not turn either failed
+  attempt into successful publication evidence or automatically replay it.
+- Upstream blocker BrokkAi/mjolnir#1166 is fixed by #1167, merged c107232 after
+  green CI, and published as v2.23.1 by the upstream release workflow. No
+  duplicate upstream PR/release was created. Existing unrelated Mjolnir sessions
+  and the user's normal installed CLI were left alone.
+- Remaining: commit final acceptance documentation/harness fix, review the final
+  diff, wait for exact-head green CI, merge #178 normally, close #149/#153–155,
+  then release Review Bot (expected 0.2.13) before Town (expected 0.7.3). Recheck
+  published versions before immutable tags and verify release assets, npm
+  packages and released worker v1 capabilities. Never infer merge authority
+  from a dry-run or zero new comments.
 
 ## Mjolnir launch receipts (#153/#154, first part implemented)
 

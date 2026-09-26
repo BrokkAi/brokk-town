@@ -32,6 +32,28 @@ type privateEvidence struct {
 	BundleSHA256 string                  `json:"bundle_sha256,omitempty"`
 }
 
+// Preserve the confirmed ACP answer even if a subsequent artifact read fails.
+// This is recovery evidence only; it never changes the run's prompting state
+// or permits publication or cleanup without Collect's complete validation.
+func (r *Run) retainCompletedAnswer(answer string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.record.State != "prompting" || strings.TrimSpace(answer) == "" || len(answer) > 1<<20 {
+		return errors.New("Mjolnir completed without a bounded ACP answer; retain its session")
+	}
+	data, err := json.Marshal(struct {
+		Session string `json:"session_id"`
+		Answer  string `json:"answer"`
+	}{r.record.Session, answer})
+	if err != nil {
+		return err
+	}
+	if err := writeCache(filepath.Join(r.directory, "completed-answer.json"), data); err != nil {
+		return err
+	}
+	return syncDirectory(r.directory)
+}
+
 func (r *Run) checkCurrentSession(ctx context.Context) (SessionState, error) {
 	s, err := r.owner.Catalog.ReadSession(ctx, r.identity())
 	if err != nil {

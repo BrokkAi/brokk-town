@@ -56,6 +56,10 @@ type Config struct {
 	DryRun        bool     `json:"dry_run"`
 	Focus         string   `json:"focus,omitempty"`
 	Verify        []string `json:"verify,omitempty"`
+	// RemoteAgent is an optional parent-owned Unix socket implementing the
+	// additive remote-agent-v1 capability. RemoteHead is frozen per session.
+	RemoteAgent string `json:"remote_agent,omitempty"`
+	RemoteHead  string `json:"-"`
 }
 
 func DefaultConfig() Config {
@@ -171,7 +175,10 @@ func (c Config) Validate() error {
 			return errors.New("checkout and state directories must not overlap")
 		}
 	}
-	if len(c.Agent.Command) == 0 || c.Agent.Command[0] == "" {
+	if c.RemoteAgent != "" && !filepath.IsAbs(c.RemoteAgent) {
+		return errors.New("remote_agent requires an absolute private Unix socket path")
+	}
+	if c.RemoteAgent == "" && (len(c.Agent.Command) == 0 || c.Agent.Command[0] == "") {
 		return errors.New("agent.command is required")
 	}
 	if c.Agent.Effort != "" && strings.TrimSpace(c.Agent.Effort) == "" {

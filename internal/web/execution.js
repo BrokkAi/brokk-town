@@ -27,7 +27,7 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
       ? `${selected.target_id} / ${selected.profile_id || "No profile"} · ${target?.availability || "missing from catalog"}${target?.unavailable_reason ? `: ${target.unavailable_reason}` : ""}`
       : "Runs directly on this machine.";
     $("execution-note").textContent = managed || (mode === "inherit" && selected.target_id)
-      ? "Mjolnir execution is not available yet. This selection holds agent work until remote checkout and evidence support are ready. Repo Bot continues inventory reads. Availability is advisory; Mjolnir checks again at launch."
+      ? "Mjolnir supports PR reviews and repairs from verified review feedback. Select a known runtime before dispatch. Other agent duties stay on hold when assigned to Mjolnir; Repo Bot continues inventory reads. Availability is checked again at launch."
       : "Direct local execution uses the agent settings below and Town’s worker limit.";
     $("save-execution").disabled = saving || (managed && (!$("execution-target").value || !$("execution-profile").value));
     const savedSelection = effective();

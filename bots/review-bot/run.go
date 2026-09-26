@@ -281,6 +281,7 @@ func (e *engine) session(ctx context.Context, g checkout, j *Job, prompt string)
 	defer func() { err = errors.Join(err, cleanup()) }()
 	cfg := e.config
 	cfg.Directory = dir
+	cfg.RemoteHead = j.PR.Head.SHA
 	text, err = e.agent(cfg).Execute(ctx, prompt)
 	if err != nil {
 		return "", err
@@ -332,7 +333,16 @@ func (e *engine) review(ctx context.Context, s *State, j *Job) error {
 		return err
 	}
 	e.report(s, "investigating", "Investigating introduced defects")
-	text, err := e.session(ctx, g, j, investigationPrompt(inputPath, e.config.MaxFindings))
+	contextRef := "at " + inputPath
+	verificationContext := inputPath
+	if e.config.RemoteAgent != "" {
+		contextRef, err = remoteSnapshotContext(snapshot)
+		if err != nil {
+			return err
+		}
+		verificationContext = contextRef
+	}
+	text, err := e.session(ctx, g, j, investigationPromptContext(contextRef, e.config.MaxFindings))
 	if err != nil {
 		return err
 	}
@@ -369,7 +379,7 @@ func (e *engine) review(ctx context.Context, s *State, j *Job) error {
 			return err
 		}
 		e.report(s, "reviewing", fmt.Sprintf("Verifying finding %d of %d", i+1, len(result.Findings)))
-		text, err = e.session(ctx, g, j, verificationPrompt(inputPath, f, comparison))
+		text, err = e.session(ctx, g, j, verificationPrompt(verificationContext, f, comparison))
 		if err != nil {
 			return err
 		}

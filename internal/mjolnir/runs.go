@@ -20,9 +20,16 @@ type RunPlan struct {
 	Placement  Placement     `json:"placement"`
 	Checkout   ExactCheckout `json:"checkout"`
 	Runtime    RuntimePin    `json:"runtime"`
+	Model      string        `json:"model,omitempty"`
+	Effort     string        `json:"effort,omitempty"`
 }
 
 func (p RunPlan) Validate() error {
+	for _, value := range []string{p.Model, p.Effort} {
+		if value != "" && (!ValidID(value)) {
+			return errors.New("invalid managed model or effort")
+		}
+	}
 	if p.ID == "" || len(p.ID) > 128 || strings.Trim(p.ID, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" || !ValidID(p.Repository) || p.Selection.Validate() != nil || !p.Selection.Managed() || p.Placement.Validate() != nil || p.Checkout.Validate() != nil || p.Runtime.Validate() != nil || p.Runtime.Source.Selection != p.Selection || p.Checkout.Repository != p.Placement.Repository || p.Checkout.Branch != "town/"+p.ID {
 		return errors.New("invalid Mjolnir run plan; exact revision, private branch, placement and selected runtime are required")
 	}

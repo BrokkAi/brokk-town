@@ -37,3 +37,22 @@ func TestReviewResultRequiresSubmittedExactRevision(t *testing.T) {
 		t.Fatal("dry run certified")
 	}
 }
+
+func TestDryRunWorkerReportsCompletionWithoutCertifyingLiveWork(t *testing.T) {
+	req := worker.Request{PR: 7, BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("b", 40), DryRun: true}
+	job := &bot.Job{Status: "dry_run", DryRun: true}
+	job.PR.Number, job.PR.Base.SHA, job.PR.Head.SHA = req.PR, req.BaseSHA, req.HeadSHA
+	saved := &bot.State{Jobs: []*bot.Job{job}}
+	got := reviewResult(saved, req)
+	if got.Status != "dry_run" || got.Complete || len(got.Findings) != 0 || !strings.Contains(got.Detail, "no review was published") {
+		t.Fatalf("dry-run outcome was lost or certified: %+v", got)
+	}
+	req.DryRun = false
+	if got := reviewResult(saved, req); got.Status != "stale" || got.Complete {
+		t.Fatalf("dry run consumed live review: %+v", got)
+	}
+	req.DryRun, req.HeadSHA = true, strings.Repeat("c", 40)
+	if got := reviewResult(saved, req); got.Status != "stale" || got.Complete {
+		t.Fatalf("dry run accepted a different revision: %+v", got)
+	}
+}

@@ -12,19 +12,22 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
 type BotWorkers struct {
-	Root         string
-	Store        *Store
-	GitHub       GitHub
-	botCommands  map[Role]string
-	poolMu       sync.Mutex
-	pool         map[string]*workerProcess
-	poolContext  context.Context
-	jobsQuery    func(*Town, string, int) (map[int]*issueJobSummary, error)
-	remoteURL    func(string) string
-	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
+	Root           string
+	Store          *Store
+	GitHub         GitHub
+	Mjolnir        *mjolnir.Catalog
+	MjolnirCommand []string
+	botCommands    map[Role]string
+	poolMu         sync.Mutex
+	pool           map[string]*workerProcess
+	poolContext    context.Context
+	jobsQuery      func(*Town, string, int) (map[int]*issueJobSummary, error)
+	remoteURL      func(string) string
+	executeAgent   func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
 	// confirmWait and confirmInterval bound how long a repair publish waits
 	// for GitHub's pull request head to catch up with the pushed branch.
 	// Zero values use the production defaults.
@@ -81,8 +84,22 @@ type dispatch struct {
 }
 
 func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Progress), log *slog.Logger) (result RunResult, err error) {
-	if err := requireLocalExecution(t.Config.ForRole(r)); err != nil {
-		return result, err
+	if t.Config.ExecutionForRole(r).Managed() {
+		managed, e := b.beginManaged(ctx, t, r, observe)
+		if e != nil {
+			return result, managedSetupError(e)
+		}
+		ctx = context.WithValue(ctx, managedContextKey{}, managed)
+		defer func() {
+			if failure := managed.failure(); failure != nil && !errors.Is(err, failure) {
+				err = errors.Join(err, failure)
+			}
+			if err == nil {
+				cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				defer cancel()
+				err = managed.finish(cleanup)
+			}
+		}()
 	}
 	if r == Release && t.Config.MergePolicy == "manual" {
 		return result, manualReleaseError()
@@ -107,9 +124,13 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			log.Warn("could not collect finished worktrees", "error", err)
 		}
 	}
-	agent, err := agentConfig(ctx, t.Config, b.Root)
-	if err != nil {
-		return result, err
+	agent := t.Config.Agent
+	if !t.Config.ExecutionForRole(r).Managed() {
+		var e error
+		agent, e = agentConfig(ctx, t.Config, b.Root)
+		if e != nil {
+			return result, e
+		}
 	}
 	t.Config.Agent = agent
 	if profile, overridden := t.Config.BotAgents[r]; overridden {
@@ -385,6 +406,19 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		Protocol: workerProtocolVersion, Remote: remote, Branch: branch,
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
 		Agent: agent, Verify: t.Config.Verify, Issue: d.issue, PR: d.pr, BaseSHA: d.base, HeadSHA: d.head,
+	}
+	if role == Review && t.Config.ExecutionForRole(role).Managed() {
+		managed, _ := ctx.Value(managedContextKey{}).(*managedDispatch)
+		if managed == nil {
+			return workerResult{}, errors.New("managed review has no durable dispatch context")
+		}
+		path, close, e := startRemoteAgent(ctx, managed, d.head)
+		if e != nil {
+			return workerResult{}, e
+		}
+		defer close()
+		request.RemoteAgent = path
+		request.Agent = runner.AgentConfig{}
 	}
 	// The house's policy carries its own verification command when it has
 	// one, so Verify stays the town default for a house without a policy.

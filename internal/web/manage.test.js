@@ -146,7 +146,7 @@ test("execution selection stores IDs independently of unsaved agent edits", asyn
   edit("execution-mode", "mjolnir", "onchange");
   edit("execution-target", "builder", "onchange");
   assert.match(elements["execution-detail"].textContent, /Start the build host/);
-  assert.match(elements["execution-note"].textContent, /holds agent work/);
+  assert.match(elements["execution-note"].textContent, /supports PR reviews/);
   assert.equal(elements["execution-profile-field"].hidden, true);
   await elements["save-execution"].onclick();
   const call = app.calls.find((c) => c.url === "/api/execution");

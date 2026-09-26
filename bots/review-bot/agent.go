@@ -17,6 +17,9 @@ type agentProcess struct {
 }
 
 func (a agentProcess) Execute(ctx context.Context, prompt string) (string, error) {
+	if a.config.RemoteAgent != "" {
+		return executeRemote(ctx, a.config, prompt)
+	}
 	text, err := (runner.Runner{Config: runner.Config{Directory: a.config.Directory, StateDirectory: a.config.StateDirectory, Agent: a.config.Agent, AutoApprove: true, ClientInfo: acp.ClientInfo{Name: "review-bot", Version: "0.1.0"}}, Log: a.log}).Execute(ctx, prompt)
 	if err != nil {
 		return "", err

@@ -182,6 +182,22 @@ results when applicable, while GitHub remains the durable source for receipts.
 The schemas are independent of the Unix HTTP transport, allowing an authenticated
 TLS transport to be added later without changing worker semantics.
 
+The additive `remote-agent-v1` capability accepts `remote_agent`, an absolute
+path to the parent's private Unix socket. Investigation and verification each
+POST `{protocol: 1, head, prompt}` to `/v1/agent`, with inline repository context.
+The context includes complete discussion and exact commits; the remote agent
+reads the full diff from its checkout. Prompts over 65,536 characters are refused
+before contacting the parent, without truncating review input.
+The parent must return `{protocol: 1, head, text, evidence}` only after validating
+the exact revision and retaining its execution evidence. Missing or mismatched
+evidence is a refusal; the bot never falls back to a local agent. The bot still
+owns semantic receipt validation and GitHub publication. Existing worker v1
+requests continue to use their configured local agent.
+
+The `dry-run` capability accepts `dry_run: true` in a worker request. It performs
+the complete review without publishing or consuming the live review revision;
+its worker result cannot authorize a merge.
+
 ## Optional configuration
 
 `brv --config /path/to/review-bot.json` loads an explicit JSON configuration;
