@@ -24,6 +24,11 @@
   destruction with a session 404; lost cleanup is reconciled by reads only.
   Regression caught shared runtime-component pointers in the launch plan; decode
   into a fresh value to freeze all nested configuration. Demo remains offline.
+- Opened PR #176. Review reproduced cleanup accepting a changed runtime ID when
+  the event ordinal stayed the same. Revalidate the full launch receipt before
+  destruction; keep the session if checkout, runtime guard or readiness changed.
+  Full root race/vet, frontend syntax and 99 tests, build and demo/fake-Mjolnir
+  smoke passed before review; repeat root checks after this fix.
 - Next PR #154: reusable bundle/workspace mapping, exact checkout, durable
   creation/cleanup intents and uncertain-outcome recovery. Then #155: remote
   evidence and verified bundle import through independent worker boundaries.

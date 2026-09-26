@@ -26,6 +26,7 @@ func runPlan(t *testing.T) RunPlan {
 type runCalls struct {
 	create, destroy, workspace atomic.Int32
 	deleted                    atomic.Bool
+	runtimeChanged             atomic.Bool
 }
 
 func runsFixture(t *testing.T, scenario string) (*Runs, RunPlan, *runCalls) {
@@ -70,6 +71,9 @@ func runsFixture(t *testing.T, scenario string) (*Runs, RunPlan, *runCalls) {
 				return
 			}
 			fields := launchFields()
+			if calls.runtimeChanged.Load() {
+				fields["runtime"].(map[string]any)["id"] = "changed-after-evidence"
+			}
 			switch scenario {
 			case "wrong checkout":
 				fields["checkout"] = ExactCheckout{"project", evidenceHead, "town/run-123"}
@@ -259,5 +263,23 @@ func TestManagedCheckoutRetainsEvidenceWhenFilesOrConnectionChange(t *testing.T)
 	other := New(t.TempDir(), false, Connection{URL: rs.Catalog.connection.URL, TokenFile: rs.Catalog.connection.TokenFile + "-other"})
 	if _, err := (&Runs{other, rs.Directory}).Records(); err == nil {
 		t.Fatal("adopted another daemon's session")
+	}
+}
+
+func TestManagedCleanupRefusesChangedRuntimeEvenWithSameOrdinal(t *testing.T) {
+	rs, plan, calls := runsFixture(t, "success")
+	run, err := rs.Prepare(t.Context(), plan, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run.MarkPrompting(); err != nil {
+		t.Fatal(err)
+	}
+	if err := run.SaveEvidence([]byte(`{"complete":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	calls.runtimeChanged.Store(true)
+	if err := run.Destroy(t.Context()); err == nil || calls.destroy.Load() != 0 {
+		t.Fatal("destroyed a session with changed runtime identity")
 	}
 }

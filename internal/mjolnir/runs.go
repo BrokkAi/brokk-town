@@ -280,7 +280,7 @@ func (r *Run) Destroy(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if receipt.Lifecycle != "live" || !receipt.Idle || receipt.ChatPhase != "idle" || receipt.HasError == nil || *receipt.HasError || receipt.Runtime == nil || r.record.Receipt == nil || receipt.Runtime.EventOrdinal != r.record.Receipt.Runtime.EventOrdinal {
+	if receipt.CheckLaunchReceipt(r.record.Plan.Checkout, r.record.Plan.Runtime.Runtime.ID) != nil || r.record.Receipt == nil || receipt.Runtime.EventOrdinal != r.record.Receipt.Runtime.EventOrdinal {
 		return errors.New("Mjolnir session changed or is busy; retain it instead of cleaning up")
 	}
 	if err := r.save("destroying"); err != nil {
