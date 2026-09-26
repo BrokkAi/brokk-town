@@ -69,7 +69,21 @@ Town stops its workers when it exits. Interrupted dispatches retain their target
 and revision as an uncertain outcome. Reconcile saved results and GitHub before
 authorizing a retry.
 
+Canceled attempts retain their last reported phase and available cancellation
+cause in both the worker log and outcome history. These distinguish an operator
+stop, a service-context cancellation (including its signal or failure when
+provided), and a worker reporting cancellation while Town's dispatch context is
+still active. Missing causes remain explicitly unknown. Older generic cancellation
+records cannot recover details that were never saved.
+
 Repo Bot resumes repository inventory automatically after an interrupted read.
+On startup after an upgrade, Town also retires the old `invalid branch` startup
+error for an uninitialized town whose default branch has not yet been discovered.
+It saves that repair immediately and makes enabled inventory due now. Historical
+logs and uncertain repair records remain; paused houses stay paused, and the town
+remains uninitialized until a fresh inventory succeeds. Canceling that inventory
+does not bring the obsolete error back. Other failures remain visible.
+
 Older recovery records and interrupted runs that could repair a branch also
 resume inventory, while retaining the uncertain repair and holding further
 repairs. A successful inventory clears the previous repository error; its log

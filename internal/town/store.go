@@ -91,7 +91,11 @@ func Open(dir string, demo bool) (*Store, error) {
 	// A saved dispatch is interrupted, not a process to adopt. Preserve possible
 	// writes, while allowing repository reads to resume and reconcile them.
 	beforeRecovery := State{AttentionSeen: s.state.AttentionSeen}
+	repairedStartup := false
 	for _, t := range s.state.Towns {
+		if recoverDefaultBranchFailure(&s.state, t, time.Now()) {
+			repairedStartup = true
+		}
 		if t.Guide != nil {
 			for i := range t.Guide.Turns {
 				turn := &t.Guide.Turns[i]
@@ -125,6 +129,14 @@ func Open(dir string, demo bool) (*Store, error) {
 		}
 	}
 	queueAttention(beforeRecovery, &s.state, time.Now())
+	if repairedStartup {
+		// Persist the upgrade repair before exposing state or starting workers;
+		// it must not depend on another inventory reaching its commit point.
+		if err := s.Update(func(*State) error { return nil }); err != nil {
+			s.Close()
+			return nil, fmt.Errorf("persist startup recovery: %w", err)
+		}
+	}
 	return s, nil
 }
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.2 — 2026-09-26
+
+Version 0.7.1 was not published: its recovery tests failed in UTC environments.
+The tests now compare saved evidence consistently across time zones.
+
+- Preserve cancellation causes and the last worker phase in durable logs and
+  outcome history, including operator stops, service signals/failures and
+  worker-provided details. Unknown causes stay explicit and credentials are scrubbed.
+- Retire the persisted `invalid branch` startup failure on upgrade for towns
+  still awaiting default-branch discovery. Save the recovery before starting
+  workers and retry enabled inventory promptly, preserving pauses, historical
+  logs and uncertain repair holds. Initialization still requires fresh inventory.
+- Add Town Guide conversations in the browser and CLI, with explicit operator
+  confirmation before a proposed pause is applied.
+- Archive completed task detail outside active snapshots and expose saved
+  history through the browser and CLI.
+
 ## 0.7.0 — 2026-09-26
 
 - Install only Town, and launch independently released bots through npx. Resolve
