@@ -411,3 +411,26 @@ that duty. The error identifies the run and any known session. Inspect `run.json
 and the session in Mjolnir before resolving the outcome; restarting Town never
 retries creation, prompting, export or cleanup from an uncertain record. There
 is no automatic repair of these records or UI action that discards them.
+
+## Separate real-target acceptance
+
+The manual harness is excluded from normal tests and CI. It reads an existing
+open PR, dispatches Review Bot with `dry_run: true`, checks every remote answer's
+saved evidence and visibility in `mj sessions` and the session index, then
+confirms cleanup. It does not run Town's publication or merge path. Failures keep
+the dedicated state directory and remote sessions for inspection.
+
+Set `BT_MJOLNIR_ACCEPTANCE` to a private JSON configuration with `Root` (a new
+absolute state directory), `Repo`, `PR`, `Target`, `Profile`, `Discovery` (an
+initialized session ID), `ReviewBinary` (an absolute worker executable path),
+and `Command` (the `mj` argv array). Use the same Mjolnir API and instance
+environment as the configured command, then invoke:
+
+```sh
+go test -tags=mjolnir_acceptance ./internal/town \
+  -run '^TestMjolnirReadOnlyAcceptance$' -count=1 -v -timeout=50m
+```
+
+Without the explicit configuration the harness skips. It writes `acceptance.json`
+with revision, session and evidence identities in the dedicated state directory;
+transcript and diff content stays in the private run evidence files.

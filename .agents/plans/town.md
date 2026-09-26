@@ -28,6 +28,14 @@
   Next: open/review the integration PR, run the separate real-container dry-run
   against that PR once the fixed upstream binary is available, fix findings,
   merge green, close acceptance issues, then release Review Bot and Town.
+- Integration PR #178 is open at 92ff9de. The exact-head COMMENT review found
+  successful worker dry-runs misleadingly returned `stale`; return `dry_run`
+  while keeping Complete false and isolating live requests and changed revisions.
+  Regression and full Review Bot race/vet checks pass. Added an opt-in
+  `mjolnir_acceptance` harness (compiled/vetted, default skips) for an existing
+  real PR; it only dispatches dry-run review and checks guarded evidence, CLI
+  session/index visibility and confirmed cleanup. Real invocation is pending
+  the upstream binary; do not count its compiled/skipped run as acceptance.
 - Isolated acceptance data and two idle, prompt-free discovery sessions are
   retained under ignored `var/mjolnir-acceptance`. The released v2.23.0 binary
   was checksum-verified. Both cached and explicitly installed Docker runtimes

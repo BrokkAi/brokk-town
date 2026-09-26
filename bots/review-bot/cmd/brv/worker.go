@@ -94,10 +94,16 @@ func findingID(value string) string {
 func reviewResult(saved *bot.State, request worker.Request) worker.ReviewResult {
 	result := worker.ReviewResult{Status: "stale", Detail: "No submitted review matches the requested revision; refresh PR eligibility and revisions", Findings: map[string]string{}, Severities: map[string]string{}, ExactBase: request.BaseSHA, ExactHead: request.HeadSHA}
 	for _, job := range saved.Jobs {
-		if job.PR.Number != request.PR || job.DryRun || job.PR.Head.SHA != request.HeadSHA || job.PR.Base.SHA != request.BaseSHA {
+		if job.PR.Number != request.PR || job.DryRun != request.DryRun || job.PR.Head.SHA != request.HeadSHA || job.PR.Base.SHA != request.BaseSHA {
 			continue
 		}
 		result.Status, result.Detail = job.Status, job.Failure
+		if job.DryRun {
+			if job.Status == "dry_run" {
+				result.Detail = "Review completed in dry-run mode; no review was published"
+			}
+			continue // A dry-run result never grants publication or merge authority.
+		}
 		if job.Status != "submitted" {
 			continue
 		}
