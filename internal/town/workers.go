@@ -91,6 +91,9 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 		}
 		ctx = context.WithValue(ctx, managedContextKey{}, managed)
 		defer func() {
+			if failure := managed.failure(); failure != nil && !errors.Is(err, failure) {
+				err = errors.Join(err, failure)
+			}
 			if err == nil {
 				cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 				defer cancel()

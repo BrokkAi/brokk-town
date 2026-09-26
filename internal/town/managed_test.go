@@ -33,6 +33,18 @@ func TestManagedCertificationReadsExactTargetDiff(t *testing.T) {
 	}
 }
 
+func TestManagedFailurePreservesActionableCause(t *testing.T) {
+	b, x, _ := managedFixture(t)
+	m, err := b.beginManaged(t.Context(), x, Review, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.execute(t.Context(), strings.Repeat("a", 40), strings.Repeat("x", 65537), false)
+	if err == nil || !errors.Is(err, m.failure()) || !strings.Contains(m.failure().Error(), "65536") || len(m.runs) != 0 {
+		t.Fatal("callback discarded the actionable managed failure", err)
+	}
+}
+
 func managedFixture(t *testing.T) (*BotWorkers, *Town, *atomic.Int32) {
 	t.Helper()
 	x := &Town{ID: "acme/app", Config: DefaultConfig("acme/app"), Tasks: map[string]*Task{}}

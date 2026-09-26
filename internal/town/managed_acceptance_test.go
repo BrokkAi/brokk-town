@@ -82,7 +82,7 @@ func TestMjolnirReadOnlyAcceptance(t *testing.T) {
 		BaseSHA: pull.Base.SHA, HeadSHA: pull.Head.SHA, RemoteAgent: socket, DryRun: true}
 	result, err := process.run(ctx, request, false, time.Now().Add(45*time.Minute), observe, nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v (managed cause: %v)", err, managed.failure())
 	}
 	managed.mu.Lock()
 	runs := append([]*mjolnir.Run{}, managed.runs...)

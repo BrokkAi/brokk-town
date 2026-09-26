@@ -56,6 +56,18 @@
   Applied the same complete-diff command to Town's independent certification
   prompt; its regression and full Town package race/vet checks pass. Keep the
   PR head fixed until the current read-only acceptance finishes.
+- The d97425a dry-run completed its agent turn but refused immediate evidence;
+  retain its run/session rather than replay it. Subsequent reads through Town's
+  actual decoders pass identity/runtime/tree/transcript checks, and the turn wait
+  receipt matches the final transcript answer exactly. The original callback
+  discarded its detailed cause, so snapshot lag is a supported hypothesis, not a
+  proven attribution. Its review independently reproduced two Town bugs: the
+  certification prompt limit (fixed in 9c6f475) and stale GET configuration after
+  successful PATCH. Add bounded read-only configuration/idle confirmation,
+  preserve confirmed ACP answers before collection, and return the parent's
+  actionable failure to Town and the acceptance harness. No mutation is retried.
+- Upstream v2.23.1 is now published; its checksum-verified official Linux archive
+  contains byte-identical CLI and worker binaries to those used for acceptance.
 - Isolated acceptance data and two idle, prompt-free discovery sessions are
   retained under ignored `var/mjolnir-acceptance`. The released v2.23.0 binary
   was checksum-verified. Both cached and explicitly installed Docker runtimes

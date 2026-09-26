@@ -142,8 +142,48 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 	answer.Text = text.String()
 	prompting = false
 	mu.Unlock()
+	if err := answer.Run.retainCompletedAnswer(answer.Text); err != nil {
+		return answer, err
+	}
+	if err := answer.Run.awaitIdle(ctx); err != nil {
+		return answer, err
+	}
 	answer.Artifacts, err = answer.Run.Collect(ctx, repair, answer.Text)
 	return answer, err
+}
+
+// A live turn can finish before the controller publishes its idle snapshot.
+// This only waits on reads after ACP confirmed EndTurn; Collect still checks
+// the full launch receipt, unchanged runtime, revision and exact final answer.
+func (r *Run) awaitIdle(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for {
+		s, err := r.owner.Catalog.ReadSession(ctx, r.identity())
+		if err != nil {
+			return err
+		}
+		if s.Lifecycle != "live" || s.HasError == nil || *s.HasError {
+			return errors.New("Mjolnir session failed after its completed turn; inspect the retained run")
+		}
+		if s.Idle && s.ChatPhase == "idle" {
+			return nil
+		}
+		if !waitSnapshot(ctx) {
+			return errors.Join(errors.New("Mjolnir did not publish an idle snapshot after completion; retain the run"), ctx.Err())
+		}
+	}
+}
+
+func waitSnapshot(ctx context.Context) bool {
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (r *Run) configure(ctx context.Context) error {
@@ -177,20 +217,16 @@ func (r *Run) configure(ctx context.Context) error {
 		if err != nil || current != setting[1] {
 			return errors.New("Mjolnir did not confirm the selected model or effort")
 		}
+		// PATCH answers from live settings, whereas GET uses the asynchronously
+		// published snapshot. Wait for this change before deciding the next one.
+		if err := r.awaitConfiguration(ctx, [][2]string{setting}); err != nil {
+			return err
+		}
 	}
 	// Model selection may reset effort, and effort can reset other settings.
 	if r.record.Plan.Model != "" || r.record.Plan.Effort != "" {
-		data, err := c.artifact(ctx, "GET", sessionPath(r.record.Session), "session configuration", "application/json", nil, maxBytes, 30*time.Second)
-		if err != nil {
+		if err := r.awaitConfiguration(ctx, [][2]string{{"model", r.record.Plan.Model}, {"effort", r.record.Plan.Effort}}); err != nil {
 			return err
-		}
-		for _, setting := range [][2]string{{"model", r.record.Plan.Model}, {"effort", r.record.Plan.Effort}} {
-			if setting[1] != "" {
-				current, _, err := configurationValue(data, setting[0], setting[1])
-				if err != nil || current != setting[1] {
-					return errors.New("Mjolnir configuration changed before prompting")
-				}
-			}
 		}
 	}
 	if _, err := r.checkCurrentSession(ctx); err != nil {
@@ -201,6 +237,33 @@ func (r *Run) configure(ctx context.Context) error {
 		return err
 	}
 	return diff.CheckReviewTree(r.record.Session, r.record.Plan.Checkout.Commit)
+}
+
+func (r *Run) awaitConfiguration(ctx context.Context, settings [][2]string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for {
+		data, err := r.owner.Catalog.artifact(ctx, "GET", sessionPath(r.record.Session), "session configuration", "application/json", nil, maxBytes, 30*time.Second)
+		if err != nil {
+			return err
+		}
+		matched := true
+		for _, setting := range settings {
+			if setting[1] != "" {
+				current, offered, err := configurationValue(data, setting[0], setting[1])
+				if err != nil || !offered {
+					return errors.New("selected Mjolnir configuration became unavailable before prompting")
+				}
+				matched = matched && current == setting[1]
+			}
+		}
+		if matched {
+			return nil
+		}
+		if !waitSnapshot(ctx) {
+			return errors.Join(errors.New("Mjolnir did not publish the selected configuration before prompting; retain the run"), ctx.Err())
+		}
+	}
 }
 
 func configurationValue(data []byte, key, wanted string) (string, bool, error) {

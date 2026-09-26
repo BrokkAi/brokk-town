@@ -416,6 +416,12 @@ and the session in Mjolnir before resolving the outcome; restarting Town never
 retries creation, prompting, export or cleanup from an uncertain record. There
 is no automatic repair of these records or UI action that discards them.
 
+After a confirmed configuration change or completed ACP turn, Town briefly polls
+the read-only session snapshot for the confirmed settings or idle state. It never
+replays the mutation. A completed ACP answer is retained privately before artifact
+collection, so a later evidence refusal preserves that answer without granting
+publication or cleanup authority.
+
 ## Separate real-target acceptance
 
 The manual harness is excluded from normal tests and CI. It reads an existing

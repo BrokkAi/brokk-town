@@ -21,15 +21,16 @@ import (
 
 type managedContextKey struct{}
 type managedDispatch struct {
-	executor  mjolnir.Executor
-	config    Config
-	role      Role
-	placement mjolnir.Placement
-	runtime   mjolnir.RuntimePin
-	observe   func(Progress)
-	runs      []*mjolnir.Run
-	mu        sync.Mutex
-	failed    bool
+	executor   mjolnir.Executor
+	config     Config
+	role       Role
+	placement  mjolnir.Placement
+	runtime    mjolnir.RuntimePin
+	observe    func(Progress)
+	runs       []*mjolnir.Run
+	mu         sync.Mutex
+	failed     bool
+	failureErr error
 }
 
 func managedSupported(t *Town, role Role) bool {
@@ -90,9 +91,16 @@ func (m *managedDispatch) execute(ctx context.Context, head, prompt string, repa
 	}
 	if err != nil {
 		m.failed = true
-		return answer, fmt.Errorf("Mjolnir run %s retained for recovery: %w", id, err)
+		m.failureErr = fmt.Errorf("Mjolnir run %s retained for recovery: %w", id, err)
+		return answer, m.failureErr
 	}
 	return answer, nil
+}
+
+func (m *managedDispatch) failure() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.failureErr
 }
 
 func (m *managedDispatch) finish(ctx context.Context) error {

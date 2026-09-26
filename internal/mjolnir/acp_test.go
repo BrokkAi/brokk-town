@@ -43,6 +43,11 @@ func executorFixture(t *testing.T, scenario string) (Executor, RunPlan, string) 
 	record := filepath.Join(dir, "calls")
 	var mu sync.Mutex
 	model, effort, destroyed := "fast", "low", false
+	if scenario == "stale configuration" {
+		effort = "high" // Changing model resets this; a stale GET must not skip restoring it.
+	}
+	staleModel, staleEffort, lagReads, completionReads := "", "", 0, 0
+	patches := map[string]int{}
 	c, _ := catalogFixture(t, func(w http.ResponseWriter, req *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -74,21 +79,47 @@ func executorFixture(t *testing.T, scenario string) (Executor, RunPlan, string) 
 				w.WriteHeader(404)
 				return
 			}
-			json.NewEncoder(w).Encode(fields())
+			f := fields()
+			if lagReads > 0 {
+				actualModel, actualEffort := model, effort
+				model, effort = staleModel, staleEffort
+				f = fields()
+				model, effort = actualModel, actualEffort
+				lagReads--
+			}
+			calls, _ := os.ReadFile(record)
+			if strings.Contains(string(calls), "session/prompt") {
+				if scenario == "stale completion" && completionReads < 2 {
+					f["is_idle"], f["chat_phase"] = false, "running"
+					completionReads++
+				}
+				if scenario == "completion drift" {
+					f["runtime"].(map[string]any)["id"] = "replacement"
+				}
+			}
+			json.NewEncoder(w).Encode(f)
 		case "/api/v1/sessions/session/config":
 			var setting struct{ Key, Value string }
 			if req.Method != "PATCH" || json.NewDecoder(req.Body).Decode(&setting) != nil {
 				t.Error("invalid configuration request")
+			}
+			patches[setting.Key]++
+			if patches[setting.Key] > 1 {
+				t.Error("replayed a configuration mutation")
 			}
 			if scenario == "lost setting" {
 				w.WriteHeader(500)
 				fmt.Fprint(w, "private-diagnostic")
 				return
 			}
+			staleModel, staleEffort = model, effort
 			if setting.Key == "model" {
 				model, effort = setting.Value, "low"
 			} else if setting.Key == "effort" {
 				effort = setting.Value
+			}
+			if scenario == "stale configuration" {
+				lagReads = 2
 			}
 			json.NewEncoder(w).Encode(fields())
 		case "/api/v1/sessions/session/diff":
@@ -134,14 +165,14 @@ func executorFixture(t *testing.T, scenario string) (Executor, RunPlan, string) 
 }
 
 func TestManagedACPDispatchGuardsAndDurableOutcomes(t *testing.T) {
-	for _, scenario := range []string{"success", "wrong daemon", "lost create", "runtime drift", "lost setting", "missing evidence", "wrong session", "incomplete turn"} {
+	for _, scenario := range []string{"success", "stale configuration", "stale completion", "completion drift", "wrong daemon", "lost create", "runtime drift", "lost setting", "missing evidence", "wrong session", "incomplete turn"} {
 		t.Run(scenario, func(t *testing.T) {
 			e, plan, record := executorFixture(t, scenario)
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			answer, err := e.Execute(ctx, plan, "review this exact revision", false)
 			calls, _ := os.ReadFile(record)
-			if scenario == "success" {
+			if scenario == "success" || scenario == "stale configuration" || scenario == "stale completion" {
 				if err != nil || answer.Text != managedAnswer || answer.Run.Record().State != "evidence" || answer.Artifacts.Head != plan.Checkout.Commit {
 					t.Fatalf("managed answer not backed by evidence: %v", err)
 				}
@@ -164,6 +195,16 @@ func TestManagedACPDispatchGuardsAndDurableOutcomes(t *testing.T) {
 				if answer.Run == nil || answer.Run.Destroy(ctx) == nil {
 					t.Fatal("uncertain evidence was discarded")
 				}
+				if scenario == "missing evidence" || scenario == "completion drift" {
+					data, err := os.ReadFile(filepath.Join(answer.Run.directory, "completed-answer.json"))
+					var completion struct {
+						Session string `json:"session_id"`
+						Answer  string `json:"answer"`
+					}
+					if err != nil || json.Unmarshal(data, &completion) != nil || completion.Session != "session" || completion.Answer != managedAnswer {
+						t.Fatal("lost the confirmed ACP answer after refusing its artifacts")
+					}
+				}
 				before, _ := os.ReadFile(record)
 				if _, retryErr := e.Execute(ctx, plan, "retry", false); retryErr == nil {
 					t.Fatal("repeated an uncertain submission")
@@ -181,6 +222,19 @@ func TestManagedACPDispatchGuardsAndDurableOutcomes(t *testing.T) {
 				t.Fatalf("lost durable run: %v", err)
 			}
 		})
+	}
+}
+
+func TestUnpublishedConfigurationStopsWithoutMutation(t *testing.T) {
+	e, _, record := executorFixture(t, "success")
+	r := &Run{owner: e.Runs, record: RunRecord{Session: "session"}}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if err := r.awaitConfiguration(ctx, [][2]string{{"model", "careful"}}); err == nil || ctx.Err() == nil {
+		t.Fatal("unconfirmed configuration did not stop at the deadline", err)
+	}
+	if _, err := os.Stat(record); !os.IsNotExist(err) {
+		t.Fatal("configuration confirmation submitted an ACP request")
 	}
 }
 
