@@ -1,6 +1,32 @@
 # Brokk Town implementation plan
 
-## Repair PR #172 and publish Town 0.7.2 (in progress)
+## Mjolnir artifact evidence (#155, first part; in progress)
+
+- User asked to start the remaining repository issues after repairing the PR and
+  release. The only open Town issues are #149 and #153–155. Upstream Mjolnir
+  #1162/#1163 remain open; implement the supported artifact boundary now without
+  claiming full managed dispatch, runtime pinning or real-target acceptance.
+- Work on feat/mjolnir-artifact-evidence from merged master, separate from the
+  immutable 0.7.2 source. Audit the supported HTTP contract at Mjolnir 4d6c0ce.
+- Add bounded session identity, exact-base diff, repository-relative file,
+  transcript and Git-bundle reads. Share the existing authenticated transport;
+  preserve demo isolation, no redirects/proxies, cancellation and safe errors.
+- Require exact review checkout and affirmative nonempty repair ancestry checks,
+  while keeping complete review receipts and verified bundle import as separate
+  requirements. Expose no branch-push export. An interrupted checkpoint/export
+  remains unconfirmed and is never automatically retried.
+- Preserve equal-sequence transcript groups beyond the requested page size;
+  the upstream database deliberately returns whole groups. Reject skipped or
+  missing evidence and keep private patch/text out of JSON projections.
+- Fake HTTP fixtures cover refusals, partial bodies, limits, identity mismatch,
+  unsupported ancestry, path escaping, cancellation and paging. A disposable-Git
+  fixture imports a returned bundle and verifies its exact repair head/ancestry.
+- Full root race/vet, frontend syntax/tests, demo isolation and fake-Mjolnir
+  integration passed. Final deadline and byte-preservation cases also pass with
+  the complete artifact race suite. Keep #149/#153–155 open: durable remote launch/artifact receipts,
+  worker integration and complete review/repair dispatch remain follow-up work.
+
+## Repair PR #172 and publish Town 0.7.2 (complete)
 
 - User requested investigation and cleanup of the broken PR and recent branch,
   then explicitly authorized closing superseded work and cutting a new release.
@@ -17,11 +43,20 @@
   license checks passed. Recovery and real-worker fake-GitHub fixtures also pass
   in Europe/Paris. Local demo, all-eight offline npm worker lifecycle and
   fake-Mjolnir integrations passed; no live repository automation was used.
-- Open a replacement PR, wait for green checks, and merge normally before
-  closing #172. The already-failed 0.7.1 workflow was canceled to free its runner.
-- Preserve v0.7.1-town. Build and validate fresh v0.7.2-town artifacts from the
-  exact merged revision, publish through the checked Actions workflow, then
-  verify the native assets and all five npm packages. No bot source changed.
+- Replacement PR #173 passed all nine modules and workflow lint, then merged
+  normally as 5d0d1ce. GitHub also marked #172 merged through that ancestry.
+  The failed 0.7.1 workflow was canceled and its empty unpublished draft removed;
+  its immutable tag and the original contributor branches remain unchanged.
+- Complete non-publishing 0.7.2 packaging passed at b85b9f1: four native
+  archives, five npm packages and isolated native/npm version checks. After
+  confirming that exact commit was merged and its tree matched master, pushed
+  immutable v0.7.2-town. Actions run 36239901804 passed all Linux/macOS checks
+  and publication. The four downloaded native archives and all five npm packages
+  pass integrity, legal-file, payload and exact-source checks; GitHub marks this
+  the latest release. The published binary passes isolated demo lifecycle smoke.
+- npm initially served incomplete native-package metadata. After propagation,
+  all five latest versions agree and a fresh isolated npx latest installation
+  reports v0.7.2. No bot code changed; #155 work is on a separate branch.
 
 ## Preserve worker cancellation diagnostics (complete)
 
@@ -46,7 +81,8 @@
 
 - PR #172 and immutable tag v0.7.1-town point to a9a9545. Both Ubuntu CI
   runs failed in the new saved-state recovery tests. The release job is gated
-  by those checks; GitHub has only an empty unpublished draft for this tag.
+  by those checks. The empty unpublished draft was removed after the replacement
+  merged.
 - The local 4577b06 plan-only commit records the attempted tag push. Its queued
   status is superseded by the observed failures. Keep the failed tag unchanged.
 - Source-built and published-worker fixtures had passed locally, but UTC exposes
