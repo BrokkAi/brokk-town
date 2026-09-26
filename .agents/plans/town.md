@@ -1341,3 +1341,7 @@
   removal is uncertain. A local Git ref-lock regression proves the partial case
   retains the saved write identity. Targeted Go race tests, vet and all 89
   frontend tests pass after the correction.
+- Integrated concurrent PR #165's independent npm-worker launcher. Re-ran the
+  full root race suite/vet, frontend checks/tests, Town-only build, isolated demo,
+  all-eight real offline npm package lifecycle checks and fake-Mjolnir smoke;
+  all passed. Storage does not invoke or alter bot publication.
