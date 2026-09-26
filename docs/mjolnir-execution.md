@@ -101,11 +101,32 @@ back to direct local execution restores those local controls and pins.
 
 Discovery is not runtime readiness or a runtime pin. Mjolnir's merged session
 API now reports a target-owned runtime receipt and accepts an expected identity
-at launch. Town can read and check those receipts as described below; saving an
-operator's runtime selection and integrating guarded launches remain pending.
+at launch. Town can read, select and check those receipts as described below;
+integrating guarded launches remains pending.
 A mutable profile ID or options revision is never a runtime pin. A changed
 identity requires an explicit operator update; Town must not copy Mjolnir's
 launch definitions into its local registry.
+
+Initialize a bundle-backed session in Mjolnir on the desired target/profile
+without a task prompt, then select its runtime in **Execution location** or:
+
+```sh
+bt execution --repo OWNER/REPO --role review --runtime-session SESSION_ID
+```
+
+Town reads that session's public receipt and requires matching placement, live
+idle readiness and a known runtime identity. This read never starts a local
+harness or prompts the discovery session. The operator owns that session's
+lifecycle. The browser and CLI both use `POST /api/execution-runtime` with `town`,
+optional `role`, and `session_id`. Discovery errors leave the saved pin intact.
+Demo refuses the operation without contacting Mjolnir.
+
+Pins are stored by target/profile pair in `execution_runtimes`, including the
+source session and public target version evidence. Roles using the same pair
+share that pin. A different pair needs its own pin; direct local overrides use
+their existing local harness settings. Catalog refreshes cannot update pins.
+Explicit replacement affects future work; dispatched configurations and restart
+recovery keep their captured receipt. Model/effort remain independent choices.
 
 ## Placement
 
@@ -292,5 +313,5 @@ configure model/effort. Each accepted initialization receipt must be retained
 with its run, rather than replaced by a later session lookup. Fixture tests cover
 the launch guard, changed checkout evidence, retained receipt serialization,
 runtime replacement, malformed/partial reads, cancellation and demo isolation.
-Durable dispatch/recovery, runtime selection controls, worker integration and
+Durable remote dispatch/recovery, worker integration and
 confirmed cleanup remain pending; the scheduler's execution hold stays in place.

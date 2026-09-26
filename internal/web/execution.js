@@ -30,6 +30,14 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
       ? "Mjolnir execution is not available yet. This selection holds agent work until remote checkout and evidence support are ready. Repo Bot continues inventory reads. Availability is advisory; Mjolnir checks again at launch."
       : "Direct local execution uses the agent settings below and Town’s worker limit.";
     $("save-execution").disabled = saving || (managed && (!$("execution-target").value || !$("execution-profile").value));
+    const savedSelection = effective();
+    $("execution-runtime-field").hidden = !savedSelection.target_id;
+    const pin = Object.values(config.execution_runtimes || {}).find((p) => p.source.target_id === savedSelection.target_id && p.source.profile_id === savedSelection.profile_id);
+    $("execution-runtime-detail").textContent = pin
+      ? `Selected runtime: ${pin.runtime.harness} · ${pin.runtime.components.filter((c) => c.version).map((c) => `${c.name} ${c.version}`).join("; ")}`
+      : "No runtime selected. Initialize a session in Mjolnir without a task prompt, then select its runtime here.";
+    $("execution-runtime-session").disabled = saving;
+    $("save-execution-runtime").disabled = saving || !savedSelection.target_id || !$("execution-runtime-session").value.trim();
   }
   function render(reset = false) {
     const targets = listing?.targets || [], profiles = listing?.profiles || [];
@@ -77,12 +85,19 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
   $("execution-target").onchange = detail;
   $("execution-profile").onchange = detail;
   $("refresh-execution").onclick = () => load(true);
-  $("save-execution").onclick = async () => {
-    if (saving) return;
-    const version = generation, id = town, selectedRole = role;
+  $("execution-runtime-session").oninput = detail;
+  $("save-execution-runtime").onclick = () => saveExecution("/api/execution-runtime", {
+    town, role, session_id: $("execution-runtime-session").value.trim(),
+  }, "Runtime selected for future work.");
+  $("save-execution").onclick = () => {
     const mode = $("execution-mode").value;
     const selection = mode === "inherit" ? null : mode === "local" ? { target_id: "", profile_id: "" }
       : { target_id: $("execution-target").value, profile_id: $("execution-profile").value };
+    return saveExecution("/api/execution", { town, role, selection }, "Execution location saved for future work.");
+  };
+  async function saveExecution(path, body, message) {
+    if (saving) return;
+    const version = generation, id = town;
     saving = true;
     $("execution-result").textContent = "";
     detail();
@@ -94,12 +109,12 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
     });
     try {
       const result = await Promise.race([timeout, (async () => {
-        await api("/api/execution", { town: id, role: selectedRole, selection }, signal);
+        await api(path, body, signal);
         if (!active) return;
         await refresh();
         if (!active || generation !== version) return;
         config = getConfig(id) || config;
-        $("execution-result").textContent = "Execution location saved for future work.";
+        $("execution-result").textContent = message;
         render(true);
         onSaved();
       })()]);
@@ -112,7 +127,7 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
       signal.removeEventListener("abort", onTimeout);
       if (generation === version) { saving = false; detail(); }
     }
-  };
+  }
   return {
     show(id, nextRole, nextConfig) {
       generation++;
@@ -120,6 +135,7 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
       clearTimeout(timer);
       town = id; role = nextRole; config = getConfig(id) || nextConfig; saving = false;
       $("execution-result").textContent = "";
+      $("execution-runtime-session").value = "";
       render(true);
       void load();
     },

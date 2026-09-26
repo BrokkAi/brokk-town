@@ -1,5 +1,26 @@
 # Brokk Town implementation plan
 
+## Finish Mjolnir issues, review/merge PRs, then release changed components
+
+- User explicitly authorized one PR per remaining issue, review and fixes,
+  normal merge after passing checks, and releases for each changed bot and Town
+  after the whole sequence. Use available test infrastructure without asking
+  the user to choose target/profile details. Docker is available; installed
+  Mjolnir 2.22.0 predates the new contracts. Keep acceptance isolated from live
+  repository automation and preserve all existing worker APIs/capabilities.
+- PR #175 covers #153: guarded launch receipts plus explicit runtime selection
+  through shared browser/CLI API. Save target-owned versions by target/profile,
+  preserve old pins on failed discovery, freeze dispatched and recovery copies,
+  and never start a local harness for managed discovery. No silent upgrades.
+- Next PR #154: reusable bundle/workspace mapping, exact checkout, durable
+  creation/cleanup intents and uncertain-outcome recovery. Then #155: remote
+  evidence and verified bundle import through independent worker boundaries.
+  Finally #149: scheduler/ACP integration, local fixtures and isolated real-target
+  acceptance. Keep incomplete issues open until their acceptance is met.
+- Review each exact PR head, fix findings, pass required checks and merge without
+  bypass. Release only changed components, bots before Town where needed, using
+  immutable project tags and Actions publishers; verify published assets/npm.
+
 ## Mjolnir launch receipts (#153/#154, first part implemented)
 
 - User asked whether the four remaining issues can be started or are blocked.

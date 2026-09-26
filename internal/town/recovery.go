@@ -52,7 +52,7 @@ func recoverWorkerRun(w *Worker) {
 	if run := w.Run; run != nil {
 		if w.Recovery == nil && !(w.Role == Repo && run.Mode == "inventory") {
 			target := workerRunTask(*run)
-			w.Recovery = &WorkerRecovery{Execution: clone(run.Execution), TaskID: target, Base: run.BaseSHA, Head: run.HeadSHA, Started: run.Started, Detail: recoveryDetail(w.Role, target)}
+			w.Recovery = &WorkerRecovery{Runtime: clone(run.Runtime), Execution: clone(run.Execution), TaskID: target, Base: run.BaseSHA, Head: run.HeadSHA, Started: run.Started, Detail: recoveryDetail(w.Role, target)}
 		}
 		if w.Role == Repo {
 			w.Next = time.Time{}

@@ -22,6 +22,7 @@ type cliFlags struct {
 	hookEnable, hookDisable           *bool
 	hookCommandFile                   *string
 	executionTarget, executionProfile *string
+	executionRuntimeSession           *string
 	localExecution, inheritExecution  *bool
 
 	daemon               *bool
@@ -104,6 +105,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.harnessVersion = fs.String("harness-version", "", "select an exact catalog version (add/settings)")
 	fl.executionTarget = fs.String("target", "", "Mjolnir target ID from bt execution")
 	fl.executionProfile = fs.String("profile", "", "Mjolnir profile ID from bt execution")
+	fl.executionRuntimeSession = fs.String("runtime-session", "", "explicitly select the runtime from an initialized Mjolnir session for this target/profile")
 	fl.localExecution = fs.Bool("local-execution", false, "select direct local execution")
 	fl.inheritExecution = fs.Bool("inherit-execution", false, "remove this bot execution override (requires --role)")
 	fl.refresh = fs.Bool("refresh", false, "refresh the official ACP registry (harnesses)")
@@ -175,7 +177,7 @@ var cliCommands = []commandInfo{
 	{name: "history", short: "Inspect archived terminal tasks", long: "Read completed tasks saved outside the active snapshot. Reopened tasks return automatically with their previous decisions and identities. Use --task for one archived task, or --after with a page cursor. This command never starts workers or writes to GitHub.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "task", "after", "limit", "json"}},
 	{name: "storage", short: "Inspect and clean completed local artifacts", long: "Read a dry-run disk inventory by town and bot. Cleanup requires explicit artifact IDs from that inventory, all workers paused, and no unresolved writes. Changed, dirty, unknown or active artifacts are retained. Task and write identities are never removed. Demo cleanup is disabled.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "older-than-hours", "cleanup", "json"}},
 	{name: "attention-hook", short: "Configure the local attention hook", long: "Show whether the service attention hook is configured and enabled. --enable/--disable changes it; --command-file FILE saves a private JSON command/argv array (- reads stdin). Disabled by default. The hook receives public identities and a reason code as JSON on stdin, runs for at most ten seconds independently of quiet hours, and never runs in demo. Command output is discarded.", args: "[flags]", flags: []string{"enable", "disable", "command-file", "json"}},
-	{name: "execution", short: "List or select execution targets", long: "List cached Mjolnir launch options. --refresh queues a background refresh. Use --repo and --target/--profile to save a selection, --local-execution to run directly here, or --inherit-execution --role BOT to restore inheritance. Mjolnir-backed execution is held until remote checkout and evidence support are available.", args: "[flags]", flags: []string{"json", "refresh", "repo", "role", "target", "profile", "local-execution", "inherit-execution"}},
+	{name: "execution", short: "List or select execution targets", long: "List cached Mjolnir launch options. --refresh queues a background refresh. Use --repo and --target/--profile to save a selection, --local-execution to run directly here, or --inherit-execution --role BOT to restore inheritance. --runtime-session ID explicitly selects the target runtime from an initialized Mjolnir session. Mjolnir-backed execution is held until remote checkout and evidence support are available.", args: "[flags]", flags: []string{"json", "refresh", "repo", "role", "target", "profile", "runtime-session", "local-execution", "inherit-execution"}},
 	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog. Works whether or not Town is running.", args: "[flags]", flags: []string{"refresh"}},
 	{name: "settings", short: "Configure Town, a town or a bot", long: "Configure service-wide settings, a town's defaults or one bot house. Omit --repo for service-wide settings (--max-workers, --quiet-hours); omit --role to edit town defaults.\n\n" +
 		"A budget bounds agent attempts and agent minutes per accounting period. Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol.\n\n" +

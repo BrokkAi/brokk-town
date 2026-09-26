@@ -74,7 +74,21 @@ func (c *Catalog) ReadSession(ctx context.Context, expected SessionIdentity) (Se
 	if err := expected.validate(); err != nil {
 		return SessionState{}, err
 	}
-	data, err := c.artifact(ctx, "GET", sessionPath(expected.Session), "session identity", "application/json", nil, maxBytes, 30*time.Second)
+	actual, err := c.readSession(ctx, expected.Session)
+	if err != nil {
+		return SessionState{}, err
+	}
+	if actual.Identity != expected {
+		return SessionState{}, errors.New("Mjolnir session identity does not match the saved launch receipt")
+	}
+	return actual, nil
+}
+
+func (c *Catalog) readSession(ctx context.Context, session string) (SessionState, error) {
+	if !validSessionID(session) {
+		return SessionState{}, errors.New("Mjolnir session ID is required")
+	}
+	data, err := c.artifact(ctx, "GET", sessionPath(session), "session identity", "application/json", nil, maxBytes, 30*time.Second)
 	if err != nil {
 		return SessionState{}, err
 	}
@@ -98,8 +112,8 @@ func (c *Catalog) ReadSession(ctx context.Context, expected SessionIdentity) (Se
 		return SessionState{}, errors.New("Mjolnir returned incomplete session identity")
 	}
 	actual := SessionIdentity{record.ID, record.Workspace, record.Bundle, Selection{record.Target, record.Profile}}
-	if actual != expected {
-		return SessionState{}, errors.New("Mjolnir session identity does not match the saved launch receipt")
+	if actual.Session != session || actual.validate() != nil {
+		return SessionState{}, errors.New("Mjolnir returned an incomplete or mismatched session identity")
 	}
 	if record.Checkout != nil && record.Checkout.Validate() != nil {
 		return SessionState{}, errors.New("Mjolnir returned an invalid exact checkout receipt")
