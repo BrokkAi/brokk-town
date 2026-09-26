@@ -53,7 +53,7 @@ func (r RunRecord) validate() error {
 		if !validSessionID(r.Session) {
 			return errors.New("missing retained session identity")
 		}
-	case "ready", "prompting", "evidence", "destroying", "uncertain_cleanup", "destroyed":
+	case "ready", "prompting", "exporting", "evidence", "destroying", "uncertain_cleanup", "destroyed":
 		expected := SessionIdentity{r.Session, r.Plan.Placement.Workspace.ID, r.Plan.Placement.Bundle, r.Plan.Selection}
 		if !validSessionID(r.Session) || r.Receipt == nil || r.Receipt.Identity != expected || r.Receipt.CheckLaunchReceipt(r.Plan.Checkout, r.Plan.Runtime.Runtime.ID) != nil {
 			return errors.New("missing confirmed launch receipt")
@@ -251,7 +251,14 @@ func (r *Run) MarkPrompting() error {
 func (r *Run) SaveEvidence(data []byte) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.record.State != "prompting" || len(data) == 0 || len(data) > 32<<20 {
+	if r.record.State != "prompting" {
+		return errors.New("Mjolnir run is not awaiting prompt evidence")
+	}
+	return r.saveEvidence(data)
+}
+
+func (r *Run) saveEvidence(data []byte) error {
+	if (r.record.State != "prompting" && r.record.State != "exporting") || len(data) == 0 || len(data) > 32<<20 {
 		return errors.New("Mjolnir run requires complete saved evidence before cleanup")
 	}
 	if err := writeCache(filepath.Join(r.directory, "evidence.json"), data); err != nil {
@@ -276,12 +283,8 @@ func (r *Run) Destroy(ctx context.Context) error {
 	if err := verifySavedEvidence(r.directory, r.record.Evidence); err != nil {
 		return err
 	}
-	receipt, err := r.owner.Catalog.ReadSession(ctx, r.identity())
-	if err != nil {
+	if _, err := r.checkCurrentSession(ctx); err != nil {
 		return err
-	}
-	if receipt.CheckLaunchReceipt(r.record.Plan.Checkout, r.record.Plan.Runtime.Runtime.ID) != nil || r.record.Receipt == nil || receipt.Runtime.EventOrdinal != r.record.Receipt.Runtime.EventOrdinal {
-		return errors.New("Mjolnir session changed or is busy; retain it instead of cleaning up")
 	}
 	if err := r.save("destroying"); err != nil {
 		return err
@@ -354,6 +357,19 @@ func verifySavedEvidence(directory, digest string) error {
 	hash := sha256.Sum256(data)
 	if hex.EncodeToString(hash[:]) != digest {
 		return errors.New("saved Mjolnir evidence changed; retain the session")
+	}
+	var evidence struct {
+		BundleSHA256 string `json:"bundle_sha256"`
+	}
+	if json.Unmarshal(data, &evidence) == nil && evidence.BundleSHA256 != "" {
+		bundle, err := readBounded(filepath.Join(directory, "repair.bundle"), maxBundleBytes)
+		if err != nil {
+			return errors.New("saved Mjolnir repair bundle is unavailable; retain the session")
+		}
+		hash := sha256.Sum256(bundle)
+		if hex.EncodeToString(hash[:]) != evidence.BundleSHA256 {
+			return errors.New("saved Mjolnir repair bundle changed; retain the session")
+		}
 	}
 	return nil
 }

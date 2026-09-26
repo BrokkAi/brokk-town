@@ -350,3 +350,31 @@ Fake-daemon tests cover exact-revision refusals, readiness, lost receipts,
 restart recovery, workspace reuse, configuration isolation, evidence retention
 and cleanup confirmation. This lifecycle is an internal boundary until the
 worker/ACP dispatch integration is enabled under #149/#155.
+
+## Complete remote evidence (#155)
+
+`Run.Collect` accepts only one finished prompt's bounded answer. It retains a
+private transcript, checks that the final agent message matches that answer,
+and refuses a changing or incomplete transcript. The session must still report
+the original runtime initialization and guarded launch identity. These checks
+prove provenance and checkout state; the bot still parses its complete review
+receipt and Town independently certifies findings before merging.
+
+| Existing evidence gate | Managed equivalent |
+| --- | --- |
+| Exact starting HEAD and private worktree | Saved checkout intent, launch receipt and pre-prompt diff at the exact starting commit. |
+| Review leaves HEAD and source unchanged | Diff from the dispatched commit must have the same HEAD and no patch, including untracked work; checked again after transcript collection. |
+| Complete investigation and independent finding verification | Separate prompts/sessions and the existing strict bot receipts; an empty diff never supplies a verdict. Each ACP answer must match its retained transcript. |
+| Repair is committed, nonempty and preserves history | Affirmative remote ancestry, changed HEAD and nonempty patch; a second diff from that HEAD must be empty. |
+| Verified repair commit available for publication | Durable export intent, bounded Git bundle, exact advertised commit, local Git bundle verification and ancestry in a Town-owned private checkout. No branch export or remote push is requested from Mjolnir. |
+| Operator verification | Run locally against the exact reviewed/imported commit; reject changed HEAD, branch or tracked source afterwards. Repair verification also rejects untracked files. It need not run on the agent's target to verify the same Git commit. |
+| Safe publication and merge | Existing ownership, current PR/base/head/discussion, durable write-intent, independent review and GitHub checks remain required. Artifact evidence alone cannot publish or merge. |
+| Recovery and cleanup | Retain transcript/diff and repair bundle privately with integrity digests before cleanup. An interrupted export remains `exporting`, since the daemon may have checkpointed; never automatically export again. |
+
+`ImportRepair` fetches objects from the saved bundle without updating a
+contributor or remote-tracking branch, then fast-forwards the caller's private
+branch. It disables Git hooks during import. Corrupt bundles, unadvertised
+commits, rewritten history, empty changes, dirty trees and failed or mutating
+verification all refuse publication. Root tests exercise review/repair artifact
+collection against fake APIs and repair imports using temporary Git repositories.
+The executable worker and scheduler integration follows in #149.

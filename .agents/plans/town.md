@@ -6,7 +6,8 @@
   normal merge after passing checks, and releases for each changed bot and Town
   after the whole sequence. Use available test infrastructure without asking
   the user to choose target/profile details. Docker is available; installed
-  Mjolnir 2.22.0 predates the new contracts. Keep acceptance isolated from live
+  Mjolnir 2.23.0 now contains the new contracts; downloaded and checksum-verified
+  its released Linux binary for an isolated Docker acceptance. Keep it apart from live
   repository automation and preserve all existing worker APIs/capabilities.
 - PR #175 covers #153: guarded launch receipts plus explicit runtime selection
   through shared browser/CLI API. Save target-owned versions by target/profile,
@@ -34,6 +35,16 @@
   evidence and verified bundle import through independent worker boundaries.
   Finally #149: scheduler/ACP integration, local fixtures and isolated real-target
   acceptance. Keep incomplete issues open until their acceptance is met.
+- #155 implementation: bind each finished answer to a complete stable private
+  transcript, unchanged review tree or committed descendant repair, and the
+  original runtime initialization. Refuse missing artifacts and resumed workers.
+  Save an export intent before checkpointing, never retry an uncertain export,
+  retain bundle/diff/transcript with digests, and recheck artifacts after export.
+  Import only the advertised exact repair commit into a clean private local
+  branch, verify history/nonempty diff, run operator checks there and require the
+  same clean commit afterwards. Existing semantic review and GitHub gates remain
+  required; dispatch wiring is the following #149 PR.
+  Root race/vet, frontend syntax/99 tests, build and both local smoke checks pass.
 - Review each exact PR head, fix findings, pass required checks and merge without
   bypass. Release only changed components, bots before Town where needed, using
   immutable project tags and Actions publishers; verify published assets/npm.
