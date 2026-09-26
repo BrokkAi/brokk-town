@@ -59,6 +59,8 @@ type Workers interface {
 // task graph never crosses the worker protocol: the worker is told only which
 // revisions to compare, never what they mean.
 type InventoryRequest struct {
+	Since  *time.Time
+	Branch string
 	// SinceHead is the branch head Town last observed. The worker names the
 	// commits the branch gained beyond it.
 	SinceHead string
@@ -927,7 +929,7 @@ func (s *Supervisor) reconcile(ctx context.Context, t *Town, health bool, observ
 		}
 		t = s.Store.Snapshot().Towns[t.ID]
 	}
-	result, err := s.Workers.Observe(ctx, t, InventoryRequest{SinceHead: inventorySince(t), Commits: unprovenCommits(t), Health: health}, observe, log)
+	result, err := s.Workers.Observe(ctx, t, InventoryRequest{SinceHead: inventorySince(t), Commits: unprovenCommits(t), Health: health, Since: inventoryCursor(t, s.now()), Branch: t.SyncBranch}, observe, log)
 	// Commit the outcome before releasing the gate: merge confirmation can
 	// dispatch another inventory as soon as this reconciliation returns. It
 	// must see an interrupted repair's hold and must not replace its identity.

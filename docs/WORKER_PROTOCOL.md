@@ -91,6 +91,8 @@ The v1 request contains:
 - expected base and head SHAs for review work.
 - issue or PR number and `mode` for Simplifier Bot intake work;
 - `mode`, `since_head` and `commits` for Repo Bot inventory work.
+- With the optional `incremental-inventory` capability, `inventory_since` and
+  `inventory_branch` request a completed delta after a previous full baseline.
 
 Protocol v1 has no field for limiting Release Bot's release-preparation merge
 authority. Town therefore does not dispatch Release Bot while the town merge
@@ -122,7 +124,7 @@ Town rejects gaps, unknown types, events after a terminal event, missing result
 payloads, and streams that end without a terminal event. Worker diagnostics are
 kept as bounded tails.
 
-Repo workers return one complete repository observation in `result.inventory`
+Repo workers return one completed repository observation in `result.inventory`
 and their report on the branch it covers in `result.health`. Their `mode` names
 the duty: `full` observes and repairs, `inventory` observes only, which is what
 Town asks for when it is confirming a merge, so a repair agent never starts
@@ -223,3 +225,25 @@ The body must be empty. The worker returns HTTP 202, signals server shutdown,
 cancels active work, drains responses within its shutdown bound, removes its
 socket, and exits. This endpoint remains part of protocol v1; it is not sent after
 each run and does not replace the parent-liveness contract.
+
+### Incremental repository observations
+
+`incremental-inventory` is an additive v1 capability. Town omits both new request
+fields for older worker releases, which continue full inventory reads. Updated
+workers return `started_at` on every successful scan and mark a delta explicitly
+with `incremental: true`; missing/false means a full scan. An interrupted or
+incomplete page is an error, never a successful partial scan.
+
+Town requests a full baseline on first sync, branch changes and at least once
+per 24 hours. Only a successfully reconciled scan advances `last_sync` to its
+start time; `last_full_sync` and `sync_branch` retain its baseline. Delta issue
+reads use GitHub's [`since` parameter](https://docs.github.com/en/rest/issues/issues#list-repository-issues)
+with five minutes of overlap, while open issues and PRs are refreshed. Changed
+closed PRs are fetched individually because the
+[PR list API](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests) has no
+`since` parameter. Branch identity or cursor uncertainty falls back to a full
+scan. Releases and requested exact commit ancestry are still read each time.
+
+Absence in a delta never proves deletion or authorizes a close. Town preserves
+closing claims and re-reads an omitted PR before continuing its durable closure
+workflow. No task graph, credentials or bot Go packages cross this boundary.

@@ -139,6 +139,10 @@ func (p *workerProcess) run(ctx context.Context, request workerRequest, retry bo
 	if !p.alive() {
 		return workerResult{}, errors.New("worker process exited")
 	}
+	if !p.info.has("incremental-inventory") {
+		request.InventorySince = nil
+		request.InventoryBranch = ""
+	}
 	if request.SupersededPR > 0 && !p.info.has(workerRequeueCapability) {
 		return workerResult{}, errors.New("worker does not support requeue")
 	}

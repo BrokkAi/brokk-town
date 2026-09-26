@@ -394,3 +394,16 @@ paths), then start Town and resolve interrupted outcomes before enabling workers
 Do not restore only the main snapshot or manually delete write intents to make
 cleanup eligible. Deletion is permanent; backup is the recovery path for removed
 evidence.
+
+
+## Repository polling
+
+Repo Bot releases advertising `incremental-inventory` read historical issue/PR
+changes since the last completed scan, with five minutes of overlap, and refresh
+open work on every poll. The cursor records when a scan started so changes made
+while pagination is running are eligible next time. Failed reads preserve both
+the cursor and current tasks. A full scan runs at least daily and whenever the
+covered branch or baseline changes; items omitted from a delta are retained.
+Older Repo Bot releases remain compatible and perform full scans. Town uses a
+new worker capability once that independent bot release is installed/launched;
+updating source here does not publish a bot release.

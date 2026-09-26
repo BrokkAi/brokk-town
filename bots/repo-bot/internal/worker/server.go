@@ -39,20 +39,22 @@ type Initialize struct {
 }
 
 type Request struct {
-	Protocol       int                `json:"protocol"`
-	Remote         string             `json:"remote"`
-	Branch         string             `json:"branch"`
-	Directory      string             `json:"directory"`
-	StateDirectory string             `json:"state_directory"`
-	Repo           string             `json:"repo"`
-	Host           string             `json:"host"`
-	Agent          runner.AgentConfig `json:"agent"`
-	Verify         []string           `json:"verify,omitempty"`
-	Issue          int                `json:"issue,omitempty"`
-	PR             int                `json:"pr,omitempty"`
-	Mode           string             `json:"mode,omitempty"`
-	BaseSHA        string             `json:"base_sha,omitempty"`
-	HeadSHA        string             `json:"head_sha,omitempty"`
+	InventorySince  *time.Time         `json:"inventory_since,omitempty"`
+	InventoryBranch string             `json:"inventory_branch,omitempty"`
+	Protocol        int                `json:"protocol"`
+	Remote          string             `json:"remote"`
+	Branch          string             `json:"branch"`
+	Directory       string             `json:"directory"`
+	StateDirectory  string             `json:"state_directory"`
+	Repo            string             `json:"repo"`
+	Host            string             `json:"host"`
+	Agent           runner.AgentConfig `json:"agent"`
+	Verify          []string           `json:"verify,omitempty"`
+	Issue           int                `json:"issue,omitempty"`
+	PR              int                `json:"pr,omitempty"`
+	Mode            string             `json:"mode,omitempty"`
+	BaseSHA         string             `json:"base_sha,omitempty"`
+	HeadSHA         string             `json:"head_sha,omitempty"`
 	// SinceHead is the branch head Town last observed. The inventory names the
 	// commits the branch gained beyond it; an empty value asks for none.
 	SinceHead string `json:"since_head,omitempty"`
@@ -103,6 +105,8 @@ type Result struct {
 // Inventory is one complete observation of the repository. Town applies it to
 // its own task graph; the worker never interprets Town state.
 type Inventory struct {
+	Incremental   bool            `json:"incremental,omitempty"`
+	StartedAt     time.Time       `json:"started_at,omitempty"`
 	Branch        string          `json:"branch"`
 	DefaultBranch string          `json:"default_branch"`
 	Head          string          `json:"head"`

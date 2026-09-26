@@ -62,9 +62,11 @@ const workerDeadline = 2 * time.Hour
 
 // dispatch identifies the exact work requested of one bot.
 type dispatch struct {
-	issue, pr  int
-	base, head string
-	mode       string
+	inventorySince  *time.Time
+	inventoryBranch string
+	issue, pr       int
+	base, head      string
+	mode            string
 	// supersededPR is the closed pull request an issue run starts over from.
 	supersededPR int
 	// sinceHead and commits are the repo worker's inventory inputs.
@@ -191,9 +193,13 @@ func (b *BotWorkers) Observe(ctx context.Context, t *Town, request InventoryRequ
 		agent = resolved
 		t.Config.Agent = agent
 	}
-	d := dispatch{mode: inventoryMode(request.Health && len(agent.Command) > 0), sinceHead: request.SinceHead, commits: request.Commits}
+	d := dispatch{mode: inventoryMode(request.Health && len(agent.Command) > 0), sinceHead: request.SinceHead, commits: request.Commits, inventorySince: request.Since, inventoryBranch: request.Branch}
 	result, err := b.runBot(ctx, t, Repo, agent, dir, state, b.remote(t.Config.Repo), d, deadline, observe)
-	return repoResult(result, err)
+	run, err := repoResult(result, err)
+	if err == nil && run.Inventory.Incremental && (request.Since == nil || run.Inventory.StartedAt.IsZero()) {
+		return RunResult{}, errors.New("repo worker returned an incremental inventory without its baseline")
+	}
+	return run, err
 }
 
 // inventoryMode names the duty the repo worker is asked for. A confirmation
@@ -401,6 +407,7 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		request.Mode = d.mode
 		request.SinceHead = d.sinceHead
 		request.Commits = d.commits
+		request.InventorySince, request.InventoryBranch = d.inventorySince, d.inventoryBranch
 	}
 	if role == Hall {
 		request.Mode = d.mode

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -71,7 +72,11 @@ func pages[T any](ctx context.Context, g githubClient, path string) ([]T, error)
 // every issue, pull request and release. Partial reads are errors, never an
 // inventory that silently omits what Town would then treat as gone.
 func (g githubClient) snapshot(ctx context.Context) (Inventory, error) {
-	var out Inventory
+	return g.snapshotSince(ctx, nil, "")
+}
+
+func (g githubClient) snapshotSince(ctx context.Context, since *time.Time, previousBranch string) (Inventory, error) {
+	out := Inventory{StartedAt: time.Now().UTC()}
 	var metadata struct {
 		Branch string `json:"default_branch"`
 	}
@@ -99,12 +104,67 @@ func (g githubClient) snapshot(ctx context.Context) (Inventory, error) {
 		return out, errors.New("GitHub reported no usable branch head")
 	}
 	var err error
-	if out.Issues, err = pages[Issue](ctx, g, g.path("/issues?state=all&sort=updated&direction=desc")); err != nil {
-		return out, err
+	// A branch change, stale/future cursor or missing baseline requires a full
+	// observation. LastSync is the START of a completed scan, with overlap below.
+	out.Incremental = since != nil && !since.IsZero() && since.Before(out.StartedAt) && out.StartedAt.Sub(*since) < 24*time.Hour && previousBranch == out.Branch
+	if !out.Incremental {
+		if out.Issues, err = pages[Issue](ctx, g, g.path("/issues?state=all&sort=updated&direction=desc")); err != nil {
+			return Inventory{}, err
+		}
+		if out.Pulls, err = pages[Pull](ctx, g, g.path("/pulls?state=all&sort=updated&direction=desc")); err != nil {
+			return Inventory{}, err
+		}
+	} else {
+		changed, e := pages[Issue](ctx, g, g.path("/issues?state=all&sort=updated&direction=desc&since="+url.QueryEscape(since.Add(-5*time.Minute).UTC().Format(time.RFC3339))))
+		if e != nil {
+			return Inventory{}, e
+		}
+		// Open work stays fresh even when a PR's base advances without updating the
+		// issue timestamp. Historical items use the cursor instead of state=all.
+		open, e := pages[Issue](ctx, g, g.path("/issues?state=open&sort=updated&direction=desc"))
+		if e != nil {
+			return Inventory{}, e
+		}
+		issues := map[int]Issue{}
+		for _, i := range changed {
+			issues[i.Number] = i
+		}
+		for _, i := range open {
+			issues[i.Number] = i
+		}
+		for _, i := range issues {
+			out.Issues = append(out.Issues, i)
+		}
+		sort.Slice(out.Issues, func(i, j int) bool { return out.Issues[i].Number < out.Issues[j].Number })
+		if out.Pulls, err = pages[Pull](ctx, g, g.path("/pulls?state=open&sort=updated&direction=desc")); err != nil {
+			return Inventory{}, err
+		}
+		seen := map[int]bool{}
+		for _, p := range out.Pulls {
+			seen[p.Number] = true
+		}
+		for _, i := range out.Issues {
+			if len(i.Pull) == 0 || string(i.Pull) == "null" || seen[i.Number] {
+				continue
+			}
+			if i.Number < 1 {
+				return Inventory{}, errors.New("invalid changed pull request identity")
+			}
+			var p Pull
+			if err := g.api(ctx, "GET", g.path(fmt.Sprintf("/pulls/%d", i.Number)), &p); err != nil {
+				// A changed PR can disappear between listing and detail reads. Restart
+				// as a full scan once; never freeze the delta cursor on that identity
+				// indefinitely, or silently accept the missing detail as a complete delta.
+				return g.snapshot(ctx)
+			}
+			if p.Number != i.Number {
+				return Inventory{}, errors.New("changed pull request identity mismatch")
+			}
+			out.Pulls = append(out.Pulls, p)
+			seen[p.Number] = true
+		}
 	}
-	if out.Pulls, err = pages[Pull](ctx, g, g.path("/pulls?state=all&sort=updated&direction=desc")); err != nil {
-		return out, err
-	}
+
 	out.Releases, err = pages[Release](ctx, g, g.path("/releases"))
 	return out, err
 }

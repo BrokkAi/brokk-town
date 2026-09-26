@@ -1357,3 +1357,31 @@
   full root race suite/vet, frontend checks/tests, Town-only build, isolated demo,
   all-eight real offline npm package lifecycle checks and fake-Mjolnir smoke;
   all passed. Storage does not invoke or alter bot publication.
+
+## Incremental inventory (#21, first part)
+
+- Add optional v1 `incremental-inventory` capability and timestamp/branch cursor
+  inputs to independent Repo Bot. Town omits these fields for older releases.
+- Delta reads overlap the last successful scan start by five minutes, refresh
+  open issues/PRs and fetch changed closed PRs individually. Fully paginated reads
+  only; errors preserve the prior durable cursor. Exact release ancestry remains.
+- Persist full-scan age and covered branch, force baseline/daily/branch-change
+  resyncs, and preserve closing claims when delta entries are absent. Re-read a
+  missing PR before the existing close workflow may write to GitHub.
+- Tests use fake GitHub, local worker executables and protocol fixtures for
+  pagination errors, identity mismatch, stale/future cursors, restart, branch
+  changes and old-worker compatibility. A vanished changed PR triggers one full
+  rescan instead of stranding the delta cursor. Validation passed: full root and
+  Repo Bot race/vet suites, all 89 frontend tests, Repo Bot launcher/packaging
+  checks, Town-only build, isolated demo, all-eight offline npm-worker lifecycle
+  and fake-Mjolnir smoke. No live automation or releases.
+- Historical task archival remains the second part of #21. This change does not
+  close that issue or publish a new independent Repo Bot release.
+
+- Diagnosed a recurring unrelated CLI test EOF/reset: the readiness fixture had
+  two os.File owners for one descriptor, so finalization could close a later HTTP
+  socket after descriptor reuse. Give the claimed descriptor its own dup, close
+  it explicitly, and assert the original pipe remains usable. Fifty combined
+  readiness/settings repeats and the final full race suite pass.
+- PR #166 merged at 6cae436 after review corrections and exact-head green CI,
+  completing #7. Incremental inventory is based on that merged implementation.
