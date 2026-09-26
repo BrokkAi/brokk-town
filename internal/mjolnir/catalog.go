@@ -1,5 +1,5 @@
-// Package mjolnir reads the daemon's versioned, public launch catalog. It never
-// starts the daemon, a session, an agent, or a repository operation.
+// Package mjolnir reads the daemon's versioned launch catalog and private
+// session artifacts. It never starts a daemon, session, agent or GitHub write.
 package mjolnir
 
 import (
@@ -279,47 +279,67 @@ func (c *Catalog) fetch(ctx context.Context) (Options, error) {
 // get reads only the public API. Error bodies may contain credentials, paths or
 // commands, so callers receive status-specific instructions instead.
 func (c *Catalog) get(ctx context.Context, path, resource string, out any) error {
-	fail := errors.New
-	if c.listing.Demo {
-		return fail("Mjolnir is offline in demo mode.")
-	}
-	if c.setupError != "" {
-		return fail(c.setupError)
-	}
-	if c.client == nil {
-		return fail("Configure BT_MJOLNIR_API_URL and BT_MJOLNIR_TOKEN_FILE to read Mjolnir profiles.")
-	}
-	token, err := readBounded(c.connection.TokenFile, 4096)
-	if err != nil || len(strings.TrimSpace(string(token))) == 0 {
-		return fail("Cannot read Mjolnir's API token; check BT_MJOLNIR_TOKEN_FILE and its permissions.")
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(c.connection.URL, "/")+path, nil)
+	resp, err := c.request(ctx, "GET", path, nil, 5*time.Second)
 	if err != nil {
-		return fail("Invalid Mjolnir API URL; check BT_MJOLNIR_API_URL.")
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fail("Cannot reach Mjolnir; check that its daemon and API listener are running.")
+		return err
 	}
 	defer resp.Body.Close()
-	if resp.Header.Get("Mj-Api-Version") != "1" {
-		return fail("Mjolnir returned an unsupported API version; use a daemon serving API 1.")
-	}
-	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		return fail("Mjolnir rejected authentication; check its API token file.")
-	}
 	if resp.StatusCode != http.StatusOK {
-		return fail(fmt.Sprintf("Mjolnir %s returned HTTP %d; check the selected profile, its runtime and authentication in Mjolnir.", resource, resp.StatusCode))
+		return fmt.Errorf("Mjolnir %s returned HTTP %d; check the selected profile, its runtime and authentication in Mjolnir.", resource, resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil || len(data) > maxBytes {
-		return fail("Mjolnir " + resource + " exceeded the response limit or could not be read.")
+		return errors.New("Mjolnir " + resource + " exceeded the response limit or could not be read.")
 	}
 	if json.Unmarshal(data, out) != nil {
-		return fail("Mjolnir returned invalid " + resource + "; check its API version.")
+		return errors.New("Mjolnir returned invalid " + resource + "; check its API version.")
 	}
 	return nil
+}
+
+// request shares authentication, connection restrictions and cancellation across
+// catalog and artifact reads. Callers own the response body and status checks.
+func (c *Catalog) request(ctx context.Context, method, path string, body io.Reader, timeout time.Duration) (*http.Response, error) {
+	fail := errors.New
+	if c.listing.Demo {
+		return nil, fail("Mjolnir is offline in demo mode.")
+	}
+	if c.setupError != "" {
+		return nil, fail(c.setupError)
+	}
+	if c.client == nil {
+		return nil, fail("Configure BT_MJOLNIR_API_URL and BT_MJOLNIR_TOKEN_FILE to read Mjolnir's API.")
+	}
+	token, err := readBounded(c.connection.TokenFile, 4096)
+	if err != nil || len(strings.TrimSpace(string(token))) == 0 {
+		return nil, fail("Cannot read Mjolnir's API token; check BT_MJOLNIR_TOKEN_FILE and its permissions.")
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.connection.URL, "/")+path, body)
+	if err != nil {
+		return nil, fail("Invalid Mjolnir API URL; check BT_MJOLNIR_API_URL.")
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	client := *c.client
+	client.Timeout = timeout
+	resp, err := client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("Mjolnir request interrupted: %w", ctx.Err())
+		}
+		return nil, fail("Cannot reach Mjolnir; check that its daemon and API listener are running.")
+	}
+	if resp.Header.Get("Mj-Api-Version") != "1" {
+		resp.Body.Close()
+		return nil, fail("Mjolnir returned an unsupported API version; use a daemon serving API 1.")
+	}
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		resp.Body.Close()
+		return nil, fail("Mjolnir rejected authentication; check its API token file.")
+	}
+	return resp, nil
 }
 func validate(o Options) error {
 	if o.Profiles == nil || o.Targets == nil || o.Bundles == nil {

@@ -158,18 +158,64 @@ capacity waits, missing artifacts, and restart recovery. Demo mode must never
 contact Mjolnir or launch an agent. A real remote acceptance demonstration is
 separate from development tests and must not be claimed from fixture coverage.
 
+## Artifact evidence client (#155, first part)
+
+Town's internal Mjolnir client can read a saved session's identity, an exact-base
+JSON diff, a repository-relative file and a page of transcript evidence. It can
+also request a Git bundle export. These calls are for background execution work;
+they are not connected to rendering or dispatch yet. Selecting Mjolnir still
+holds agent work while the remaining launch and recovery contracts are developed.
+
+The client retains the existing loopback-only connection, per-request token read,
+API version check, no proxy/redirect behavior and demo isolation. Artifact reads
+have a 30-second deadline; a bundle export has two minutes because it can first
+checkpoint the session. Bounds are 1 MiB for session/transcript JSON, 16 MiB for
+diff JSON or file bytes, and 32 MiB for a bundle. Oversize, partial, missing or
+unsupported responses are errors, with no partial evidence returned. A 409
+refusal remains distinct from a missing artifact or daemon failure. Raw daemon
+errors are never copied into diagnostics.
+
+Session checks compare the saved session, workspace, bundle, target and profile
+IDs. They do not infer runtime identity from a profile or idle status. Diff reads
+require a full commit ID and matching returned base. Review-tree checks require
+unchanged HEAD and an empty patch; they do not supply a review verdict or replace
+a complete independent review receipt. Repair-history checks require a different
+HEAD, a nonempty patch and affirmative ancestry. An older worker that omits
+ancestry is unsupported evidence, not a successful check.
+
+Transcript pages advance by sequence, including updates to an existing item.
+They keep every item sharing a page's boundary sequence even when the daemon
+returns more than the requested 200 items, within the byte limit. Missing or
+skipped evidence is refused. Only documented item fields are retained; raw
+harness-shaped bodies are ignored. Patch and transcript text are private and
+excluded from their JSON projections. File and bundle bytes remain private
+inputs to validation and eventual durable artifact storage, never snapshots.
+
+The only export operation exposed by this client requests a bundle, not a
+branch push. An interrupted export retains an unconfirmed checkpoint outcome
+and is never automatically retried. Callers must still import and verify the
+bundle in a private checkout, check its exact head and ancestry, run the operator's
+verification command, obtain independent review, and use the existing publication
+gates. Fake-daemon and disposable-Git tests exercise artifact reads and bundle
+verification. Durable session/artifact receipts, bot integration and complete
+remote review/repair dispatch remain work under #154/#155; this client does not
+complete the real-target acceptance in #149.
+
 ## Remaining execution contract
 
 The following audit uses Mjolnir source at
-[`4205ca8`](https://github.com/BrokkAi/mjolnir/tree/4205ca8096d66c7de156a11e5b7e31d6b850e3a0).
+[`4d6c0ce`](https://github.com/BrokkAi/mjolnir/tree/4d6c0ce9c58efe76cdaa098de1b735eded5e871b).
 It records requirements for #153–155; it does not claim those issues or the
 real-target acceptance in #149 are complete.
 
 - `mj acp` accepts target, profile, bundle, workspace and an exit policy, but
-  does not pass an exact launch base/branch, model or effort. The HTTP session
-  creation request has those fields; the ACP adapter needs to carry them or
-  attach to a session Town has already provisioned before it can satisfy Town's
-  dispatch contract. Its ACP session ID already equals the Mjolnir session ID.
+  does not pass launch base/branch, model or effort. The HTTP API supports those
+  selectors, but `launch_base` only sets the diff baseline for a fresh bundle
+  checkout; it does not move HEAD to that commit. A new exact-checkout contract
+  and supported ACP launch path are tracked in Mjolnir #1162. The adapter does
+  not currently allow attaching a session created outside its process. Its ACP
+  session ID already equals the Mjolnir session ID. Runtime identity and expected
+  identity enforcement remain upstream work in Mjolnir #1163.
 - Session creation returns a server-assigned ID. Town needs to save a dispatch
   intent before submission and its session receipt before prompting. A lost
   creation receipt must remain uncertain, with no automatic resubmission.
