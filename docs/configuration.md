@@ -290,3 +290,52 @@ The HTTP listener accepts loopback IPs only (default `127.0.0.1:8099`). Host,
 origin, and bearer key checks protect the local API. A browser supporting WebMCP
 can list towns and navigate to a house through optional page tools. Unsupported
 browsers use the ordinary interface.
+
+## Local attention hook
+
+Under **Service settings → Local attention hook**, save a command as a JSON
+argument array and enable it. The hook is disabled by default. The saved command
+stays private: browser/CLI snapshots show only `enabled` and `configured`.
+Leaving the command field blank preserves it; disable the hook and enter `[]`
+to remove it. Closing the dialog clears any command you typed.
+
+The CLI uses the same service setting. Store the argument array in a private file
+(or use `--command-file -` to read it from stdin):
+
+```sh
+bt attention-hook                         # show enabled/configured
+bt attention-hook --enable --command-file /path/to/hook.json
+bt attention-hook --disable                # keep the saved command
+bt attention-hook --json
+```
+
+A startup config can set `"attention_hook": {"enabled": true, "command":
+["/path/to/notify-town"]}` alongside `max_workers` and `towns`. Omit it to keep
+the persisted setting. The executable receives one JSON line on standard input:
+
+```json
+{"town":"acme/project","task":"issue:23","role":"issue","reason":"blocked","seq":42}
+```
+
+Reasons are `blocked`, `failed`, `inconclusive`, `uncertain_write`,
+`worker_failed`, or `worker_recovery`; worker task IDs use `worker:ROLE`.
+Payloads contain no titles, error text, commands, credentials or agent settings.
+Each newly appearing identity/reason queues one invocation. Repeated snapshots
+produce no duplicates, and transitions for an identity already queued coalesce.
+Enabling the hook queues existing attention once. Snoozed tasks wait until their
+snooze expires, except for uncertain writes or inconclusive reviews, which remain
+visible attention just as in the inbox.
+
+Delivery runs beside the scheduler with one command at a time, a ten-second
+limit and process-group cancellation. The command receives no shell expansion
+unless you explicitly configure a shell. Its working directory is Town's private
+state directory. Town discards stdout/stderr; redirect output inside your hook
+if you need it. Failures produce a short service-log entry and never change task
+or worker state. Hooks run independently of quiet hours. Demo never invokes one.
+
+Pending notices survive restart. A durable claim is saved before starting the
+command; an interrupted claim has an uncertain delivery outcome and is logged
+without replay. Failed deliveries are not retried automatically. A later new
+attention transition can notify again. Disabling drops pending notices and lets
+an already started command finish within its time limit. Keep `state.json` in
+backups to preserve configuration and delivery records.

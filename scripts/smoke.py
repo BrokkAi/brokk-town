@@ -55,6 +55,14 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
 
         wait_for(lambda: len(snapshot()['towns']) == 2)
         assert snapshot()['demo'] is True
+        hook_marker = root / 'demo-hook-must-not-run'
+        with request('/api/attention-hook', {'enabled': True, 'command':
+                [sys.executable, '-c', 'from pathlib import Path; Path(__import__("sys").argv[1]).touch()', str(hook_marker)]}) as response:
+            assert json.load(response) == {'enabled': True, 'configured': True}
+        assert str(hook_marker) not in json.dumps(snapshot())
+        hook_cli = subprocess.check_output([binary, 'attention-hook', '--demo',
+            '--state-dir', directory, '--json'], text=True)
+        assert json.loads(hook_cli) == {'enabled': True, 'configured': True}
         initial_capacity = snapshot()['capacity']
         assert initial_capacity['limit'] == 4 and initial_capacity['active'] >= 0
         capacity_cli = subprocess.check_output([binary, 'settings', '--demo',
@@ -71,7 +79,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
                             '--repo', 'BrokkAi/orchard', '--role', 'feature'],
                            check=True, stdout=subprocess.DEVNULL)
             assert snapshot()['towns']['brokkai/orchard']['workers']['feature']['enabled'] == (action == 'start')
-        for path in ['/', '/app.js', '/town.js', '/tools.js', '/manage.js', '/scenery.js', '/style.css',
+        for path in ['/', '/app.js', '/town.js', '/tools.js', '/manage.js', '/attention.js', '/scenery.js', '/style.css',
                      '/assets/buildings-atlas.png', '/assets/actors-atlas.png',
                      '/assets/feature-study.png', '/assets/feature-reader.png',
                      '/assets/simplifier-clarifier.png']:
@@ -201,6 +209,7 @@ with tempfile.TemporaryDirectory(prefix='brokk-town-smoke-') as directory:
         assert 'running' in status_out
         subprocess.run([binary, 'shutdown', '--demo', '--state-dir', directory], check=True, timeout=40)
         assert not conn_path.exists()
+        assert not hook_marker.exists(), 'demo invoked the attention hook'
         print('Demo smoke passed: browser assets, auth, SSE, registry, profiles, requests, foreground shutdown, explicit daemon lifecycle.')
     finally:
         if service.poll() is None:

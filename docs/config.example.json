@@ -1,5 +1,6 @@
 {
   "max_workers": 4,
+  "attention_hook": {"enabled": false, "command": []},
   "quiet_hours": [
     {"days": ["mon", "tue", "wed", "thu", "fri"], "start": "19:00", "end": "07:00"},
     {"days": ["sat", "sun"], "start": "00:00", "end": "24:00"}

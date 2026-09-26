@@ -43,6 +43,7 @@ import {
   formatQuietHours,
   reconnectDelay,
 } from "./town.js";
+import { attentionSettings } from "./attention.js";
 import { management } from "./manage.js";
 import { easeDelivery } from "./scenery.js";
 import { factions, skinFor, normalizeSkin } from "./skins.js";
@@ -245,6 +246,7 @@ function town() {
 async function refreshState() {
   receive(await api("/api/state"));
 }
+const attention = attentionSettings({ api, getState: () => state, refresh: refreshState });
 const renderManagement = management({
   api,
   getTown: town,
@@ -888,6 +890,7 @@ document.querySelectorAll("#view-switcher [data-view]").forEach((button) => {
 });
 
 $("#capacity-settings").onclick = () => {
+  attention.open();
   renderCapacity();
   $("#capacity-error").textContent = "";
   $("#service-quiet-error").textContent = "";

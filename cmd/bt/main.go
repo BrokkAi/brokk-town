@@ -209,6 +209,8 @@ func run(ctx context.Context, args []string) error {
 		}
 		fmt.Println("Town stopped")
 		return nil
+	case "attention-hook":
+		return attentionHookCommand(ctx, abs, fl, fs)
 	case "execution":
 		return executionCommand(ctx, abs, fl, fs)
 	case "choices":
@@ -650,6 +652,9 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 					s.ServiceConfig.QuietHours = *service.QuietHours
 				}
 			}
+			if service.AttentionHook != nil {
+				s.ServiceConfig.AttentionHook = *service.AttentionHook
+			}
 			for _, entry := range configs {
 				cfg := entry.Config
 				if err := cfg.Validate(); err != nil {
@@ -811,7 +816,8 @@ func decodeTowns(raw []byte) ([]townEntry, error) {
 // fileService is what the object form says about the whole service. A nil
 // field was absent, and leaves the saved setting as it was.
 type fileService struct {
-	MaxWorkers *int
+	AttentionHook *town.AttentionHook
+	MaxWorkers    *int
 	// QuietHours replaces the service default quiet hours; an empty list
 	// removes them.
 	QuietHours *[]town.QuietWindow
@@ -820,9 +826,10 @@ type fileService struct {
 func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
 	var none fileService
 	var file struct {
-		MaxWorkers json.RawMessage `json:"max_workers"`
-		QuietHours json.RawMessage `json:"quiet_hours"`
-		Towns      json.RawMessage `json:"towns"`
+		AttentionHook json.RawMessage `json:"attention_hook"`
+		MaxWorkers    json.RawMessage `json:"max_workers"`
+		QuietHours    json.RawMessage `json:"quiet_hours"`
+		Towns         json.RawMessage `json:"towns"`
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
@@ -840,6 +847,18 @@ func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
 		return nil, none, err
 	}
 	var service fileService
+	if len(file.AttentionHook) > 0 {
+		var hook *town.AttentionHook
+		d := json.NewDecoder(bytes.NewReader(file.AttentionHook))
+		d.DisallowUnknownFields()
+		if d.Decode(&hook) != nil || hook == nil {
+			return nil, none, errors.New("attention_hook must be an object with enabled and command")
+		}
+		if err := hook.Validate(); err != nil {
+			return nil, none, err
+		}
+		service.AttentionHook = hook
+	}
 	if len(file.MaxWorkers) > 0 {
 		if string(file.MaxWorkers) == "null" {
 			return nil, none, errors.New("max_workers cannot be null")

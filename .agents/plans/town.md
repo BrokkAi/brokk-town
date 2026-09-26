@@ -1206,3 +1206,33 @@
 - PR #163 review reproduced a mixed-case repository discovery failure with a
   failing regression. Normalize repository IDs in the shared ChoicesForRole
   boundary, matching persisted town identities; browser and CLI both benefit.
+
+## Local attention hook (#54)
+
+- Added private persisted service command/argv and enabled setting, disabled by
+  default. Browser service settings, `bt attention-hook`, startup config and the
+  authenticated API share the same setting; snapshots expose presence only.
+- Capture public attention identity/reason transitions during state commit and
+  consume them in a separate bounded watcher. Coalesced Watch signals cannot
+  lose short-lived blocked states. Save claims before subprocess launch, retain
+  pending notices across restart and never replay interrupted uncertain claims.
+- Hooks receive a small JSON line, have a ten-second process-group deadline and
+  discarded output. Failures log fixed outcomes without command/error contents
+  and leave scheduling state intact. Quiet hours do not hold notifications;
+  demo never invokes a hook. Completed delivery records are removed.
+- Public service configuration now has an explicit projection, including the
+  quiet-hours endpoint, so newly private service fields cannot leak there.
+- Tests cover transitions, disabled/demo behavior, duplicate snapshots, short
+  transitions, snooze expiry, restart uncertainty, timeout/failure privacy,
+  API/CLI validation and browser draft lifecycle. The demo smoke configures a
+  marker hook and checks it was never invoked across service restart.
+- PR #163 merged after review, a reproduced mixed-case-ID fix and green CI;
+  #151 closed. #142's previously implemented decision/worker tests were verified
+  by the same all-nine-module CI run and the issue was closed without duplicate
+  implementation. Remaining remote execution requires the contracts documented
+  in docs/mjolnir-execution.md; no remote acceptance run has been claimed.
+- Validation: full root race tests and vet, frontend syntax/tests, complete
+  bundle build, demo hook-isolation smoke, all-eight worker lifecycle smoke and
+  fake-Mjolnir smoke passed. The first race attempt exhausted the shared /tmp
+  filesystem; rerunning with private temporary files on the workspace volume
+  passed. No unrelated files were removed. No live automation or release.
