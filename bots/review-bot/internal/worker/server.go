@@ -51,6 +51,8 @@ type Request struct {
 	PR             int                `json:"pr,omitempty"`
 	BaseSHA        string             `json:"base_sha,omitempty"`
 	HeadSHA        string             `json:"head_sha,omitempty"`
+	RemoteAgent    string             `json:"remote_agent,omitempty"`
+	DryRun         bool               `json:"dry_run,omitempty"`
 	// Policy is Town's work selection and limits for this run.
 	Policy *Policy `json:"policy,omitempty"`
 }

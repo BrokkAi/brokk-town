@@ -221,7 +221,7 @@ func TestManagedExecutionIsHeldWithoutBudgetOrLocalFallback(t *testing.T) {
 		t.Fatal("held execution spent capacity/budget")
 	}
 	bot := &BotWorkers{Root: t.TempDir()}
-	if _, err := bot.Run(context.Background(), st.Towns[x.ID], Review, func(Progress) {}, slog.Default()); err == nil || !strings.Contains(err.Error(), "not available yet") {
+	if _, err := bot.Run(context.Background(), st.Towns[x.ID], Review, func(Progress) {}, slog.Default()); err == nil || !strings.Contains(err.Error(), "configured Mjolnir connection") {
 		t.Fatal(err)
 	}
 	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{}); err == nil || !strings.Contains(err.Error(), "Configure BT_MJOLNIR") {

@@ -103,7 +103,11 @@ func (s *Supervisor) setupChecks(ctx context.Context, c Config) []Diagnostic {
 	for _, role := range AgentRoles {
 		cfg := c.ForRole(role)
 		if cfg.Execution.Managed() {
-			add("execution", role, "blocked", executionPending, "Select direct local execution to use a local agent.")
+			if detail := executionHold(&Town{Config: c}, role); detail != "" {
+				add("execution", role, "blocked", detail, "Check this role's execution and runtime selection.")
+			} else {
+				add("execution", role, "unknown", "A managed runtime is selected; checkout, runtime and artifacts are verified at dispatch.", "Inspect Mjolnir for target readiness and authentication.")
+			}
 			continue
 		}
 		status, detail, action := agentSetup(cfg, s.Harnesses)

@@ -139,6 +139,12 @@ func (p *workerProcess) run(ctx context.Context, request workerRequest, retry bo
 	if !p.alive() {
 		return workerResult{}, errors.New("worker process exited")
 	}
+	if request.RemoteAgent != "" && !p.info.has("remote-agent-v1") {
+		return workerResult{}, errors.New("review worker lacks remote-agent-v1; update the released bot before managed dispatch")
+	}
+	if request.DryRun && !p.info.has("dry-run") {
+		return workerResult{}, errors.New("worker lacks dry-run capability")
+	}
 	if !p.info.has("incremental-inventory") {
 		request.InventorySince = nil
 		request.InventoryBranch = ""

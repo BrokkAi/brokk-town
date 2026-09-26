@@ -714,6 +714,12 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh}
 	supervisor := town.NewSupervisor(store, gh, workers)
 	supervisor.Mjolnir = mjolnir.New(dir, demo, mjolnir.Environment())
+	workers.Mjolnir = supervisor.Mjolnir
+	if command := os.Getenv("BT_MJOLNIR_COMMAND"); command != "" {
+		if json.Unmarshal([]byte(command), &workers.MjolnirCommand) != nil || len(workers.MjolnirCommand) == 0 || workers.MjolnirCommand[0] == "" {
+			return errors.New("BT_MJOLNIR_COMMAND must be a JSON command array for mj")
+		}
+	}
 	defer workers.Close()
 	if !demo {
 		if err := workers.SyncProcesses(ctx, store.Snapshot()); err != nil {

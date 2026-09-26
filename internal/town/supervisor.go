@@ -180,7 +180,7 @@ func (s *Supervisor) schedule(ctx context.Context) {
 			if !w.Enabled || w.Next.After(s.now()) {
 				continue
 			}
-			if r != Repo && t.Config.ExecutionForRole(r).Managed() {
+			if r != Repo && executionHold(t, r) != "" {
 				if w.Phase != "execution" && w.Status != "working" && w.Status != "pausing" && w.Recovery == nil {
 					s.update(func(st *State) error {
 						current := st.Towns[t.ID]
@@ -188,8 +188,8 @@ func (s *Supervisor) schedule(ctx context.Context) {
 							return nil
 						}
 						worker := current.Workers[r]
-						if current.Config.ExecutionForRole(r).Managed() && worker.Enabled && worker.Status != "working" && worker.Status != "pausing" && worker.Recovery == nil {
-							worker.Status, worker.Phase, worker.Task = "waiting", "execution", executionPending
+						if detail := executionHold(current, r); detail != "" && worker.Enabled && worker.Status != "working" && worker.Status != "pausing" && worker.Recovery == nil {
+							worker.Status, worker.Phase, worker.Task = "waiting", "execution", detail
 						}
 						return nil
 					})
@@ -334,9 +334,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		if current.Deleted || !w.Enabled {
 			return context.Canceled
 		}
-		if r != Repo && current.Config.ExecutionForRole(r).Managed() {
+		if detail := executionHold(current, r); r != Repo && detail != "" {
 			if w.Recovery == nil {
-				w.Status, w.Phase, w.Task = "waiting", "execution", executionPending
+				w.Status, w.Phase, w.Task = "waiting", "execution", detail
 			}
 			held = true
 			return nil
@@ -403,8 +403,8 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			if repair {
 				s.releaseRepair(t.ID)
 			}
-		} else if e := requireLocalExecution(t.Config); e != nil {
-			err = e
+		} else if detail := executionHold(t, r); detail != "" {
+			err = errors.New(detail)
 		} else if r == Review {
 			handled, e := s.mergeReady(ctx, t, log)
 			err = e

@@ -2,6 +2,40 @@
 
 ## Finish Mjolnir issues, review/merge PRs, then release changed components
 
+- User requested monitoring https://github.com/BrokkAi/mjolnir/issues/1166 and
+  automatic resumption once fixed. Upstream PR #1167 merged as c107232 after
+  green CI (head 07e76c4; 29 passed, one intentional skip), closing #1166.
+  Resume implementation and fake-service checks under the existing authorization.
+  Real container verification still awaits the fixed upstream binary: v2.23.1
+  release workflow 36254212898 is queued, and the green branch CI runs do not
+  retain binary artifacts. Do not duplicate the upstream release work.
+- User withdrew the suggestion to cut an early release. Finish all remaining
+  issues and reviewed, green PRs first, then release each changed component.
+  During upstream monitoring the first CI runs were explicitly cancelled by the
+  foundev account. Two later macOS fixture failures were fixed upstream
+  (canonical cache paths and portable `false` lookup); the final CI passed.
+- PRs #175, #176 and #177 are merged after review fixes and green CI; latest
+  merged base is d2f3f07. No release has been published. #149/#153–155 remain
+  open pending integrated acceptance. Current branch is
+  `codex/mjolnir-worker-dispatch` with uncommitted, unfinished ACP executor,
+  Review Bot remote-agent-v1/dry-run protocol and Town review/repair routing.
+  The integration now passes root and Review Bot race tests/vet, 99 frontend
+  tests/syntax, both modules' Python release and npm launcher tests, build,
+  demo/fake-Mjolnir smoke, and all eight offline npm worker lifecycle checks.
+  New fixtures cover ACP intent ordering, uncertain creation/settings/evidence,
+  cancellation, strict callback identities, old worker capabilities, frozen
+  configuration, independent remote finding verification and dry-run writes.
+  Next: open/review the integration PR, run the separate real-container dry-run
+  against that PR once the fixed upstream binary is available, fix findings,
+  merge green, close acceptance issues, then release Review Bot and Town.
+- Isolated acceptance data and two idle, prompt-free discovery sessions are
+  retained under ignored `var/mjolnir-acceptance`. The released v2.23.0 binary
+  was checksum-verified. Both cached and explicitly installed Docker runtimes
+  report unknown identity because the worker inspects the `sh` launcher instead
+  of the Codex package. Never bypass that refusal. An isolated upstream clone
+  exists at `var/mjolnir-runtime-fix` on `codex/container-runtime-identity`; no
+  upstream source fix, PR, merge or release has been made.
+
 - User explicitly authorized one PR per remaining issue, review and fixes,
   normal merge after passing checks, and releases for each changed bot and Town
   after the whole sequence. Use available test infrastructure without asking

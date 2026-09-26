@@ -6,14 +6,16 @@ This document records the operator's decisions for
 [#151](https://github.com/BrokkAi/brokk-town/issues/151) and guides the implementation
 under [#149](https://github.com/BrokkAi/brokk-town/issues/149). Town now caches
 Mjolnir's launch options and saves independent town/bot execution selections.
-Running agents through Mjolnir remains planned: selecting a Mjolnir target holds
-that bot's agent work until remote checkout and evidence support are available.
-Repo Bot continues its inventory reads without starting a repair agent.
+PR review, independent certification, and repairs from verified review feedback
+can run through `mj acp`. Each task uses an exact private checkout and a selected
+target runtime, and its answer must match retained remote evidence. Other agent
+duties remain held when assigned to Mjolnir. Repo Bot continues inventory reads.
 
 ## Connect and select
 
 Use `mj api-info` to find the daemon's API base URL and token file. That command
-may start Mjolnir; Town itself never starts it. Set these environment variables
+may start Mjolnir. Catalog reads never start it; an explicitly dispatched managed
+task checks `mj api-info` before launching the ACP adapter. Set these variables
 on the Town service, then start Town normally:
 
 ```sh
@@ -27,6 +29,19 @@ HTTPS with a normally trusted certificate are supported. Town does not follow
 redirects or send this request through an HTTP proxy. The token is read from its
 file for each request and never enters Town's state, catalog, logs or clients.
 Changing these environment variables requires restarting Town.
+
+Town runs `mj` from PATH by default. `BT_MJOLNIR_COMMAND` can supply a JSON array
+such as `["mj", "--instance", "town"]`. The command's API URL and token-file
+path must match the configured connection before Town can create a session.
+Keep any `MJ_CONFIG_DIR` and `MJ_DATA_DIR` overrides on the Town service as well.
+
+Configure one single-repository bundle in Mjolnir whose primary repository maps
+to the town's GitHub repository. Initialize a prompt-free session on the chosen
+target/profile and select its known runtime in Town's settings, or with
+`bt execution --repo OWNER/REPO --role review --runtime-session SESSION_ID`.
+Model and effort are applied and confirmed on each target session before its
+first prompt. Unknown runtime identity, a missing bundle, or changed revision
+holds the work without starting a local harness.
 
 Town reads `GET /api/v1/options` in a background task, checks API version 1,
 and caches only the public profile, target, bundle, host and default fields.
@@ -101,8 +116,7 @@ back to direct local execution restores those local controls and pins.
 
 Discovery is not runtime readiness or a runtime pin. Mjolnir's merged session
 API now reports a target-owned runtime receipt and accepts an expected identity
-at launch. Town can read, select and check those receipts as described below;
-integrating guarded launches remains pending.
+at launch. Town reads, selects and checks those receipts before guarded dispatch.
 A mutable profile ID or options revision is never a runtime pin. A changed
 identity requires an explicit operator update; Town must not copy Mjolnir's
 launch definitions into its local registry.
@@ -184,8 +198,7 @@ separate from development tests and must not be claimed from fixture coverage.
 Town's internal Mjolnir client can read a saved session's identity, an exact-base
 JSON diff, a repository-relative file and a page of transcript evidence. It can
 also request a Git bundle export. These calls are for background execution work;
-they are not connected to rendering or dispatch yet. Selecting Mjolnir still
-holds agent work while the remaining launch and recovery contracts are developed.
+they are consumed by the review/repair dispatch path, never by rendering.
 
 The client retains the existing loopback-only connection, per-request token read,
 API version check, no proxy/redirect behavior and demo isolation. Artifact reads
@@ -218,9 +231,9 @@ and is never automatically retried. Callers must still import and verify the
 bundle in a private checkout, check its exact head and ancestry, run the operator's
 verification command, obtain independent review, and use the existing publication
 gates. Fake-daemon and disposable-Git tests exercise artifact reads and bundle
-verification. Durable session/artifact receipts, bot integration and complete
-remote review/repair dispatch remain work under #154/#155; this client does not
-complete the real-target acceptance in #149.
+verification. The following sections describe the durable lifecycle and its
+worker integration; fixture coverage alone does not establish real-target
+acceptance.
 
 ## Remaining execution contract
 
@@ -231,9 +244,10 @@ The former upstream blockers are merged:
 checkouts, and [#1165](https://github.com/BrokkAi/mjolnir/pull/1165) implements
 runtime receipts and expected-identity enforcement. At the September 26 audit,
 the latest published Mjolnir release was v2.22.0, which predates these changes.
-Town implementation can proceed against the merged contract; installed older
-daemons will not provide the new evidence. #153–155 and the real-target
-acceptance in #149 are still incomplete.
+Subsequent container acceptance found runtime inspection selecting the shell
+launcher; upstream [#1167](https://github.com/BrokkAi/mjolnir/pull/1167) fixes that
+for v2.23.1. Use a build containing that fix for container execution. Older
+daemons that cannot supply the required receipts are refused.
 
 - `mj acp` accepts target, profile, bundle, workspace and an exit policy, but
   does not pass model or effort at creation. The HTTP API supports those
@@ -313,8 +327,8 @@ configure model/effort. Each accepted initialization receipt must be retained
 with its run, rather than replaced by a later session lookup. Fixture tests cover
 the launch guard, changed checkout evidence, retained receipt serialization,
 runtime replacement, malformed/partial reads, cancellation and demo isolation.
-Durable remote dispatch/recovery, worker integration and
-confirmed cleanup remain pending; the scheduler's execution hold stays in place.
+The review/repair dispatcher consumes these guards before sending its prompt.
+Unsupported duties and missing runtime selections remain held by the scheduler.
 
 ## Durable checkout lifecycle (#154)
 
@@ -348,8 +362,7 @@ contributor branch is deleted.
 
 Fake-daemon tests cover exact-revision refusals, readiness, lost receipts,
 restart recovery, workspace reuse, configuration isolation, evidence retention
-and cleanup confirmation. This lifecycle is an internal boundary until the
-worker/ACP dispatch integration is enabled under #149/#155.
+and cleanup confirmation. The worker/ACP integration uses this same lifecycle.
 
 ## Complete remote evidence (#155)
 
@@ -377,4 +390,24 @@ branch. It disables Git hooks during import. Corrupt bundles, unadvertised
 commits, rewritten history, empty changes, dirty trees and failed or mutating
 verification all refuse publication. Root tests exercise review/repair artifact
 collection against fake APIs and repair imports using temporary Git repositories.
-The executable worker and scheduler integration follows in #149.
+
+## Worker dispatch and recovery
+
+Review Bot advertises the additive `remote-agent-v1` capability. Town supplies a
+private mode-0600 callback socket for one dispatched head. The bot sends inline
+review context instead of a controller filesystem path, retaining its existing
+investigation, independent verification, strict receipts and GitHub write gates.
+Each callback creates a separate guarded Mjolnir session. Town also runs its
+independent merge certification through this path. Old workers remain compatible
+with local execution and are refused before managed work if the capability is
+absent. The worker's optional `dry_run` flag preserves all review checks without
+publishing a GitHub review or producing merge authority.
+
+Runs and evidence are private files under
+`towns/TOWN_KEY/extensions/mjolnir/ROLE/RUN_ID` in Town's state root. Successful
+dispatches retain their evidence, then confirm session destruction. An error,
+lost response or cancellation keeps the run and blocks further managed work for
+that duty. The error identifies the run and any known session. Inspect `run.json`
+and the session in Mjolnir before resolving the outcome; restarting Town never
+retries creation, prompting, export or cleanup from an uncertain record. There
+is no automatic repair of these records or UI action that discards them.

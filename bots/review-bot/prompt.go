@@ -44,8 +44,11 @@ Never invent test results. Report execution limits honestly. Keep output free of
 
 func jsonContext(v any) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }
 func investigationPrompt(snapshot string, maximum int) string {
+	return investigationPromptContext("at "+snapshot, maximum)
+}
+func investigationPromptContext(snapshot string, maximum int) string {
 	return groundRules + fmt.Sprintf(`
-Read the complete JSON snapshot at %s and its listed instruction_files. Inspect the full merge-base-to-head change and surrounding code.
+Read the complete JSON snapshot %s and its listed instruction_files. Inspect the full merge-base-to-head change and surrounding code.
 Review existing discussion to avoid repeating known root causes. Return at most %d findings; this is
 an upper bound, never a quota. Zero findings is a valid outcome. The summary must describe coverage,
 checks performed and limitations, not claim that candidate findings are independently verified.
