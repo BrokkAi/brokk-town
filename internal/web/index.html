@@ -400,6 +400,13 @@
           </div>
           <p id="execution-detail" class="muted"></p>
           <p id="execution-note" class="muted"></p>
+          <div id="execution-runtime-field">
+            <p id="execution-runtime-detail" class="muted"></p>
+            <label for="execution-runtime-session">Runtime discovery session</label>
+            <input id="execution-runtime-session" placeholder="Mjolnir session ID" autocomplete="off">
+            <p class="muted">Use an initialized session on the saved target and profile to select its runtime. Changes apply to future work.</p>
+            <button id="save-execution-runtime" type="button">Use this runtime</button>
+          </div>
           <div class="actions">
             <button id="save-execution" type="button">Save execution location</button>
             <button id="refresh-execution" type="button">Refresh Mjolnir options</button>

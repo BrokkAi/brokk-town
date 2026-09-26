@@ -49,3 +49,20 @@ func (s *Server) execution(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w, map[string]bool{"ok": true})
 }
+
+func (s *Server) executionRuntime(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Town    string    `json:"town"`
+		Role    town.Role `json:"role,omitempty"`
+		Session string    `json:"session_id"`
+	}
+	if err := decode(w, r, &input); err != nil {
+		rejectInput(w, err)
+		return
+	}
+	if err := s.Supervisor.SelectExecutionRuntime(r.Context(), input.Town, input.Role, input.Session); err != nil {
+		problem(w, err.Error(), 400)
+		return
+	}
+	respond(w, map[string]bool{"ok": true})
+}

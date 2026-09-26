@@ -423,6 +423,7 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 	started := func(run WorkerRun) error {
 		if role != Repo || d.mode != "inventory" {
 			run.Execution = clone(t.Config.Execution)
+			run.Runtime = t.Config.ExecutionRuntimeForRole(role)
 		}
 		if b.Store == nil {
 			return nil

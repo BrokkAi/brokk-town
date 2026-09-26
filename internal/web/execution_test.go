@@ -20,6 +20,8 @@ func TestExecutionAPIValidatesIdentityAndKeepsDemoOffline(t *testing.T) {
 	}{
 		{"/api/execution-options", "GET", "", "", 401},
 		{"/api/execution", "POST", `{"town":"acme/app","selection":null}`, "", 401},
+		{"/api/execution-runtime", "POST", `{"town":"acme/app","session_id":"discovery"}`, "", 401},
+		{"/api/execution-runtime", "POST", `{"town":"acme/app","session_id":"discovery"}`, "test-key", 400},
 		{"/api/execution-options", "GET", "", "test-key", 200},
 		{"/api/execution-options/refresh", "POST", `{}`, "test-key", 200},
 		{"/api/execution-options/refresh", "POST", `{"url":"http://elsewhere"}`, "test-key", 400},

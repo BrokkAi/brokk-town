@@ -59,37 +59,78 @@ func (s SessionIdentity) validate() error {
 // SessionState excludes diagnostic text, runtime configuration and private
 // paths. Idle alone does not prove successful work or an unchanged checkout.
 type SessionState struct {
-	Identity SessionIdentity
-	State    string
-	Idle     bool
+	Identity                SessionIdentity `json:"identity"`
+	State                   string          `json:"state"`
+	Idle                    bool            `json:"is_idle"`
+	Lifecycle               string          `json:"lifecycle,omitempty"`
+	ChatPhase               string          `json:"chat_phase,omitempty"`
+	HasError                *bool           `json:"has_error,omitempty"`
+	Checkout                *ExactCheckout  `json:"checkout,omitempty"`
+	ExpectedRuntimeIdentity string          `json:"expected_runtime_identity,omitempty"`
+	Runtime                 *RuntimeReceipt `json:"runtime,omitempty"`
 }
 
 func (c *Catalog) ReadSession(ctx context.Context, expected SessionIdentity) (SessionState, error) {
 	if err := expected.validate(); err != nil {
 		return SessionState{}, err
 	}
-	data, err := c.artifact(ctx, "GET", sessionPath(expected.Session), "session identity", "application/json", nil, maxBytes, 30*time.Second)
+	actual, err := c.readSession(ctx, expected.Session)
+	if err != nil {
+		return SessionState{}, err
+	}
+	if actual.Identity != expected {
+		return SessionState{}, errors.New("Mjolnir session identity does not match the saved launch receipt")
+	}
+	return actual, nil
+}
+
+func (c *Catalog) readSession(ctx context.Context, session string) (SessionState, error) {
+	if !validSessionID(session) {
+		return SessionState{}, errors.New("Mjolnir session ID is required")
+	}
+	data, err := c.artifact(ctx, "GET", sessionPath(session), "session identity", "application/json", nil, maxBytes, 30*time.Second)
 	if err != nil {
 		return SessionState{}, err
 	}
 	// Explicit tags keep this projection independent of the daemon's extra fields.
 	var record struct {
-		ID        string `json:"id"`
-		Workspace string `json:"workspace_id"`
-		Bundle    string `json:"bundle_id"`
-		Target    string `json:"target_id"`
-		Profile   string `json:"profile_id"`
-		State     string `json:"state"`
-		Idle      *bool  `json:"is_idle"`
+		ID                      string          `json:"id"`
+		Workspace               string          `json:"workspace_id"`
+		Bundle                  string          `json:"bundle_id"`
+		Target                  string          `json:"target_id"`
+		Profile                 string          `json:"profile_id"`
+		State                   string          `json:"state"`
+		Idle                    *bool           `json:"is_idle"`
+		Lifecycle               string          `json:"lifecycle"`
+		ChatPhase               string          `json:"chat_phase"`
+		HasError                *bool           `json:"has_error"`
+		Checkout                *ExactCheckout  `json:"checkout"`
+		ExpectedRuntimeIdentity string          `json:"expected_runtime_identity"`
+		Runtime                 json.RawMessage `json:"runtime"`
 	}
 	if json.Unmarshal(data, &record) != nil || record.Idle == nil || !ValidID(record.State) {
 		return SessionState{}, errors.New("Mjolnir returned incomplete session identity")
 	}
 	actual := SessionIdentity{record.ID, record.Workspace, record.Bundle, Selection{record.Target, record.Profile}}
-	if actual != expected {
-		return SessionState{}, errors.New("Mjolnir session identity does not match the saved launch receipt")
+	if actual.Session != session || actual.validate() != nil {
+		return SessionState{}, errors.New("Mjolnir returned an incomplete or mismatched session identity")
 	}
-	return SessionState{actual, record.State, *record.Idle}, nil
+	if record.Checkout != nil && record.Checkout.Validate() != nil {
+		return SessionState{}, errors.New("Mjolnir returned an invalid exact checkout receipt")
+	}
+	if (record.ExpectedRuntimeIdentity != "" && !validRuntimeID(record.ExpectedRuntimeIdentity)) ||
+		(record.Lifecycle != "" && !ValidID(record.Lifecycle)) || (record.ChatPhase != "" && !ValidID(record.ChatPhase)) {
+		return SessionState{}, errors.New("Mjolnir returned invalid launch receipt fields")
+	}
+	runtime, err := readRuntimeReceipt(record.Runtime)
+	if err != nil {
+		return SessionState{}, err
+	}
+	return SessionState{
+		Identity: actual, State: record.State, Idle: *record.Idle,
+		Lifecycle: record.Lifecycle, ChatPhase: record.ChatPhase, HasError: record.HasError,
+		Checkout: record.Checkout, ExpectedRuntimeIdentity: record.ExpectedRuntimeIdentity, Runtime: runtime,
+	}, nil
 }
 
 // DiffEvidence contains private repository content. Do not put the patch in a

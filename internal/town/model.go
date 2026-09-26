@@ -103,8 +103,9 @@ func SHA(v string) bool {
 }
 
 type Config struct {
-	Execution    *mjolnir.Selection         `json:"execution,omitempty"`
-	BotExecution map[Role]mjolnir.Selection `json:"bot_execution,omitempty"`
+	ExecutionRuntimes map[string]mjolnir.RuntimePin `json:"execution_runtimes,omitempty"`
+	Execution         *mjolnir.Selection            `json:"execution,omitempty"`
+	BotExecution      map[Role]mjolnir.Selection    `json:"bot_execution,omitempty"`
 
 	Repo              string                  `json:"repo"`
 	Branch            string                  `json:"branch,omitempty"`
@@ -276,8 +277,9 @@ func (c Config) Validate() error {
 
 // PublicConfig deliberately excludes agent environment values and command arguments.
 type PublicConfig struct {
-	Execution    *mjolnir.Selection         `json:"execution,omitempty"`
-	BotExecution map[Role]mjolnir.Selection `json:"bot_execution,omitempty"`
+	ExecutionRuntimes map[string]mjolnir.RuntimePin `json:"execution_runtimes,omitempty"`
+	Execution         *mjolnir.Selection            `json:"execution,omitempty"`
+	BotExecution      map[Role]mjolnir.Selection    `json:"bot_execution,omitempty"`
 
 	Repo            string                        `json:"repo"`
 	Branch          string                        `json:"branch"`
@@ -331,7 +333,8 @@ type Worker struct {
 // WorkerRecovery preserves an unresolved dispatch without exposing its private
 // process paths or pretending that an absent process proves no write occurred.
 type WorkerRecovery struct {
-	Execution *mjolnir.Selection `json:"execution,omitempty"`
+	Runtime   *mjolnir.RuntimePin `json:"runtime,omitempty"`
+	Execution *mjolnir.Selection  `json:"execution,omitempty"`
 
 	TaskID  string    `json:"task_id,omitempty"`
 	Base    string    `json:"base,omitempty"`
@@ -343,7 +346,8 @@ type WorkerRecovery struct {
 // WorkerRun records dispatch identity before sending work. An interrupted
 // dispatch becomes a recovery hold; it is never used to adopt a process.
 type WorkerRun struct {
-	Execution *mjolnir.Selection `json:"execution,omitempty"`
+	Runtime   *mjolnir.RuntimePin `json:"runtime,omitempty"`
+	Execution *mjolnir.Selection  `json:"execution,omitempty"`
 
 	Bot      string    `json:"bot"`
 	Version  string    `json:"version"`
@@ -363,6 +367,14 @@ type WorkerRun struct {
 func (r *WorkerRun) Validate(role Role) error {
 	if r == nil {
 		return nil
+	}
+	if r.Runtime != nil {
+		if err := r.Runtime.Validate(); err != nil {
+			return err
+		}
+		if r.Execution == nil || r.Runtime.Source.Selection != *r.Execution {
+			return errors.New("worker runtime does not match its execution selection")
+		}
 	}
 	if r.Execution != nil {
 		if err := r.Execution.Validate(); err != nil {
@@ -868,11 +880,18 @@ func (c Config) Public() PublicConfig {
 		if cfg.HarnessDefinition != nil {
 			botVersion = cfg.HarnessDefinition.Version
 		}
-		bots[role] = PublicBotAgentConfig{Harness: cfg.harness(), Model: cfg.Agent.Model, Effort: cfg.Agent.Effort, HarnessVersion: botVersion, Inherited: !overridden}
+		harnessName := cfg.harness()
+		if selection := c.ExecutionForRole(role); selection.Managed() {
+			harnessName, botVersion = selection.Profile, "unselected"
+			if pin := c.ExecutionRuntimeForRole(role); pin != nil {
+				harnessName, botVersion = pin.Runtime.Harness, pin.Version()
+			}
+		}
+		bots[role] = PublicBotAgentConfig{Harness: harnessName, Model: cfg.Agent.Model, Effort: cfg.Agent.Effort, HarnessVersion: botVersion, Inherited: !overridden}
 	}
 	funnels := make([]PublicFunnelConfig, 0, len(c.Funnels))
 	for _, funnel := range c.Funnels {
 		funnels = append(funnels, funnel.Public())
 	}
-	return PublicConfig{Execution: clone(c.Execution), BotExecution: clone(c.BotExecution), Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies(), QuietHours: c.QuietHours}
+	return PublicConfig{ExecutionRuntimes: clone(c.ExecutionRuntimes), Execution: clone(c.Execution), BotExecution: clone(c.BotExecution), Repo: c.Repo, Branch: c.Branch, MergePolicy: c.MergePolicy, MaxCycles: c.MaxCycles, Harness: c.harness(), Model: c.Agent.Model, Effort: c.Agent.Effort, HarnessVersion: version, BotAgents: bots, Funnels: funnels, SimplifierMode: c.SimplifierModeOrDefault(), BulletinSeconds: c.BulletinSecondsOrDefault(), ReviewCloseSeverity: c.ReviewCloseSeverityOrDefault(), Budget: c.Budget, WorkPolicies: c.PublicPolicies(), QuietHours: c.QuietHours}
 }

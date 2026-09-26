@@ -72,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/execution-options", s.executionOptions)
 	mux.HandleFunc("POST /api/execution-options/refresh", s.refreshExecutionOptions)
 	mux.HandleFunc("POST /api/execution", s.execution)
+	mux.HandleFunc("POST /api/execution-runtime", s.executionRuntime)
 	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
 	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
 	mux.HandleFunc("POST /api/requests", s.submitRequest)

@@ -15,6 +15,27 @@ func executionCommand(ctx context.Context, dir string, fl *cliFlags, fs *flag.Fl
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	selecting := set["target"] || set["profile"] || *fl.localExecution || *fl.inheritExecution
+	if set["runtime-session"] {
+		if selecting || *fl.refresh || !town.ValidRepo(*fl.repo) || *fl.executionRuntimeSession == "" || (set["role"] && !town.ValidAgentRole(town.Role(*fl.role))) {
+			return errors.New("runtime selection requires --repo OWNER/REPO and --runtime-session ID, with an optional --role BOT; save placement separately")
+		}
+		conn, err := requireService(ctx, dir)
+		if err != nil {
+			return err
+		}
+		role := ""
+		if set["role"] {
+			role = *fl.role
+		}
+		var receipt struct {
+			OK bool `json:"ok"`
+		}
+		if err := request(ctx, conn, "POST", "/api/execution-runtime", map[string]any{"town": *fl.repo, "role": role, "session_id": *fl.executionRuntimeSession}, &receipt); err != nil {
+			return err
+		}
+		fmt.Println("Mjolnir runtime selected for future work")
+		return nil
+	}
 	if selecting && *fl.refresh {
 		return errors.New("refresh options separately before selecting execution")
 	}
