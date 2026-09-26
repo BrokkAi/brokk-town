@@ -315,3 +315,38 @@ the launch guard, changed checkout evidence, retained receipt serialization,
 runtime replacement, malformed/partial reads, cancellation and demo isolation.
 Durable remote dispatch/recovery, worker integration and
 confirmed cleanup remain pending; the scheduler's execution hold stays in place.
+
+## Durable checkout lifecycle (#154)
+
+Town's internal run lifecycle now resolves a repository against the daemon's
+configured bundles and reuses one stable named workspace. It does not create
+quick bundles from local worktrees. Until sibling artifacts can be verified,
+the bundle must contain exactly one repository, selected as primary, with a
+matching GitHub repository. Missing or ambiguous mappings refuse preparation.
+
+A run freezes the selected target/profile/runtime, exact commit and a new
+`town/RUN_ID` private branch. Before session creation it writes and syncs a private
+intent, including the daemon connection identity. The session ID is saved before
+readiness checks. Preparation requires matching launch receipts and an unchanged
+exact-base diff. The same durable boundary supports an ACP-owned session creator;
+it never attaches an adapter to a session created over HTTP.
+
+The run ID can be submitted only once. A lost creation reply remains uncertain,
+even when no session ID was received. A canceled or failed preparation retains
+its intent and any confirmed identity for inspection. Reading records after a
+restart never restarts work, guesses ownership from a title, or switches daemons.
+
+Before cleanup, the caller must finish validation and save its complete private
+evidence through the run lifecycle. Town syncs that file and its digest before
+recording a destroy intent. Destruction is confirmed only when the saved session
+returns 404. An interrupted acknowledgement remains uncertain; reconciliation
+only reads the saved session and never resubmits destruction. Missing or changed
+local evidence prevents cleanup. Bundle and workspace records are retained for
+reuse; successful session environments are removed after evidence is saved.
+Interrupted sessions are retained for operator reconciliation. No source or
+contributor branch is deleted.
+
+Fake-daemon tests cover exact-revision refusals, readiness, lost receipts,
+restart recovery, workspace reuse, configuration isolation, evidence retention
+and cleanup confirmation. This lifecycle is an internal boundary until the
+worker/ACP dispatch integration is enabled under #149/#155.

@@ -1,5 +1,6 @@
 // Package mjolnir reads the daemon's versioned launch catalog and private
-// session artifacts. It never starts a daemon, session, agent or GitHub write.
+// artifacts, and manages explicitly requested sessions through durable intents.
+// It never starts the daemon or performs GitHub writes.
 package mjolnir
 
 import (

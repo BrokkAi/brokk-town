@@ -12,6 +12,18 @@
   through shared browser/CLI API. Save target-owned versions by target/profile,
   preserve old pins on failed discovery, freeze dispatched and recovery copies,
   and never start a local harness for managed discovery. No silent upgrades.
+- Reviewed #175 at bdb34e1, fixed runtime-save timeout/late-response handling,
+  passed all root/frontend/local checks and the nine-module CI plus worker smoke,
+  then merged normally as 2440dfe. Runtime dispatch acceptance remains pending
+  the later PRs, so #153 stays open until the integrated path is validated.
+- #154 now has a durable Mjolnir run lifecycle. Resolve an unambiguous configured
+  single-repository bundle; reuse one stable workspace; save exact private-branch
+  and runtime intent before HTTP or ACP creation. Never retry a lost create
+  receipt. Confirm readiness and unchanged exact-base diff before returning a
+  usable session. Store complete private evidence before cleanup and confirm
+  destruction with a session 404; lost cleanup is reconciled by reads only.
+  Regression caught shared runtime-component pointers in the launch plan; decode
+  into a fresh value to freeze all nested configuration. Demo remains offline.
 - Next PR #154: reusable bundle/workspace mapping, exact checkout, durable
   creation/cleanup intents and uncertain-outcome recovery. Then #155: remote
   evidence and verified bundle import through independent worker boundaries.
