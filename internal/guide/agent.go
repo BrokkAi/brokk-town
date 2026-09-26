@@ -89,8 +89,19 @@ func Run(ctx context.Context, config runner.AgentConfig, directory, prompt strin
 	if err != nil {
 		return err
 	}
+	if config.Model != "" {
+		if err = connection.SetModel(ctx, &session, config.Model); err != nil {
+			return err
+		}
+	}
+	if config.Effort != "" {
+		if err = connection.SetEffort(ctx, &session, config.Effort); err != nil {
+			return err
+		}
+	}
 	// A configured execution mode might bypass approvals. A guide must select an
 	// advertised read-only mode itself and fail before prompting if unavailable.
+	// Select it after model/effort: changing those can reset session modes.
 	mode := ""
 	if session.Modes != nil {
 		for _, candidate := range session.Modes.AvailableModes {
@@ -108,16 +119,6 @@ func Run(ctx context.Context, config runner.AgentConfig, directory, prompt strin
 	}
 	if err = connection.SetMode(ctx, &session, mode); err != nil {
 		return err
-	}
-	if config.Model != "" {
-		if err = connection.SetModel(ctx, &session, config.Model); err != nil {
-			return err
-		}
-	}
-	if config.Effort != "" {
-		if err = connection.SetEffort(ctx, &session, config.Effort); err != nil {
-			return err
-		}
 	}
 	mu.Lock()
 	sessionID = session.SessionID

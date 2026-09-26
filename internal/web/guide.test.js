@@ -48,3 +48,20 @@ test("Guide uses static context paths under reduced motion and no delivery layer
  paintGuide(ctx,{town,now:3000,motion:false,visual:{open:true,town:town.id,openedAt:2500},positions:{hall:[100,100],issue:[200,200]}});
  assert.ok(strokes.some(([key,value])=>key==="lineDashOffset"&&value===0));assert.ok(strokes.some(([key])=>key==="lineTo"));assert.ok(strokes.some(([key,text])=>key==="fillText"&&text==="Guide: gathering"));
 });
+test("Guide acknowledges SSE before HTTP without leaving the submitted question in the draft",async()=>{
+ let finish,submitted;
+ const ui=panel(async(_url,body)=>{submitted=body;return new Promise(resolve=>{finish=resolve;});});
+ fields["ask-guide"].onclick();submit("First question");
+ const conversation={revision:1,next:1,turns:[{id:submitted.id,question:submitted.question,answer:"",status:"queued"}]};
+ state.towns["acme/project"].guide=conversation;ui.render();
+ assert.equal(fields["guide-question"].value,"");
+ fields["guide-question"].value="Follow-up draft";finish(conversation);await tick();
+ assert.equal(fields["guide-question"].value,"Follow-up draft");
+});
+test("Guide HTTP acknowledgement preserves an edited follow-up draft",async()=>{
+ let finish,submitted;
+ panel(async(_url,body)=>{submitted=body;return new Promise(resolve=>{finish=resolve;});});
+ fields["ask-guide"].onclick();submit("First question");fields["guide-question"].value="Follow-up draft";
+ finish({revision:1,next:1,turns:[{id:submitted.id,question:submitted.question,answer:"",status:"queued"}]});await tick();
+ assert.equal(fields["guide-question"].value,"Follow-up draft");
+});

@@ -9,6 +9,11 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
   const rows = new Map(), conversations = new Map();
   try { pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null"); } catch {}
   function savePending(value) { pending = value; try { value ? sessionStorage.setItem(pendingKey, JSON.stringify(value)) : sessionStorage.removeItem(pendingKey); } catch {} }
+  function acknowledge(id, origin) {
+    if (pending?.id !== id || pending?.town !== origin) return;
+    const submitted = pending; savePending(null);
+    if (origin === townID && $("guide-question").value.trim() === submitted.question) $("guide-question").value = "";
+  }
   function selected() { return getState()?.towns?.[townID]; }
   async function command(body) {
     if (sending) return;
@@ -18,7 +23,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
       const conversation = await api("/api/guide", {town: origin, ...body}, AbortSignal.timeout(30000));
       conversations.set(origin, conversation);
       if (origin === townID) renderConversation(conversation);
-      if (body.action === "ask" && pending?.id === body.id) { savePending(null); if (origin === townID) $("guide-question").value = ""; }
+      if (body.action === "ask") acknowledge(body.id, origin);
     } catch (error) {
       const rejected = error.status >= 400 && error.status < 500 && error.status !== 408;
       if (rejected && body.action === "ask" && pending?.id === body.id) savePending(null);
@@ -38,7 +43,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
     if (cached && (cached.revision || 0) > (conversation.revision || 0)) conversation = cached;
     else conversations.set(townID, conversation);
     const turns = conversation.turns || [];
-    if (pending?.town === townID && turns.some((turn) => turn.id === pending.id)) savePending(null);
+    if (pending?.town === townID && turns.some((turn) => turn.id === pending.id)) acknowledge(pending.id, townID);
     const ids = turns.map((turn) => turn.id).join(",");
     for (const turn of turns) {
       const item = row(turn);

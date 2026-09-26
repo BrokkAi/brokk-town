@@ -97,6 +97,7 @@ func TestGuideAgentHelper(t *testing.T) {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), 1<<20)
 	var prompt json.RawMessage
+	currentMode := "bypassPermissions"
 	for scanner.Scan() {
 		f.Write(append(append([]byte(nil), scanner.Bytes()...), '\n'))
 		var m struct {
@@ -117,13 +118,20 @@ func TestGuideAgentHelper(t *testing.T) {
 			}
 			reply(m.ID, result)
 		case "session/set_mode":
+			currentMode, _ = m.Params["modeId"].(string)
 			reply(m.ID, map[string]any{})
 		case "session/set_config_option":
+			currentMode = "bypassPermissions" // A changed model may reset the session mode.
 			key := m.Params["configId"].(string)
 			current[key] = m.Params["value"].(string)
 			reply(m.ID, map[string]any{"configOptions": selectors()})
 		case "session/prompt":
 			prompt = m.ID
+			if script == "answer" && currentMode != "plan" {
+				chunk("Unsafe mode after model selection")
+				reply(prompt, map[string]string{"stopReason": "end_turn"})
+				continue
+			}
 			if script == "hang" {
 				continue
 			}

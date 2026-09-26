@@ -1464,3 +1464,12 @@
   existing inheritance, picker, frozen dispatch/recovery and demo tests; closed
   #150 with that evidence. Managed execution remains held under #149/#153–155;
   no non-local acceptance run has been claimed.
+- PR #171 review added failing regressions for a model/effort change resetting
+  the ACP mode and for SSE/HTTP acknowledgement ordering losing or retaining
+  browser drafts incorrectly. Select read-only mode immediately before prompting
+  and acknowledge a draft by exact submission identity without erasing edits.
+- Concurrent #170 changed bot license validation only; integrated it and passed
+  Repo, Mayor and Simplifier packaging/license tests with mocked publication.
+- After the review fixes, the full root race suite/vet and all 98 frontend tests
+  pass. The fake ACP fixture resets mode during model/effort selection, proving
+  the final read-only selection precedes every prompt.
