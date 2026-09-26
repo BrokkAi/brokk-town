@@ -1170,7 +1170,9 @@
 - Pre-PR review fixed CLI receipt decoding/JSON flags, kept inherited agent probes
   independent of bot placement, and preserved existing recovery explanations.
   User authorized opening, reviewing, fixing and merging the PR once green;
-  PR #162 is open on feat/mjolnir-launch-options; CI is in progress.
+  PR #162 contains this implementation and review on feat/mjolnir-launch-options.
+  Merge is gated on the reviewed head passing CI; remote execution remains
+  follow-up work under #150 and #153–155.
 - PR review found execution saves could leave browser controls disabled forever
   if the write or follow-up snapshot refresh stalled. Add a 30-second deadline
   covering both, prevent duplicate submissions, and retain an uncertain-outcome
