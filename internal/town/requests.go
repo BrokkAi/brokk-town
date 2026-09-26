@@ -178,7 +178,7 @@ func (s *Supervisor) scheduleRequests(ctx context.Context, t *Town) {
 	key := t.ID + ":requests"
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.running[key] != nil {
+	if s.running[key] != nil || s.Store.storageHeld(t.ID) {
 		return
 	}
 	child, cancel := context.WithTimeout(ctx, 2*time.Minute)

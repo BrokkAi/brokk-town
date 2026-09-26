@@ -165,7 +165,7 @@ func (s *Supervisor) schedule(ctx context.Context) {
 		state = s.Store.Snapshot()
 	}
 	for _, t := range state.Towns {
-		if t.Deleted {
+		if t.Deleted || s.Store.storageHeld(t.ID) {
 			continue
 		}
 		s.scheduleRequests(ctx, t)
@@ -257,7 +257,7 @@ func (s *Supervisor) claimRepair(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	town := s.Store.Snapshot().Towns[id]
-	if town == nil || town.Workers[Repo].Recovery != nil || town.Config.ExecutionForRole(Repo).Managed() {
+	if s.Store.storageHeld(id) || town == nil || town.Workers[Repo].Recovery != nil || town.Config.ExecutionForRole(Repo).Managed() {
 		return false
 	}
 	if _, limit := s.Store.dispatchEligibility(id, Repo, s.now()); s.activeWorkers() >= limit {
@@ -1349,7 +1349,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 	if s.retrying == nil {
 		s.retrying = map[string]bool{}
 	}
-	if s.retrying[key] {
+	if s.retrying[key] || s.Store.storageHeld(id) {
 		s.mu.Unlock()
 		return errors.New("issue retry is already in progress")
 	}

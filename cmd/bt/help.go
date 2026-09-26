@@ -13,6 +13,8 @@ import (
 // help, and a help command. Flag parsing stays on the standard library.
 
 type cliFlags struct {
+	storageAge                        *int
+	storageCleanup                    *string
 	hookEnable, hookDisable           *bool
 	hookCommandFile                   *string
 	executionTarget, executionProfile *string
@@ -73,6 +75,8 @@ type cliFlags struct {
 // flags relevant to each command.
 func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl := &cliFlags{}
+	fl.storageAge = fs.Int("older-than-hours", 168, "minimum completed artifact age for storage cleanup (default 7 days)")
+	fl.storageCleanup = fs.String("cleanup", "", "explicit comma-separated artifact IDs from a fresh storage inventory to remove")
 	fl.hookEnable = fs.Bool("enable", false, "enable the local attention hook")
 	fl.hookDisable = fs.Bool("disable", false, "disable the local attention hook")
 	fl.hookCommandFile = fs.String("command-file", "", "JSON argument array file for the private attention hook command; - reads stdin")
@@ -157,6 +161,7 @@ var cliCommands = []commandInfo{
 	{name: "add", short: "Add a town", long: "Add a town for a GitHub repository.", args: "--repo OWNER/REPO [flags]", flags: []string{"agent-command", "effort", "harness", "harness-version", "model", "repo"}},
 	{name: "delete", short: "Delete a town", long: "Delete a town. GitHub state stays intact.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo"}},
 	{name: "choices", short: "List a saved profile’s models and efforts", long: "Read model and effort choices for a town or bot profile. Mjolnir selections use the daemon catalog; direct local selections prepare a prompt-free local harness session. --model selects which model’s effort choices to read. This does not save settings.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "role", "model", "json"}},
+	{name: "storage", short: "Inspect and clean completed local artifacts", long: "Read a dry-run disk inventory by town and bot. Cleanup requires explicit artifact IDs from that inventory, all workers paused, and no unresolved writes. Changed, dirty, unknown or active artifacts are retained. Task and write identities are never removed. Demo cleanup is disabled.", args: "--repo OWNER/REPO [flags]", flags: []string{"repo", "older-than-hours", "cleanup", "json"}},
 	{name: "attention-hook", short: "Configure the local attention hook", long: "Show whether the service attention hook is configured and enabled. --enable/--disable changes it; --command-file FILE saves a private JSON command/argv array (- reads stdin). Disabled by default. The hook receives public identities and a reason code as JSON on stdin, runs for at most ten seconds independently of quiet hours, and never runs in demo. Command output is discarded.", args: "[flags]", flags: []string{"enable", "disable", "command-file", "json"}},
 	{name: "execution", short: "List or select execution targets", long: "List cached Mjolnir launch options. --refresh queues a background refresh. Use --repo and --target/--profile to save a selection, --local-execution to run directly here, or --inherit-execution --role BOT to restore inheritance. Mjolnir-backed execution is held until remote checkout and evidence support are available.", args: "[flags]", flags: []string{"json", "refresh", "repo", "role", "target", "profile", "local-execution", "inherit-execution"}},
 	{name: "harnesses", short: "List available agent harnesses", long: "List the official ACP registry. Use --refresh to update the cached catalog. Works whether or not Town is running.", args: "[flags]", flags: []string{"refresh"}},
