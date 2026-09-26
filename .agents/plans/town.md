@@ -16,17 +16,18 @@
   and isolated demo lifecycle smoke pass. The first full rerun exhausted /tmp;
   removed this task's unpublished packaging artifacts and moved its build cache
   into ignored workspace storage, then successfully reran the suite.
-- No bot code changed. No release or tag was published; publication remains on
-  hold. Historical cancellation causes cannot be reconstructed from old records.
+- No bot code changed. Historical cancellation causes cannot be reconstructed
+  from old records. User subsequently authorized publication of both fixes.
 
-## Town 0.7.1 release (publication deferred)
+## Town 0.7.1 release (in progress)
 
 - User requested a new Town release after the persisted default-branch recovery
   fix. Publish through the tag-triggered Actions workflow and its checks.
   Town 0.7.0 is the latest published Town release; 0.7.1 is unused.
-- Include the startup repair and the already-merged Town Guide and task-history
-  changes on master. Bot source is unchanged from Town 0.7.0; no bot release is
-  needed for this Town change.
+- User explicitly resumed publication after the logging fix. Include both the
+  startup repair and cancellation diagnostics, plus the already-merged Town Guide
+  and task-history changes on master. Bot source is unchanged from Town 0.7.0;
+  no bot release is needed for this Town change.
 - Additional investigation found Repo Bot's own local state had resolved
   `master` before the later cancellation. Cached published Repo Bot 0.1.5 and
   Issue Bot 0.5.11 pass all six fake-GitHub protocol scenarios, including the

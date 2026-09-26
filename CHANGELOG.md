@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.1 — unreleased
+## 0.7.1 — 2026-09-26
 
 - Preserve cancellation causes and the last worker phase in durable logs and
   outcome history, including operator stops, service signals/failures and
