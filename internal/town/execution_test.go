@@ -21,6 +21,10 @@ func executionCatalog(t *testing.T) *mjolnir.Catalog {
 	t.Helper()
 	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Mj-Api-Version", "1")
+		if r.URL.Path == "/api/v1/profiles/coder/config" {
+			_ = json.NewEncoder(w).Encode(AgentChoices{Models: []ChoiceValue{{Value: r.URL.Query().Get("model"), Name: "Remote model"}}, Efforts: []ChoiceValue{{Value: "high", Name: "High"}}})
+			return
+		}
 		fmt.Fprint(w, `{"revision":1,"profiles":[{"id":"coder","harness":"codex"}],"targets":[{"id":"builder","kind":"ssh-bare","availability":"unavailable","unavailable_reason":"Start the host."}],"bundles":[]}`)
 	}))
 	t.Cleanup(h.Close)
@@ -42,6 +46,79 @@ func executionCatalog(t *testing.T) *mjolnir.Catalog {
 		time.Sleep(time.Millisecond)
 	}
 	return c
+}
+
+func TestManagedChoicesUseRolePlacementAndPreserveLocalPins(t *testing.T) {
+	store := testStore(t, false)
+	x := addTown(t, store)
+	s := NewSupervisor(store, nil, nil)
+	s.Mjolnir = executionCatalog(t)
+	update(t, store, func(st *State) {
+		c := &st.Towns[x.ID].Config
+		c.Agent.Model = "default-model"
+		c.Agent.Command = []string{"must-never-run-local-harness"}
+		c.BotExecution = map[Role]mjolnir.Selection{Review: {Target: "builder", Profile: "coder"}}
+	})
+	before := store.Snapshot().Towns[x.ID].Config
+	for _, settings := range []AgentSettings{{Model: ptr("chosen-model")}, {Inherit: true}} {
+		choices, err := s.ChoicesForRole(context.Background(), strings.ToUpper(x.ID), Review, settings)
+		want := "default-model"
+		if settings.Model != nil {
+			want = *settings.Model
+		}
+		if err != nil || len(choices.Models) != 1 || choices.Models[0].Value != want {
+			t.Fatalf("choices=%+v err=%v", choices, err)
+		}
+	}
+	if !reflect.DeepEqual(before, store.Snapshot().Towns[x.ID].Config) {
+		t.Fatal("discovery changed saved settings")
+	}
+	if err := s.SettingsForRole(x.ID, Review, AgentSettings{Model: ptr("chosen-model"), Effort: ptr("high")}); err != nil {
+		t.Fatal(err)
+	}
+	profile := store.Snapshot().Towns[x.ID].Config.ForRole(Review)
+	if profile.Agent.Model != "chosen-model" || !reflect.DeepEqual(profile.Agent.Command, before.Agent.Command) || !reflect.DeepEqual(profile.HarnessDefinition, before.HarnessDefinition) {
+		t.Fatal("managed edit changed local runtime", profile)
+	}
+	for _, edit := range []AgentSettings{{Harness: ptr("claude-code")}, {Version: ptr("new")}, {Command: &[]string{"other"}}} {
+		if err := s.SettingsForRole(x.ID, Review, edit); err == nil || !strings.Contains(err.Error(), "Mjolnir owns") {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestPrepareRespectsPerBotPlacementWithoutLocalRegistryLookup(t *testing.T) {
+	s := NewSupervisor(testStore(t, false), nil, nil)
+	cfg := DefaultConfig("acme/project")
+	cfg.Harness = "missing-from-local-registry"
+	cfg.Execution = &mjolnir.Selection{Target: "builder", Profile: "coder"}
+	cfg.BotAgents = map[Role]BotAgentConfig{Review: cfg.botAgent()}
+	if _, err := s.Prepare(cfg, AgentSettings{Model: ptr("remote-model")}); err != nil {
+		t.Fatal(err)
+	}
+	cfg.BotExecution = map[Role]mjolnir.Selection{Review: {}}
+	if _, err := s.Prepare(cfg, AgentSettings{}); err == nil {
+		t.Fatal("direct local override skipped its registry lookup")
+	}
+	cfg.Execution = nil
+	cfg.Harness = "codex-acp"
+	cfg.BotExecution[Review] = mjolnir.Selection{Target: "builder", Profile: "coder"}
+	if _, err := s.Prepare(cfg, AgentSettings{}); err != nil {
+		t.Fatal("managed override inherited local registry resolution", err)
+	}
+}
+
+func TestManagedDemoChoicesStayOffline(t *testing.T) {
+	store := testStore(t, true)
+	x := addTown(t, store)
+	s := NewSupervisor(store, nil, nil)
+	update(t, store, func(st *State) {
+		st.Towns[x.ID].Config.Execution = &mjolnir.Selection{Target: "builder", Profile: "coder"}
+	})
+	choices, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{})
+	if err != nil || len(choices.Models) != 1 || choices.Models[0].Value != "demo-model" {
+		t.Fatal(choices, err)
+	}
 }
 
 func TestExecutionInheritanceIsIndependentAndDurable(t *testing.T) {
@@ -147,7 +224,7 @@ func TestManagedExecutionIsHeldWithoutBudgetOrLocalFallback(t *testing.T) {
 	if _, err := bot.Run(context.Background(), st.Towns[x.ID], Review, func(Progress) {}, slog.Default()); err == nil || !strings.Contains(err.Error(), "not available yet") {
 		t.Fatal(err)
 	}
-	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{}); err == nil || !strings.Contains(err.Error(), "not available yet") {
+	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{}); err == nil || !strings.Contains(err.Error(), "Configure BT_MJOLNIR") {
 		t.Fatal("local model probe was not refused", err)
 	}
 	if err := s.SetExecution(x.ID, Review, &mjolnir.Selection{}); err != nil {
@@ -217,7 +294,7 @@ func TestManagedSelectionPreservesUncertaintyAndBlocksInheritedProfileProbe(t *t
 		t.Fatal(w)
 	}
 	// Inheriting the agent profile must not also inherit its execution location.
-	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{Inherit: true}); err == nil || !strings.Contains(err.Error(), "not available yet") {
+	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{Inherit: true}); err == nil || !strings.Contains(err.Error(), "Configure BT_MJOLNIR") {
 		t.Fatal(err)
 	}
 	checks := s.setupChecks(context.Background(), store.Snapshot().Towns[x.ID].Config)

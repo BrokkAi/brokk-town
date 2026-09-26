@@ -1178,3 +1178,31 @@
   covering both, prevent duplicate submissions, and retain an uncertain-outcome
   message after timeout even if a late response arrives. Both regressions fail
   on the original PR and pass with the fix; frontend syntax and all 83 tests pass.
+
+## Mjolnir profile discovery and execution contract audit (#153–155)
+
+- Managed roles load model/effort choices from the daemon's versioned profile
+  config API, with the selected model, instead of preparing/probing a local
+  harness. Retain private token handling, no redirects/proxies, cancellation,
+  five-second deadline, response bounds and sanitized actionable failures.
+- Keep local harness commands and pinned registry definitions independent of
+  remote model edits. Honor bot execution overrides during profile preparation;
+  inheriting an agent profile must not inherit its placement. Demo stays offline.
+- Browser settings show the runtime owner, omit local harness changes for
+  managed selections and discard stale choices when execution changes while
+  preserving unsaved model drafts. Shared settings/choices APIs serve clients.
+- The source contract audit in docs/mjolnir-execution.md identifies missing ACP
+  launch selectors, runtime identity and uncertain creation reconciliation;
+  chooses reusable bundles/workspaces with isolated Mjolnir-owned checkouts;
+  maps existing review/repair/publication checks to required remote evidence.
+  Dispatch remains held. #149/#150/#153–155 are not complete, and no real remote
+  acceptance run is claimed. #151's operator decisions are already recorded.
+- Added `bt choices --repo OWNER/REPO [--role BOT] [--model ID] [--json]`
+  through the same profile API; it reads selectors without saving settings.
+- Validation: full root Go race suite and vet, frontend syntax/tests, bundle
+  build, isolated demo, all-eight worker lifecycle and fake-Mjolnir/offline
+  restart smoke checks passed. CLI additions separately passed race tests and
+  vet. No live repository automation or real remote acceptance run was used.
+- PR #163 review reproduced a mixed-case repository discovery failure with a
+  failing regression. Normalize repository IDs in the shared ChoicesForRole
+  boundary, matching persisted town identities; browser and CLI both benefit.

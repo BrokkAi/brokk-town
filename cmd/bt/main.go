@@ -211,6 +211,8 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	case "execution":
 		return executionCommand(ctx, abs, fl, fs)
+	case "choices":
+		return choicesCommand(ctx, abs, fl, fs)
 	case "harnesses":
 		return listHarnesses(ctx, abs, *demo, *fl.refresh)
 	}

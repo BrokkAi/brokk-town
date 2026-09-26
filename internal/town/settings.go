@@ -154,7 +154,7 @@ func (s *Supervisor) Prepare(c Config, settings AgentSettings) (Config, error) {
 		return cfg, err
 	}
 	for role, a := range cfg.BotAgents {
-		bot, err := s.prepareAgent(cfg.withAgent(a), AgentSettings{})
+		bot, err := s.prepareAgent(cfg.ForRole(role).withAgent(a), AgentSettings{})
 		if err != nil {
 			return cfg, fmt.Errorf("%s agent: %w", role, err)
 		}
@@ -164,9 +164,15 @@ func (s *Supervisor) Prepare(c Config, settings AgentSettings) (Config, error) {
 }
 
 func (s *Supervisor) prepareAgent(c Config, settings AgentSettings) (Config, error) {
+	if c.Execution != nil && c.Execution.Managed() && (settings.Harness != nil || settings.Command != nil || settings.Version != nil) {
+		return c, errors.New("Mjolnir owns this runtime; choose its execution profile to change the harness. Local harness settings and version pins are preserved.")
+	}
 	cfg, err := settings.Apply(c)
 	if err != nil {
 		return cfg, err
+	}
+	if cfg.Execution != nil && cfg.Execution.Managed() {
+		return cfg, nil
 	}
 	if cfg.harness() == "custom" {
 		return cfg, nil
@@ -600,6 +606,7 @@ func (s *Supervisor) Choices(ctx context.Context, id string, settings AgentSetti
 }
 
 func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, settings AgentSettings) (AgentChoices, error) {
+	id = strings.ToLower(id)
 	if err := settings.validateRole(role); err != nil {
 		return AgentChoices{}, err
 	}
@@ -617,8 +624,9 @@ func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, s
 	if settings.Inherit {
 		role, settings = "", AgentSettings{}
 	}
-	cfg, err := s.prepareAgent(t.Config.ForRole(role), settings)
+	cfg := t.Config.ForRole(role)
 	cfg.Execution = &execution
+	cfg, err := s.prepareAgent(cfg, settings)
 	if err != nil {
 		s.mu.Unlock()
 		return AgentChoices{}, err
@@ -638,5 +646,19 @@ func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, s
 	s.mu.Unlock()
 	defer s.wg.Done()
 	defer func() { cancel(); s.mu.Lock(); delete(s.running, key); s.mu.Unlock() }()
+	if execution.Managed() {
+		remote, err := s.Mjolnir.ProfileConfig(ctx, execution, cfg.Agent.Model)
+		if err != nil {
+			return AgentChoices{}, err
+		}
+		result := AgentChoices{Models: []ChoiceValue{}, Efforts: []ChoiceValue{}}
+		for _, model := range remote.Models {
+			result.Models = append(result.Models, ChoiceValue{Value: model.Value, Name: model.Name})
+		}
+		for _, effort := range remote.Efforts {
+			result.Efforts = append(result.Efforts, ChoiceValue{Value: effort.Value, Name: effort.Name})
+		}
+		return result, nil
+	}
 	return ProbeAgent(ctx, cfg, filepath.Dir(s.Store.path))
 }
