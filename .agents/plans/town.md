@@ -5,11 +5,12 @@
 - User authorized one PR per remaining issue (#149, #153, #154, #155), review,
   fixes, normal merge when green, and independent releases of changed components
   only after all four issues are fixed. No early release. Review Bot and Town
-  are the changed projects; no Town or bot release has been published yet.
+  are the changed projects; release progress is recorded below.
 - PR #175 (#153) merged as 2440dfe after review fixes and green CI. PR #176
   (#154) merged as b72f499 after the runtime-drift cleanup review fix and green
   CI. PR #177 (#155) merged as d2f3f07 after transcript-position fixes and green
-  CI. Integration PR #178 (#149) is open on codex/mjolnir-worker-dispatch.
+  CI. Integration PR #178 (#149) is merged; the current branch is
+  codex/mjolnir-worker-dispatch.
 - #178 production code is validated at 1a7867c. Exact-head COMMENT reviews found
   and fixed misleading dry-run worker results (9e3d147), oversized remote review
   prompts (d97425a), oversized certification prompts (9c6f475), and stale model/
@@ -54,12 +55,29 @@
   green CI, and published as v2.23.1 by the upstream release workflow. No
   duplicate upstream PR/release was created. Existing unrelated Mjolnir sessions
   and the user's normal installed CLI were left alone.
-- Remaining: commit final acceptance documentation/harness fix, review the final
-  diff, wait for exact-head green CI, merge #178 normally, close #149/#153–155,
-  then release Review Bot (expected 0.2.13) before Town (expected 0.7.3). Recheck
-  published versions before immutable tags and verify release assets, npm
-  packages and released worker v1 capabilities. Never infer merge authority
-  from a dry-run or zero new comments.
+- Final PR #178 at adca43d passed CI and the final COMMENT review, then merged
+  normally as 271db4d332fd0e9a0fe8f5608609061c6582cd44. All four issues are closed.
+  Both final packaging preflights passed from that exact merged commit.
+- Review Bot v0.2.13-review-bot is published and verified. Release workflow
+  36258398453 and merge-commit CI 36258330759 passed on Linux and macOS. Verified
+  all GitHub asset digests, four native archives, legal/build metadata, all five
+  npm packages, and actual published worker v1/new capabilities/parent-loss
+  behavior without dispatching work. Initial verifier errors were stale npm
+  metadata and the CLI's documented v-prefixed version, not package failures.
+- Town v0.7.3-town is tagged at the same merged commit, but release workflow
+  36259398603 failed before publication: Git's detached maintenance raced
+  temporary repository cleanup in the repair-import test. Keep that tag
+  immutable. The fixture now disables automatic Git maintenance for every child
+  process, including the importer, and isolates system/global Git configuration.
+  All eight import scenarios passed 30 repetitions under the race detector;
+  the full root race suite and vet also passed. Review and merge this test-only
+  fix through normal green CI, then release Town 0.7.4 and verify its assets/npm
+  launcher. Review Bot does not need another release for this test-only change.
+  No tags were moved or checks bypassed.
+- The successful acceptance session was destroyed through production cleanup.
+  Five older idle discovery/failed-attempt sessions remain retained: Mjolnir
+  returned 409 to their suspension requests. Preserve their private records.
+
 
 ## Mjolnir launch receipts (#153/#154, first part implemented)
 
