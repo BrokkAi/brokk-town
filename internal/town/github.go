@@ -90,6 +90,8 @@ type RemoteCommit struct {
 	} `json:"commit"`
 }
 type RepoSnapshot struct {
+	Incremental bool
+	StartedAt   time.Time
 	// Branch is the branch this inventory covers: the town's configured branch
 	// when it has one, otherwise DefaultBranch. DefaultBranch is what GitHub
 	// currently reports as the repository default, which a rename can change.

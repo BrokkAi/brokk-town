@@ -75,6 +75,13 @@ esac
 			if result.Inventory == nil || result.Inventory.Branch != tc.want || result.Inventory.Head != baseSHA {
 				t.Fatalf("inventory = %+v", result.Inventory)
 			}
+			if tc.name == "first inventory" {
+				since := time.Now().Add(-time.Hour)
+				delta, e := workers.Observe(ctx, x, InventoryRequest{Since: &since, Branch: "main"}, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+				if e != nil || delta.Inventory == nil || !delta.Inventory.Incremental || delta.Inventory.StartedAt.IsZero() {
+					t.Fatalf("incremental protocol result: %+v, %v", delta, e)
+				}
+			}
 			update(t, store, func(st *State) { Reconcile(st, st.Towns[x.ID], *result.Inventory, time.Now()) })
 			x = store.Snapshot().Towns[x.ID]
 			if !x.Initialized || x.Branch() != tc.want || x.Config.Branch != tc.configured {

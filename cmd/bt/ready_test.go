@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -90,9 +91,28 @@ func TestTakeReadyPipeAcceptsOnlyAPipe(t *testing.T) {
 	}
 	defer r.Close()
 	defer w.Close()
-	t.Setenv(readyEnv, strconv.Itoa(int(w.Fd())))
-	if f := takeReadyPipe(); f == nil {
+	// Production receives a raw inherited descriptor with no os.File owner.
+	// Duplicate here: two os.File wrappers around w's same descriptor let an
+	// unreachable wrapper's finalizer close an unrelated socket after fd reuse.
+	fd, err := syscall.Dup(int(w.Fd()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(readyEnv, strconv.Itoa(fd))
+	f := takeReadyPipe()
+	if f == nil {
+		_ = syscall.Close(fd)
 		t.Fatal("refused a pipe")
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString("still owned"); err != nil {
+		t.Fatalf("claim closed the original pipe: %v", err)
+	}
+	data := make([]byte, len("still owned"))
+	if _, err := r.Read(data); err != nil || string(data) != "still owned" {
+		t.Fatal(string(data), err)
 	}
 }
 

@@ -582,6 +582,8 @@ type Event struct {
 	Title string    `json:"title"`
 }
 type Town struct {
+	SyncBranch    string                    `json:"sync_branch,omitempty"`
+	LastFullSync  time.Time                 `json:"last_full_sync,omitempty"`
 	Artifacts     map[string]ArtifactRecord `json:"artifacts,omitempty"`
 	ID            string                    `json:"id"`
 	Deleted       bool                      `json:"deleted,omitempty"`

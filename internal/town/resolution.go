@@ -342,6 +342,18 @@ func (s *Supervisor) closeRetiredPulls(ctx context.Context, t *Town, remote Repo
 			}
 			continue
 		}
+		if _, known := pulls[n]; !known && remote.Incremental {
+			p, err := s.GitHub.Pull(ctx, t.Config.Repo, n)
+			if err != nil {
+				failures = errors.Join(failures, err)
+				continue
+			}
+			if p.Number != n {
+				failures = errors.Join(failures, errors.New("pull request identity changed during close reconciliation"))
+				continue
+			}
+			pulls[n] = p
+		}
 		if p, known := pulls[n]; known && p.MergedAt != nil {
 			continue // The inventory records the merge; there is nothing to close.
 		}
