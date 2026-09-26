@@ -64,8 +64,12 @@ func findArtifact(t *testing.T, s *Supervisor, id, path string, age int) Storage
 func TestStorageCleanupPreservesIdentityAndRestart(t *testing.T) {
 	s, id, root := storageFixture(t)
 	path := savedTranscript(t, s, id, root, "done", true)
+	old := time.Now().Add(-8 * 24 * time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
 	a := findArtifact(t, s, strings.ToUpper(id), "done.jsonl", 168)
-	if !a.Eligible || a.Task != "issue:1" || a.Bytes == 0 || a.Files != 1 {
+	if !a.Eligible || a.Task != "issue:1" || a.Bytes == 0 || a.Files != 1 || a.AgeHours < 192 {
 		t.Fatalf("%+v", a)
 	}
 	if fresh := findArtifact(t, s, id, "done.jsonl", 24*9); fresh.Eligible {
@@ -299,5 +303,49 @@ func TestStorageExplicitRepairRemovalPreservesWriteReceipt(t *testing.T) {
 	}
 	if dirs, branches := worktrees(t, b, x.ID); len(dirs) != 0 || len(branches) != 0 {
 		t.Fatal(dirs, branches)
+	}
+}
+
+func TestStorageReportsPartialRemovalWhenBranchCleanupFails(t *testing.T) {
+	b, x, _, _ := fixtureWorkers(t)
+	b.Root = filepath.Dir(b.Store.path)
+	ctx := context.Background()
+	p, err := b.GitHub.Pull(ctx, x.Config.Repo, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := b.tree(ctx, x, p, "repair", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tree.close()
+	update(t, b.Store, func(st *State) {
+		x := st.Towns[x.ID]
+		for _, w := range x.Workers {
+			w.Enabled = false
+		}
+		x.Intents[1] = &Intent{PR: 1, Kind: "repair", Status: "confirmed", Directory: tree.dir, Base: p.Base.SHA, Head: p.Head.SHA, NewHead: p.Head.SHA, Branch: p.Head.Ref}
+	})
+	// Git may remove the tree successfully but refuse to delete its branch.
+	lock := filepath.Join(tree.repository, "refs", "heads", repairBranch(tree.dir)+".lock")
+	if err := os.WriteFile(lock, []byte("held by fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(lock)
+	s := NewSupervisor(b.Store, nil, b)
+	a := findArtifact(t, s, x.ID, filepath.Base(tree.dir), 0)
+	result, err := s.CleanupStorage(ctx, x.ID, 0, []string{a.ID})
+	if err != nil || len(result) != 1 || result[0].Status != "partial" {
+		t.Fatal(result, err)
+	}
+	if _, err := os.Stat(tree.dir); !os.IsNotExist(err) {
+		t.Fatal("worktree was not removed", err)
+	}
+	branch, err := git(ctx, "", "--git-dir", tree.repository, "rev-parse", "refs/heads/"+repairBranch(tree.dir))
+	if err != nil || branch != p.Head.SHA {
+		t.Fatal("branch unexpectedly removed", branch, err)
+	}
+	if s.Store.Snapshot().Towns[x.ID].Intents[1] == nil {
+		t.Fatal("write identity lost")
 	}
 }

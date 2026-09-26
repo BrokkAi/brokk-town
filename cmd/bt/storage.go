@@ -61,7 +61,7 @@ func storageCommand(ctx context.Context, dir string, fl *cliFlags) error {
 		if a.Eligible {
 			disposition = "eligible"
 		}
-		fmt.Printf("%s  %s  %d bytes  %s  %s  %s\n  %s (%s): %s\n", a.ID, disposition, a.Bytes, a.Modified.Format("2006-01-02T15:04:05Z07:00"), a.Role, a.Task, a.Path, a.Kind, a.Reason)
+		fmt.Printf("%s  %s  %d bytes  %d hours old  %s  %s  %s\n  %s (%s): %s\n", a.ID, disposition, a.Bytes, a.AgeHours, a.Modified.Format("2006-01-02T15:04:05Z07:00"), a.Role, a.Task, a.Path, a.Kind, a.Reason)
 	}
 	if result.Incomplete {
 		fmt.Println("Inventory incomplete; no artifacts can be removed.")

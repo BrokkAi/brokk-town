@@ -21,7 +21,7 @@ export function storagePanel({ api, getTown }) {
       check.setAttribute("aria-label", `Remove ${artifact.path}`);
       check.onchange = () => { if (check.checked) selected.add(artifact.id); else selected.delete(artifact.id); controls(); };
       const choice = document.createElement("td"); choice.append(check); row.append(choice);
-      for (const value of [artifact.path, artifact.task || "—", `${artifact.bytes.toLocaleString()} bytes`, artifact.modified.startsWith("0001-") ? "Unknown" : new Date(artifact.modified).toLocaleString(), artifact.reason]) {
+      for (const value of [artifact.path, artifact.task || "—", `${artifact.bytes.toLocaleString()} bytes`, artifact.modified.startsWith("0001-") ? "Unknown" : `${artifact.age_hours} hours old (${new Date(artifact.modified).toLocaleString()})`, artifact.reason]) {
         const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
       }
       return row;

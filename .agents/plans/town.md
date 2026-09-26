@@ -1336,3 +1336,8 @@
 - Pre-PR review fixed incomplete transcript discovery being treated as an empty
   baseline and blocked terminal-task reopening during cleanup. No live agents,
   repository automation, release or deployment was used.
+- PR #166 self-review added explicit age in hours and corrected cleanup receipts:
+  a removed worktree whose branch deletion fails is partial, and an unconfirmed
+  removal is uncertain. A local Git ref-lock regression proves the partial case
+  retains the saved write identity. Targeted Go race tests, vet and all 89
+  frontend tests pass after the correction.

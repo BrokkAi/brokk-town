@@ -25,6 +25,7 @@ type StorageArtifact struct {
 	Bytes    int64     `json:"bytes"`
 	Files    int       `json:"files"`
 	Modified time.Time `json:"modified"`
+	AgeHours int64     `json:"age_hours"`
 	Eligible bool      `json:"eligible"`
 	Reason   string    `json:"reason"`
 	head     string
@@ -200,6 +201,9 @@ func storageInventory(ctx context.Context, root string, t *Town, ageHours int) S
 					a.Reason = "Younger than the selected retention period."
 				}
 			}
+		}
+		if !a.Modified.IsZero() {
+			a.AgeHours = max(0, int64(out.At.Sub(a.Modified)/time.Hour))
 		}
 		if out.CleanupHold != "" && a.Eligible {
 			a.Eligible = false
@@ -465,6 +469,7 @@ func (s *Supervisor) CleanupStorage(ctx context.Context, id string, ageHours int
 			results = append(results, result)
 			continue
 		}
+		removedWorktree := false
 		switch a.Kind {
 		case "transcript":
 			digest, size, e := artifactDigest(ctx, path)
@@ -482,6 +487,7 @@ func (s *Supervisor) CleanupStorage(ctx context.Context, id string, ageHours int
 			}
 			_, err = git(ctx, "", "--git-dir", repository, "worktree", "remove", path)
 			if err == nil {
+				removedWorktree = true
 				_, err = git(ctx, "", "--git-dir", repository, "update-ref", "-d", "refs/heads/"+repairBranch(path), head)
 			}
 		default:
@@ -489,7 +495,12 @@ func (s *Supervisor) CleanupStorage(ctx context.Context, id string, ageHours int
 			continue
 		}
 		if err != nil {
+			result.Status = "uncertain"
 			result.Detail = "Cleanup could not finish; refresh the inventory to inspect the outcome."
+			if removedWorktree {
+				result.Status = "partial"
+				result.Detail = "Worktree removed; private branch cleanup was not confirmed."
+			}
 		} else {
 			result.Status, result.Detail = "removed", "Artifact removed; task and write identities retained."
 			if e := s.Store.Update(func(st *State) error { delete(st.Towns[t.ID].Artifacts, Key(a.Path)); return nil }); e != nil {
