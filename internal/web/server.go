@@ -18,7 +18,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-//go:embed index.html style.css app.js town.js tools.js manage.js scenery.js skins.js frontline.js assets/*
+//go:embed index.html style.css app.js town.js tools.js manage.js execution.js scenery.js skins.js frontline.js assets/*
 var files embed.FS
 
 type Server struct {
@@ -64,6 +64,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/capacity", s.capacity)
 	mux.HandleFunc("POST /api/quiet-hours", s.quietHours)
 	mux.HandleFunc("POST /api/choices", s.choices)
+	mux.HandleFunc("GET /api/execution-options", s.executionOptions)
+	mux.HandleFunc("POST /api/execution-options/refresh", s.refreshExecutionOptions)
+	mux.HandleFunc("POST /api/execution", s.execution)
 	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
 	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
 	mux.HandleFunc("POST /api/requests", s.submitRequest)

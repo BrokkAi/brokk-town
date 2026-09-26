@@ -340,6 +340,27 @@
             </button>
           </div>
         </div>
+        <section id="execution-settings" hidden>
+          <h3>Execution location</h3>
+          <p id="execution-status" class="muted" role="status"></p>
+          <label for="execution-mode">Run this bot</label>
+          <select id="execution-mode"></select>
+          <div id="execution-target-field">
+            <label for="execution-target">Mjolnir target</label>
+            <select id="execution-target"></select>
+          </div>
+          <div id="execution-profile-field">
+            <label for="execution-profile">Mjolnir profile</label>
+            <select id="execution-profile"></select>
+          </div>
+          <p id="execution-detail" class="muted"></p>
+          <p id="execution-note" class="muted"></p>
+          <div class="actions">
+            <button id="save-execution" type="button">Save execution location</button>
+            <button id="refresh-execution" type="button">Refresh Mjolnir options</button>
+          </div>
+          <p id="execution-result" role="status"></p>
+        </section>
         <label for="harness-input">Coding harness</label>
         <select id="harness-input">
           <option value="custom">Custom ACP command</option>

@@ -233,10 +233,12 @@ inspect agents outside a town. Shared ACP conventions can improve interoperabili
 but a Town dispatch is owned by Town's durable state, worker reservation, and
 reconciliation rules.
 
-The planned Mjolnir integration uses a town target default with per-bot overrides.
-Mjolnir owns execution capacity for Mjolnir-backed work; Town displays that
-capacity read-only. Local work retains Town's concurrency bound. These are design
-decisions, not implemented settings. See [Mjolnir execution](mjolnir-execution.md)
+The Mjolnir catalog integration saves a town execution default with independent
+per-bot overrides. Background API reads cache the daemon's public launch options;
+browser and CLI reads never wait for that daemon. Mjolnir-backed execution is
+held pending remote checkout/evidence support, with no local fallback. Planned
+execution capacity belongs to Mjolnir and will be shown read-only. Direct local
+work retains Town's concurrency bound. See [Mjolnir execution](mjolnir-execution.md)
 for inheritance, capacity ownership, and the dependent implementation work.
 Town keeps its fixed bot-role projection and does not expose programmable
 workflows. Usage quotas, budgets, and spending limits remain separate concerns.

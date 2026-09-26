@@ -1,11 +1,76 @@
-# Planned Mjolnir execution
+# Mjolnir execution
 
 [Back to Brokk Town](../README.md) · [Architecture](ARCHITECTURE.md)
 
 This document records the operator's decisions for
 [#151](https://github.com/BrokkAi/brokk-town/issues/151) and guides the implementation
-under [#149](https://github.com/BrokkAi/brokk-town/issues/149). These settings are
-not implemented yet; current Town dispatches use local bot workers and agents.
+under [#149](https://github.com/BrokkAi/brokk-town/issues/149). Town now caches
+Mjolnir's launch options and saves independent town/bot execution selections.
+Running agents through Mjolnir remains planned: selecting a Mjolnir target holds
+that bot's agent work until remote checkout and evidence support are available.
+Repo Bot continues its inventory reads without starting a repair agent.
+
+## Connect and select
+
+Use `mj api-info` to find the daemon's API base URL and token file. That command
+may start Mjolnir; Town itself never starts it. Set these environment variables
+on the Town service, then start Town normally:
+
+```sh
+export BT_MJOLNIR_API_URL=http://127.0.0.1:3765/api/v1
+export BT_MJOLNIR_TOKEN_FILE=/path/reported/by/mj/api-info/api-token
+bt
+```
+
+Both values are required. The listener must be on a loopback address; HTTP and
+HTTPS with a normally trusted certificate are supported. Town does not follow
+redirects or send this request through an HTTP proxy. The token is read from its
+file for each request and never enters Town's state, catalog, logs or clients.
+Changing these environment variables requires restarting Town.
+
+Town reads `GET /api/v1/options` in a background task, checks API version 1,
+and caches only the public profile, target, bundle, host and default fields.
+Requests have a five-second timeout and a 1 MiB response limit. The catalog
+refreshes every minute and on request. Failed reads retain the last successful
+response, mark it stale, and expose a short actionable error. The cache survives
+restarts and is scoped to the connection; changing the daemon connection does
+not reuse another daemon's catalog. Viewing a town never waits for Mjolnir.
+
+```sh
+bt execution                   # current cached options
+bt execution --refresh         # queue a background refresh
+bt execution --json            # the same catalog the browser reads
+bt execution --repo OWNER/REPO --target TARGET_ID --profile PROFILE_ID
+bt execution --repo OWNER/REPO --role review --local-execution
+bt execution --repo OWNER/REPO --role review --inherit-execution
+```
+
+In a town's settings, **Execution location** saves placement separately from the
+coding harness. Pickers contain the IDs the daemon reports, including implied
+local targets. A single local target/profile adds no picker; a single value in
+either picker is implicit. Saved missing targets and daemon failures remain
+visible. Unavailable targets retain their reason and may still be selected:
+the reported availability is advisory, never permission to start a session.
+
+Config files store a nullable `execution` selection containing only `target_id`
+and `profile_id`, and `bot_execution` overrides keyed by bot role. Missing or
+null town execution means direct local execution. An absent bot override inherits;
+an empty pair explicitly runs locally even when the town default uses Mjolnir.
+Both IDs are required for a Mjolnir selection. For example:
+
+```json
+{
+  "execution": {"target_id": "builder", "profile_id": "codex"},
+  "bot_execution": {"review": {"target_id": "", "profile_id": ""}}
+}
+```
+
+The API accepts `POST /api/execution` with `town`, optional `role`, and a required
+`selection` (the ID pair, or `null` to reset/inherit). New pairs must exist in the
+cached catalog. Local agent profiles remain independent. Selecting Mjolnir never
+runs a local harness as a fallback, consumes retry budget, or authorizes a merge.
+Direct local work already in progress keeps the placement captured at dispatch.
+Demo mode never reads the Mjolnir token/cache or contacts its daemon.
 
 ## Placement
 

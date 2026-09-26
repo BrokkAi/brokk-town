@@ -1142,3 +1142,39 @@
 - Validation passed: full root race tests/vet, frontend syntax/tests, complete
   bundle build, demo lifecycle and all-eight worker smoke checks.
   User authorized updating the PR and merging its exact head once green.
+
+## Mjolnir launch catalog and execution selections (#152, first part of #150)
+
+- Consume the daemon's versioned GET /api/v1/options with explicit private service
+  connection settings. Background reads have timeout/size bounds, no redirects or
+  proxies, and retain a sanitized, connection-scoped cache across daemon failures
+  and Town restarts. API/browser/CLI catalog reads use memory only. No daemon
+  autostart, real sessions, remote repository work, or live agents in development.
+- Save town defaults and independent per-bot execution overrides containing only
+  target/profile IDs. Missing overrides inherit; an empty pair explicitly selects
+  direct local execution. Agent-profile edits and placement resets stay independent.
+- Browser pickers use daemon-reported IDs and show availability reasons, stale
+  errors, and missing saved selections. Hide redundant single-choice fields.
+  bt execution reads the same catalog and writes through the same selection API.
+- Freeze direct-local placement at dispatch and carry execution identity alongside
+  exact revisions in interrupted-run recovery. Mjolnir-selected agent work remains
+  explicitly held pending #153–155, without retry/budget charges or local fallback;
+  Repo Bot inventory continues without a repair agent. No execution-capacity
+  integration or successful remote acceptance demonstration is claimed here.
+- Validation passed: full root Go race suite and vet, frontend syntax and 81
+  browser tests, workflow lint, complete bundle build, demo lifecycle, all-eight
+  worker shutdown, and fake-Mjolnir catalog/offline-restart/CLI smoke checks.
+  Fake-daemon/API regressions cover inheritance, restart, refusal, cancellation,
+  credentials and demo isolation; a real Repo Bot protocol fixture verifies
+  managed placement still allows inventory without an agent.
+- Pre-PR review fixed CLI receipt decoding/JSON flags, kept inherited agent probes
+  independent of bot placement, and preserved existing recovery explanations.
+  User authorized opening, reviewing, fixing and merging the PR once green;
+  PR #162 contains this implementation and review on feat/mjolnir-launch-options.
+  Merge is gated on the reviewed head passing CI; remote execution remains
+  follow-up work under #150 and #153–155.
+- PR review found execution saves could leave browser controls disabled forever
+  if the write or follow-up snapshot refresh stalled. Add a 30-second deadline
+  covering both, prevent duplicate submissions, and retain an uncertain-outcome
+  message after timeout even if a late response arrives. Both regressions fail
+  on the original PR and pass with the fix; frontend syntax and all 83 tests pass.

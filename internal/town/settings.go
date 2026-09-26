@@ -106,6 +106,9 @@ func (a AgentSettings) Apply(c Config) (Config, error) {
 
 func agentConfig(ctx context.Context, c Config, root string) (runner.AgentConfig, error) {
 	a := c.Agent
+	if err := requireLocalExecution(c); err != nil {
+		return a, err
+	}
 	if len(a.Command) != 0 {
 		return a, nil
 	}
@@ -610,10 +613,12 @@ func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, s
 		s.mu.Unlock()
 		return AgentChoices{}, errors.New("unknown town")
 	}
+	execution := t.Config.ExecutionForRole(role)
 	if settings.Inherit {
 		role, settings = "", AgentSettings{}
 	}
 	cfg, err := s.prepareAgent(t.Config.ForRole(role), settings)
+	cfg.Execution = &execution
 	if err != nil {
 		s.mu.Unlock()
 		return AgentChoices{}, err
