@@ -87,6 +87,7 @@ func Open(dir string, demo bool) (*Store, error) {
 		for _, w := range t.Workers {
 			recoverWorkerRun(w)
 			w.Agent = nil
+			w.Execution = nil
 			if w.Recovery != nil {
 				if w.Role == Repo {
 					w.Next = time.Time{}

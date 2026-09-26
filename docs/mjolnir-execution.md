@@ -1,11 +1,111 @@
-# Planned Mjolnir execution
+# Mjolnir execution
 
 [Back to Brokk Town](../README.md) · [Architecture](ARCHITECTURE.md)
 
 This document records the operator's decisions for
 [#151](https://github.com/BrokkAi/brokk-town/issues/151) and guides the implementation
-under [#149](https://github.com/BrokkAi/brokk-town/issues/149). These settings are
-not implemented yet; current Town dispatches use local bot workers and agents.
+under [#149](https://github.com/BrokkAi/brokk-town/issues/149). Town now caches
+Mjolnir's launch options and saves independent town/bot execution selections.
+Running agents through Mjolnir remains planned: selecting a Mjolnir target holds
+that bot's agent work until remote checkout and evidence support are available.
+Repo Bot continues its inventory reads without starting a repair agent.
+
+## Connect and select
+
+Use `mj api-info` to find the daemon's API base URL and token file. That command
+may start Mjolnir; Town itself never starts it. Set these environment variables
+on the Town service, then start Town normally:
+
+```sh
+export BT_MJOLNIR_API_URL=http://127.0.0.1:3765/api/v1
+export BT_MJOLNIR_TOKEN_FILE=/path/reported/by/mj/api-info/api-token
+bt
+```
+
+Both values are required. The listener must be on a loopback address; HTTP and
+HTTPS with a normally trusted certificate are supported. Town does not follow
+redirects or send this request through an HTTP proxy. The token is read from its
+file for each request and never enters Town's state, catalog, logs or clients.
+Changing these environment variables requires restarting Town.
+
+Town reads `GET /api/v1/options` in a background task, checks API version 1,
+and caches only the public profile, target, bundle, host and default fields.
+Requests have a five-second timeout and a 1 MiB response limit. The catalog
+refreshes every minute and on request. Failed reads retain the last successful
+response, mark it stale, and expose a short actionable error. The cache survives
+restarts and is scoped to the connection; changing the daemon connection does
+not reuse another daemon's catalog. Viewing a town never waits for Mjolnir.
+
+```sh
+bt execution                   # current cached options
+bt execution --refresh         # queue a background refresh
+bt execution --json            # the same catalog the browser reads
+bt execution --repo OWNER/REPO --target TARGET_ID --profile PROFILE_ID
+bt execution --repo OWNER/REPO --role review --local-execution
+bt execution --repo OWNER/REPO --role review --inherit-execution
+```
+
+In a town's settings, **Execution location** saves placement separately from the
+coding harness. Pickers contain the IDs the daemon reports, including implied
+local targets. A single local target/profile adds no picker; a single value in
+either picker is implicit. Saved missing targets and daemon failures remain
+visible. Unavailable targets retain their reason and may still be selected:
+the reported availability is advisory, never permission to start a session.
+
+Config files store a nullable `execution` selection containing only `target_id`
+and `profile_id`, and `bot_execution` overrides keyed by bot role. Missing or
+null town execution means direct local execution. An absent bot override inherits;
+an empty pair explicitly runs locally even when the town default uses Mjolnir.
+Both IDs are required for a Mjolnir selection. For example:
+
+```json
+{
+  "execution": {"target_id": "builder", "profile_id": "codex"},
+  "bot_execution": {"review": {"target_id": "", "profile_id": ""}}
+}
+```
+
+The API accepts `POST /api/execution` with `town`, optional `role`, and a required
+`selection` (the ID pair, or `null` to reset/inherit). New pairs must exist in the
+cached catalog. Local agent profiles remain independent. Selecting Mjolnir never
+runs a local harness as a fallback, consumes retry budget, or authorizes a merge.
+Direct local work already in progress keeps the placement captured at dispatch.
+Demo mode never reads the Mjolnir token/cache or contacts its daemon.
+
+## Model and effort discovery
+
+The CLI uses the same choices and settings APIs as the browser:
+
+```sh
+bt choices --repo OWNER/REPO --role review --json
+bt choices --repo OWNER/REPO --role review --model MODEL_ID
+bt settings --repo OWNER/REPO --role review --model MODEL_ID --effort EFFORT_ID
+```
+
+For a saved Mjolnir selection, **Load available choices** reads
+`GET /api/v1/profiles/{profile_id}/config`, passing the selected model when
+asking for its effort choices. The request uses the same authentication,
+five-second timeout, cancellation and 1 MiB response limit as the launch catalog.
+Town does not install or start a local harness for this read; Mjolnir owns
+its profile discovery. Missing profiles,
+unavailable runtimes, authentication failures and malformed responses produce
+an error; they never become an empty successful catalog. Empty advertised lists
+mean the profile offers no selectors.
+
+The saved execution profile chooses the Mjolnir harness. The model and effort
+fields retain their existing independent town/bot inheritance. While Mjolnir is
+selected, settings accept model/effort edits and preserve the saved local
+command and registry version; attempts to change a local harness definition
+are refused with instructions to choose an execution profile instead. Switching
+back to direct local execution restores those local controls and pins.
+
+Discovery is not runtime readiness or a runtime pin. Mjolnir's public profile
+and session responses currently omit the resolved harness version. Town must
+not silently treat a mutable profile ID or the options projection revision as
+an immutable runtime identity. Before enabling dispatch, the contract needs a
+daemon-owned runtime identity which can be selected, checked at launch and
+recorded with the session. A changed identity must require an explicit operator
+update; Town must not copy Mjolnir's launch definitions into its local registry.
 
 ## Placement
 
@@ -57,3 +157,54 @@ Develop this path with fake daemons, GitHub and agents, including interruption,
 capacity waits, missing artifacts, and restart recovery. Demo mode must never
 contact Mjolnir or launch an agent. A real remote acceptance demonstration is
 separate from development tests and must not be claimed from fixture coverage.
+
+## Remaining execution contract
+
+The following audit uses Mjolnir source at
+[`4205ca8`](https://github.com/BrokkAi/mjolnir/tree/4205ca8096d66c7de156a11e5b7e31d6b850e3a0).
+It records requirements for #153–155; it does not claim those issues or the
+real-target acceptance in #149 are complete.
+
+- `mj acp` accepts target, profile, bundle, workspace and an exit policy, but
+  does not pass an exact launch base/branch, model or effort. The HTTP session
+  creation request has those fields; the ACP adapter needs to carry them or
+  attach to a session Town has already provisioned before it can satisfy Town's
+  dispatch contract. Its ACP session ID already equals the Mjolnir session ID.
+- Session creation returns a server-assigned ID. Town needs to save a dispatch
+  intent before submission and its session receipt before prompting. A lost
+  creation receipt must remain uncertain, with no automatic resubmission.
+  Reliable recovery needs a caller-supplied identity that the daemon can look up;
+  a matching title alone is not proof of ownership.
+- Choose Mjolnir-owned target checkouts. Reuse an operator-configured bundle
+  for the repository and a stable Town workspace; do not create quick bundles
+  from each transient local worktree. Every session still needs its own isolated
+  checkout, exact launch commit and Town-owned branch. Ambiguous or missing
+  repository mappings must refuse dispatch. Keep interrupted sessions and
+  artifacts until reconciliation; only then release their storage.
+- `--on-exit suspend` provides a retention policy, but cleanup must be confirmed
+  by the daemon. Town's current short local subprocess shutdown must not kill
+  the adapter before its potentially long checkpoint completes. Do not use
+  `destroy` before evidence has been retrieved and durably recorded.
+- Mjolnir's public options report host availability, not numerical execution
+  capacity. Town must show capacity as unknown until it is exposed. A missing
+  field cannot be interpreted as free capacity.
+
+The evidence mapping below is the required implementation boundary. GitHub
+writes remain owned by Town's existing durable intents and exact-head checks.
+Bots remain separate executables using their worker protocol; prompts must name
+the remote checkout, never a path that only exists on Town's machine.
+
+| Existing check | Required non-local evidence |
+| --- | --- |
+| Exact review checkout and unchanged HEAD | Bind the artifact to the saved session, repository and launch SHA; require `diff?base=EXPECTED_HEAD&json=true` metadata with that base, `head == EXPECTED_HEAD`, and an empty diff. Missing metadata is a refusal. |
+| Reviewed tracked files unchanged | The same diff compares the expected commit to the working tree, including untracked files; reject any changes. Retrieve the structured review receipt through the artifact API and validate its exact base/head and completeness. Zero comments still prove nothing. |
+| Nonempty repair and no rewritten history | Require diff metadata with the recorded base, a different head, nonempty diff and `head_descends_from_base == true`; absence of the ancestry field is unsupported evidence. |
+| Verified committed repair | Export a Git bundle, validate its advertised head and ancestry against a private Town checkout, and run the configured verify command on that exact imported commit. Require clean tracked files and unchanged HEAD after verification. A patch alone cannot prove a committed repair. |
+| Independent review of a repair | Start a separate exact-head review and apply the same read-only evidence checks. Preserve the returned decision and complete receipt before any publication. |
+| Recovery and audit trail | Persist session/target/profile/runtime identity, launch and returned revisions, transcript reference and artifact checks before considering the attempt complete. An unavailable file, transcript, export or session remains explicit missing evidence. |
+| Safe publication and merge | Push only Town-owned branches without force, then confirm GitHub's exact head. Re-run the existing base/head, review audit, checks and approval requirements before merging. A remote artifact never authorizes a GitHub write by itself. |
+
+These are design constraints, not tests of a running remote integration. The
+remaining work includes protocol changes, fake-daemon review/repair integration,
+interrupted submission and retention tests, and a separately authorized real
+remote acceptance demonstration.

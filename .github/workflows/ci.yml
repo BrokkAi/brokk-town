@@ -68,7 +68,7 @@ jobs:
             exit 1
           fi
       - name: Build Town and check worker API compatibility through local npm packages
-        run: npm run check && npm test && make build && python3 scripts/smoke.py && python3 scripts/smoke_workers.py
+        run: npm run check && npm test && make build && python3 scripts/smoke.py && python3 scripts/smoke_workers.py && python3 scripts/smoke_mjolnir.py
   workflows:
     runs-on: ubuntu-latest
     steps:

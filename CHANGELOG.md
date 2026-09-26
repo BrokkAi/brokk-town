@@ -1,12 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 — 2026-09-26
 
 - Install only Town, and launch independently released bots through npx. Resolve
   the latest stable bot at worker startup, keep that exact version for its
   lifetime, and use the versioned worker API Town supports. Bot releases retain
   older APIs and lifecycle support. npm launchers use a private parent socket
   so workers still stop when Town exits unexpectedly.
+- Add setup diagnostics and precise merge blockers, with actionable guidance
+  in the shared browser and CLI state.
+- Add Mjolnir launch choices and saved execution selections. Managed model and
+  effort discovery uses the daemon's versioned API; remote job dispatch remains
+  held pending its execution protocol integration.
+
+## Unreleased
 
 - Reshape the `bt` CLI for the foreground lifecycle (breaking). `bt service
   status|stop` is gone: `bt status` now summarizes a running or stopped Town

@@ -102,6 +102,10 @@ func (s *Supervisor) setupChecks(ctx context.Context, c Config) []Diagnostic {
 	checks[len(checks)-1].URL = "https://github.com/" + c.Repo
 	for _, role := range AgentRoles {
 		cfg := c.ForRole(role)
+		if cfg.Execution.Managed() {
+			add("execution", role, "blocked", executionPending, "Select direct local execution to use a local agent.")
+			continue
+		}
 		status, detail, action := agentSetup(cfg, s.Harnesses)
 		add("agent", role, status, detail, action)
 		add("agent_auth", role, "unknown", "Agent authentication is not detectable without starting the configured harness.", "Use the harness's own authentication/status command as the Town service user; no agent session was started.")

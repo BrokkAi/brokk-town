@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
 // Exercise the actual standalone worker: a fake worker cannot catch a mismatch
@@ -38,12 +40,13 @@ esac
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for _, tc := range []struct {
 		name, configured, observed, want string
-		recovery                         bool
+		recovery, managed                bool
 	}{
-		{"first inventory", "", "", "main", false},
-		{"changed default", "", "old-default", "main", false},
-		{"explicit branch", "stable", "main", "stable", false},
-		{"recovery inventory never starts a repair agent", "", "", "main", true},
+		{"first inventory", "", "", "main", false, false},
+		{"changed default", "", "old-default", "main", false, false},
+		{"explicit branch", "stable", "main", "stable", false, false},
+		{"recovery inventory never starts a repair agent", "", "", "main", true, false},
+		{"managed placement keeps inventory local without repair", "", "", "main", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := testStore(t, false)
@@ -51,6 +54,10 @@ esac
 			update(t, store, func(st *State) {
 				st.Towns[x.ID].Config.Branch = tc.configured
 				st.Towns[x.ID].DefaultBranch = tc.observed
+				if tc.managed {
+					st.Towns[x.ID].Config.BotExecution = map[Role]mjolnir.Selection{Repo: {Target: "builder", Profile: "coder"}}
+					st.Towns[x.ID].Config.Agent.Command = []string{"agent-must-not-start"}
+				}
 				if tc.recovery {
 					st.Towns[x.ID].Workers[Repo].Recovery = &WorkerRecovery{Detail: recoveryDetail(Repo, "")}
 					st.Towns[x.ID].Config.Agent.Command = []string{"agent-must-not-start"}
@@ -61,7 +68,7 @@ esac
 			t.Cleanup(workers.Close)
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
-			result, err := workers.Observe(ctx, x, InventoryRequest{Health: tc.recovery}, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			result, err := workers.Observe(ctx, x, InventoryRequest{Health: tc.recovery || tc.managed}, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,6 +79,9 @@ esac
 			x = store.Snapshot().Towns[x.ID]
 			if !x.Initialized || x.Branch() != tc.want || x.Config.Branch != tc.configured {
 				t.Fatalf("inventory did not initialize the town with the selected branch: %+v", x.Config)
+			}
+			if tc.managed && (x.Workers[Repo].Run.Mode != "inventory" || x.Workers[Repo].Run.Execution != nil) {
+				t.Fatal("managed selection changed read-only inventory", x.Workers[Repo].Run)
 			}
 			if tc.recovery && (x.Workers[Repo].Run.Mode != "inventory" || x.Workers[Repo].Recovery == nil) {
 				t.Fatalf("recovery changed repair authority: %+v", x.Workers[Repo])

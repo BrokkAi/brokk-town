@@ -1,5 +1,37 @@
 # Brokk Town implementation plan
 
+## Publish independent bot releases and Town 0.7.0 (in progress)
+
+- User requested releases on 2026-09-26 for every bot changed since its last
+  release, then Town using the new npx lifecycle. All eight bots have source
+  changes, confirmed against their published standalone GitHub tag trees and
+  npm stable versions. Preserve independent versions and never reuse a version
+  already distributed inside a Town bundle.
+
+| Project | Published stable | Previously bundled | New release |
+| --- | --- | --- | --- |
+| bug-bot | 0.3.5 | 0.6.0 | 0.6.1 |
+| feature-bot | 0.1.2 | 0.4.0 | 0.4.1 |
+| issue-bot | 0.5.4 | 0.5.9 | 0.5.10 |
+| mayor-bot | 0.1.1 | 0.1.2 | 0.1.3 |
+| release-bot | 0.6.1 | 0.8.0 | 0.8.1 |
+| repo-bot | 0.1.0 | 0.1.2 | 0.1.3 |
+| review-bot | 0.2.4 | 0.2.9 | 0.2.10 |
+| simplifier-bot | 0.1.1 | 0.1.3 | 0.1.4 |
+| Town | 0.6.5 | — | 0.7.0 |
+
+- Integrate master through ce49c44, retaining its Mjolnir model/effort discovery,
+  execution selections and fake-daemon smoke alongside the npx compatibility
+  checks. Validate the integration, then merge the release PR after its checks.
+- Integrated root race tests/vet, frontend checks/tests, workflow lint, Town build,
+  demo and fake-Mjolnir smoke pass. The bots are unchanged from the already-passing
+  nine-module validation. All forty-five target npm versions are available.
+- Publish immutable per-project suffix tags from the exact merged revision.
+  Wait for bot workflows and all forty bot npm packages, then verify each
+  published worker's v1 initialization and parent-loss lifecycle without jobs.
+  Only then publish Town and verify its four native archives and five npm
+  packages. Use the configured Actions publishers; do not bypass checks.
+
 ## Restore independently released bots through npx (complete)
 
 - User chose independent bot releases and npx startup; the proposed unified
@@ -1179,3 +1211,67 @@
 - Validation passed: full root race tests/vet, frontend syntax/tests, complete
   bundle build, demo lifecycle and all-eight worker smoke checks.
   User authorized updating the PR and merging its exact head once green.
+
+## Mjolnir launch catalog and execution selections (#152, first part of #150)
+
+- Consume the daemon's versioned GET /api/v1/options with explicit private service
+  connection settings. Background reads have timeout/size bounds, no redirects or
+  proxies, and retain a sanitized, connection-scoped cache across daemon failures
+  and Town restarts. API/browser/CLI catalog reads use memory only. No daemon
+  autostart, real sessions, remote repository work, or live agents in development.
+- Save town defaults and independent per-bot execution overrides containing only
+  target/profile IDs. Missing overrides inherit; an empty pair explicitly selects
+  direct local execution. Agent-profile edits and placement resets stay independent.
+- Browser pickers use daemon-reported IDs and show availability reasons, stale
+  errors, and missing saved selections. Hide redundant single-choice fields.
+  bt execution reads the same catalog and writes through the same selection API.
+- Freeze direct-local placement at dispatch and carry execution identity alongside
+  exact revisions in interrupted-run recovery. Mjolnir-selected agent work remains
+  explicitly held pending #153–155, without retry/budget charges or local fallback;
+  Repo Bot inventory continues without a repair agent. No execution-capacity
+  integration or successful remote acceptance demonstration is claimed here.
+- Validation passed: full root Go race suite and vet, frontend syntax and 81
+  browser tests, workflow lint, complete bundle build, demo lifecycle, all-eight
+  worker shutdown, and fake-Mjolnir catalog/offline-restart/CLI smoke checks.
+  Fake-daemon/API regressions cover inheritance, restart, refusal, cancellation,
+  credentials and demo isolation; a real Repo Bot protocol fixture verifies
+  managed placement still allows inventory without an agent.
+- Pre-PR review fixed CLI receipt decoding/JSON flags, kept inherited agent probes
+  independent of bot placement, and preserved existing recovery explanations.
+  User authorized opening, reviewing, fixing and merging the PR once green;
+  PR #162 contains this implementation and review on feat/mjolnir-launch-options.
+  Merge is gated on the reviewed head passing CI; remote execution remains
+  follow-up work under #150 and #153–155.
+- PR review found execution saves could leave browser controls disabled forever
+  if the write or follow-up snapshot refresh stalled. Add a 30-second deadline
+  covering both, prevent duplicate submissions, and retain an uncertain-outcome
+  message after timeout even if a late response arrives. Both regressions fail
+  on the original PR and pass with the fix; frontend syntax and all 83 tests pass.
+
+## Mjolnir profile discovery and execution contract audit (#153–155)
+
+- Managed roles load model/effort choices from the daemon's versioned profile
+  config API, with the selected model, instead of preparing/probing a local
+  harness. Retain private token handling, no redirects/proxies, cancellation,
+  five-second deadline, response bounds and sanitized actionable failures.
+- Keep local harness commands and pinned registry definitions independent of
+  remote model edits. Honor bot execution overrides during profile preparation;
+  inheriting an agent profile must not inherit its placement. Demo stays offline.
+- Browser settings show the runtime owner, omit local harness changes for
+  managed selections and discard stale choices when execution changes while
+  preserving unsaved model drafts. Shared settings/choices APIs serve clients.
+- The source contract audit in docs/mjolnir-execution.md identifies missing ACP
+  launch selectors, runtime identity and uncertain creation reconciliation;
+  chooses reusable bundles/workspaces with isolated Mjolnir-owned checkouts;
+  maps existing review/repair/publication checks to required remote evidence.
+  Dispatch remains held. #149/#150/#153–155 are not complete, and no real remote
+  acceptance run is claimed. #151's operator decisions are already recorded.
+- Added `bt choices --repo OWNER/REPO [--role BOT] [--model ID] [--json]`
+  through the same profile API; it reads selectors without saving settings.
+- Validation: full root Go race suite and vet, frontend syntax/tests, bundle
+  build, isolated demo, all-eight worker lifecycle and fake-Mjolnir/offline
+  restart smoke checks passed. CLI additions separately passed race tests and
+  vet. No live repository automation or real remote acceptance run was used.
+- PR #163 review reproduced a mixed-case repository discovery failure with a
+  failing regression. Normalize repository IDs in the shared ChoicesForRole
+  boundary, matching persisted town identities; browser and CLI both benefit.

@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/BrokkAi/brokk-town/internal/harness"
+	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
 // Progress is one worker phase/task snapshot. Seq is the worker protocol event
@@ -83,6 +84,7 @@ type Supervisor struct {
 	Publisher   IssuePublisher
 	Funnels     FunnelRegistry
 	Harnesses   *harness.Catalog
+	Mjolnir     *mjolnir.Catalog
 	mu          sync.Mutex
 	diagnosing  bool
 	running     map[string]context.CancelFunc
@@ -103,7 +105,7 @@ func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	if provider, ok := gh.(GitHubFunnelProvider); ok {
 		registry[ProviderID("github")] = &GitHubFunnel{Client: provider}
 	}
-	return &Supervisor{Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]chan struct{}{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	return &Supervisor{Mjolnir: mjolnir.New(filepath.Dir(store.path), store.Snapshot().Demo, mjolnir.Connection{}), Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]chan struct{}{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -124,6 +126,8 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		}
 	}
 	defer func() { cancel(); s.wg.Wait() }()
+	s.wg.Add(1)
+	go func() { defer s.wg.Done(); s.Mjolnir.Run(ctx) }()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	// Reconnect to bot processes left by the previous service before scheduling
@@ -166,6 +170,22 @@ func (s *Supervisor) schedule(ctx context.Context) {
 		for _, r := range Roles {
 			w := t.Workers[r]
 			if !w.Enabled || w.Next.After(s.now()) {
+				continue
+			}
+			if r != Repo && t.Config.ExecutionForRole(r).Managed() {
+				if w.Phase != "execution" && w.Status != "working" && w.Status != "pausing" && w.Recovery == nil {
+					s.update(func(st *State) error {
+						current := st.Towns[t.ID]
+						if current == nil || current.Deleted {
+							return nil
+						}
+						worker := current.Workers[r]
+						if current.Config.ExecutionForRole(r).Managed() && worker.Enabled && worker.Status != "working" && worker.Status != "pausing" && worker.Recovery == nil {
+							worker.Status, worker.Phase, worker.Task = "waiting", "execution", executionPending
+						}
+						return nil
+					})
+				}
 				continue
 			}
 			if r != Repo && !t.Initialized {
@@ -235,7 +255,7 @@ func (s *Supervisor) claimRepair(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	town := s.Store.Snapshot().Towns[id]
-	if town == nil || town.Workers[Repo].Recovery != nil {
+	if town == nil || town.Workers[Repo].Recovery != nil || town.Config.ExecutionForRole(Repo).Managed() {
 		return false
 	}
 	if _, limit := s.Store.dispatchEligibility(id, Repo, s.now()); s.activeWorkers() >= limit {
@@ -296,6 +316,7 @@ func (s *Supervisor) SetCapacity(limit int) error {
 func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 	now := s.now()
 	started := now
+	held := false
 	if err := s.Store.Update(func(st *State) error {
 		current := st.Towns[t.ID]
 		w := current.Workers[r]
@@ -304,6 +325,13 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		}
 		if current.Deleted || !w.Enabled {
 			return context.Canceled
+		}
+		if r != Repo && current.Config.ExecutionForRole(r).Managed() {
+			if w.Recovery == nil {
+				w.Status, w.Phase, w.Task = "waiting", "execution", executionPending
+			}
+			held = true
+			return nil
 		}
 		if r != Repo {
 			// Migrate older towns to a pinned registry definition at first dispatch.
@@ -314,6 +342,10 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		}
 		// Resolve settings at actual dispatch, not from an older scheduler snapshot.
 		t = clone(current)
+		selection := current.Config.ExecutionForRole(r)
+		if r != Repo {
+			w.Execution = &selection
+		}
 		if r != Repo {
 			profile := current.Config.Public().BotAgents[r]
 			w.Agent = &profile
@@ -327,6 +359,9 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		if !errors.Is(err, context.Canceled) {
 			s.fail(err)
 		}
+		return
+	}
+	if held {
 		return
 	}
 	// Progress and logging never block agent callbacks. A single consumer persists
@@ -356,6 +391,8 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			if repair {
 				s.releaseRepair(t.ID)
 			}
+		} else if e := requireLocalExecution(t.Config); e != nil {
+			err = e
 		} else if r == Review {
 			handled, e := s.mergeReady(ctx, t, log)
 			err = e
@@ -386,6 +423,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			w.Run = nil
 		}
 		w.Agent = nil
+		w.Execution = nil
 		w.Status = "waiting"
 		w.Updated = s.now()
 		w.Next = s.now().Add(time.Duration(current.Config.PollSeconds) * time.Second)
