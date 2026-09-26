@@ -10,14 +10,14 @@
 
 | Project | Published stable | Previously bundled | New release |
 | --- | --- | --- | --- |
-| bug-bot | 0.3.5 | 0.6.0 | 0.6.1 |
-| feature-bot | 0.1.2 | 0.4.0 | 0.4.1 |
-| issue-bot | 0.5.4 | 0.5.9 | 0.5.10 |
-| mayor-bot | 0.1.1 | 0.1.2 | 0.1.3 |
-| release-bot | 0.6.1 | 0.8.0 | 0.8.1 |
-| repo-bot | 0.1.0 | 0.1.2 | 0.1.3 |
-| review-bot | 0.2.4 | 0.2.9 | 0.2.10 |
-| simplifier-bot | 0.1.1 | 0.1.3 | 0.1.4 |
+| bug-bot | 0.3.5 | 0.6.0 | 0.6.2 |
+| feature-bot | 0.1.2 | 0.4.0 | 0.4.2 |
+| issue-bot | 0.5.4 | 0.5.9 | 0.5.11 |
+| mayor-bot | 0.1.1 | 0.1.2 | 0.1.4 |
+| release-bot | 0.6.1 | 0.8.0 | 0.8.2 |
+| repo-bot | 0.1.0 | 0.1.2 | 0.1.4 |
+| review-bot | 0.2.4 | 0.2.9 | 0.2.11 |
+| simplifier-bot | 0.1.1 | 0.1.3 | 0.1.5 |
 | Town | 0.6.5 | — | 0.7.0 |
 
 - Integrate master through ce49c44, retaining its Mjolnir model/effort discovery,
@@ -30,6 +30,18 @@
   Publisher review found Release Bot still builds its retained Python artifact
   alongside npm; add pinned setup-uv/uv versions so its publishing runner has
   the required build tool. Python publication remains a separate action.
+- PR #165 merged as a967d8b with the concurrently merged attention hook. The
+  combined root race/vet, frontend and integration checks passed locally, as did
+  complete non-publishing Town 0.7.0 and Release Bot packaging builds.
+- The first bot tag attempts passed Linux but macOS found a test comparing
+  /var and /private/var as different directories. Publication was gated off;
+  remaining attempts were stopped and stable npm versions remain unchanged.
+  Preserve those immutable tags and use fresh patch tags in the table above.
+  Reproduce the failure through a symlink on Linux, then check directory
+  identity and canonical cwd while retaining the startup-version/reuse checks.
+  The explicit symlink fixture fails before the assertion fix and passes after;
+  full root race tests and vet also pass. Run both hosted platforms on this fix
+  before tagging the replacement releases.
 - Publish immutable per-project suffix tags from the exact merged revision.
   Wait for bot workflows and all forty bot npm packages, then verify each
   published worker's v1 initialization and parent-loss lifecycle without jobs.

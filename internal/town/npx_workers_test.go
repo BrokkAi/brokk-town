@@ -28,6 +28,12 @@ func fakeNPX(t *testing.T, body string) string {
 
 func TestNPXResolvesLatestThenStartsExactVersion(t *testing.T) {
 	dir := t.TempDir()
+	// macOS exposes its temporary directory through /var -> /private/var.
+	// Exercise the same aliasing on every platform.
+	root := filepath.Join(t.TempDir(), "town-root")
+	if err := os.Symlink(dir, root); err != nil {
+		t.Fatal(err)
+	}
 	native := filepath.Join(dir, "bib")
 	writeFakeWorker(t, native, pythonFakeWorker)
 	trace := filepath.Join(dir, "trace")
@@ -36,7 +42,8 @@ func TestNPXResolvesLatestThenStartsExactVersion(t *testing.T) {
 	fakeNPX(t, `import json, os, sys
 with open(os.environ['FAKE_NPX_TRACE'], 'a') as output:
     output.write(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd()}) + '\n')
-assert sys.argv[1] == '--prefix=' + os.getcwd(), sys.argv
+assert sys.argv[1].startswith('--prefix='), sys.argv
+assert os.path.samefile(sys.argv[1][len('--prefix='):], os.getcwd()), sys.argv
 del sys.argv[1]
 assert sys.argv[1:4] == ['--yes', '--registry=https://registry.npmjs.org', '--'], sys.argv
 if sys.argv[4:] == ['@brokkai/issue-bot@latest', 'version']:
@@ -45,7 +52,7 @@ if sys.argv[4:] == ['@brokkai/issue-bot@latest', 'version']:
 assert sys.argv[4:6] == ['@brokkai/issue-bot@9.8.7', 'worker'], sys.argv
 os.execv(os.environ['FAKE_NPX_NATIVE'], [os.environ['FAKE_NPX_NATIVE'], *sys.argv[5:]])
 `)
-	workers := &BotWorkers{Root: dir}
+	workers := &BotWorkers{Root: root}
 	bot, err := workers.externalBot(t.Context(), Issue)
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +81,10 @@ os.execv(os.environ['FAKE_NPX_NATIVE'], [os.environ['FAKE_NPX_NATIVE'], *sys.arg
 	if len(lines) != 2 {
 		t.Fatalf("unexpected package invocations: %s", data)
 	}
+	wantDir, err := filepath.EvalSymlinks(filepath.Join(root, "packages"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, line := range lines {
 		var call struct {
 			Args []string `json:"args"`
@@ -82,7 +93,7 @@ os.execv(os.environ['FAKE_NPX_NATIVE'], [os.environ['FAKE_NPX_NATIVE'], *sys.arg
 		if err := json.Unmarshal([]byte(line), &call); err != nil {
 			t.Fatal(err)
 		}
-		if call.CWD != filepath.Join(dir, "packages") {
+		if call.CWD != wantDir {
 			t.Fatalf("package runner used an unowned directory: %s", line)
 		}
 	}
