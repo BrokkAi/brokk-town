@@ -13,6 +13,9 @@ duties remain held when assigned to Mjolnir. Repo Bot continues inventory reads.
 
 ## Connect and select
 
+The container workflow was validated with Mjolnir 2.23.1. Use that version or
+newer for the guarded runtime identity required by Town.
+
 Use `mj api-info` to find the daemon's API base URL and token file. That command
 may start Mjolnir. Catalog reads never start it; an explicitly dispatched managed
 task checks `mj api-info` before launching the ACP adapter. Set these variables
@@ -42,6 +45,10 @@ target/profile and select its known runtime in Town's settings, or with
 Model and effort are applied and confirmed on each target session before its
 first prompt. Unknown runtime identity, a missing bundle, or changed revision
 holds the work without starting a local harness.
+
+Model discovery also uses Mjolnir's profile environment. For managed Codex, make
+Node 22 or newer available in Mjolnir's clean login PATH or set an explicit PATH
+on its profile when using a version manager.
 
 Town reads `GET /api/v1/options` in a background task, checks API version 1,
 and caches only the public profile, target, bundle, host and default fields.
@@ -429,6 +436,8 @@ open PR, dispatches Review Bot with `dry_run: true`, checks every remote answer'
 saved evidence and visibility in `mj sessions` and the session index, then
 confirms cleanup. It does not run Town's publication or merge path. Failures keep
 the dedicated state directory and remote sessions for inspection.
+The index check first performs a search read, which requests Mjolnir's background
+index refresh; point lookups alone read the existing index.
 
 Set `BT_MJOLNIR_ACCEPTANCE` to a private JSON configuration with `Root` (a new
 absolute state directory), `Repo`, `PR`, `Target`, `Profile`, `Discovery` (an

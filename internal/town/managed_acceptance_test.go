@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,6 +146,17 @@ func awaitAcceptanceIndex(t *testing.T, ctx context.Context, connection mjolnir.
 		token, err := os.ReadFile(connection.TokenFile)
 		if err != nil {
 			t.Fatal("cannot read acceptance API token")
+		}
+		// Point lookups only read the existing index. Search is the documented
+		// surface that starts a background refresh when its snapshot is stale.
+		refresh, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(connection.URL, "/")+"/wiki/search?q="+url.QueryEscape(session)+"&limit=1", nil)
+		if err != nil {
+			t.Fatal("invalid acceptance index URL")
+		}
+		refresh.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+		if response, err := client.Do(refresh); err == nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+			response.Body.Close()
 		}
 		req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(connection.URL, "/")+"/wiki/sessions/"+session, nil)
 		if err != nil {
