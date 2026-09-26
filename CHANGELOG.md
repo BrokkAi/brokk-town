@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1 — 2026-09-26
+
+- Retire the persisted `invalid branch` startup failure on upgrade for towns
+  still awaiting default-branch discovery. Save the recovery before starting
+  workers and retry enabled inventory promptly, preserving pauses, historical
+  logs and uncertain repair holds. Initialization still requires fresh inventory.
+- Add Town Guide conversations in the browser and CLI, with explicit operator
+  confirmation before a proposed pause is applied.
+- Archive completed task detail outside active snapshots and expose saved
+  history through the browser and CLI.
+
 ## 0.7.0 — 2026-09-26
 
 - Install only Town, and launch independently released bots through npx. Resolve
@@ -14,11 +25,6 @@
   held pending its execution protocol integration.
 
 ## Unreleased
-
-- Retire the persisted `invalid branch` startup failure on upgrade for towns
-  still awaiting default-branch discovery. Save the recovery before starting
-  workers and retry enabled inventory promptly, preserving pauses, historical
-  logs and uncertain repair holds. Initialization still requires fresh inventory.
 
 - Reshape the `bt` CLI for the foreground lifecycle (breaking). `bt service
   status|stop` is gone: `bt status` now summarizes a running or stopped Town

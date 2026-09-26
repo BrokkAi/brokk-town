@@ -1,5 +1,23 @@
 # Brokk Town implementation plan
 
+## Town 0.7.1 release (in progress)
+
+- User requested a new Town release after the persisted default-branch recovery
+  fix. Publish through the tag-triggered Actions workflow and its checks.
+  Town 0.7.0 is the latest published Town release; 0.7.1 is unused.
+- Include the startup repair and the already-merged Town Guide and task-history
+  changes on master. Bot source is unchanged from Town 0.7.0; no bot release is
+  needed for this Town change.
+- Additional investigation found Repo Bot's own local state had resolved
+  `master` before the later cancellation. Cached published Repo Bot 0.1.5 and
+  Issue Bot 0.5.11 pass all six fake-GitHub protocol scenarios, including the
+  upgraded scheduler. The temporary diagnostic used private temporary state
+  and was removed afterwards. Historical cancellation causes were not recorded;
+  do not claim this release establishes or repairs their cause.
+- Prepare release notes, validate packaging from the exact committed candidate,
+  pass PR checks, merge, and publish an immutable Town tag. Verify native assets,
+  checksums, and all five npm packages after the workflow succeeds.
+
 ## Retire the persisted default-branch startup failure (complete)
 
 - Read-only inspection of local state confirms an uninitialized town following
