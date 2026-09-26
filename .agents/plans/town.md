@@ -1457,3 +1457,10 @@
   smoke exposed its separate simulation loop missing the Guide queue; add a
   fake-only loop there and a startup regression. No live agents, GitHub
   automation or release has been used.
+- Integrated merged archival #169 (da32cc5), retained both client controls and
+  state validations, and passed full root race/vet, 96 frontend tests, build,
+  demo Guide isolation/reconnect, fake-Mjolnir and offline npm lifecycle checks.
+- Audited #150's configuration-specific acceptance against merged #162/#163 and
+  existing inheritance, picker, frozen dispatch/recovery and demo tests; closed
+  #150 with that evidence. Managed execution remains held under #149/#153–155;
+  no non-local acceptance run has been claimed.
