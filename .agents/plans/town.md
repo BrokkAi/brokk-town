@@ -26,6 +26,10 @@
 - Integrated root race tests/vet, frontend checks/tests, workflow lint, Town build,
   demo and fake-Mjolnir smoke pass. The bots are unchanged from the already-passing
   nine-module validation. All forty-five target npm versions are available.
+- Release PR #165 includes the integration. Its initial module checks passed.
+  Publisher review found Release Bot still builds its retained Python artifact
+  alongside npm; add pinned setup-uv/uv versions so its publishing runner has
+  the required build tool. Python publication remains a separate action.
 - Publish immutable per-project suffix tags from the exact merged revision.
   Wait for bot workflows and all forty bot npm packages, then verify each
   published worker's v1 initialization and parent-loss lifecycle without jobs.
