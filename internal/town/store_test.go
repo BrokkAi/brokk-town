@@ -118,7 +118,7 @@ func TestDemoOpenRequiresExplicitDemoMarker(t *testing.T) {
 			dir := t.TempDir()
 			state := NewState(true)
 			if stale {
-				state.Format = 2
+				state.Format = 3
 			}
 			raw, err := json.Marshal(state)
 			if err != nil {

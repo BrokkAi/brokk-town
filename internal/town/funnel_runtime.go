@@ -131,7 +131,17 @@ func (s *Supervisor) reconcileFunnels(ctx context.Context, townID string) error 
 		if err != nil && page.Outcome.Kind == "" {
 			page = DiscoveryPage{Funnel: config.ID, Provider: config.Provider, Cursor: cursor, Complete: false, Outcome: OutcomeFromError(err), ObservedAt: s.now()}
 		}
-		if updateErr := s.Store.Update(func(st *State) error { return ReconcileFunnelPage(st, st.Towns[townID], page, s.now()) }); updateErr != nil {
+		restored, historyErr := s.Store.prepareFunnelHistory(ctx, t, config, page)
+		if historyErr != nil {
+			return historyErr
+		}
+		if updateErr := s.Store.Update(func(st *State) error {
+			current := st.Towns[townID]
+			if err := restoreHistory(current, restored); err != nil {
+				return err
+			}
+			return ReconcileFunnelPage(st, current, page, s.now())
+		}); updateErr != nil {
 			return updateErr
 		}
 		if err != nil {

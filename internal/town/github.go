@@ -90,6 +90,7 @@ type RemoteCommit struct {
 	} `json:"commit"`
 }
 type RepoSnapshot struct {
+	Archived    map[string]bool // Cold identities already accounted for; never transmitted to a worker.
 	Incremental bool
 	StartedAt   time.Time
 	// Branch is the branch this inventory covers: the town's configured branch

@@ -582,21 +582,23 @@ type Event struct {
 	Title string    `json:"title"`
 }
 type Town struct {
-	SyncBranch    string                    `json:"sync_branch,omitempty"`
-	LastFullSync  time.Time                 `json:"last_full_sync,omitempty"`
-	Artifacts     map[string]ArtifactRecord `json:"artifacts,omitempty"`
-	ID            string                    `json:"id"`
-	Deleted       bool                      `json:"deleted,omitempty"`
-	Config        Config                    `json:"config"`
-	Initialized   bool                      `json:"initialized"`
-	Workers       map[Role]*Worker          `json:"workers"`
-	Tasks         map[string]*Task          `json:"tasks"`
-	Owned         map[int]Ownership         `json:"owned"`
-	Intents       map[int]*Intent           `json:"intents"`
-	FunnelIntents map[string]*WriteIntent   `json:"funnel_intents,omitempty"`
-	FunnelSyncs   map[FunnelID]*FunnelSync  `json:"funnel_syncs,omitempty"`
-	Requests      map[string]*IssueRequest  `json:"requests,omitempty"`
-	Reports       []Report                  `json:"reports"`
+	ArchivedTasks  int                       `json:"archived_tasks,omitempty"`
+	HistoryCreated bool                      `json:"history_created,omitempty"`
+	SyncBranch     string                    `json:"sync_branch,omitempty"`
+	LastFullSync   time.Time                 `json:"last_full_sync,omitempty"`
+	Artifacts      map[string]ArtifactRecord `json:"artifacts,omitempty"`
+	ID             string                    `json:"id"`
+	Deleted        bool                      `json:"deleted,omitempty"`
+	Config         Config                    `json:"config"`
+	Initialized    bool                      `json:"initialized"`
+	Workers        map[Role]*Worker          `json:"workers"`
+	Tasks          map[string]*Task          `json:"tasks"`
+	Owned          map[int]Ownership         `json:"owned"`
+	Intents        map[int]*Intent           `json:"intents"`
+	FunnelIntents  map[string]*WriteIntent   `json:"funnel_intents,omitempty"`
+	FunnelSyncs    map[FunnelID]*FunnelSync  `json:"funnel_syncs,omitempty"`
+	Requests       map[string]*IssueRequest  `json:"requests,omitempty"`
+	Reports        []Report                  `json:"reports"`
 	// Bulletins is the work-completed feed Mayor Bot writes, oldest first.
 	Bulletins []Bulletin      `json:"bulletins"`
 	Outcomes  []OutcomeRecord `json:"outcomes"`

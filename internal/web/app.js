@@ -1,3 +1,4 @@
+import { historyPanel } from "./history.js";
 import { storagePanel } from "./storage.js";
 import {
   positions,
@@ -724,9 +725,12 @@ function chooseHouse(role) {
   render();
 }
 storagePanel({ api, getTown: town });
+historyPanel({ api, getTown: town });
 
 function renderTownControls(t) {
  $("#town-storage").disabled = !t;
+ $("#town-history").disabled = !t;
+ $("#town-history").textContent = t?.archived_tasks ? `History (${t.archived_tasks})` : "History";
   const toggle = $("#town-toggle"),
     pauseAll = $("#pause-all"),
     chip = $("#town-state"),

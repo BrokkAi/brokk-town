@@ -1385,3 +1385,27 @@
   readiness/settings repeats and the final full race suite pass.
 - PR #166 merged at 6cae436 after review corrections and exact-head green CI,
   completing #7. Incremental inventory is based on that merged implementation.
+
+## Archived completed task history (#21, second part)
+
+- PR #168 merged at f7901cb after self-review and green checks. Incremental
+  inventory remains compatible with older released workers; no bot publication.
+- Archive native closed/merged/shipped tasks after 30 days, at most 500 per
+  inventory. Keep active, blocked, pending-claim, recovery, follow-up and source
+  cursor work hot. Unresolved writes and active non-Repo workers hold archival.
+- Save immutable bounded task objects, fsync their directories, then atomically
+  save a digest index before removing exact matching hot records. A failed hot
+  commit retains tasks; restart tolerates duplicates. Missing identity indexes
+  fail startup; damaged objects fail detail/reopen without fresh-task fallback.
+- Restore reopened tasks before revision checks and preserve saved decisions;
+  suppress historical arrivals and already-shipped commits on full rescans.
+  Newly configured GitHub funnels restore any matching archived native issue.
+- Browser History and bt history share authenticated bounded page/detail reads.
+  Rendering uses counts only, navigation is cancelable, and history is retained
+  by storage cleanup. Transcript cleanup still recognizes cold terminal tasks.
+- First archival upgrades state format to 2 so older versions cannot forget cold
+  identities. Document complete private-directory backup/restore, 30-day policy,
+  limits and durable records deliberately kept in the main snapshot.
+- Validation passed: full root race tests/vet, frontend syntax and 92 tests,
+  Town build, isolated demo, all-eight offline npm-worker lifecycle and fake
+  Mjolnir smoke. No live agents, GitHub automation, release or deployment.
