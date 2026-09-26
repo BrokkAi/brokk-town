@@ -63,6 +63,13 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 	}); err != nil {
 		return err
 	}
+	// The closed simulation owns its own fake Guide loop as well. No GitHub
+	// client, worker runner or harness catalog enters this path.
+	ctx, cancel := context.WithCancel(ctx)
+	guideDone := make(chan struct{})
+	guide := &Supervisor{Store: store, now: time.Now, fatal: make(chan error, 1)}
+	go func() { defer close(guideDone); guide.runGuide(ctx) }()
+	defer func() { cancel(); <-guideDone }()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	step := 0
@@ -70,6 +77,8 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case err := <-guide.fatal:
+			return err
 		case now := <-ticker.C:
 			if err := store.Update(func(s *State) error {
 				// A snooze ends on the demo's own clock, exactly as the live

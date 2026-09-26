@@ -85,6 +85,7 @@
             <p id="skin-note" class="skin-note" hidden></p>
           </div>
           <div class="town-controls">
+            <button id="ask-guide" class="primary" disabled>Ask Town Guide</button>
             <button id="new-request" disabled>＋ New request</button>
             <button id="town-history" class="quiet" disabled>History</button>
             <button id="town-storage" class="quiet" disabled>Storage</button>
@@ -298,7 +299,19 @@
  <p id="history-status" role="status"></p><p id="history-error" class="form-error" role="alert"></p><pre id="history-detail"></pre>
  <div class="dialog-actions"><button id="history-close" type="button">Close</button></div>
  </dialog>
- <dialog id="storage-dialog" class="wide-dialog" aria-labelledby="storage-heading">
+    <dialog id="guide-dialog" class="wide-dialog" aria-labelledby="guide-heading">
+      <h2 id="guide-heading">Town Guide · Town Hall</h2>
+      <p id="guide-town" class="muted"></p><p id="guide-profile" class="muted"></p>
+      <p>Ask about workers, queued work, failures or settings. Pause proposals require your confirmation.</p>
+      <div id="guide-turns" aria-label="Town Guide conversation"></div>
+      <p id="guide-status" role="status"></p><p id="guide-error" class="form-error" role="alert"></p>
+      <form id="guide-form">
+        <label for="guide-question">Your question</label><textarea id="guide-question" rows="3" maxlength="4096" required></textarea>
+        <div class="dialog-actions"><button id="guide-send" type="submit" class="primary">Ask</button><button id="guide-retry" type="button" hidden>Retry saved submission</button><button id="guide-cancel" type="button" disabled>Cancel answer</button></div>
+      </form>
+      <div class="dialog-actions"><button id="guide-refresh" type="button">Refresh conversation</button><button id="guide-close" type="button">Close</button></div>
+    </dialog>
+    <dialog id="storage-dialog" class="wide-dialog" aria-labelledby="storage-heading">
  <h2 id="storage-heading">Local storage</h2>
  <p id="storage-town" class="muted"></p>
  <p id="storage-summary"></p>

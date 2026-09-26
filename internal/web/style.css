@@ -1994,3 +1994,9 @@ body[data-skin="frontline"] .base-mini.release { background-position: 66.667% 10
 #storage-status { white-space: pre-wrap; }
 
 #history-detail { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow-y: auto; }
+
+#guide-turns { max-height: 42vh; overflow: auto; }
+.guide-turn { padding: .8rem 0; border-bottom: 1px solid var(--line, #635f50); }
+.guide-answer, .guide-question { white-space: pre-wrap; overflow-wrap: anywhere; }
+.guide-question { font-weight: 600; }
+#guide-question { width: 100%; box-sizing: border-box; }

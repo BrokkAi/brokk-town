@@ -211,6 +211,9 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	case "history":
 		return historyCommand(ctx, abs, fl)
+
+	case "guide":
+		return guideCommand(ctx, abs, fl)
 	case "storage":
 		return storageCommand(ctx, abs, fl)
 	case "attention-hook":

@@ -1431,3 +1431,29 @@
   demonstrated the omission; the corrected case joins the full race suite.
 - Rebased onto concurrent npm startup fix #167 and merged incremental #168;
   complete root race/vet and offline integration checks passed on that base.
+
+## Conversational Town Guide (#40)
+
+- Add a separate bounded ACP conversation using the town's saved default
+  harness/model/effort. Require an advertised read-only/plan mode, expose no
+  workspace tools and deny all permissions. Keep worker permission overrides,
+  process output and GitHub/Town credential variables out of the Guide path.
+- Commit bounded shared conversation state with sequence-based submission
+  idempotency, explicit cancellation, restart interruption and monotonic updates.
+  Background execution streams sanitized chunks; rendering only consumes state.
+- Build context from worker summaries, recent failures, task counts and up to 30
+  tasks, with public settings. Preserve unknown/recovery outcomes and exact
+  review revision context. Redact private configuration values and token formats.
+- Browser Town Hall chat and bt guide use the same authenticated commands and
+  conversation. Guide may propose one pause; exact confirmation validates current
+  worker state and commits through the existing control transaction. Other
+  mutations remain in their established controls.
+- Place Town Hall nearer the center and render an idle/waving Guide, window glow,
+  contextual dotted paths and static reduced-motion status. No Guide deliveries
+  or render-driven writes. Demo uses an internal fake and never calls ACP/GitHub.
+- Validation passed: full root Go race tests/vet, fake ACP protocol tests,
+  frontend syntax and 93 tests, Town build, demo marker-isolation/reconnect smoke,
+  all-eight offline npm worker lifecycle and fake-Mjolnir smoke. The real demo
+  smoke exposed its separate simulation loop missing the Guide queue; add a
+  fake-only loop there and a startup regression. No live agents, GitHub
+  automation or release has been used.

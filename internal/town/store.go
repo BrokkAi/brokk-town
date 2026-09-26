@@ -92,6 +92,16 @@ func Open(dir string, demo bool) (*Store, error) {
 	// writes, while allowing repository reads to resume and reconcile them.
 	beforeRecovery := State{AttentionSeen: s.state.AttentionSeen}
 	for _, t := range s.state.Towns {
+		if t.Guide != nil {
+			for i := range t.Guide.Turns {
+				turn := &t.Guide.Turns[i]
+				if turn.Status == "gathering" || turn.Status == "answering" {
+					t.Guide.Revision++
+					turn.Status = "interrupted"
+					turn.Detail = "Town restarted before the answer finished. Submit a new question to try again."
+				}
+			}
+		}
 		for _, w := range t.Workers {
 			recoverWorkerRun(w)
 			w.Agent = nil
@@ -186,6 +196,9 @@ func validateState(s State, demo bool) error {
 		}
 		if t.ArchivedTasks < 0 || (t.HistoryCreated && s.Format != 2) || (t.ArchivedTasks > 0 && !t.HistoryCreated) {
 			return errors.New("invalid task history metadata")
+		}
+		if err := t.Guide.validate(); err != nil {
+			return err
 		}
 		if len(t.Bulletins) > maxBulletins {
 			return errors.New("too many bulletins")
