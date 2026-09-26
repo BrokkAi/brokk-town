@@ -186,9 +186,16 @@ func (b *BotWorkers) certify(ctx context.Context, t *Town, task *Task, known map
 	if err != nil {
 		return nil, err
 	}
-	diff, err := osrun.RunRaw(ctx, tree.dir, nil, "git", "diff", "--find-renames", mergeBase, p.Head.SHA)
-	if err != nil {
-		return nil, err
+	var diff string
+	if t.Config.Execution != nil && t.Config.Execution.Managed() {
+		// The target owns these exact commits. Keep the complete change available
+		// without copying a potentially large patch into Mjolnir's bounded prompt.
+		diff = fmt.Sprintf("Read the complete diff from the repository root with: git diff --no-ext-diff --no-textconv --no-color --find-renames %s %s -- . If either commit is unavailable, report an inconclusive review; never substitute another revision.", mergeBase, p.Head.SHA)
+	} else {
+		diff, err = osrun.RunRaw(ctx, tree.dir, nil, "git", "diff", "--find-renames", mergeBase, p.Head.SHA)
+		if err != nil {
+			return nil, err
+		}
 	}
 	evidence := map[string]string{}
 	for id, detail := range task.Concerns {

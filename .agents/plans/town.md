@@ -50,6 +50,12 @@
   Fix Town/Review Bot to refuse oversized prompts before creating a session and
   include complete metadata with an exact-checkout diff command instead of a
   duplicate inline diff. No truncation, GitHub writes or prompt replay occurred.
+- Prompt fix d97425a passes full Town/Review Bot race suites and vet. Fresh
+  dry-run run-347b2b93115e842af13a9bd7dccfc9d2/session
+  2172a82c527cf0fc1db89833a27a40c0 is now running against that exact PR head.
+  Applied the same complete-diff command to Town's independent certification
+  prompt; its regression and full Town package race/vet checks pass. Keep the
+  PR head fixed until the current read-only acceptance finishes.
 - Isolated acceptance data and two idle, prompt-free discovery sessions are
   retained under ignored `var/mjolnir-acceptance`. The released v2.23.0 binary
   was checksum-verified. Both cached and explicitly installed Docker runtimes

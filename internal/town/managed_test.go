@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +16,22 @@ import (
 
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
+
+func TestManagedCertificationReadsExactTargetDiff(t *testing.T) {
+	b, x, task, _ := fixtureWorkers(t)
+	x.Config.Execution = &mjolnir.Selection{Target: "builder", Profile: "coder"}
+	stop := errors.New("checked prompt; no real agent")
+	b.executeAgent = func(_ context.Context, _ *Town, tree sessionTree, role string, _ *slog.Logger, prompt string) (string, error) {
+		if role != "review" || !strings.Contains(prompt, task.Base+" "+task.Head) || !strings.Contains(prompt, "git diff --no-ext-diff") || strings.Contains(prompt, "diff --git") || strings.Contains(prompt, tree.dir) || !strings.Contains(prompt, "all discussion retained") {
+			t.Fatal("managed certification lost the exact diff or complete evidence")
+		}
+		return "", stop
+	}
+	_, err := b.certify(t.Context(), x, task, map[string]string{"existing": "all discussion retained"}, nil, slog.Default())
+	if !errors.Is(err, stop) {
+		t.Fatalf("certification did not reach the guarded remote prompt: %v", err)
+	}
+}
 
 func managedFixture(t *testing.T) (*BotWorkers, *Town, *atomic.Int32) {
 	t.Helper()
