@@ -300,6 +300,7 @@ func TestTranscriptRefusesMissingOrSkippedEvidence(t *testing.T) {
 		`{"session_id":"session","latest_seq":3,"next_after_seq":3,"items":[{"stable_id":"a","position":1,"seq":1,"role":"agent","text":"x"}]}`,
 		`{"session_id":"session","latest_seq":1,"items":[{"stable_id":"a","position":1,"seq":2,"role":"agent","text":"x"}]}`,
 		`{"session_id":"session","latest_seq":1,"items":[{"stable_id":"a","position":1,"seq":1,"role":"agent"}]}`,
+		`{"session_id":"session","latest_seq":1,"items":[{"stable_id":"a","seq":1,"role":"agent","text":"missing position"}]}`,
 	} {
 		c, _ := catalogFixture(t, func(w http.ResponseWriter, r *http.Request) {
 			artifactHeaders(w, "application/json")

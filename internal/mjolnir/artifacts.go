@@ -261,7 +261,7 @@ func (c *Catalog) ReadTranscript(ctx context.Context, session string, after uint
 		Next    *uint64 `json:"next_after_seq"`
 		Items   []struct {
 			ID       string  `json:"stable_id"`
-			Position uint64  `json:"position"`
+			Position *uint64 `json:"position"`
 			Sequence uint64  `json:"seq"`
 			Role     string  `json:"role"`
 			Text     *string `json:"text"`
@@ -275,11 +275,11 @@ func (c *Catalog) ReadTranscript(ctx context.Context, session string, after uint
 	for _, item := range record.Items {
 		// One event can produce several items with the same sequence. The daemon
 		// keeps the entire group together, even beyond the requested page size.
-		if !ValidID(item.ID) || seen[item.ID] || !ValidID(item.Role) || item.Text == nil || item.Sequence <= after || item.Sequence < page.Next || item.Sequence > page.Latest {
+		if !ValidID(item.ID) || seen[item.ID] || !ValidID(item.Role) || item.Text == nil || item.Position == nil || item.Sequence <= after || item.Sequence < page.Next || item.Sequence > page.Latest {
 			return TranscriptPage{}, errors.New("Mjolnir returned invalid transcript sequence or content")
 		}
 		seen[item.ID] = true
-		page.Items = append(page.Items, TranscriptItem{item.ID, item.Position, item.Sequence, item.Role, *item.Text})
+		page.Items = append(page.Items, TranscriptItem{item.ID, *item.Position, item.Sequence, item.Role, *item.Text})
 		page.Next = item.Sequence
 	}
 	if record.Next != nil && *record.Next != page.Next {

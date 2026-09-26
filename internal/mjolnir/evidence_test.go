@@ -56,6 +56,9 @@ func evidenceRun(t *testing.T, repair bool, scenario string) (*Run, *atomic.Int3
 			items := []map[string]any{}
 			if req.URL.Query().Get("after_seq") == "0" {
 				items = append(items, map[string]any{"stable_id": "answer", "seq": 2, "position": 1, "role": "agent", "text": text})
+				if scenario == "duplicate position" {
+					items = append(items, map[string]any{"stable_id": "ambiguous", "seq": 2, "position": 1, "role": "agent", "text": "other answer"})
+				}
 			}
 			latest := 2
 			if scenario == "advanced transcript" && reads.Load() > 1 {
@@ -132,7 +135,7 @@ func TestRemoteEvidenceBindsAnswerExactTreeAndDurableRepairExport(t *testing.T) 
 }
 
 func TestRemoteEvidenceRefusesMissingChangedAndUncertainArtifacts(t *testing.T) {
-	for _, scenario := range []string{"missing diff", "wrong answer", "advanced transcript", "reinitialized", "dirty", "rewritten", "head changed", "lost export"} {
+	for _, scenario := range []string{"missing diff", "wrong answer", "duplicate position", "advanced transcript", "reinitialized", "dirty", "rewritten", "head changed", "lost export"} {
 		t.Run(scenario, func(t *testing.T) {
 			r, exports := evidenceRun(t, true, scenario)
 			if _, err := r.Collect(t.Context(), true, "REVIEW_RESULT private-answer"); err == nil {

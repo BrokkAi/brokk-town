@@ -14,7 +14,7 @@ import (
 // The bot must separately parse and validate its complete semantic receipt.
 type Artifacts struct {
 	Head   string
-	Bundle []byte
+	Bundle []byte `json:"-"`
 }
 
 type privateTranscriptItem struct {
@@ -78,6 +78,7 @@ func (r *Run) Collect(ctx context.Context, repair bool, answer string) (Artifact
 	evidence := privateEvidence{Session: s, Diff: diff, Patch: diff.Patch, Answer: answer}
 	var latest uint64
 	seen := map[string]bool{}
+	positions := map[uint64]bool{}
 	lastAgent, lastPosition := "", uint64(0)
 	total := 0
 	for pages := 0; ; pages++ {
@@ -94,10 +95,11 @@ func (r *Run) Collect(ctx context.Context, repair bool, answer string) (Artifact
 			return result, errors.New("Mjolnir transcript changed while collecting evidence; retain the session")
 		}
 		for _, item := range page.Items {
-			if seen[item.ID] {
-				return result, errors.New("Mjolnir transcript repeated an item across pages")
+			if seen[item.ID] || positions[item.Position] {
+				return result, errors.New("Mjolnir transcript repeated an item or position across pages")
 			}
 			seen[item.ID] = true
+			positions[item.Position] = true
 			total += len(item.Text) + len(item.ID) + 128
 			if total > 8<<20 {
 				return result, errors.New("Mjolnir transcript exceeds the evidence size limit; retain the session")

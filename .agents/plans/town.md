@@ -30,6 +30,10 @@
   destruction; keep the session if checkout, runtime guard or readiness changed.
   Full root race/vet, frontend syntax and 99 tests, build and demo/fake-Mjolnir
   smoke passed before review; repeat root checks after this fix.
+- PR #176 passed all CI and merged normally at b72f499 after the exact-head
+  review. PR #177 contains the artifact/evidence layer. Its review found missing
+  transcript positions defaulting to zero and ambiguous duplicate positions;
+  both now refuse evidence rather than choosing a potentially wrong final answer.
 - Next PR #154: reusable bundle/workspace mapping, exact checkout, durable
   creation/cleanup intents and uncertain-outcome recovery. Then #155: remote
   evidence and verified bundle import through independent worker boundaries.
