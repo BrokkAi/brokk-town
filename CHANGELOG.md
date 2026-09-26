@@ -1,7 +1,10 @@
 # Changelog
 
-## 0.7.1 — 2026-09-26
+## 0.7.1 — unreleased
 
+- Preserve cancellation causes and the last worker phase in durable logs and
+  outcome history, including operator stops, service signals/failures and
+  worker-provided details. Unknown causes stay explicit and credentials are scrubbed.
 - Retire the persisted `invalid branch` startup failure on upgrade for towns
   still awaiting default-branch discovery. Save the recovery before starting
   workers and retry enabled inventory promptly, preserving pauses, historical

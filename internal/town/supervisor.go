@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -119,16 +120,16 @@ func (s *Supervisor) fail(err error) {
 	}
 }
 func (s *Supervisor) update(fn func(*State) error) { s.fail(s.Store.Update(fn)) }
-func (s *Supervisor) Run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+func (s *Supervisor) Run(ctx context.Context) (runErr error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer func() { cancel(runErr) }()
 	if workers, ok := s.Workers.(*BotWorkers); ok {
 		defer workers.Close()
 		if err := workers.SyncProcesses(ctx, s.Store.Snapshot()); err != nil {
 			return err
 		}
 	}
-	defer func() { cancel(); s.wg.Wait() }()
+	defer func() { cancel(runErr); s.wg.Wait() }()
 	s.wg.Add(1)
 	go func() { defer s.wg.Done(); s.Mjolnir.Run(ctx) }()
 	s.wg.Add(1)
@@ -380,7 +381,11 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 		defer close(done)
 		s.consumeWorkerChatter(t.ID, r, updates, progress)
 	}()
-	observe := func(p Progress) { latestProgress(progress, p) }
+	var lastProgress atomic.Pointer[Progress]
+	observe := func(p Progress) {
+		lastProgress.Store(&p)
+		latestProgress(progress, p)
+	}
 	log := slog.New(&workerLog{role: r, out: updates, now: s.now})
 	var result RunResult
 	var err error
@@ -410,7 +415,15 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			result, err = s.Workers.Run(ctx, t, r, observe, log)
 		}
 	}()
-	if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+	canceled := ""
+	if errors.Is(err, context.Canceled) {
+		phase := ""
+		if p := lastProgress.Load(); p != nil {
+			phase = p.Phase
+		}
+		canceled = cancellationDetail(ctx, err, phase)
+		log.Warn("worker attempt canceled", "detail", canceled)
+	} else if err != nil && ctx.Err() == nil {
 		log.Error("worker attempt failed", "error", err)
 	}
 	close(updates)
@@ -552,7 +565,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			if err != nil && !errors.Is(err, context.Canceled) {
 				status, detail = "blocked", err.Error()
 			} else if errors.Is(err, context.Canceled) {
-				status, detail = "abandoned", "Worker attempt was canceled"
+				status, detail = "abandoned", canceled
 			}
 			attemptID := fmt.Sprintf("attempt:%s:%d:%s", r, started.UnixNano(), taskID)
 			attempt := OutcomeRecord{ID: attemptID, At: finished, Class: "attempt", Kind: "worker_attempt", Status: status, Role: r, TaskID: taskID, Revision: revision, Detail: detail, ElapsedMS: elapsedMillis(started, finished), Agent: OccupiesAgentSlot(r) || repaired, Usage: result.Usage, CostUSD: result.CostUSD}

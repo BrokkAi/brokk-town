@@ -732,8 +732,8 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	if err = os.Chmod(filepath.Join(dir, "connection.json"), 0600); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
 	results := make(chan error, 2)
@@ -755,7 +755,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	case err = <-results:
 		remaining--
 	}
-	cancel()
+	cancel(err)
 	shutdown, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelShutdown()
 	if e := httpServer.Shutdown(shutdown); e != nil {

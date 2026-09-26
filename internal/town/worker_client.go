@@ -438,6 +438,9 @@ func consumeWorkerEvents(body io.Reader, after uint64, observe func(Progress)) (
 			seenFinal = true
 		case "canceled":
 			runErr = context.Canceled
+			if strings.TrimSpace(event.Error) != "" {
+				runErr = &workerCanceledError{detail: cancellationText(event.Error, 2048)}
+			}
 			seenFinal = true
 		default:
 			return result, fmt.Errorf("unknown worker event %q", event.Type)

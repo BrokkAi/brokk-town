@@ -1,6 +1,25 @@
 # Brokk Town implementation plan
 
-## Town 0.7.1 release (in progress)
+## Preserve worker cancellation diagnostics (complete)
+
+- User identified the logging gap while reviewing the startup repair. Town
+  discards `context.Cause` and the worker stream's canceled-event detail, then
+  persists only "Worker attempt was canceled" without a cancellation log.
+- Preserved known operator-stop and service-shutdown causes, worker-reported
+  details and the last phase in bounded, credential-scrubbed logs and outcomes.
+  Service and supervisor cleanup now propagate their failure as the context's
+  cancellation cause. Unknown causes stay explicit; write holds remain intact.
+- Protocol-detail, operator-stop, signal-cause, unknown-cause, worker-canceled,
+  credential-redaction and supervisor-failure regressions failed before the
+  implementation and now pass, including saved outcomes and logs after restart.
+- Full root race tests/vet, frontend syntax/tests, npm launcher tests, Town build
+  and isolated demo lifecycle smoke pass. The first full rerun exhausted /tmp;
+  removed this task's unpublished packaging artifacts and moved its build cache
+  into ignored workspace storage, then successfully reran the suite.
+- No bot code changed. No release or tag was published; publication remains on
+  hold. Historical cancellation causes cannot be reconstructed from old records.
+
+## Town 0.7.1 release (publication deferred)
 
 - User requested a new Town release after the persisted default-branch recovery
   fix. Publish through the tag-triggered Actions workflow and its checks.
@@ -17,6 +36,12 @@
 - Prepare release notes, validate packaging from the exact committed candidate,
   pass PR checks, merge, and publish an immutable Town tag. Verify native assets,
   checksums, and all five npm packages after the workflow succeeds.
+- User asked to hold the release while investigating diagnostics. Only the
+  preparation branch was pushed; no PR, release tag or publication was created.
+  A check-only build at 0fbc35c validated four native archives and five npm
+  packages without uploading anything. Python packaging tests passed. The npm
+  launcher suite also passes with local-fixture sandbox escalation after its
+  missing-dependency fixture failed in the restricted run.
 
 ## Retire the persisted default-branch startup failure (complete)
 
