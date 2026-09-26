@@ -13,11 +13,11 @@
 | bug-bot | 0.3.5 | 0.6.0 | 0.6.2 |
 | feature-bot | 0.1.2 | 0.4.0 | 0.4.2 |
 | issue-bot | 0.5.4 | 0.5.9 | 0.5.11 |
-| mayor-bot | 0.1.1 | 0.1.2 | 0.1.4 |
+| mayor-bot | 0.1.1 | 0.1.2 | 0.1.5 |
 | release-bot | 0.6.1 | 0.8.0 | 0.8.2 |
-| repo-bot | 0.1.0 | 0.1.2 | 0.1.4 |
+| repo-bot | 0.1.0 | 0.1.2 | 0.1.5 |
 | review-bot | 0.2.4 | 0.2.9 | 0.2.11 |
-| simplifier-bot | 0.1.1 | 0.1.3 | 0.1.5 |
+| simplifier-bot | 0.1.1 | 0.1.3 | 0.1.6 |
 | Town | 0.6.5 | — | 0.7.0 |
 
 - Integrate master through ce49c44, retaining its Mjolnir model/effort discovery,
@@ -42,7 +42,23 @@
   The explicit symlink fixture fails before the assertion fix and passes after;
   full root race tests and vet also pass. Run both hosted platforms on this fix
   before tagging the replacement releases.
-- Publish immutable per-project suffix tags from the exact merged revision.
+- PR #167 passed Linux and macOS and merged as 95239ea. A concurrent unrelated
+  storage feature changed the merge tree, so freeze the release source at the
+  exact tested candidate dbafc82. Eight replacement bot tag workflows started;
+  Bug, Feature and Issue Bot publications succeeded.
+- Mayor, Repo and Simplifier Bot have MIT project licenses and npm metadata,
+  but their copied npm validators incorrectly require Apache-2.0. Publication
+  stopped before upload. Preserve the attempted tags and use fresh patch tags
+  above. Correct the validators to require MIT, retain exact legal-file checks,
+  reject missing/wrong license fields, and exercise actual npm packing for all
+  five packages from verified fixture assets. The packaging regression fails
+  before the fix; all three full Python suites, race tests, vet, launcher tests
+  and license checks pass after it. All fifteen replacement npm versions are unused.
+  Complete non-publishing builds from 19dfa58 verify twelve native archives and
+  fifteen npm packages. Integrate master f7901cb to resolve PR #170's plan-only
+  conflict, preserving its storage and incremental-inventory changes. Revalidate
+  the integrated root and Repo Bot; the other bot code remains unchanged.
+- Publish immutable per-project suffix tags from each exact tested revision.
   Wait for bot workflows and all forty bot npm packages, then verify each
   published worker's v1 initialization and parent-loss lifecycle without jobs.
   Only then publish Town and verify its four native archives and five npm

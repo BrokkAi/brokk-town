@@ -89,6 +89,19 @@ class LicensePolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "inventory changed"):
             licenses.check(write=True)
 
+    def test_npm_rejects_missing_or_incorrect_project_license(self):
+        licenses.check(write=True)
+        package = self.root / "package.tgz"
+        for metadata in (b'{}', b'{"license": "Apache-2.0"}'):
+            files = dict(licenses.legal_files(), **{"package.json": metadata})
+            with tarfile.open(package, "w:gz") as archive:
+                for name, data in files.items():
+                    entry = tarfile.TarInfo("package/" + name)
+                    entry.size = len(data)
+                    archive.addfile(entry, io.BytesIO(data))
+            with self.assertRaisesRegex(ValueError, "must declare MIT"):
+                licenses.check_npm(package)
+
     def test_npm_checks_notice_bytes_even_when_archive_is_valid(self):
         licenses.check(write=True)
         package = self.root / "package.tgz"
@@ -96,7 +109,7 @@ class LicensePolicyTests(unittest.TestCase):
             files = licenses.legal_files()
             if changed:
                 files["NOTICE"] = b"incorrect attribution\n"
-            files["package.json"] = b'{"license": "Apache-2.0"}'
+            files["package.json"] = b'{"license": "MIT"}'
             with tarfile.open(package, "w:gz") as archive:
                 for name, data in files.items():
                     entry = tarfile.TarInfo("package/" + name)

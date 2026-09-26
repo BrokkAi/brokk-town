@@ -105,8 +105,8 @@ def check_npm(path):
             if len(matches) != 1 or not matches[0].isfile() or archive.extractfile(matches[0]).read() != expected:
                 raise ValueError(f"npm package has missing or altered legal text: {filename}")
         metadata = json.load(archive.extractfile("package/package.json"))
-        if metadata.get("license") != "Apache-2.0":
-            raise ValueError("npm package must declare Apache-2.0")
+        if metadata.get("license") != "MIT":
+            raise ValueError("npm package must declare MIT")
 
 
 if __name__ == "__main__":
