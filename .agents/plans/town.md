@@ -1,6 +1,6 @@
 # Brokk Town implementation plan
 
-## Restore independently released bots through npx (in progress)
+## Restore independently released bots through npx (complete)
 
 - User chose independent bot releases and npx startup; the proposed unified
   version/release change was canceled before any files changed.
@@ -26,11 +26,16 @@
   actionlint and local demo lifecycle integration pass. The remote-head polling
   success fixture now allows three seconds for its Git subprocesses; the
   never-catches-up fixture retains its short deadline and uncertainty assertions.
-- Real offline npx fixtures launch all eight independently built bots and check
-  v1 initialization and shutdown on parent loss. Retain explicit checks for every
-  existing capability, including policy, retries and issue summaries.
-- Finish the expanded capability smoke and verify complete native/npm packaging
-  from the committed checkout. Commit validation results; no release publication.
+- Real offline npx fixtures pass for all eight independently built bots, checking
+  v1 initialization, every existing capability and shutdown on parent loss.
+  Retain those capability checks, including policy, retries and issue summaries.
+- Implementation committed as 07dab9b. Non-publishing v0.0.0-town packaging from
+  that exact commit built and verified all four native archives and five npm
+  packages. Content checks confirm only Town is packaged; the native executable,
+  offline npm installation and npx launcher version checks pass.
+- No release or tag was published. For the transition, publish bot releases with
+  the additive parent-socket capability before the new Town release; publication
+  still requires a release request.
 
 ## Standalone projects and explicit lifecycle (complete)
 
