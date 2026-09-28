@@ -51,8 +51,19 @@ func TestBundledOfficialCatalogAndRequestedSupplements(t *testing.T) {
 		t.Fatal("supplements missing")
 	}
 	for _, e := range supplements() {
-		if e.Repository == "" || e.Version != "installed" || len(e.Command) != 1 {
+		if e.Repository == "" || e.Version != "installed" {
 			t.Fatal(e)
+		}
+		switch e.ID {
+		case "brokkai/anvil", "brokkai/muse-acp":
+			want := map[string]string{"brokkai/anvil": "@brokkai/anvil", "brokkai/muse-acp": "@brokkai/muse-acp"}[e.ID]
+			if len(e.Command) != 0 || e.Distribution.Npx == nil || e.Distribution.Npx.Package != want {
+				t.Fatal(e)
+			}
+		default:
+			if len(e.Command) != 1 {
+				t.Fatal(e)
+			}
 		}
 	}
 	if _, err := c.Lookup("not-a-real-agent", ""); err == nil {
@@ -159,7 +170,9 @@ func TestInvalidMetadataAndUnavailablePlatforms(t *testing.T) {
 
 func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"npx", "uvx", "anvil", "muse-acp", "draupnir"} {
+	// No anvil or muse-acp binary is stubbed: those harnesses must resolve
+	// through npx.
+	for _, name := range []string{"npx", "uvx", "draupnir"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -181,8 +194,40 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 	}
 	for _, extra := range supplements() {
 		command, _, err := Launch(context.Background(), t.TempDir(), extra)
-		if err != nil || len(command) != 1 || command[0] != filepath.Join(dir, extra.Command[0]) {
+		if err != nil {
+			t.Fatal(extra.ID, err)
+		}
+		if pkg, ok := map[string]string{"brokkai/anvil": "@brokkai/anvil", "brokkai/muse-acp": "@brokkai/muse-acp"}[extra.ID]; ok {
+			want := []string{filepath.Join(dir, "npx"), "--yes", "--", pkg}
+			if !reflect.DeepEqual(command, want) {
+				t.Fatal(extra.ID, command)
+			}
+			continue
+		}
+		if len(command) != 1 || command[0] != filepath.Join(dir, extra.Command[0]) {
 			t.Fatal(extra.ID, command, err)
+		}
+	}
+	// Profiles saved by an older Town still name the installed binary; they
+	// stay valid and keep launching until the profile is re-saved.
+	legacies := []Entry{
+		{ID: "brokkai/anvil", Name: "Anvil", Version: "installed", Command: []string{"anvil"}},
+		{ID: "brokkai/muse-acp", Name: "Muse ACP", Version: "installed", Command: []string{"muse-acp"}},
+	}
+	for _, legacy := range legacies {
+		if err := legacy.Validate(); err != nil {
+			t.Fatal("legacy launch rejected", legacy.ID, err)
+		}
+	}
+	for _, name := range []string{"anvil", "muse-acp"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, legacy := range legacies {
+		command, _, err := Launch(context.Background(), t.TempDir(), legacy)
+		if err != nil || len(command) != 1 || command[0] != filepath.Join(dir, legacy.Command[0]) {
+			t.Fatal("legacy launch", legacy.ID, command, err)
 		}
 	}
 	t.Setenv("PATH", t.TempDir())

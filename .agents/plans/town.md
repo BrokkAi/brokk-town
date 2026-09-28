@@ -1723,3 +1723,24 @@
 - After the review fixes, the full root race suite/vet and all 98 frontend tests
   pass. The fake ACP fixture resets mode during model/effort selection, proving
   the final read-only selection precedes every prompt.
+
+## Anvil and Muse ACP via npx
+
+- User asked Town to launch muse-acp through npx per its docs; anvil ships
+  the same npm pattern (@brokkai/anvil 0.28.5, @brokkai/muse-acp 0.6.2, both
+  with bin entries and platform deps), so both supplements move from PATH
+  binaries to `npx --yes -- <package>` distributions. Draupnir stays a PATH
+  supplement; custom commands are unchanged.
+- Saved profiles keep their launch definition: pre-npx anvil/muse-acp
+  definitions stay valid and launch until the harness is re-selected. New
+  selections resolve npx and fail clearly when npx is missing.
+- Coverage: catalog tests assert both npx launches with no stubbed binaries
+  plus legacy PATH-binary validity; town muse-config tests stub npx;
+  frontend setup-failure strings match the new "needs npx" error. Docs,
+  changelog and this plan updated. Full gates before commit.
+- The default Mjolnir command follows the same pattern: `npx --yes --
+  @brokkai/mjolnir` (verified on npm as 2.23.1 with a `mj` bin) unless
+  `BT_MJOLNIR_COMMAND` sets an explicit prefix. The `api-info` identity
+  check still guards daemon mismatch. Covered by a unit test on the
+  command resolution; daemon-gated acceptance still uses its explicit
+  configured command.

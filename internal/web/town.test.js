@@ -601,7 +601,7 @@ test("unresolved dispatches show recovery instead of a runnable schedule", () =>
 
 
 test("attention guidance distinguishes setup, prior release failure, and uncertain writes", () => {
-  const setup = attentionGuidance({ kind: "worker", house: "feature", detail: "Muse ACP is not on the service PATH. Uses muse-acp on PATH." });
+  const setup = attentionGuidance({ kind: "worker", house: "feature", detail: "Muse ACP needs npx on the service PATH." });
   assert.equal(setup.configure, true);
   assert.match(setup.next, /Choose an available agent/);
   const failure = { kind: "worker", house: "release", retryRelease: true, detail: "release retry budget exhausted; last failure: https://github.com/BrokkAi/brokk-town/actions/runs/34853392035: failure" };

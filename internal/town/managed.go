@@ -37,6 +37,15 @@ func managedSupported(t *Town, role Role) bool {
 	return role == Review || (role == Issue && nextTask(t, Issue, "fixes", time.Now()) != nil)
 }
 
+// mjolnirCommand resolves the mj executable: an explicit BT_MJOLNIR_COMMAND
+// prefix, or the npm release through npx when none is configured.
+func mjolnirCommand(configured []string) []string {
+	if len(configured) > 0 {
+		return append([]string{}, configured...)
+	}
+	return []string{"npx", "--yes", "--", "@brokkai/mjolnir"}
+}
+
 func (b *BotWorkers) beginManaged(ctx context.Context, t *Town, role Role, observe func(Progress)) (*managedDispatch, error) {
 	if !managedSupported(t, role) {
 		return nil, errors.New("this bot duty does not yet support managed execution; select direct local execution")
@@ -63,10 +72,7 @@ func (b *BotWorkers) beginManaged(ctx context.Context, t *Town, role Role, obser
 	if err != nil {
 		return nil, err
 	}
-	command := append([]string{}, b.MjolnirCommand...)
-	if len(command) == 0 {
-		command = []string{"mj"}
-	}
+	command := mjolnirCommand(b.MjolnirCommand)
 	return &managedDispatch{executor: mjolnir.Executor{Runs: rs, Command: command}, config: config, role: role, placement: placement, runtime: *pin, observe: observe}, nil
 }
 

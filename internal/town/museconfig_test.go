@@ -107,8 +107,8 @@ func TestMuseConfigHomeRebuilds(t *testing.T) {
 	}
 }
 
-// stubHarnessPATH puts no-op executables for the supplement commands on PATH,
-// so the launch path resolves without those harnesses being installed.
+// stubHarnessPATH puts no-op executables on PATH so the launch path resolves
+// without those harnesses being installed.
 func stubHarnessPATH(t *testing.T, names ...string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -123,7 +123,7 @@ func stubHarnessPATH(t *testing.T, names ...string) {
 // Only the Muse adapter is redirected, and the redirect outranks an operator's
 // own XDG_CONFIG_HOME because the derivation already read through it.
 func TestAgentConfigRedirectsMuseOnly(t *testing.T) {
-	stubHarnessPATH(t, "muse-acp", "anvil")
+	stubHarnessPATH(t, "npx")
 	_, env := writeMuseConfig(t, `{"permissions":{"default_profile":":auto-review"}}`)
 	root := t.TempDir()
 	base := Config{Agent: runner.AgentConfig{Environment: env}}
@@ -151,7 +151,7 @@ func TestAgentConfigRedirectsMuseOnly(t *testing.T) {
 
 // The opt-out leaves the operator's configuration untouched.
 func TestAgentConfigMusePermissionsOptOut(t *testing.T) {
-	stubHarnessPATH(t, "muse-acp")
+	stubHarnessPATH(t, "npx")
 	t.Setenv(museKeepPermissions, "keep")
 	_, env := writeMuseConfig(t, `{"permissions":{"default_profile":":auto-review"}}`)
 	cfg := Config{Harness: "muse-acp", Agent: runner.AgentConfig{Environment: env}}

@@ -119,8 +119,8 @@ func Platform() string {
 }
 func supplements() []Entry {
 	return []Entry{
-		{ID: "brokkai/anvil", Name: "Anvil", Version: "installed", Repository: "https://github.com/BrokkAi/anvil", Description: "Brokk.ai's ACP agent runtime", Command: []string{"anvil"}, Setup: "Uses anvil on PATH. Configure its model provider first. Install: npm install -g @brokkai/anvil"},
-		{ID: "brokkai/muse-acp", Name: "Muse ACP", Version: "installed", Repository: "https://github.com/BrokkAi/muse-acp", Description: "Brokk.ai's ACP adapter for Muse Code", Command: []string{"muse-acp"}, Setup: "Uses muse-acp on PATH. Muse Code must also be installed and authenticated with muse login. Adapter releases are linked below."},
+		{ID: "brokkai/anvil", Name: "Anvil", Version: "installed", Repository: "https://github.com/BrokkAi/anvil", Description: "Brokk.ai's ACP agent runtime", Distribution: Distribution{Npx: &Package{Package: "@brokkai/anvil"}}, Setup: "Runs @brokkai/anvil with npx; requires npx on the service PATH. Configure its model provider first."},
+		{ID: "brokkai/muse-acp", Name: "Muse ACP", Version: "installed", Repository: "https://github.com/BrokkAi/muse-acp", Description: "Brokk.ai's ACP adapter for Muse Code", Distribution: Distribution{Npx: &Package{Package: "@brokkai/muse-acp"}}, Setup: "Runs @brokkai/muse-acp with npx; requires npx on the service PATH. Muse Code must also be installed and authenticated with muse login."},
 		{ID: "foundev/draupnir", Name: "Draupnir", Version: "installed", Repository: "https://github.com/foundev/draupnir", Description: "Portable ACP agent runtime", Command: []string{"draupnir"}, Setup: "Uses draupnir on PATH. Configure its model provider first. Install using the repository's release instructions."},
 	}
 }
@@ -150,9 +150,16 @@ func (e Entry) Validate() error {
 	}
 	if len(e.Command) > 0 {
 		for _, extra := range supplements() {
-			if e.ID == extra.ID && len(e.Command) == 1 && e.Command[0] == extra.Command[0] {
+			if e.ID == extra.ID && len(e.Command) == 1 && len(extra.Command) == 1 && e.Command[0] == extra.Command[0] {
 				return nil
 			}
+		}
+		// Profiles saved before Anvil and Muse ACP moved to npx still name
+		// the installed binary; they stay valid and keep launching until the
+		// profile is re-saved.
+		if (e.ID == "brokkai/anvil" && len(e.Command) == 1 && e.Command[0] == "anvil") ||
+			(e.ID == "brokkai/muse-acp" && len(e.Command) == 1 && e.Command[0] == "muse-acp") {
+			return nil
 		}
 		return errors.New("unrecognized additional harness command")
 	}
@@ -242,10 +249,14 @@ func (c *Catalog) List() Listing {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	out := Listing{Agents: []Option{}, Source: RegistryURL, Fetched: c.fetched, Stale: c.fetched.IsZero() || time.Since(c.fetched) > time.Hour, Demo: c.demo}
+	extra := map[string]bool{}
+	for _, s := range supplements() {
+		extra[s.ID] = true
+	}
 	for _, e := range append(copyEntries(c.entries), supplements()...) {
 		source, setup, available := "registry", "", true
 		switch {
-		case len(e.Command) > 0:
+		case len(e.Command) > 0 || extra[e.ID]:
 			source, setup = "additional", e.Setup
 		case e.Distribution.Npx != nil:
 			setup = "Runs the registry's versioned npm package with npx."

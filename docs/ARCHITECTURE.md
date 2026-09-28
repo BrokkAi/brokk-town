@@ -77,8 +77,9 @@ uses review-bot's profile.
 `internal/harness` reads the official ACP registry v1 index, retaining a bundled
 offline snapshot and an atomic, validated cache. Authenticated API/CLI refreshes
 run independently of town scheduling. The browser displays the cached catalog
-immediately and refreshes stale entries in the background. Anvil, Muse ACP, and
-Draupnir are explicit supplements resolved from PATH, with setup notes.
+immediately and refreshes stale entries in the background. Anvil and Muse ACP
+are explicit supplements resolved through npx, and Draupnir is an explicit
+supplement resolved from PATH, each with setup notes.
 
 Selecting a harness persists its full launch definition in the selected private
 profile; public snapshots expose only the ID and version. Catalog refreshes never
@@ -89,8 +90,9 @@ environment without a shell. Native
 archives install in a private cache keyed by definition and platform, using a
 cross-process lock, bounded downloads/extraction, optional registry checksums,
 path/link validation, and atomic publication. Preparation runs in worker or
-choice-request contexts, not in render or scheduling loops. Installed supplemental
-commands retain the user's version. Registry definitions pin launch recipes;
+choice-request contexts, not in render or scheduling loops. The installed
+Draupnir command and pre-npx Anvil/Muse ACP definitions retain the user's
+version. Registry definitions pin launch recipes;
 upstream mutable package tags or release assets remain upstream-controlled.
 
 Choice discovery resolves the selected role's profile and first prepares its

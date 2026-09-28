@@ -670,7 +670,7 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   assert.deepEqual(JSON.parse(control.options.body), { town: "acme/project", role: "hall", action: "decline", task: "issue:3" }, "the command targets the item's own town, not the selected one");
   assert.equal(elements["inbox-error"].textContent, "");
 
-  other.workers.feature = { role: "feature", enabled: true, status: "failed", error: "Muse ACP is not on the service PATH.", logs: [] };
+  other.workers.feature = { role: "feature", enabled: true, status: "failed", error: "Muse ACP needs npx on the service PATH.", logs: [] };
   other.workers.release = { role: "release", enabled: true, status: "failed", error: "release retry budget exhausted; last failure: https://github.com/beta/tools/actions/runs/123: failure", logs: [] };
   elements["inbox-dialog"].close();
   elements["inbox-toggle"].onclick();

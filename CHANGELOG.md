@@ -68,6 +68,12 @@ The tests now compare saved evidence consistently across time zones.
 - Treat both themes as presentation only: they read the same snapshot, follow
   the same committed events and reduced-motion setting, and never send a
   command or write to GitHub.
+- Launch Anvil and Muse ACP through `npx` (`@brokkai/anvil` and
+  `@brokkai/muse-acp`) instead of requiring their binaries on the service
+  PATH. Profiles saved before the move keep their installed-binary launch
+  until the harness is re-selected.
+- Run the default Mjolnir command through `npx` (`@brokkai/mjolnir`) as well;
+  `BT_MJOLNIR_COMMAND` still overrides it with an installed `mj`.
 
 ## 0.6.2 — 2026-09-22
 

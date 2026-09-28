@@ -16,8 +16,9 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
-// Executor speaks ACP to mj, never to a local coding harness. Command is an
-// operator-supplied mj executable/prefix (for example mj --instance work).
+// Executor speaks ACP to mj, never to a local coding harness. Command is the
+// mj executable/prefix: BT_MJOLNIR_COMMAND when set (for example
+// mj --instance work), otherwise the npm release through npx.
 type Executor struct {
 	Runs    *Runs
 	Command []string

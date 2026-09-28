@@ -49,15 +49,18 @@ it. Native installs are shared across workers and check a checksum when the
 registry supplies one. Agents without a distribution for your platform are
 marked unavailable. Provider credentials and login remain the harness's own.
 
-The additional harnesses use the executable installed on the service's PATH:
+Anvil and Muse ACP run through `npx` (install Node.js/npm); Draupnir uses the
+executable installed on the service's PATH:
 
 | Harness | Command | Setup |
 | --- | --- | --- |
-| [BrokkAi/anvil](https://github.com/BrokkAi/anvil) | `anvil` | `npm install -g @brokkai/anvil`; configure its model provider. |
-| [BrokkAi/muse-acp](https://github.com/BrokkAi/muse-acp) | `muse-acp` | Install the adapter and Muse Code; authenticate with `muse login`. |
+| [BrokkAi/anvil](https://github.com/BrokkAi/anvil) | `npx --yes -- @brokkai/anvil` | Configure its model provider. |
+| [BrokkAi/muse-acp](https://github.com/BrokkAi/muse-acp) | `npx --yes -- @brokkai/muse-acp` | Install Muse Code; authenticate with `muse login`. |
 | [foundev/draupnir](https://github.com/foundev/draupnir) | `draupnir` | Install its release and configure its model provider. |
 
-These three use your installed versions. Their project links and setup notes
+These three use your latest npm release (Anvil, Muse ACP) or installed version
+(Draupnir). Profiles saved before the npx move keep their installed-binary
+launch until the harness is re-selected. Their project links and setup notes
 also appear in Settings. A custom command supports other local ACP agents.
 
 **Load available choices** prepares and briefly starts the selected bot's harness

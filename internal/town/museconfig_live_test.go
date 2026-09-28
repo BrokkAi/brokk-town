@@ -14,8 +14,8 @@ func TestProbeMuseLive(t *testing.T) {
 	if testing.Short() || os.Getenv("BROKK_TOWN_LIVE_TESTS") != "1" {
 		t.Skip("live harness probe requires explicit BROKK_TOWN_LIVE_TESTS=1")
 	}
-	if _, err := exec.LookPath("muse-acp"); err != nil {
-		t.Skip("muse-acp is not installed")
+	if _, err := exec.LookPath("npx"); err != nil {
+		t.Skip("npx is not installed")
 	}
 	choices, err := ProbeAgent(context.Background(), Config{Harness: "muse-acp"}, t.TempDir())
 	if err != nil {

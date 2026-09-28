@@ -33,9 +33,11 @@ redirects or send this request through an HTTP proxy. The token is read from its
 file for each request and never enters Town's state, catalog, logs or clients.
 Changing these environment variables requires restarting Town.
 
-Town runs `mj` from PATH by default. `BT_MJOLNIR_COMMAND` can supply a JSON array
-such as `["mj", "--instance", "town"]`. The command's API URL and token-file
-path must match the configured connection before Town can create a session.
+Town runs `@brokkai/mjolnir` through `npx` by default (install Node.js/npm).
+`BT_MJOLNIR_COMMAND` can supply a JSON array such as `["mj", "--instance",
+"town"]` to use an installed `mj` instead. The command's API URL and
+token-file path must match the configured connection before Town can create
+a session.
 Keep any `MJ_CONFIG_DIR` and `MJ_DATA_DIR` overrides on the Town service as well.
 
 Configure one single-repository bundle in Mjolnir whose primary repository maps

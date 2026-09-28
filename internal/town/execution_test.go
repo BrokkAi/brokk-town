@@ -87,6 +87,18 @@ func TestManagedChoicesUseRolePlacementAndPreserveLocalPins(t *testing.T) {
 	}
 }
 
+// The default mj executable is the npm release through npx; an explicit
+// BT_MJOLNIR_COMMAND prefix passes through untouched.
+func TestMjolnirCommandDefaultsToNpx(t *testing.T) {
+	if got := mjolnirCommand(nil); !reflect.DeepEqual(got, []string{"npx", "--yes", "--", "@brokkai/mjolnir"}) {
+		t.Fatal(got)
+	}
+	custom := []string{"mj", "--instance", "town"}
+	if got := mjolnirCommand(custom); !reflect.DeepEqual(got, custom) {
+		t.Fatal(got)
+	}
+}
+
 func TestPrepareRespectsPerBotPlacementWithoutLocalRegistryLookup(t *testing.T) {
 	s := NewSupervisor(testStore(t, false), nil, nil)
 	cfg := DefaultConfig("acme/project")
