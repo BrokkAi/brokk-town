@@ -1,5 +1,22 @@
 # Brokk Town implementation plan
 
+## Changelog backfill for released versions (complete)
+
+- User asked whether master held code not yet in a release. The audit found it
+  does not: `master` equals `origin/master` at f92ca9a, `v0.7.5-town` is a
+  published release at that exact commit, and every bot's latest tag tree is
+  identical to master for its project. The drift was in `CHANGELOG.md`, which
+  still carried shipped work under "Unreleased" and had no entries for 0.6.3,
+  0.6.4, 0.6.5, 0.7.3 or 0.7.4.
+- Rewrote the top of `CHANGELOG.md` to match the released tags: new 0.7.5 and
+  0.7.4 entries, with 0.7.3 documented as unpublished (its Linux module check
+  failed the Mjolnir repair-import history test, fixed by b058406); the stale
+  "Unreleased" bullets returned to 0.6.4 and 0.6.3 where they first shipped;
+  and 0.6.5 backfilled. No code changed.
+- Verified against tags: every published town tag except 0.7.1 and 0.7.3 now
+  has a matching heading, and the file has no "Unreleased" section while master
+  equals v0.7.5-town. `git diff --check` is clean.
+
 ## Finish Mjolnir issues, review/merge PRs, then release changed components
 
 - User authorized one PR per remaining issue (#149, #153, #154, #155), review,

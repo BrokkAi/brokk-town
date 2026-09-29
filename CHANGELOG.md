@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.5 — 2026-09-28
+
+- Launch Anvil and Muse ACP through `npx` (`@brokkai/anvil` and
+  `@brokkai/muse-acp`) instead of requiring their binaries on the service
+  PATH. Profiles saved before the move keep their installed-binary launch
+  until the harness is re-selected.
+- Run the default Mjolnir command through `npx` (`@brokkai/mjolnir`) as well;
+  `BT_MJOLNIR_COMMAND` still overrides it with an installed `mj`.
+
+## 0.7.4 — 2026-09-26
+
+Version 0.7.3 was not published: its Linux module check failed in the Mjolnir
+repair-import history test. The fixtures now keep their own repository alive
+instead of racing detached Git maintenance, and 0.7.4 carries all of 0.7.3's
+work.
+
+- Run pull-request review, independent certification and repairs from verified
+  review feedback through Mjolnir with target-owned runtimes and exact private
+  checkouts. Execution selection is shared by the browser and CLI, a selected
+  runtime is pinned explicitly, session intents and retained evidence are
+  durable, and an uncertain outcome holds further work.
+- Validate review transcripts, diffs and imported repair bundles before the
+  existing publication gates. Review Bot 0.2.13 supplies the additive
+  remote-agent capability; the other managed agent duties remain explicitly
+  held.
+
 ## 0.7.2 — 2026-09-26
 
 Version 0.7.1 was not published: its recovery tests failed in UTC environments.
@@ -30,7 +56,17 @@ The tests now compare saved evidence consistently across time zones.
   effort discovery uses the daemon's versioned API; remote job dispatch remains
   held pending its execution protocol integration.
 
-## Unreleased
+## 0.6.5 — 2026-09-25
+
+- Resume repository inventory automatically after an interrupted startup while
+  uncertain branch repairs remain held for operator review. A concurrent
+  merge-confirmation inventory preserves the interrupted repair's recovery
+  record and cannot authorize replacement repairs or follow-up GitHub writes.
+- Show current inventory and recovery conditions in the browser and CLI
+  instead of an old startup error. Paused houses stay paused and historical
+  logs remain available.
+
+## 0.6.4 — 2026-09-24
 
 - Reshape the `bt` CLI for the foreground lifecycle (breaking). `bt service
   status|stop` is gone: `bt status` now summarizes a running or stopped Town
@@ -44,20 +80,20 @@ The tests now compare saved evidence consistently across time zones.
 - Report a failed `bt -d` start immediately, with the end of the error log,
   instead of after a one-minute timeout: the background Town now signals
   readiness over a pipe rather than being polled.
+- Let every bot run standalone: Mayor, Repo and Simplifier Bots gain the same
+  no-config CLI as the other five, with repository discovery into a managed
+  workspace, `status`/`version`, `--once`/`--json`, and `assess`, `observe`,
+  `bulletin` and `judge` commands, and all eight get the terminal dashboard.
+- Fix Repo Bot's default-branch discovery during Town startup and keep the
+  standalone Repo Bot's state readable.
+- Close Town's own pull request when Simplifier declines it and start its issue
+  over; requeue only an issue still tied to the closed pull request, and keep a
+  branch a newer open Town pull request still uses.
+- Scan for simplifications when due at the fetched head, continue Mayor
+  bulletins from the last covered window, and explain a closed pull request
+  whose closing comment was uncertain.
 
-- Give the merge gate's `gh pr view` the same one-minute timeout as Town's
-  other GitHub calls, so a stalled `gh` cannot hold the review house.
-- Add `bt settings --merge-policy bot|manual|all`.
-- Seed the demo's paper-trail town with its own opening report.
-
-- Start a fresh demo when the demo's saved state was written by an older Town
-  and no longer validates, instead of refusing to start. The unreadable file is
-  kept beside it as `state.rejected-<timestamp>.json`, a one-line notice says
-  what happened, and the demo seeds its two towns again. Only a file that
-  parses and says it is demo state is replaced: real state, including real
-  state in the demo directory, is still refused and left untouched.
-- Name the town and the house in the state error for a missing worker, and say
-  where the demo keeps its state when that file cannot be parsed at all.
+## 0.6.3 — 2026-09-23
 
 - Add a Frontline theme to the browser. Each repository becomes a base flying
   one of three armies — humans, humanoid aliens or a swarm — with its own
@@ -68,12 +104,46 @@ The tests now compare saved evidence consistently across time zones.
 - Treat both themes as presentation only: they read the same snapshot, follow
   the same committed events and reduced-motion setting, and never send a
   command or write to GitHub.
-- Launch Anvil and Muse ACP through `npx` (`@brokkai/anvil` and
-  `@brokkai/muse-acp`) instead of requiring their binaries on the service
-  PATH. Profiles saved before the move keep their installed-binary launch
-  until the harness is re-selected.
-- Run the default Mjolnir command through `npx` (`@brokkai/mjolnir`) as well;
-  `BT_MJOLNIR_COMMAND` still overrides it with an installed `mj`.
+- Hold new automation during scheduled quiet hours, as a service default or a
+  per-town override, with DST-correct windows. Agent dispatch, branch repairs
+  and merges wait for the window to end while running work finishes and
+  inventory keeps going.
+- Snooze one task until a chosen time from the browser or `bt defer`/`bt
+  undefer`. A snooze stops new dispatch and merges for that task only, expires
+  on its own, and keeps snoozed work out of the attention queue.
+- Give the merge gate's `gh pr view` the same one-minute timeout as Town's
+  other GitHub calls, so a stalled `gh` cannot hold the review house.
+- Add `bt settings --merge-policy bot|manual|all`.
+- Seed the demo's paper-trail town with its own opening report.
+- Start a fresh demo when the demo's saved state was written by an older Town
+  and no longer validates, instead of refusing to start. The unreadable file is
+  kept beside it as `state.rejected-<timestamp>.json`, a one-line notice says
+  what happened, and the demo seeds its two towns again. Only a file that
+  parses and says it is demo state is replaced: real state, including real
+  state in the demo directory, is still refused and left untouched.
+- Name the town and the house in the state error for a missing worker, and say
+  where the demo keeps its state when that file cannot be parsed at all.
+- Return reopened work to the intake it left instead of stranding it `queued`,
+  keep a Simplifier auto-decline until the Mayor admits it, treat an operator's
+  reopen of a declined issue as an appeal, and discard a stale Simplifier
+  assessment that arrives after its intake ended.
+- Never merge a pull request retargeted off the town's branch; block it with
+  the off-branch record that releases the block when it returns, and queue a
+  fresh review rather than resuming the discarded audit.
+- Restore a deleted town under the settings it is added with, and keep a
+  restored town's settings the add request does not supply.
+- Scrub credential-shaped text from worker logs, including nested attributes,
+  keep in-flight browser writes across redraws with reconnect back-off, and say
+  when a GitHub call timed out.
+- Let Release Bot wait on `release_trigger_ignore` paths without starting a
+  release, reassess triage when the watched remote head moves, retry
+  reconciliation comment failures in-process, and optionally run an outcome
+  notification command. Review and Issue Bots reconcile repository
+  capitalization, and Issue Bot stops `--once` after a completed reconciliation.
+- Ship the period's bundled bot work: Bug Bot's only-on-change polling and
+  optional workspace setup command, model/effort selection for review in Bug,
+  Feature and Review Bots, Feature Bot's completed-workspace pruning and
+  selected dry-run publication, and Review and Issue Bots on acp-go 0.8.1.
 
 ## 0.6.2 — 2026-09-22
 
