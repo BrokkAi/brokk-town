@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -87,6 +88,9 @@ func describeLock(dir string, err error) error {
 
 func stateHome() string {
 	base := os.Getenv("XDG_STATE_HOME")
+	if base == "" && runtime.GOOS == "windows" {
+		base = os.Getenv("LOCALAPPDATA")
+	}
 	if base == "" {
 		home, _ := os.UserHomeDir()
 		base = filepath.Join(home, ".local", "state")
@@ -740,7 +744,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh}
+	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh, Shutdown: func() { cancel(context.Canceled) }}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
 	results := make(chan error, 2)
 	remaining := 2

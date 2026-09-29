@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -165,6 +166,7 @@ func executorFixture(t *testing.T, scenario string) (Executor, RunPlan, string) 
 }
 
 func TestManagedACPDispatchGuardsAndDurableOutcomes(t *testing.T) {
+	skipHostPathSessionRoot(t)
 	for _, scenario := range []string{"success", "stale configuration", "stale completion", "completion drift", "wrong daemon", "lost create", "runtime drift", "lost setting", "missing evidence", "wrong session", "incomplete turn"} {
 		t.Run(scenario, func(t *testing.T) {
 			e, plan, record := executorFixture(t, scenario)
@@ -239,6 +241,7 @@ func TestUnpublishedConfigurationStopsWithoutMutation(t *testing.T) {
 }
 
 func TestManagedACPCancellationInterruptsAndRetainsSession(t *testing.T) {
+	skipHostPathSessionRoot(t)
 	e, plan, record := executorFixture(t, "hang")
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -363,4 +366,14 @@ func TestMjACPHelper(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+// skipHostPathSessionRoot skips ACP dispatch on Windows: acp-go checks the
+// session root "/" with the host's filepath.IsAbs, which rejects it there even
+// though the bundled target that receives it is POSIX.
+func skipHostPathSessionRoot(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip(`acp-go rejects the POSIX session root "/" as a Windows path`)
+	}
 }

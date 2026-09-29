@@ -17,6 +17,7 @@ import (
 
 func writeFakeWorker(t *testing.T, path, body string) {
 	t.Helper()
+	skipPOSIXFakes(t)
 	if err := os.WriteFile(path, []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}

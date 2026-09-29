@@ -249,7 +249,7 @@ func TestRoleChoicesUsePrivateProfileAndCanPreviewInheritance(t *testing.T) {
 func TestNestedCertificationAndRepairUseTheirBotProfiles(t *testing.T) {
 	b, town, task, _ := fixtureWorkers(t)
 	bin := t.TempDir()
-	npx := filepath.Join(bin, "npx")
+	npx := filepath.Join(bin, exeName("npx"))
 	if err := os.WriteFile(npx, []byte("unused fake executable"), 0700); err != nil {
 		t.Fatal(err)
 	}

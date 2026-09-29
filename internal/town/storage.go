@@ -10,8 +10,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/filelock"
 )
 
 // StorageArtifact is an inspection receipt. Paths are relative to this town's
@@ -387,7 +388,7 @@ func lockStorage(root, id string) (func(), error) {
 	var locked []*os.File
 	release := func() {
 		for _, f := range locked {
-			_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			_ = filelock.Unlock(f)
 			_ = f.Close()
 		}
 	}
@@ -400,12 +401,12 @@ func lockStorage(root, id string) (func(), error) {
 			release()
 			return nil, errors.New("unsafe worker state directory; cleanup refused")
 		}
-		f, err := os.OpenFile(filepath.Join(dir, "daemon.lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+		f, err := os.OpenFile(filepath.Join(dir, "daemon.lock"), os.O_CREATE|os.O_RDWR|oNoFollow, 0600)
 		if err != nil {
 			release()
 			return nil, errors.New("cannot lock worker state; cleanup refused")
 		}
-		if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if err = filelock.TryLock(f); err != nil {
 			f.Close()
 			release()
 			return nil, errors.New("an independent worker owns its state; cleanup refused")

@@ -60,6 +60,7 @@ func attentionLines(path string) []string {
 func fixtureHook(path string) []string { return []string{"/bin/sh", "-c", `cat >> "$1"`, "hook", path} }
 
 func TestAttentionTransitionsDurableAndOffWorkerLoop(t *testing.T) {
+	skipPOSIXFakes(t)
 	store := testStore(t, false)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
@@ -109,6 +110,7 @@ func TestAttentionTransitionsDurableAndOffWorkerLoop(t *testing.T) {
 }
 
 func TestAttentionRestartKeepsQueueButNeverReplaysAnUncertainClaim(t *testing.T) {
+	skipPOSIXFakes(t)
 	store := testStore(t, false)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
@@ -176,6 +178,7 @@ func TestAttentionProjectionAndSnoozeExpiry(t *testing.T) {
 }
 
 func TestAttentionHookTimeoutFailureAndPrivacy(t *testing.T) {
+	skipPOSIXFakes(t)
 	notice := AttentionNotice{Town: "acme/project", Task: "issue:1", Role: Issue, Reason: "blocked", Seq: 7}
 	started := time.Now()
 	command := []string{"/bin/sh", "-c", "while :; do printf private-output; done"}

@@ -52,7 +52,7 @@ func TestHistoryArchivalLeavesHotStateAndSurvivesRestart(t *testing.T) {
 	}
 	for _, e := range s.history[id] {
 		info, err := os.Stat(filepath.Join(historyRoot(filepath.Dir(s.path), id), "objects", e.filename()))
-		if err != nil || info.Mode().Perm() != 0600 {
+		if err != nil || !ownerOnly(info.Mode()) {
 			t.Fatal(info, err)
 		}
 	}
@@ -221,6 +221,7 @@ func TestHistoryDemoCancellationAndSymlinksPreserveTasks(t *testing.T) {
 		t.Fatal("cancellation lost task")
 	}
 	base := historyRoot(filepath.Dir(s.path), id)
+	requireSymlinks(t)
 	os.RemoveAll(base)
 	if err := os.Symlink(t.TempDir(), base); err != nil {
 		t.Fatal(err)

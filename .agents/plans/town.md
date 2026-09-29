@@ -1,5 +1,41 @@
 # Brokk Town implementation plan
 
+## Windows support for the Town service (first part implemented)
+
+- Goal: run `bt` natively on Windows. Agreed scope for this pass is the
+  daemon and demo mode; the bots, win32 npm packages and the `bt.cjs`
+  launcher (which still rejects `win32`) follow separately.
+- acp-go v0.8.1 does not build on Windows (its `internal/osrun` uses
+  `Setpgid`/`syscall.Kill`). Another agent owns that work in the acp-go repo;
+  Town must adopt a released acp-go with Windows support before it links on
+  Windows. Local validation used a scratchpad copy of acp-go through an
+  uncommitted `GOWORK`; `go.mod` is unchanged.
+- Implemented in Town: `internal/osrun` process control split per platform
+  (Windows: `CREATE_NEW_PROCESS_GROUP`, Ctrl+Break, `taskkill /T`, and
+  `OpenProcess` liveness); `internal/filelock` (flock / `LockFileEx`) for the
+  state, storage and harness-install locks; `internal/durable.SyncDir`
+  (directory fsync, a no-op on Windows where a directory handle cannot be
+  flushed); `O_NOFOLLOW` has no Windows open flag and relies on
+  `storagePathSafe`. `bt -d` starts Town with a hidden console of its own and
+  passes the ready pipe as an explicitly inherited handle; `bt shutdown` on
+  Windows uses a token-authenticated `POST /api/shutdown`, since there is no
+  signal for it. Windows state defaults to `%LOCALAPPDATA%rokk-town`. Muse
+  config lookup falls back to `USERPROFILE` as muse-acp does.
+- Validation on Windows 11 (gcc from WinLibs for `-race`): `go vet ./...` and
+  `go test -race ./...` pass for all Town packages; `bt -d --demo`, `status`,
+  the browser page, `/api/state`, the event stream, `bt shutdown`, the
+  single-writer lock and restart all work. 60 tests skip on Windows with a
+  stated reason: 50 rely on POSIX shebang fakes, 8 need symlinks (they run
+  with Developer Mode), 2 hit the acp-go path issue below. Linux and macOS
+  `go vet` pass against the released acp-go.
+- Open: acp-go validates ACP paths with the host `filepath.IsAbs`, so the
+  Mjolnir session root `"/"` (a POSIX path in the remote target) is refused on
+  Windows. Managed Mjolnir dispatch from Windows needs that fixed in acp-go.
+- Open: port shebang fakes to test-binary re-exec helpers so the worker
+  protocol, GitHub client and attention hook tests run on Windows; worker
+  descendants whose npx parent already exited escape `taskkill /T` (a Job
+  Object would close that gap); the bots and win32 packaging.
+
 ## Changelog backfill for released versions (complete)
 
 - User asked whether master held code not yet in a release. The audit found it

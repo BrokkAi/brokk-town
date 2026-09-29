@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/BrokkAi/brokk-town/internal/osrun"
@@ -65,7 +64,7 @@ func startWorkerProcess(ctx context.Context, bot externalBot) (*workerProcess, e
 	p.cmd = exec.Command(bot.command, args...)
 	p.cmd.Dir = bot.dir
 	p.cmd.Env = append(os.Environ(), "BROKK_TOWN_PARENT_SOCKET="+parentPath)
-	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	p.cmd.SysProcAttr = osrun.ProcessGroup()
 	p.cmd.Stdout = p.output
 	p.cmd.Stderr = p.output
 	p.cmd.WaitDelay = time.Second
@@ -109,7 +108,7 @@ func (p *workerProcess) close() {
 			// Let the worker cancel and drain before its npm parent exits.
 			// Signaling npx first can leave a still-running native child behind.
 			if p.parent == nil {
-				_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGTERM)
+				_ = osrun.TerminateGroup(p.cmd.Process.Pid)
 			}
 			select {
 			case <-p.done:

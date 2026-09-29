@@ -13,8 +13,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/durable"
 )
 
 const historyDays = 30
@@ -65,7 +66,7 @@ func readHistoryFile(root, path string, limit int64) ([]byte, error) {
 	if !storagePathSafe(root, path) {
 		return nil, errors.New("unsafe or missing history path")
 	}
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	f, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -94,13 +95,7 @@ func historyDirectory(root, id string) (string, error) {
 		if err == nil {
 			// Persist each newly created directory entry before hot state can
 			// point at objects beneath it, including on the first archival.
-			parent, openErr := os.Open(filepath.Dir(path))
-			if openErr != nil {
-				return "", openErr
-			}
-			syncErr := parent.Sync()
-			closeErr := parent.Close()
-			if err := errors.Join(syncErr, closeErr); err != nil {
+			if err := durable.SyncDir(filepath.Dir(path)); err != nil {
 				return "", err
 			}
 		}
@@ -127,12 +122,7 @@ func writeHistoryFile(path string, data []byte) error {
 	if err = os.Rename(f.Name(), path); err != nil {
 		return err
 	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return durable.SyncDir(dir)
 }
 func (s *Store) loadHistory() error {
 	s.history = map[string]map[string]historyEntry{}

@@ -31,6 +31,9 @@ type Server struct {
 	// narrow slice of town.GitHub so tests fake two methods, not the whole
 	// interface. A nil handle means live details are unavailable.
 	TaskGitHub taskGitHub
+	// Shutdown, when set, stops the service after the request is answered. It
+	// is how bt shutdown reaches a service it cannot signal, as on Windows.
+	Shutdown func()
 }
 
 // taskGitHub fetches a single live issue or pull request on demand. Bodies
@@ -81,6 +84,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/diagnostics", s.diagnostics)
 	mux.HandleFunc("GET /api/outcomes", s.outcomes)
 	mux.HandleFunc("POST /api/outcomes/judgment", s.outcomeJudgment)
+	if s.Shutdown != nil {
+		mux.HandleFunc("POST /api/shutdown", func(w http.ResponseWriter, r *http.Request) {
+			respond(w, map[string]bool{"stopping": true})
+			s.Shutdown()
+		})
+	}
 	mux.Handle("/", http.FileServerFS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Embedded assets change with every service binary; a reload after a

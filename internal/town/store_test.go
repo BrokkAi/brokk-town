@@ -74,7 +74,7 @@ func TestDemoOpenSetsAsideADemoStateItCannotRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0600 {
+	if !ownerOnly(info.Mode()) {
 		t.Fatalf("set-aside permissions = %v, want 0600", info.Mode().Perm())
 	}
 	current, err := os.ReadFile(statePath(dir))

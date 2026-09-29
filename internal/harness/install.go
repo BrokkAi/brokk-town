@@ -17,8 +17,9 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/filelock"
 )
 
 func localPath(name string) bool {
@@ -95,11 +96,11 @@ func launch(ctx context.Context, root string, e Entry, client *http.Client) ([]s
 	}
 	defer lock.Close()
 	for {
-		err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err = filelock.TryLock(lock)
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
+		if !errors.Is(err, filelock.ErrLocked) {
 			return nil, nil, err
 		}
 		select {
@@ -108,7 +109,7 @@ func launch(ctx context.Context, root string, e Entry, client *http.Client) ([]s
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer filelock.Unlock(lock)
 	dest := filepath.Join(base, id)
 	command := filepath.Join(dest, filepath.FromSlash(b.Cmd))
 	if _, err = os.Stat(filepath.Join(dest, ".town-install")); errors.Is(err, os.ErrNotExist) {

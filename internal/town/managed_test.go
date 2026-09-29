@@ -112,7 +112,7 @@ func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 	}
 	defer close()
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil || !ownerOnly(info.Mode()) {
 		t.Fatal("callback socket is not private")
 	}
 	client := workerClient(path)

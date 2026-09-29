@@ -30,6 +30,7 @@ type recordingGH struct {
 
 func fakeGitHubCLI(t *testing.T, routes ...ghRoute) recordingGH {
 	t.Helper()
+	skipPOSIXFakes(t)
 	dir := t.TempDir()
 	var script strings.Builder
 	script.WriteString("#!/bin/sh\n")

@@ -11,9 +11,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/filelock"
 )
 
 var baseSHA = strings.Repeat("a", 40)
@@ -231,7 +232,7 @@ func TestStoreRestartLockSecretsAndUnknownIntent(t *testing.T) {
 		t.Fatal("corrupt intent accepted")
 	}
 	info, _ := os.Stat(filepath.Join(dir, "state.json"))
-	if info.Mode().Perm() != 0600 {
+	if !ownerOnly(info.Mode()) {
 		t.Fatal(info.Mode())
 	}
 }
@@ -430,7 +431,7 @@ func (w *issueRetryWorker) Run(ctx context.Context, t *Town, role Role, _ func(P
 		return RunResult{}, err
 	}
 	defer lock.Close()
-	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err = filelock.TryLock(lock); err != nil {
 		return RunResult{}, err
 	}
 	w.mu.Lock()
@@ -440,7 +441,7 @@ func (w *issueRetryWorker) Run(ctx context.Context, t *Town, role Role, _ func(P
 	w.mu.Unlock()
 	w.entered <- run
 	<-ctx.Done()
-	_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	_ = filelock.Unlock(lock)
 	w.mu.Lock()
 	w.active = false
 	w.mu.Unlock()

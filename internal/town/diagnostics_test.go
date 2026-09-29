@@ -160,7 +160,7 @@ func TestSetupChecksMissingCommandsAndNeverExecutesThem(t *testing.T) {
 	assertCheck(report, "agent", Issue, "blocked")
 	assertCheck(report, "verify", Issue, "blocked")
 	for _, name := range []string{"git", "gh", "agent", "verify"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nprintf invoked > '"+dir+"/unexpected'\nexit 1\n"), 0700); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, exeName(name)), []byte("#!/bin/sh\nprintf invoked > '"+dir+"/unexpected'\nexit 1\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -276,7 +276,7 @@ func TestSetupRelativeExecutablesAndPerBotOverride(t *testing.T) {
 	x := addTown(t, s)
 	dir := t.TempDir()
 	t.Setenv("PATH", dir)
-	if err := os.WriteFile(filepath.Join(dir, "review-agent"), []byte("must never run"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, exeName("review-agent")), []byte("must never run"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	update(t, s, func(st *State) {

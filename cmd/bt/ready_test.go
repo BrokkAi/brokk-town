@@ -13,17 +13,42 @@ import (
 	"time"
 )
 
+// readyChildEnv selects a stand-in child's behavior in TestReadyChild.
+const readyChildEnv = "BT_READY_TEST_CHILD"
+
+// TestReadyChild is the stand-in child, run by startWithReadyPipe as this test
+// binary. It takes the notification pipe as Town does.
+func TestReadyChild(t *testing.T) {
+	switch os.Getenv(readyChildEnv) {
+	case "":
+		t.Skip("stand-in child for the ready pipe tests")
+	case "ready":
+		readyPipe = takeReadyPipe()
+		if readyPipe == nil {
+			os.Exit(2)
+		}
+		signalReady()
+		time.Sleep(5 * time.Second)
+	case "fail":
+		os.Exit(3)
+	case "sleep":
+		time.Sleep(30 * time.Second)
+	}
+	os.Exit(0)
+}
+
 // startWithReadyPipe runs a stand-in child holding the notification pipe as
-// descriptor 3, and closes the parent's write end as startBackground does.
-func startWithReadyPipe(t *testing.T, script string) (*exec.Cmd, *os.File) {
+// bt -d passes it, and closes the parent's write end as startBackground does.
+func startWithReadyPipe(t *testing.T, mode string) (*exec.Cmd, *os.File) {
 	t.Helper()
 	ready, notify, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ready.Close() })
-	cmd := exec.Command("sh", "-c", script)
-	cmd.ExtraFiles = []*os.File{notify}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestReadyChild$")
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	cmd.Env = append(os.Environ(), readyChildEnv+"="+mode, readyEnv+"="+passReady(cmd, notify))
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +57,7 @@ func startWithReadyPipe(t *testing.T, script string) (*exec.Cmd, *os.File) {
 }
 
 func TestAwaitReadyReturnsWhenTheChildSignals(t *testing.T) {
-	cmd, ready := startWithReadyPipe(t, "echo ready >&3; exec 3>&-; sleep 5")
+	cmd, ready := startWithReadyPipe(t, "ready")
 	defer cmd.Process.Kill()
 	if err := awaitReady(context.Background(), cmd, ready); err != nil {
 		t.Fatal(err)
@@ -41,7 +66,7 @@ func TestAwaitReadyReturnsWhenTheChildSignals(t *testing.T) {
 
 // A child that dies during startup is reported at once, not after a timeout.
 func TestAwaitReadyReportsAFailedStartImmediately(t *testing.T) {
-	cmd, ready := startWithReadyPipe(t, "exit 3")
+	cmd, ready := startWithReadyPipe(t, "fail")
 	start := time.Now()
 	err := awaitReady(context.Background(), cmd, ready)
 	if err == nil || !strings.Contains(err.Error(), "exited during startup") || !strings.Contains(err.Error(), "exit status 3") {
@@ -53,7 +78,7 @@ func TestAwaitReadyReportsAFailedStartImmediately(t *testing.T) {
 }
 
 func TestAwaitReadyStopsTheChildOnCancel(t *testing.T) {
-	cmd, ready := startWithReadyPipe(t, "sleep 30")
+	cmd, ready := startWithReadyPipe(t, "sleep")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := awaitReady(ctx, cmd, ready); !errors.Is(err, context.Canceled) {
@@ -81,7 +106,7 @@ func TestTakeReadyPipeAcceptsOnlyAPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	t.Setenv(readyEnv, strconv.Itoa(int(file.Fd())))
+	t.Setenv(readyEnv, strconv.FormatUint(uint64(file.Fd()), 10))
 	if f := takeReadyPipe(); f != nil {
 		t.Fatal("took a regular file as the notification descriptor")
 	}
@@ -94,14 +119,11 @@ func TestTakeReadyPipeAcceptsOnlyAPipe(t *testing.T) {
 	// Production receives a raw inherited descriptor with no os.File owner.
 	// Duplicate here: two os.File wrappers around w's same descriptor let an
 	// unreachable wrapper's finalizer close an unrelated socket after fd reuse.
-	fd, err := syscall.Dup(int(w.Fd()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(readyEnv, strconv.Itoa(fd))
+	value, release := duplicate(t, w)
+	t.Setenv(readyEnv, value)
 	f := takeReadyPipe()
 	if f == nil {
-		_ = syscall.Close(fd)
+		release()
 		t.Fatal("refused a pipe")
 	}
 	if err := f.Close(); err != nil {

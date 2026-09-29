@@ -273,7 +273,7 @@ resets the saved cycle counter; it does not extend the fixed review/repair limit
 ## Private state and local API
 
 Private state defaults to `$XDG_STATE_HOME/brokk-town` or
-`~/.local/state/brokk-town`. `--state-dir` selects another directory; `--demo`
+`~/.local/state/brokk-town` (`%LOCALAPPDATA%rokk-town` on Windows). `--state-dir` selects another directory; `--demo`
 appends `demo`. A single writer lock, atomic snapshots, per-role bot state, and
 private worktrees keep towns separate. Events, logs, and repo-bot reports have
 bounded recent histories. Old terminal tasks move to local history; ownership,

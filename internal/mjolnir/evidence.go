@@ -8,6 +8,8 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+
+	"github.com/BrokkAi/brokk-town/internal/durable"
 )
 
 // Artifacts is private evidence, never a public snapshot or a review verdict.
@@ -51,7 +53,7 @@ func (r *Run) retainCompletedAnswer(answer string) error {
 	if err := writeCache(filepath.Join(r.directory, "completed-answer.json"), data); err != nil {
 		return err
 	}
-	return syncDirectory(r.directory)
+	return durable.SyncDir(r.directory)
 }
 
 func (r *Run) checkCurrentSession(ctx context.Context) (SessionState, error) {
@@ -157,7 +159,7 @@ func (r *Run) Collect(ctx context.Context, repair bool, answer string) (Artifact
 		if err := writeCache(filepath.Join(r.directory, "repair.bundle"), bundle); err != nil {
 			return result, err
 		}
-		if err := syncDirectory(r.directory); err != nil {
+		if err := durable.SyncDir(r.directory); err != nil {
 			return result, err
 		}
 		hash := sha256.Sum256(bundle)

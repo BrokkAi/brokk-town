@@ -1,4 +1,4 @@
-// Package osrun supplies bounded command output for the Unix daemon.
+// Package osrun supplies bounded command output and process-tree control.
 package osrun
 
 import (
@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -52,7 +51,7 @@ func StartCommand(ctx context.Context, dir string, args []string, env map[string
 	for key, value := range env {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = ProcessGroup()
 	cmd.WaitDelay = time.Second
 	cmd.Cancel = func() error { return Kill(cmd) }
 	return cmd
@@ -62,27 +61,6 @@ func Kill(cmd *exec.Cmd) error {
 		return nil
 	}
 	return KillGroup(cmd.Process.Pid)
-}
-
-// KillGroup ends every process in the group led by pid.
-func KillGroup(pid int) error {
-	if pid <= 0 {
-		return nil
-	}
-	err := syscall.Kill(-pid, syscall.SIGKILL)
-	if errors.Is(err, syscall.ESRCH) {
-		return os.ErrProcessDone
-	}
-	return err
-}
-
-// Alive reports whether pid still exists. Permission errors count as alive.
-func Alive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // TailFile returns up to limit bytes from the end of a file, valid UTF-8, and

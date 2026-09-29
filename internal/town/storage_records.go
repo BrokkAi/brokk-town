@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -87,7 +86,7 @@ func artifactDigest(ctx context.Context, path string) (string, int64, error) {
 	if info.Size() > maxTranscriptBytes {
 		return "", 0, errors.New("artifact exceeds the verification limit")
 	}
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	f, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
 	if err != nil {
 		return "", 0, err
 	}

@@ -15,6 +15,7 @@ import (
 // exact resolved version, not query latest again. No package registry is used.
 func fakeNPX(t *testing.T, body string) string {
 	t.Helper()
+	skipPOSIXFakes(t)
 	dir := t.TempDir()
 	python, err := exec.LookPath("python3")
 	if err != nil {
@@ -30,6 +31,7 @@ func TestNPXResolvesLatestThenStartsExactVersion(t *testing.T) {
 	dir := t.TempDir()
 	// macOS exposes its temporary directory through /var -> /private/var.
 	// Exercise the same aliasing on every platform.
+	skipPOSIXFakes(t)
 	root := filepath.Join(t.TempDir(), "town-root")
 	if err := os.Symlink(dir, root); err != nil {
 		t.Fatal(err)

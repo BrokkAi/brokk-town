@@ -14,6 +14,7 @@ import (
 // environment that points at it.
 func writeMuseConfig(t *testing.T, settings string) (string, map[string]string) {
 	t.Helper()
+	requireSymlinks(t)
 	xdg := t.TempDir()
 	dir := filepath.Join(xdg, "muse")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -113,7 +114,7 @@ func stubHarnessPATH(t *testing.T, names ...string) {
 	t.Helper()
 	dir := t.TempDir()
 	for _, name := range names {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, exeName(name)), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}

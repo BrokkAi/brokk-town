@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/durable"
 )
 
 type RunPlan struct {
@@ -110,20 +112,11 @@ func (r *Run) save(state string) error {
 	if err := writeCache(filepath.Join(r.directory, "run.json"), data); err != nil {
 		return err
 	}
-	if err := syncDirectory(r.directory); err != nil {
+	if err := durable.SyncDir(r.directory); err != nil {
 		return err
 	}
 	r.record = next
 	return nil
-}
-
-func syncDirectory(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
 }
 
 // SessionCreator permits the ACP-owned path to return session/new's ID through
@@ -166,7 +159,7 @@ func (rs *Runs) Prepare(ctx context.Context, plan RunPlan, create SessionCreator
 	if err := r.save("creating"); err != nil {
 		return r, err
 	}
-	if err := syncDirectory(rs.Directory); err != nil {
+	if err := durable.SyncDir(rs.Directory); err != nil {
 		return r, err
 	}
 	if create == nil {
@@ -271,7 +264,7 @@ func (r *Run) saveEvidence(data []byte) error {
 	if err := writeCache(filepath.Join(r.directory, "evidence.json"), data); err != nil {
 		return err
 	}
-	if err := syncDirectory(r.directory); err != nil {
+	if err := durable.SyncDir(r.directory); err != nil {
 		return err
 	}
 	digest := sha256.Sum256(data)

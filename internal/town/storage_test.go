@@ -120,6 +120,7 @@ func TestStorageRetainsUnfinishedUnknownChangedAndSymlinkedEvidence(t *testing.T
 			case "symlink":
 				outside := filepath.Join(t.TempDir(), "precious")
 				os.WriteFile(outside, []byte("private"), 0600)
+				requireSymlinks(t)
 				os.Remove(path)
 				if err := os.Symlink(outside, path); err != nil {
 					t.Fatal(err)

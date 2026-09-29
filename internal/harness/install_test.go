@@ -57,6 +57,7 @@ func binaryEntry(data []byte, extension string) Entry {
 	return Entry{ID: "binary-agent", Name: "Binary Agent", Version: "1", Distribution: Distribution{Binary: map[string]Binary{Platform(): {Archive: "https://example.com/agent" + extension, Cmd: "./bin/agent", Args: []string{"--acp"}, Env: map[string]string{"MODE": "acp"}, SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}}}}
 }
 func TestNativeInstallIsAtomicCachedAndSharedAcrossWorkers(t *testing.T) {
+	requireSymlinks(t)
 	data := tarBytes(t, tarItem{name: "real-agent", body: "fake executable"}, tarItem{name: "bin/agent", kind: tar.TypeSymlink, target: "../real-agent"})
 	entry := binaryEntry(data, ".tar.gz")
 	root := t.TempDir()

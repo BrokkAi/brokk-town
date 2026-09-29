@@ -154,7 +154,11 @@ func TestInvalidMetadataAndUnavailablePlatforms(t *testing.T) {
 		t.Fatal("official registry injected an additional command")
 	}
 	e = sampleEntry()
-	e.Distribution = Distribution{Binary: map[string]Binary{"windows-x86_64": {Archive: "https://example.com/a.zip", Cmd: "./agent.exe"}}}
+	other := "windows-x86_64"
+	if Platform() == other {
+		other = "linux-x86_64"
+	}
+	e.Distribution = Distribution{Binary: map[string]Binary{other: {Archive: "https://example.com/a.zip", Cmd: "./agent.exe"}}}
 	c := New(t.TempDir(), false)
 	c.entries = []Entry{e}
 	for _, v := range c.List().Agents {
@@ -162,7 +166,7 @@ func TestInvalidMetadataAndUnavailablePlatforms(t *testing.T) {
 			t.Fatal("unsupported platform enabled")
 		}
 	}
-	e.Distribution.Binary["windows-x86_64"] = Binary{Archive: "http://example.com/a", Cmd: "../outside"}
+	e.Distribution.Binary[other] = Binary{Archive: "http://example.com/a", Cmd: "../outside"}
 	if err := e.Validate(); err == nil {
 		t.Fatal("unsafe binary metadata accepted")
 	}
@@ -173,7 +177,7 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 	// No anvil or muse-acp binary is stubbed: those harnesses must resolve
 	// through npx.
 	for _, name := range []string{"npx", "uvx", "draupnir"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, exeName(name)), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -183,13 +187,13 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{filepath.Join(dir, "npx"), "--yes", "--", "@example/agent@1.2.3", "--acp", "literal $(text)"}
+	want := []string{filepath.Join(dir, exeName("npx")), "--yes", "--", "@example/agent@1.2.3", "--acp", "literal $(text)"}
 	if !reflect.DeepEqual(command, want) || env["SETTING"] != "value" {
 		t.Fatal(command, env)
 	}
 	e.Distribution = Distribution{Uvx: &Package{Package: "agent==1.2.3", Args: []string{"acp"}}}
 	command, _, err = Launch(context.Background(), t.TempDir(), e)
-	if err != nil || !reflect.DeepEqual(command, []string{filepath.Join(dir, "uvx"), "--", "agent==1.2.3", "acp"}) {
+	if err != nil || !reflect.DeepEqual(command, []string{filepath.Join(dir, exeName("uvx")), "--", "agent==1.2.3", "acp"}) {
 		t.Fatal(command, err)
 	}
 	for _, extra := range supplements() {
@@ -198,13 +202,13 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 			t.Fatal(extra.ID, err)
 		}
 		if pkg, ok := map[string]string{"brokkai/anvil": "@brokkai/anvil", "brokkai/muse-acp": "@brokkai/muse-acp"}[extra.ID]; ok {
-			want := []string{filepath.Join(dir, "npx"), "--yes", "--", pkg}
+			want := []string{filepath.Join(dir, exeName("npx")), "--yes", "--", pkg}
 			if !reflect.DeepEqual(command, want) {
 				t.Fatal(extra.ID, command)
 			}
 			continue
 		}
-		if len(command) != 1 || command[0] != filepath.Join(dir, extra.Command[0]) {
+		if len(command) != 1 || command[0] != filepath.Join(dir, exeName(extra.Command[0])) {
 			t.Fatal(extra.ID, command, err)
 		}
 	}
@@ -220,13 +224,13 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"anvil", "muse-acp"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, exeName(name)), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, legacy := range legacies {
 		command, _, err := Launch(context.Background(), t.TempDir(), legacy)
-		if err != nil || len(command) != 1 || command[0] != filepath.Join(dir, legacy.Command[0]) {
+		if err != nil || len(command) != 1 || command[0] != filepath.Join(dir, exeName(legacy.Command[0])) {
 			t.Fatal("legacy launch", legacy.ID, command, err)
 		}
 	}

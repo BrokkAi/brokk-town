@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/durable"
+	"github.com/BrokkAi/brokk-town/internal/filelock"
 )
 
 type Store struct {
@@ -36,7 +38,7 @@ func Open(dir string, demo bool) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err = filelock.TryLock(f); err != nil {
 		f.Close()
 		return nil, fmt.Errorf("%w: %w", ErrServiceRunning, err)
 	}
@@ -362,7 +364,7 @@ func (s *Store) Close() error {
 	if s.lock == nil {
 		return nil
 	}
-	_ = syscall.Flock(int(s.lock.Fd()), syscall.LOCK_UN)
+	_ = filelock.Unlock(s.lock)
 	err := s.lock.Close()
 	s.lock = nil
 	return err
@@ -493,10 +495,5 @@ func (s *Store) Update(fn func(*State) error) error {
 	s.state = next
 	close(s.changed)
 	s.changed = make(chan struct{})
-	d, err := os.Open(filepath.Dir(s.path))
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return durable.SyncDir(filepath.Dir(s.path))
 }

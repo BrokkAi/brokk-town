@@ -8,10 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
 const (
@@ -55,18 +55,10 @@ func openLogs(dir string) (*os.File, *os.File, error) {
 	return out, errFile, nil
 }
 
-func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
-}
-
 // serviceAlive reports a service that is running and answering.
 func serviceAlive(ctx context.Context, dir string) (connection, bool) {
 	conn, err := readConnection(dir)
-	if err != nil || !processAlive(conn.PID) {
+	if err != nil || !osrun.Alive(conn.PID) {
 		return conn, false
 	}
 	probe, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -116,10 +108,8 @@ func spawnDetached(base string, demo bool, listen, config string, notify *os.Fil
 	cmd.Dir = dir
 	cmd.Stdout = out
 	cmd.Stderr = errFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	// ExtraFiles[0] is descriptor 3 in the child.
-	cmd.ExtraFiles = []*os.File{notify}
-	cmd.Env = append(os.Environ(), readyEnv+"=3")
+	cmd.SysProcAttr = detachedProcess()
+	cmd.Env = append(os.Environ(), readyEnv+"="+passReady(cmd, notify))
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -158,14 +148,14 @@ func logTail(dir string, offset int64) string {
 // stopProcess terminates a service and waits for it to release the state
 // lock after it has stopped its bot processes.
 func stopProcess(ctx context.Context, conn connection) error {
-	if !processAlive(conn.PID) {
+	if !osrun.Alive(conn.PID) {
 		return nil
 	}
-	if err := syscall.Kill(conn.PID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := requestStop(ctx, conn); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
 	deadline := time.Now().Add(stopTimeout)
-	for processAlive(conn.PID) {
+	for osrun.Alive(conn.PID) {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("town service pid %d did not stop within %s", conn.PID, stopTimeout)
 		}
@@ -205,18 +195,7 @@ func takeReadyPipe() *os.File {
 		return nil
 	}
 	os.Unsetenv(readyEnv)
-	fd, err := strconv.Atoi(value)
-	if err != nil || fd < 3 {
-		return nil
-	}
-	// Only a pipe is a notification descriptor; a stray variable must not make
-	// Town write to whatever file happens to be open at that number.
-	var st syscall.Stat_t
-	if syscall.Fstat(fd, &st) != nil || st.Mode&syscall.S_IFMT != syscall.S_IFIFO {
-		return nil
-	}
-	syscall.CloseOnExec(fd)
-	return os.NewFile(uintptr(fd), "ready")
+	return inheritedReady(value)
 }
 
 // signalReady tells a waiting bt -d that Town is serving.
@@ -244,7 +223,7 @@ func awaitReady(ctx context.Context, cmd *exec.Cmd, ready *os.File) error {
 		}
 		return fmt.Errorf("Town exited during startup: %v", cmd.Wait())
 	case <-ctx.Done():
-		_ = cmd.Process.Signal(syscall.SIGTERM)
+		interruptStarting(cmd)
 		_ = cmd.Wait()
 		return ctx.Err()
 	}

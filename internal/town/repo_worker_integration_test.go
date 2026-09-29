@@ -17,6 +17,7 @@ import (
 // Exercise the actual standalone worker: a fake worker cannot catch a mismatch
 // between Town's optional branch and Repo Bot's configuration validation.
 func TestRepoWorkerResolvesTheDefaultBranch(t *testing.T) {
+	skipPOSIXFakes(t)
 	bin := t.TempDir()
 	worker := filepath.Join(bin, "brp")
 	build := exec.CommandContext(t.Context(), "go", "build", "-ldflags", "-X main.version=0.0.0", "-o", worker, "./cmd/brp")

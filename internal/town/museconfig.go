@@ -27,8 +27,11 @@ func museUserConfig(env map[string]string) string {
 	if xdg := museEnv(env, "XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "muse")
 	}
-	if home := museEnv(env, "HOME"); home != "" {
-		return filepath.Join(home, ".config", "muse")
+	// Muse falls back to USERPROFILE where HOME is unset, as on Windows.
+	for _, key := range []string{"HOME", "USERPROFILE"} {
+		if home := museEnv(env, key); home != "" {
+			return filepath.Join(home, ".config", "muse")
+		}
 	}
 	return ""
 }

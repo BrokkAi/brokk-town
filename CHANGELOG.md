@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Build and run the Town service on Windows: portable process control, file
+  locks and durable writes; `bt -d` and `bt shutdown` work without Unix
+  signals; demo mode runs end to end. Bots and the npm launcher do not yet
+  support Windows, and Town needs a Windows-capable acp-go release before it
+  links there.
+- `bt shutdown` can stop a service through the authenticated local API.
+- State defaults to `%LOCALAPPDATA%rokk-town` on Windows.
+
 ## 0.7.5 — 2026-09-28
 
 - Launch Anvil and Muse ACP through `npx` (`@brokkai/anvil` and

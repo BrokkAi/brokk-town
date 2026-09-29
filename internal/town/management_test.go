@@ -505,7 +505,7 @@ func TestSavedRegistryDefinitionSurvivesCatalogChangesAndRestart(t *testing.T) {
 	}
 	// Preparation uses the pinned package without executing it.
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "npx"), []byte("fake executable"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, exeName("npx")), []byte("fake executable"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
