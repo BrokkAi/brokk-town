@@ -30,7 +30,8 @@
   `go vet` pass against the released acp-go.
 - Open (still true in acp-go v0.11.0): acp-go validates ACP paths with the host `filepath.IsAbs`, so the
   Mjolnir session root `"/"` (a POSIX path in the remote target) is refused on
-  Windows. Managed Mjolnir dispatch from Windows needs that fixed in acp-go.
+  Windows. Managed Mjolnir dispatch from Windows needs that fixed in acp-go
+  (BrokkAi/acp-go#45).
 - Open: port shebang fakes to test-binary re-exec helpers so the worker
   protocol, GitHub client and attention hook tests run on Windows; worker
   descendants whose npx parent already exited escape `taskkill /T` (a Job
