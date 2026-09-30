@@ -5,8 +5,8 @@
 - Build and run the Town service on Windows: portable process control, file
   locks and durable writes; `bt -d` and `bt shutdown` work without Unix
   signals; demo mode runs end to end. Bots and the npm launcher do not yet
-  support Windows, and Town needs a Windows-capable acp-go release before it
-  links there.
+  support Windows.
+- Update acp-go to 0.11.0, which builds on Windows.
 - `bt shutdown` can stop a service through the authenticated local API.
 - State defaults to `%LOCALAPPDATA%rokk-town` on Windows.
 

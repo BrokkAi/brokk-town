@@ -5,11 +5,11 @@
 - Goal: run `bt` natively on Windows. Agreed scope for this pass is the
   daemon and demo mode; the bots, win32 npm packages and the `bt.cjs`
   launcher (which still rejects `win32`) follow separately.
-- acp-go v0.8.1 does not build on Windows (its `internal/osrun` uses
-  `Setpgid`/`syscall.Kill`). Another agent owns that work in the acp-go repo;
-  Town must adopt a released acp-go with Windows support before it links on
-  Windows. Local validation used a scratchpad copy of acp-go through an
-  uncommitted `GOWORK`; `go.mod` is unchanged.
+- acp-go v0.8.1 did not build on Windows (its `internal/osrun` used
+  `Setpgid`/`syscall.Kill`); another agent fixed that in the acp-go repo.
+  Town now uses the released acp-go v0.11.0 (no API changes were needed; its
+  LICENSE and NOTICE are unchanged) and builds on Windows. `go test -race`
+  passes on Windows and Linux against it, and `scripts/licenses.py` passes.
 - Implemented in Town: `internal/osrun` process control split per platform
   (Windows: `CREATE_NEW_PROCESS_GROUP`, Ctrl+Break, `taskkill /T`, and
   `OpenProcess` liveness); `internal/filelock` (flock / `LockFileEx`) for the
@@ -28,7 +28,7 @@
   stated reason: 50 rely on POSIX shebang fakes, 8 need symlinks (they run
   with Developer Mode), 2 hit the acp-go path issue below. Linux and macOS
   `go vet` pass against the released acp-go.
-- Open: acp-go validates ACP paths with the host `filepath.IsAbs`, so the
+- Open (still true in acp-go v0.11.0): acp-go validates ACP paths with the host `filepath.IsAbs`, so the
   Mjolnir session root `"/"` (a POSIX path in the remote target) is refused on
   Windows. Managed Mjolnir dispatch from Windows needs that fixed in acp-go.
 - Open: port shebang fakes to test-binary re-exec helpers so the worker
