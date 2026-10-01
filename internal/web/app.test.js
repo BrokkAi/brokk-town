@@ -774,7 +774,7 @@ test("an exhausted agent budget explains itself and never renders absent telemet
     attempts: 12, max_attempts: 12, agent_seconds: 300, max_agent_minutes: 0,
     untimed: 2, exhausted: true,
     reason: "Budget reached: 12 of 12 agent attempts this day. New agent work resumes at 00:00 on 23 Sep.",
-    advice: "Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol.",
+    advice: "Town cannot cap token or dollar spend: no bundled agent harness reports usage back to Town.",
     usage: null, cost_usd: null,
   });
   assert.match(text, /Agent budget/, "Town Hall shows the budget");

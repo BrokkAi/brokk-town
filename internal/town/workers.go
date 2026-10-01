@@ -21,13 +21,12 @@ type BotWorkers struct {
 	GitHub         GitHub
 	Mjolnir        *mjolnir.Catalog
 	MjolnirCommand []string
-	botCommands    map[Role]string
-	poolMu         sync.Mutex
-	pool           map[string]*workerProcess
-	poolContext    context.Context
-	jobsQuery      func(*Town, string, int) (map[int]*issueJobSummary, error)
-	remoteURL      func(string) string
-	executeAgent   func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
+	// botRun replaces the in-process bot with a test double. Production leaves
+	// it nil and calls the bot packages directly.
+	botRun       func(context.Context, Role, workerRequest, bool, func(Progress)) (workerResult, error)
+	jobsQuery    func(*Town, string, int) (map[int]*issueJobSummary, error)
+	remoteURL    func(string) string
+	executeAgent func(context.Context, *Town, sessionTree, string, *slog.Logger, string) (string, error)
 	// confirmWait and confirmInterval bound how long a repair publish waits
 	// for GitHub's pull request head to catch up with the pushed branch.
 	// Zero values use the production defaults.
@@ -396,14 +395,10 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 }
 
 func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, d dispatch, deadline time.Time, observe func(Progress)) (workerResult, error) {
-	bot, err := b.workerBot(ctx, t.ID, role)
-	if err != nil {
-		return workerResult{}, err
-	}
-	observe(Progress{Phase: "starting", Task: "Using " + string(role) + "-bot " + bot.version})
+	observe(Progress{Phase: "starting", Task: "Using " + string(role) + "-bot"})
 	branch := t.Branch()
 	request := workerRequest{
-		Protocol: workerProtocolVersion, Remote: remote, Branch: branch,
+		Remote: remote, Branch: branch,
 		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
 		Agent: agent, Verify: t.Config.Verify, Issue: d.issue, PR: d.pr, BaseSHA: d.base, HeadSHA: d.head,
 	}
@@ -454,24 +449,33 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
 	// Record dispatch provenance before sending work so an interrupted write
 	// remains uncertain until it is reconciled.
-	started := func(run WorkerRun) error {
-		if role != Repo || d.mode != "inventory" {
-			run.Execution = clone(t.Config.Execution)
-			run.Runtime = t.Config.ExecutionRuntimeForRole(role)
-		}
-		if b.Store == nil {
-			return nil
-		}
-		return b.Store.Update(func(st *State) error {
+	run := WorkerRun{
+		Bot: workerBotNames[role], Version: botVersion,
+		Started: time.Now(), Deadline: deadline,
+		Issue: request.Issue, PR: request.PR, BaseSHA: request.BaseSHA, HeadSHA: request.HeadSHA, Mode: request.Mode,
+	}
+	if role != Repo || d.mode != "inventory" {
+		run.Execution = clone(t.Config.Execution)
+		run.Runtime = t.Config.ExecutionRuntimeForRole(role)
+	}
+	if b.Store != nil {
+		if err := b.Store.Update(func(st *State) error {
 			town := st.Towns[t.ID]
 			if town == nil {
 				return errors.New("town disappeared before the worker started")
 			}
 			town.Workers[role].Run = &run
 			return nil
-		})
+		}); err != nil {
+			return workerResult{}, err
+		}
 	}
-	return b.runPersistent(ctx, t.ID, bot, request, retry, deadline, observe, started)
+	result, err := b.dispatchBot(ctx, role, request, retry, observe)
+	result.retried = retry
+	if ctx.Err() != nil {
+		return result, &WorkerInterruptedError{ctx.Err()}
+	}
+	return result, err
 }
 
 func validateWorkerResult(result workerResult, role Role) error {

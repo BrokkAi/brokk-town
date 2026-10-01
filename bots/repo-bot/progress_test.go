@@ -4,21 +4,19 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
 
 func TestObservationSummarizesARun(t *testing.T) {
 	head := strings.Repeat("a", 40)
-	result := worker.Result{
-		Inventory: &worker.Inventory{Head: head, Issues: []worker.Issue{{State: "open"}, {State: "closed"}, {State: "open", Pull: []byte(`{}`)}}, Pulls: []worker.Pull{{State: "open"}, {State: "closed"}}, Releases: []worker.Release{{Tag: "v1"}}, Commits: []worker.Commit{{SHA: head}}},
-		Health:    &worker.BranchHealth{State: healthRepaired, Head: head, Failing: []string{"test"}, Pushed: strings.Repeat("b", 40), Attempts: 1},
+	result := Result{
+		Inventory: &Inventory{Head: head, Issues: []Issue{{State: "open"}, {State: "closed"}, {State: "open", Pull: []byte(`{}`)}}, Pulls: []Pull{{State: "open"}, {State: "closed"}}, Releases: []Release{{Tag: "v1"}}, Commits: []Commit{{SHA: head}}},
+		Health:    &BranchHealth{State: healthRepaired, Head: head, Failing: []string{"test"}, Pushed: strings.Repeat("b", 40), Attempts: 1},
 	}
 	o := observation(result, nil)
 	if o.Head != head || o.OpenIssues != 1 || o.OpenPulls != 1 || o.Releases != 1 || o.NewCommits != 1 || o.Health != healthRepaired || o.Pushed == "" || o.Attempts != 1 || o.Error != "" {
 		t.Fatalf("observation %+v", o)
 	}
-	failed := observation(worker.Result{}, errors.New("GitHub unavailable"))
+	failed := observation(Result{}, errors.New("GitHub unavailable"))
 	if failed.Error != "GitHub unavailable" || observationStatus(failed) != "error" {
 		t.Fatalf("failed observation %+v", failed)
 	}

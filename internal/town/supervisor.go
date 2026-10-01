@@ -19,9 +19,8 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
-// Progress is one worker phase/task snapshot. Seq is the worker protocol event
-// number when the observation came from an external bot stream, so Town can
-// resume that stream after a restart.
+// Progress is one bot phase/task snapshot. Seq is retained for observations
+// that arrive in order, so Town can resume reading after a restart.
 type Progress struct {
 	Phase, Task string
 	Seq         uint64
@@ -57,8 +56,8 @@ type Workers interface {
 }
 
 // InventoryRequest is what Town needs from one repository observation. Town's
-// task graph never crosses the worker protocol: the worker is told only which
-// revisions to compare, never what they mean.
+// task graph never reaches the bot: it is told only which revisions to compare,
+// never what they mean.
 type InventoryRequest struct {
 	Since  *time.Time
 	Branch string
@@ -123,12 +122,6 @@ func (s *Supervisor) update(fn func(*State) error) { s.fail(s.Store.Update(fn)) 
 func (s *Supervisor) Run(ctx context.Context) (runErr error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer func() { cancel(runErr) }()
-	if workers, ok := s.Workers.(*BotWorkers); ok {
-		defer workers.Close()
-		if err := workers.SyncProcesses(ctx, s.Store.Snapshot()); err != nil {
-			return err
-		}
-	}
 	defer func() { cancel(runErr); s.wg.Wait() }()
 	s.wg.Add(1)
 	go func() { defer s.wg.Done(); s.Mjolnir.Run(ctx) }()
@@ -138,14 +131,7 @@ func (s *Supervisor) Run(ctx context.Context) (runErr error) {
 	go func() { defer s.wg.Done(); s.runGuide(ctx) }()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	// Reconnect to bot processes left by the previous service before scheduling
-	// anything, so no house is dispatched twice.
 	for {
-		if workers, ok := s.Workers.(*BotWorkers); ok {
-			if err := workers.SyncProcesses(ctx, s.Store.Snapshot()); err != nil && ctx.Err() == nil {
-				return err
-			}
-		}
 		s.schedule(ctx)
 		select {
 		case <-ctx.Done():
@@ -1307,8 +1293,8 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 }
 
 // retryRelease asks the next release dispatch to lift the release bot's
-// exhausted attempt budget through its worker API. Town never edits the bot's
-// private state itself; the worker resets it and the same run resumes the job.
+// exhausted attempt budget through the bot's own retry. Town never edits the
+// bot's private state itself; the bot resets it and the same run resumes the job.
 func (s *Supervisor) retryRelease(id string) error {
 	return s.Store.Update(func(st *State) error {
 		t := st.Towns[id]

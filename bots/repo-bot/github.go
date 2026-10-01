@@ -12,17 +12,6 @@ import (
 	"time"
 
 	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/osrun"
-	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
-)
-
-// Inventory payload types are the protocol's own, so one observation is read,
-// validated and reported without a private copy in between.
-type (
-	Inventory = worker.Inventory
-	Issue     = worker.Issue
-	Pull      = worker.Pull
-	Release   = worker.Release
-	Commit    = worker.Commit
 )
 
 var sha = regexp.MustCompile(`^[0-9a-f]{40}$`)

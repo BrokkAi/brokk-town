@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-
-	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
 
 // Request is what Town asks for: one complete observation of the repository,
@@ -24,13 +22,13 @@ type Request struct {
 // Run observes the repository and, when the branch it covers is failing its
 // checks, repairs it. The inventory is reported even when the repair does not
 // land: Town's view of the repository must not depend on an agent.
-func Run(ctx context.Context, cfg Config, request Request, agent Agent, log *slog.Logger) (worker.Result, error) {
+func Run(ctx context.Context, cfg Config, request Request, agent Agent, log *slog.Logger) (Result, error) {
 	if err := cfg.validate(true); err != nil {
-		return worker.Result{}, err
+		return Result{}, err
 	}
 	cfg, err := cfg.resolved()
 	if err != nil {
-		return worker.Result{}, err
+		return Result{}, err
 	}
 	if log == nil {
 		log = slog.Default()
@@ -40,7 +38,7 @@ func Run(ctx context.Context, cfg Config, request Request, agent Agent, log *slo
 	report(Progress{Phase: "inventorying", Task: "Reading " + cfg.GitHubRepo()})
 	inventory, err := gh.snapshotSince(ctx, request.InventorySince, request.InventoryBranch)
 	if err != nil {
-		return worker.Result{}, fmt.Errorf("read repository inventory: %w", err)
+		return Result{}, fmt.Errorf("read repository inventory: %w", err)
 	}
 	// Resolve once per run before any state access or repair. Town leaves the
 	// branch empty when following the repository default, including on startup.
@@ -49,13 +47,13 @@ func Run(ctx context.Context, cfg Config, request Request, agent Agent, log *slo
 	if SHA(request.SinceHead) && request.SinceHead != inventory.Head {
 		report(Progress{Phase: "inventorying", Task: "Naming changes since " + short(request.SinceHead)})
 		if inventory.Commits, err = gh.changes(ctx, request.SinceHead, inventory.Head); err != nil {
-			return worker.Result{}, fmt.Errorf("compare branch changes: %w", err)
+			return Result{}, fmt.Errorf("compare branch changes: %w", err)
 		}
 	}
 	if candidates := ancestryCandidates(inventory, request.Commits); len(candidates) > 0 {
 		report(Progress{Phase: "inventorying", Task: "Settling release ancestry"})
 		if inventory.Released, err = released(ctx, cfg, gh, inventory, candidates); err != nil {
-			return worker.Result{}, err
+			return Result{}, err
 		}
 	}
 	report(Progress{Phase: "checking", Task: "Reading checks on " + cfg.Branch})
@@ -63,9 +61,9 @@ func Run(ctx context.Context, cfg Config, request Request, agent Agent, log *slo
 	if err != nil {
 		// The inventory is true whatever the health duty did, so it is reported
 		// rather than lost with the error.
-		return worker.Result{Inventory: &inventory}, err
+		return Result{Inventory: &inventory}, err
 	}
-	return worker.Result{Inventory: &inventory, Health: health}, nil
+	return Result{Inventory: &inventory, Health: health}, nil
 }
 
 // ancestryCandidates is every revision whose release state this run can settle:

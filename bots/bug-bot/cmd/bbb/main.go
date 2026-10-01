@@ -50,8 +50,6 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 		switch args[0] {
 		case "version", "--version", "-v":
 			return versionCommand(args[1:], os.Stdout)
-		case "worker":
-			return workerCommand(ctx, args[1:], buildVersion())
 		case "run", "once", "status", "report", "retry":
 			mode = args[0]
 			args = args[1:]
@@ -59,7 +57,7 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	}
 	fs := flag.NewFlagSet("bbb", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: bbb [run|once|status|report|retry|worker|version] [repository path or URL] [options]\n\nFind reproducible bugs and file new GitHub issues without duplicates. No config file is required.")
+		fmt.Fprintln(fs.Output(), "Usage: bbb [run|once|status|report|retry|version] [repository path or URL] [options]\n\nFind reproducible bugs and file new GitHub issues without duplicates. No config file is required.")
 		fs.PrintDefaults()
 	}
 	var reportStatus string

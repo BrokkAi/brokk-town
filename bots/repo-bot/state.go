@@ -33,7 +33,7 @@ type State struct {
 	VainCompare string    `json:"vain_compare,omitempty"`
 	Updated     time.Time `json:"updated,omitempty"`
 	// History is the latest standalone observations, oldest first, for the
-	// dashboard and status output. Town keeps its own record of worker runs.
+	// dashboard and status output. Town keeps its own record of dispatches.
 	History []Observation `json:"history,omitempty"`
 }
 
@@ -62,7 +62,7 @@ func statePath(cfg Config) string { return filepath.Join(cfg.StateDirectory, "re
 
 // lockWatch keeps a second standalone process off the same state and the same
 // repository branch, where both would spend repair attempts and push repairs.
-// Town serializes its own worker runs.
+// Town serializes its own dispatches.
 func lockWatch(cfg Config) (func(), error) {
 	base, err := stateHome()
 	if err != nil {

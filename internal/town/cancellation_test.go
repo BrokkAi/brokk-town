@@ -13,13 +13,6 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
-func TestWorkerCancellationEventKeepsItsDetail(t *testing.T) {
-	result, err := consumeWorkerEvents(strings.NewReader("{\"type\":\"canceled\",\"seq\":1,\"error\":\"fixture shutdown\"}\n"), 0, func(Progress) {})
-	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "fixture shutdown") || result.terminal {
-		t.Fatalf("lost cancellation evidence: err=%v terminal=%v", err, result.terminal)
-	}
-}
-
 func TestWorkerCancellationCauseAndPhaseSurviveRestart(t *testing.T) {
 	for _, scenario := range []struct {
 		name, want string
@@ -47,8 +40,7 @@ func TestWorkerCancellationCauseAndPhaseSurviveRestart(t *testing.T) {
 				p(Progress{Phase: "inventorying", Task: "Reading fixture"})
 				close(entered)
 				if scenario.name == "worker canceled" {
-					_, err := consumeWorkerEvents(strings.NewReader("{\"type\":\"canceled\",\"seq\":1,\"error\":\"fixture worker shutdown\"}\n"), 0, p)
-					return RunResult{}, &WorkerInterruptedError{err}
+					return RunResult{}, &WorkerInterruptedError{&workerCanceledError{detail: "fixture worker shutdown"}}
 				}
 				<-ctx.Done()
 				return RunResult{}, &WorkerInterruptedError{ctx.Err()}

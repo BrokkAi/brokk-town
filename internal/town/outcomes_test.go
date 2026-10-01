@@ -106,11 +106,8 @@ func TestOutcomeJudgmentRequiresExplicitExplanation(t *testing.T) {
 }
 
 func TestWorkerResultRetainsAvailableUsageAndCost(t *testing.T) {
-	stream := strings.NewReader("{\"type\":\"result\",\"seq\":1,\"result\":{\"issue\":{\"owned\":[]},\"usage\":{\"input_tokens\":80,\"output_tokens\":20},\"cost_usd\":0.125}}\n{\"type\":\"complete\",\"seq\":2}\n")
-	result, err := consumeWorkerEvents(stream, 0, func(Progress) {})
-	if err != nil {
-		t.Fatal(err)
-	}
+	cost := 0.125
+	result := workerResult{Issue: &workerIssueResult{}, Usage: &OutcomeUsage{InputTokens: 80, OutputTokens: 20}, CostUSD: &cost}
 	if err := validateWorkerResult(result, Issue); err != nil {
 		t.Fatal(err)
 	}

@@ -51,8 +51,6 @@ func executeWithRun(ctx context.Context, args []string, logger *slog.Logger, run
 		switch args[0] {
 		case "version", "--version", "-v":
 			return versionCommand(args[1:], os.Stdout)
-		case "worker":
-			return workerCommand(ctx, args[1:], buildVersion())
 		case "run", "once", "status", "history", "retry":
 			mode = args[0]
 			args = args[1:]
@@ -60,7 +58,7 @@ func executeWithRun(ctx context.Context, args []string, logger *slog.Logger, run
 	}
 	flags := flag.NewFlagSet(mode, flag.ContinueOnError)
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: brb [repository path or URL] [options]\n\nRun inside a repository to detect its remote and default branch and start working.\nNo configuration file is needed. Repository instructions and checks are discovered\nby the agent. Existing run, once, status, history, retry, worker and version commands are also supported.\n\nOptions:")
+		fmt.Fprintln(flags.Output(), "Usage: brb [repository path or URL] [options]\n\nRun inside a repository to detect its remote and default branch and start working.\nNo configuration file is needed. Repository instructions and checks are discovered\nby the agent. Existing run, once, status, history, retry and version commands are also supported.\n\nOptions:")
 		flags.PrintDefaults()
 	}
 	tag := flags.String("tag", "", "select receipt details by exact tag (history only)")

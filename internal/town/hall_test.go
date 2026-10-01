@@ -6,8 +6,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -259,20 +257,14 @@ func TestMayorBotBulletinsBuildAContiguousFeed(t *testing.T) {
 	}
 }
 
-func TestMayorWorkerProtocolCarriesTheArrivalAndDuty(t *testing.T) {
-	dir := t.TempDir()
-	fake := filepath.Join(dir, "fake-worker")
-	capture := filepath.Join(dir, "request.json")
-	body := strings.Replace(pythonFakeWorker, `'bot': 'issue-bot'`, `'bot': 'mayor-bot'`, 1)
-	body = strings.Replace(body, `['run', 'progress', 'issue-result', 'exact-issue']`, `['run', 'progress', 'mayor-judgment', 'mayor-bulletin']`, 1)
-	body = strings.Replace(body, `{'issue': {'owned': [{'pr': 7, 'branch': 'town/7', 'issue': 7}]}}`, `{'judgment': {'decision': 'admit', 'reason': 'A real defect with a bounded fix.'}}`, 1)
-	writeFakeWorker(t, fake, body)
-	t.Setenv("TOWN_WORKER_TEST_CAPTURE", capture)
+func TestMayorDispatchCarriesTheArrivalAndDuty(t *testing.T) {
 	store := testStore(t, false)
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	pendingAt(x, &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Complex request", Simplification: &Simplification{Mode: "suggest", Decision: "decline", Detail: "Adds a registry."}})
-	workers := &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Hall: fake}}
+	var request workerRequest
+	workers := &BotWorkers{Root: t.TempDir(), Store: store}
+	workers.botRun = botRunHook(&request, workerResult{Judgment: &Judgment{Decision: "admit", Reason: "A real defect with a bounded fix."}})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result, err := workers.Run(context.Background(), x, Hall, func(Progress) {}, logger)
 	if err != nil {
@@ -281,20 +273,7 @@ func TestMayorWorkerProtocolCarriesTheArrivalAndDuty(t *testing.T) {
 	if result.JudgedTask != "issue:7" || result.Judgment == nil || result.Judgment.Decision != "admit" {
 		t.Fatalf("unexpected mayor result: %+v", result)
 	}
-	var request struct {
-		Issue   int             `json:"issue"`
-		Mode    string          `json:"mode"`
-		Arrival json.RawMessage `json:"arrival"`
-		Since   *time.Time      `json:"since"`
-	}
-	data, err := os.ReadFile(capture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = json.Unmarshal(data, &request); err != nil {
-		t.Fatal(err)
-	}
 	if request.Issue != 7 || request.Mode != "judge" || request.Since != nil || !strings.Contains(string(request.Arrival), "Adds a registry") {
-		t.Fatalf("worker request omitted the duty or arrival: %s", data)
+		t.Fatalf("dispatch omitted the duty or arrival: %+v", request)
 	}
 }

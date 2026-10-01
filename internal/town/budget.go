@@ -35,7 +35,7 @@ const (
 
 // BudgetLimitAdvice explains what Town can and cannot cap. Operators meet it
 // wherever a cost ceiling might be expected.
-const BudgetLimitAdvice = "Town cannot cap token or dollar spend: no bundled agent harness reports usage back through the worker protocol. Limit agent attempts or agent minutes instead."
+const BudgetLimitAdvice = "Town cannot cap token or dollar spend: no bundled agent harness reports usage back to Town. Limit agent attempts or agent minutes instead."
 
 func ValidBudgetPeriod(p string) bool { return p == "day" || p == "week" || p == "month" }
 

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
 
 // Watch runs the bot on its own: it observes the repository every poll
@@ -104,7 +103,7 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 }
 
 // observation summarizes one run for the saved history.
-func observation(result worker.Result, err error) Observation {
+func observation(result Result, err error) Observation {
 	o := Observation{At: time.Now().UTC()}
 	if inventory := result.Inventory; inventory != nil {
 		o.Head, o.Releases, o.NewCommits = inventory.Head, len(inventory.Releases), len(inventory.Commits)

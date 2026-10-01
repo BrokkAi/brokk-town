@@ -51,8 +51,6 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run runFu
 		switch args[0] {
 		case "version", "--version", "-v":
 			return versionCommand(args[1:], stdout)
-		case "worker":
-			return workerCommand(ctx, args[1:], buildVersion())
 		case "run", "once", "status", "assess":
 			mode = args[0]
 			args = args[1:]
@@ -60,7 +58,7 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run runFu
 	}
 	fs := flag.NewFlagSet("bsb", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: bsb [run|once|status|assess|worker|version] [repository path or URL] [options]\n\nPropose removing disproportionate complexity as GitHub issues, or assess one issue or pull request. No config file is required.")
+		fmt.Fprintln(fs.Output(), "Usage: bsb [run|once|status|assess|version] [repository path or URL] [options]\n\nPropose removing disproportionate complexity as GitHub issues, or assess one issue or pull request. No config file is required.")
 		fs.PrintDefaults()
 	}
 	var issue, pr *int

@@ -145,7 +145,7 @@ func (g MergeGate) Allows(p Pull, a *Audit, branch string) bool {
 
 // GitHub is what Town itself still needs from GitHub: the writes it authorizes,
 // and the exact-revision reads that decide them. Repository inventory belongs to
-// Repo Bot, which reports it over the worker protocol.
+// Repo Bot, which reports it to Town directly.
 type GitHub interface {
 	Pull(context.Context, string, int) (Pull, error)
 	Discussion(context.Context, string, int) ([]Discussion, error)

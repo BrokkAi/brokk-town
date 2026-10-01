@@ -53,8 +53,6 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 		switch args[0] {
 		case "version", "--version", "-v":
 			return versionCommand(args[1:], os.Stdout)
-		case "worker":
-			return workerCommand(ctx, args[1:], buildVersion())
 		case "run", "once", "status", "report", "retry", "prune", "publish":
 			mode = args[0]
 			args = args[1:]
@@ -62,7 +60,7 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	}
 	fs := flag.NewFlagSet("bfb", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: bfb [run|once|status|report|retry|prune|publish|worker|version] [repository path or URL] [options]\n\nFind valuable new features and file new GitHub issues without duplicates. No config file is required.")
+		fmt.Fprintln(fs.Output(), "Usage: bfb [run|once|status|report|retry|prune|publish|version] [repository path or URL] [options]\n\nFind valuable new features and file new GitHub issues without duplicates. No config file is required.")
 		fs.PrintDefaults()
 	}
 	file := fs.String("config", "", "optional JSON configuration")

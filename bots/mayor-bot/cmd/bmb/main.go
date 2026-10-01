@@ -58,8 +58,6 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run comma
 		switch args[0] {
 		case "version", "--version", "-v":
 			return versionCommand(args[1:], stdout)
-		case "worker":
-			return workerCommand(ctx, args[1:], buildVersion())
 		case "run", "once", "status", "judge", "bulletin":
 			mode = args[0]
 			args = args[1:]
@@ -67,7 +65,7 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run comma
 	}
 	fs := flag.NewFlagSet("bmb", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: bmb [run|once|status|judge|bulletin|worker|version] [repository path or URL] [options]\n\nWrite bulletins of what merged for the software's users, or judge one issue or pull request. Never writes to GitHub. No config file is required.")
+		fmt.Fprintln(fs.Output(), "Usage: bmb [run|once|status|judge|bulletin|version] [repository path or URL] [options]\n\nWrite bulletins of what merged for the software's users, or judge one issue or pull request. Never writes to GitHub. No config file is required.")
 		fs.PrintDefaults()
 	}
 	var issue, pr *int

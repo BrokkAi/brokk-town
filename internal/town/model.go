@@ -326,7 +326,7 @@ type Worker struct {
 	Next     time.Time             `json:"next,omitempty"`
 	Logs     []Log                 `json:"logs"`
 	// RetryRequested asks the next release dispatch to lift the release bot's
-	// exhausted attempt budget through its worker API before running.
+	// exhausted attempt budget through its own retry before running.
 	RetryRequested bool `json:"retry_requested,omitempty"`
 }
 
@@ -349,12 +349,15 @@ type WorkerRun struct {
 	Runtime   *mjolnir.RuntimePin `json:"runtime,omitempty"`
 	Execution *mjolnir.Selection  `json:"execution,omitempty"`
 
-	Bot      string    `json:"bot"`
-	Version  string    `json:"version"`
-	Command  string    `json:"command"`
-	Hash     string    `json:"hash"`
-	PID      int       `json:"pid"`
-	Socket   string    `json:"socket"`
+	Bot     string `json:"bot"`
+	Version string `json:"version"`
+	// Command, Hash, PID and Socket identified the bot process a dispatch used
+	// to launch. They stay for reading state written before Town called the
+	// bots in process, and are empty for every new run.
+	Command  string    `json:"command,omitempty"`
+	Hash     string    `json:"hash,omitempty"`
+	PID      int       `json:"pid,omitempty"`
+	Socket   string    `json:"socket,omitempty"`
 	Started  time.Time `json:"started"`
 	Deadline time.Time `json:"deadline"`
 	Issue    int       `json:"issue,omitempty"`
@@ -384,7 +387,7 @@ func (r *WorkerRun) Validate(role Role) error {
 	if !ValidAgentRole(role) {
 		return fmt.Errorf("%s worker cannot own an external run", role)
 	}
-	if r.PID <= 0 || r.Socket == "" || r.Bot == "" || !workerVersionPattern.MatchString(r.Version) || r.Command == "" {
+	if r.Bot == "" || !workerVersionPattern.MatchString(r.Version) {
 		return errors.New("invalid worker run handle")
 	}
 	if (r.BaseSHA != "" && !SHA(r.BaseSHA)) || (r.HeadSHA != "" && !SHA(r.HeadSHA)) || r.Issue < 0 || r.PR < 0 {

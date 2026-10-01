@@ -724,12 +724,6 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 			return errors.New("BT_MJOLNIR_COMMAND must be a JSON command array for mj")
 		}
 	}
-	defer workers.Close()
-	if !demo {
-		if err := workers.SyncProcesses(ctx, store.Snapshot()); err != nil {
-			return err
-		}
-	}
 	token, err := serviceToken(dir)
 	if err != nil {
 		return err

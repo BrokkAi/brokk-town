@@ -9,10 +9,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/osrun"
-	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
-
-type BranchHealth = worker.BranchHealth
 
 // checkReader is the branch verdict this duty works from. The GitHub client
 // supplies it in production; tests supply a verdict of their own.

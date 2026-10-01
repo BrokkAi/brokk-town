@@ -144,12 +144,8 @@ func (b *BotWorkers) queryIssueJobs(t *Town, mode string, issue int) (map[int]*i
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	bot, err := b.workerBot(ctx, t.ID, Issue)
-	if err != nil {
-		return nil, err
-	}
 	dir, state := Workspace(b.Root, t.ID, Issue)
-	result, err := b.runPersistent(ctx, t.ID, bot, workerRequest{Protocol: workerProtocolVersion, Remote: b.remote(t.Config.Repo), Branch: t.Branch(), Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com", Mode: mode, Issue: issue}, false, time.Now().Add(15*time.Second), func(Progress) {}, nil)
+	result, err := b.dispatchBot(ctx, Issue, workerRequest{Remote: b.remote(t.Config.Repo), Branch: t.Branch(), Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com", Mode: mode, Issue: issue}, false, func(Progress) {})
 	return result.Jobs, err
 }
 func (b *BotWorkers) CanRetryIssue(t *Town, issue int) (bool, error) {

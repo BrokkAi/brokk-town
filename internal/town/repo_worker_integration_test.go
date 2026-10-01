@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -14,19 +13,13 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
-// Exercise the actual standalone worker: a fake worker cannot catch a mismatch
-// between Town's optional branch and Repo Bot's configuration validation.
+// Exercise the actual Repo Bot in process: it must resolve the repository's
+// default branch even when Town configured none.
 func TestRepoWorkerResolvesTheDefaultBranch(t *testing.T) {
 	skipPOSIXFakes(t)
 	bin := t.TempDir()
-	worker := filepath.Join(bin, "brp")
-	build := exec.CommandContext(t.Context(), "go", "build", "-ldflags", "-X main.version=0.0.0", "-o", worker, "./cmd/brp")
-	build.Dir = "../../bots/repo-bot"
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build repo worker: %v\n%s", err, out)
-	}
 	// Only these reads are allowed. Git and agents must never run in this test.
-	writeFakeWorker(t, filepath.Join(bin, "gh"), `#!/bin/sh
+	writeTestCommand(t, filepath.Join(bin, "gh"), `#!/bin/sh
 [ "$1" = api ] && [ "$4" = --method ] && [ "$5" = GET ] || exit 1
 case "$6" in
   repos/acme/orchard) echo '{"default_branch":"main"}' ;;
@@ -38,7 +31,7 @@ case "$6" in
   *) echo "unexpected GitHub request: $6" >&2; exit 1 ;;
 esac
 `)
-	writeFakeWorker(t, filepath.Join(bin, "git"), "#!/bin/sh\nexit 1\n")
+	writeTestCommand(t, filepath.Join(bin, "git"), "#!/bin/sh\nexit 1\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for _, tc := range []struct {
 		name, configured, observed, want string
@@ -66,8 +59,7 @@ esac
 				}
 			})
 			x = store.Snapshot().Towns[x.ID]
-			workers := &BotWorkers{Root: t.TempDir(), Store: store, botCommands: map[Role]string{Repo: worker}}
-			t.Cleanup(workers.Close)
+			workers := &BotWorkers{Root: t.TempDir(), Store: store}
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
 			result, err := workers.Observe(ctx, x, InventoryRequest{Health: tc.recovery || tc.managed}, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -102,12 +94,6 @@ esac
 		// Exercise the whole scheduler, including the real Issue Bot summaries
 		// before and after the real Repo Bot inventory. Direct Observe calls
 		// alone do not prove an upgraded service can reconcile saved state.
-		issueWorker := filepath.Join(bin, "bib")
-		build := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-ldflags", "-X main.version=0.0.0", "-o", issueWorker, "./cmd/bib")
-		build.Dir = "../../bots/issue-bot"
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("build issue worker: %v\n%s", err, out)
-		}
 		dir := t.TempDir()
 		before := legacyBranchFailure(t, dir, true, true)
 		store, err := Open(dir, false)
@@ -118,8 +104,7 @@ esac
 		if x := store.Snapshot().Towns[before.ID]; x.Error != "" || x.Initialized {
 			t.Fatalf("upgrade did not retire only the obsolete error: error=%q initialized=%v", x.Error, x.Initialized)
 		}
-		workers := &BotWorkers{Root: t.TempDir(), Store: store, botCommands: map[Role]string{Repo: worker, Issue: issueWorker}}
-		defer workers.Close()
+		workers := &BotWorkers{Root: t.TempDir(), Store: store}
 		sup := NewSupervisor(store, newGH(1), workers)
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 		defer cancel()

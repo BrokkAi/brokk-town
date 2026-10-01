@@ -50,8 +50,6 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run runFu
 		switch args[0] {
 		case "version", "--version", "-v":
 			return versionCommand(args[1:], stdout)
-		case "worker":
-			return workerCommand(ctx, args[1:], buildVersion())
 		case "run", "once", "status":
 			mode = args[0]
 			args = args[1:]
@@ -59,7 +57,7 @@ func executeWith(ctx context.Context, args []string, log *slog.Logger, run runFu
 	}
 	fs := flag.NewFlagSet("brp", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: brp [run|once|status|worker|version] [repository path or URL] [options]\n\nObserve a repository and repair its branch when its checks fail. No config file is required.")
+		fmt.Fprintln(fs.Output(), "Usage: brp [run|once|status|version] [repository path or URL] [options]\n\nObserve a repository and repair its branch when its checks fail. No config file is required.")
 		fs.PrintDefaults()
 	}
 	file := fs.String("config", "", "optional JSON configuration")

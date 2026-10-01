@@ -7,15 +7,30 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
+
+// unixSocketClient dials Town's own remote-agent callback socket, which a bot
+// uses to ask for a managed agent.
+func unixSocketClient(path string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, "unix", path)
+			},
+			DisableKeepAlives: true,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
 
 func TestManagedCertificationReadsExactTargetDiff(t *testing.T) {
 	b, x, task, _ := fixtureWorkers(t)
@@ -115,7 +130,7 @@ func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 	if err != nil || !ownerOnly(info.Mode()) {
 		t.Fatal("callback socket is not private")
 	}
-	client := workerClient(path)
+	client := unixSocketClient(path)
 	defer client.CloseIdleConnections()
 	for _, tc := range []struct {
 		body   string
@@ -164,16 +179,5 @@ func TestManagedUnsupportedDutiesAndDemoRemainOffline(t *testing.T) {
 	b.Store = testStore(t, true)
 	if _, err := b.beginManaged(t.Context(), x, Review, nil); err == nil || calls.Load() != before {
 		t.Fatal("demo or unsupported work contacted Mjolnir")
-	}
-}
-
-func TestManagedWorkerCapabilitiesRefuseBeforeRunIntent(t *testing.T) {
-	for _, request := range []workerRequest{{RemoteAgent: "/private/agent.sock"}, {DryRun: true}} {
-		p := &workerProcess{done: make(chan struct{}), gate: make(chan struct{}, 1), info: workerInitialize{Capabilities: []string{"run", "progress"}}}
-		started := false
-		_, err := p.run(t.Context(), request, false, time.Now().Add(time.Minute), nil, func(WorkerRun) error { started = true; return nil })
-		if err == nil || started {
-			t.Fatal("legacy worker received an unsupported request")
-		}
 	}
 }

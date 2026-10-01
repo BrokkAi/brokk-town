@@ -2,13 +2,9 @@ package town
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -257,20 +253,14 @@ func TestSimplifierRepositoryScanHasNoItemAssessment(t *testing.T) {
 	}
 }
 
-func TestSimplifierWorkerProtocolCarriesModeAndTypedAssessment(t *testing.T) {
-	dir := t.TempDir()
-	fake := filepath.Join(dir, "fake-worker")
-	capture := filepath.Join(dir, "request.json")
-	body := strings.Replace(pythonFakeWorker, `'bot': 'issue-bot'`, `'bot': 'simplifier-bot'`, 1)
-	body = strings.Replace(body, `['run', 'progress', 'issue-result', 'exact-issue']`, `['run', 'progress', 'simplifier-review']`, 1)
-	body = strings.Replace(body, `{'issue': {'owned': [{'pr': 7, 'branch': 'town/7', 'issue': 7}]}}`, `{'simplification': {'mode': 'suggest', 'decision': 'decline', 'summary': 'Low value', 'detail': 'No callers.'}}`, 1)
-	writeFakeWorker(t, fake, body)
-	t.Setenv("TOWN_WORKER_TEST_CAPTURE", capture)
+func TestSimplifierDispatchCarriesModeAndTypedAssessment(t *testing.T) {
 	store := testStore(t, false)
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Complex request", Stage: "simplifying", House: Simplifier, Updated: time.Now()}
-	workers := &BotWorkers{Root: dir, Store: store, botCommands: map[Role]string{Simplifier: fake}}
+	var request workerRequest
+	workers := &BotWorkers{Root: t.TempDir(), Store: store}
+	workers.botRun = botRunHook(&request, workerResult{Simplification: &workerSimplification{Mode: "suggest", Decision: "decline", Summary: "Low value", Detail: "No callers."}})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result, err := workers.Run(context.Background(), x, Simplifier, func(Progress) {}, logger)
 	if err != nil {
@@ -279,18 +269,7 @@ func TestSimplifierWorkerProtocolCarriesModeAndTypedAssessment(t *testing.T) {
 	if result.Issue != 7 || result.Simplification == nil || result.Simplification.Decision != "decline" || result.Simplification.Mode != "suggest" {
 		t.Fatalf("unexpected simplifier result: %+v", result)
 	}
-	var request struct {
-		Issue int    `json:"issue"`
-		Mode  string `json:"mode"`
-	}
-	data, err := os.ReadFile(capture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = json.Unmarshal(data, &request); err != nil {
-		t.Fatal(err)
-	}
 	if request.Issue != 7 || request.Mode != "suggest" {
-		t.Fatalf("worker request omitted target or mode: %+v", request)
+		t.Fatalf("dispatch omitted target or mode: %+v", request)
 	}
 }

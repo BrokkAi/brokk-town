@@ -2,12 +2,9 @@ package town
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -64,46 +61,6 @@ func TestIncrementalAbsencePreservesClosingClaimAndFullCursor(t *testing.T) {
 	})
 	if s.Snapshot().Towns[x.ID].Tasks["issue:1"].Stage != "declined" {
 		t.Fatal("full scan no longer resolves absence")
-	}
-}
-func TestWorkerNegotiatesIncrementalFieldsWithoutBreakingOlderAPI(t *testing.T) {
-	for _, supports := range []bool{false, true} {
-		t.Run(map[bool]string{false: "legacy", true: "incremental"}[supports], func(t *testing.T) {
-			capture := filepath.Join(t.TempDir(), "request.json")
-			t.Setenv("TOWN_WORKER_TEST_CAPTURE", capture)
-			body := pythonFakeWorker
-			if supports {
-				body = strings.Replace(body, "capabilities.append('parent-socket')", "capabilities.append('parent-socket')\n        capabilities.append('incremental-inventory')", 1)
-			}
-			path := filepath.Join(t.TempDir(), "worker")
-			writeFakeWorker(t, path, body)
-			b := &BotWorkers{botCommands: map[Role]string{Issue: path}}
-			bot, err := b.externalBot(context.Background(), Issue)
-			if err != nil {
-				t.Fatal(err)
-			}
-			p, err := startWorkerProcess(context.Background(), bot)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer p.close()
-			since := time.Now().Add(-time.Hour)
-			_, err = p.run(context.Background(), workerRequest{Protocol: 1, InventorySince: &since, InventoryBranch: "main"}, false, time.Now().Add(time.Minute), func(Progress) {}, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			data, err := os.ReadFile(capture)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var request map[string]any
-			if err = json.Unmarshal(data, &request); err != nil {
-				t.Fatal(err)
-			}
-			if (request["inventory_since"] != nil) != supports || (request["inventory_branch"] != nil) != supports {
-				t.Fatal(request)
-			}
-		})
 	}
 }
 
