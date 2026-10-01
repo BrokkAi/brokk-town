@@ -23,18 +23,17 @@ per-bot release. If you find code or docs that describe one, it is stale.
 | `internal/guide` | Town Guide agent session. |
 | `internal/durable`, `internal/filelock`, `internal/osrun` | Durable writes, locking and process control. |
 | `bots/*` | One package per bot; each owns its prompt, config and durable state. |
-| `scripts/` | Build, packaging, license and smoke tooling (Python). |
+| `scripts/` | Generates the license file attached to a release. |
 | `docs/` | Operator and developer documentation. |
-| `licenses/` | Reviewed dependency policy and generated notices. |
+| `licenses/` | Generated third-party notices and supplementary license texts. |
 
 ## Build and test
 
 ```sh
-make build     # python3 scripts/build.py -> bin/bt
+make build     # go build -o bin/bt ./cmd/bt
 make test      # go test -race ./... and the browser JavaScript tests
 make js        # node --check every browser source, then node --test
-make check     # full gate: test, vet, licenses, browser, installer and scripts
-make smoke     # build, then run the isolated demo integration checks
+make check     # full gate: race tests, browser tests and vet
 ```
 
 `make check` is the gate. Run it before claiming a change is done. When you are
@@ -44,12 +43,11 @@ only touching one area, the fast loop is:
 go test -race ./internal/town/...      # or the package you changed
 go vet ./...
 make js                                # browser JavaScript
-python3 -m unittest discover -s scripts -p '*_test.py'
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same Go checks on Linux for pull
-requests and on Linux and macOS for `master` and release tags, plus the browser,
-Python, installer and workflow-lint checks.
+requests and on Linux and macOS for `master`, plus the browser and
+workflow-lint checks.
 
 ## Working rules
 
@@ -100,7 +98,7 @@ affected page in the same change:
 
 ## Releasing
 
-A release is a tag push: `git tag vX.Y.Z-town && git push origin vX.Y.Z-town`.
-The workflow runs CI, builds the native archives, and publishes them as a GitHub
-release. Do not create tags or push to a release branch unless the user
-explicitly asked for a release. See [RELEASING.md](RELEASING.md).
+A release is a tag push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The workflow
+runs GoReleaser, which builds the archives, checksums them and publishes the
+GitHub release. Do not create tags or push to a release branch unless the user
+explicitly asked for a release.

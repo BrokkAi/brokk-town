@@ -22,9 +22,8 @@ make build
 export PATH="$PWD/bin:$PATH"
 ```
 
-You need Go 1.27.1 or newer, Node.js 24 for the browser tests, and Python 3 for
-the packaging and license tooling. `gh` is only needed to exercise real
-repositories; tests use fakes and the demo service.
+You need Go 1.27.1 or newer and Node.js 24 for the browser tests. `gh` is only
+needed to exercise real repositories; tests use fakes and the demo service.
 
 ## The gate
 
@@ -33,10 +32,7 @@ make check
 ```
 
 This runs, in order: `go test -race ./...`, the browser JavaScript syntax checks
-and tests (`make js`), `python3 scripts/licenses.py`, `go vet ./...`, a shell
-syntax check of `install.sh`, and the Python unit tests under `scripts/`. Run it
-before you push. `make smoke` additionally builds the binary and runs the
-isolated demo integration checks, including the Mjolnir harness.
+and tests (`make js`), and `go vet ./...`. Run it before you push.
 
 ## What we look for
 
@@ -82,8 +78,10 @@ pull request.
 
 ## Releases
 
-Maintainers publish by pushing a `vX.Y.Z-town` tag; see [RELEASING.md](RELEASING.md).
-Contributors do not need to do anything for a release and should not create tags.
+Maintainers publish by pushing a `vX.Y.Z` tag. The `Release town` workflow runs
+GoReleaser, which builds the archives, checksums them, and publishes the GitHub
+release. Contributors do not need to do anything for a release and should not
+create tags.
 
 ## Code of conduct
 

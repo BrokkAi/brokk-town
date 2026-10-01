@@ -145,7 +145,7 @@ confirmed against current state. See [operations.md](operations.md).
 
 `bt --demo` runs a closed simulation in a separate state directory: it seeds two
 towns and never receives a GitHub client, an Mjolnir connection or a worker
-runner. It is used by the smoke tests and is safe to run anywhere.
+runner. It is safe to run anywhere.
 
 `cmd/townsim` is a stochastic model of the scheduler. It reproduces the
 supervisor's rules — one worker per house, shared capacity, poll cadence,

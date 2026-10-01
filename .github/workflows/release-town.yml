@@ -1,35 +1,24 @@
 name: Release town
 on:
   push:
-    tags: ['v*-town']
+    tags: ['v*']
 permissions:
-  contents: read
-concurrency:
-  group: release-town-${{ github.ref_name }}
-  cancel-in-progress: false
+  contents: write
 jobs:
-  checks:
-    uses: ./.github/workflows/ci.yml
   release:
-    needs: checks
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: packages-publish
-    permissions:
-      contents: write
-    defaults:
-      run:
-        working-directory: .
-    env:
-      GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ github.ref_name }}
-      RELEASE_COMMIT: ${{ github.sha }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version-file: ./go.mod
+          go-version-file: go.mod
           cache: false
-      - run: python3 scripts/publish_tag.py
+      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

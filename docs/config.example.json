@@ -50,7 +50,7 @@
             "triage": true,
             "verification_timeout_seconds": 1800,
             "workflows": ["ci.yml", "release-town.yml"],
-            "assets": ["brokk-town-*-linux-amd64.tar.gz", "checksums.txt"]
+            "assets": ["brokk-town_*_linux_amd64.tar.gz", "checksums.txt"]
           }
         }
       },

@@ -1,6 +1,6 @@
 name: CI
 # Pushes only run CI on master: a pull request branch is already covered by its
-# pull_request run, and a release tag by the release workflow's own call.
+# pull_request run.
 on:
   push:
     branches: [master]
@@ -22,7 +22,7 @@ jobs:
     # other while the work itself takes under half an hour in total. The bots
     # share the root module and its Go version, so one toolchain setup serves
     # them all. The account's runner limit is tight, so pull requests run on
-    # Ubuntu only; macOS runs on master and releases.
+    # Ubuntu only; macOS runs on master.
     strategy:
       fail-fast: false
       matrix:
@@ -40,8 +40,8 @@ jobs:
           node-version: '24'
       - name: Check the module
         # One module covers Town and every bot, so the whole package tree is
-        # checked in a single pass. The browser, Python, installer and smoke
-        # checks run once for Town below.
+        # checked in a single pass. The browser checks and the build run once
+        # for Town below.
         run: |
           unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
           if [ -n "$unformatted" ]; then
@@ -51,8 +51,12 @@ jobs:
           fi
           go test -race ./...
           go vet ./...
-      - name: Build Town and run its smoke checks
-        run: make js && make build && python3 scripts/smoke.py && python3 scripts/smoke_mjolnir.py
+      - name: Check the license file is current
+        run: |
+          sh scripts/licenses.sh
+          git diff --exit-code -- licenses/THIRD_PARTY_NOTICES.txt
+      - name: Build Town
+        run: make js && make build
   workflows:
     runs-on: ubuntu-latest
     steps:

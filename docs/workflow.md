@@ -146,7 +146,7 @@ A release goes through preparation, publishability preflight, publication and
 independent verification. The prepared commit and tag are binding; the agent may
 not weaken checks or rewrite a published tag. If publication is partial, the next
 attempt reconciles it rather than republishing from scratch. See
-[RELEASING.md](../RELEASING.md) for this repository's own release.
+[README.md](../README.md#releasing) for this repository's own release.
 
 ## Deferral
 

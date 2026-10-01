@@ -10,12 +10,12 @@ the `gh` and agent credentials you already have.
 The eight bots are Go packages of this module. Town calls them in process: there
 is no separate bot daemon to install, no worker protocol to keep in version
 step, and no per-bot release to track. One binary (`bt`) and one release tag
-(`vX.Y.Z-town`) cover the whole project.
+(`vX.Y.Z`) cover the whole project.
 
 ## Requirements
 
-- Linux or macOS (amd64 or arm64) for the packaged binary. The service also
-  builds and runs on Windows; Windows is not packaged yet.
+- Go 1.27.1 or newer, the version in [go.mod](go.mod), to install with
+  `go install`. The release binaries need no toolchain.
 - Git.
 - [`gh`](https://cli.github.com/) authenticated for the repositories you add.
 - An ACP agent harness. Town ships an official registry catalog and installs or
@@ -24,19 +24,41 @@ step, and no per-bot release to track. One binary (`bt`) and one release tag
 
 ## Install
 
+Go 1.27.1 or newer:
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/BrokkAi/brokk-town/master/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
+go install github.com/BrokkAi/brokk-town/cmd/bt@latest
+export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
-The shell installer downloads the latest GitHub release, verifies its SHA-256
-checksum and installs `bt`. Or build from source with the Go version in
-[go.mod](go.mod):
+To pin a specific release:
+
+```sh
+go install github.com/BrokkAi/brokk-town/cmd/bt@v0.8.1
+```
+
+`go install` records the module version in the binary, so `bt version` reports
+what you installed. Or build from a checkout:
 
 ```sh
 make build
 export PATH="$PWD/bin:$PATH"
 ```
+
+### Without Go
+
+Every release also publishes prebuilt archives for Linux, macOS and Windows on
+amd64 and arm64 on the [releases page](https://github.com/BrokkAi/brokk-town/releases).
+Download the archive for your platform, unpack it, and put `bt` on your `PATH`:
+
+```sh
+tar -xzf brokk-town_v0.8.1_linux_amd64.tar.gz
+install -m 755 bt "$HOME/.local/bin/bt"
+```
+
+Each archive contains `bt`, `LICENSE`, `NOTICE` and
+`licenses/THIRD_PARTY_NOTICES.txt`. The release's `checksums.txt` verifies the
+download.
 
 ## First run
 
@@ -157,8 +179,7 @@ The file is either a JSON array of town configurations or an object with
 
 ```sh
 make build     # build bin/bt
-make check     # race tests, vet, licenses, browser, installer and script checks
-make smoke     # build and run the isolated demo integration checks
+make check     # race tests, browser tests and vet
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow and
@@ -169,11 +190,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow and
 A release is a tag push:
 
 ```sh
-git tag vX.Y.Z-town && git push origin vX.Y.Z-town
+git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-The tag starts the `Release town` workflow, which runs CI, builds the native
-archives and publishes them as a GitHub release. See [RELEASING.md](RELEASING.md).
+The tag starts the `Release town` workflow, which runs
+[GoReleaser](https://goreleaser.com/) to build the archives for Linux, macOS and
+Windows, checksum them, and publish a GitHub release.
 
 ## License
 

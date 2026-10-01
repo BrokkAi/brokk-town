@@ -1,0 +1,48 @@
+version: 2
+
+project_name: brokk-town
+
+before:
+  hooks:
+    - sh scripts/licenses.sh
+
+builds:
+  - id: bt
+    main: ./cmd/bt
+    binary: bt
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Tag}}
+
+archives:
+  - id: bt
+    ids:
+      - bt
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - NOTICE
+      - licenses/THIRD_PARTY_NOTICES.txt
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+
+release:
+  draft: false
