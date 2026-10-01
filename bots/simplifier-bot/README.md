@@ -44,7 +44,7 @@ edit or a moved revision fails an assessment.
 ## Configuration
 
 Town fills this configuration from the town's agent profile and the simplifier
-house's policy (`bt settings --role simplifier`). The package's own fields are:
+house's policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

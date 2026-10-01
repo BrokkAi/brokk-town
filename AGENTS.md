@@ -5,7 +5,7 @@ Instructions for automated and human contributors working in this repository.
 ## What this repository is
 
 Brokk Town is one Go module. `cmd/bt` is the whole product: a local service with
-an embedded browser UI and a command-line client. The eight bots live under
+an embedded browser UI and a small process-control CLI. The eight bots live under
 `bots/` as packages of this module and are called in process, not over a socket
 or a separate binary. There is no worker protocol, no per-bot module, and no
 per-bot release. If you find code or docs that describe one, it is stale.
@@ -14,7 +14,7 @@ per-bot release. If you find code or docs that describe one, it is stale.
 
 | Path | Contents |
 | --- | --- |
-| `cmd/bt` | Service entry point, CLI parsing, client commands, background start. |
+| `cmd/bt` | Service entry point, process-control CLI, background start. |
 | `cmd/townsim` | A stochastic scheduler model used to sanity-check defaults. |
 | `internal/town` | State model, store, supervisor, scheduling, funnels, recovery, storage. |
 | `internal/web` | HTTP server, embedded assets and the browser UI. |
@@ -91,7 +91,7 @@ workflow-lint checks.
 affected page in the same change:
 
 - `docs/configuration.md` for settings, policies and config-file fields.
-- `docs/operations.md` for CLI commands, the browser and the local API.
+- `docs/operations.md` for process commands, the browser and the local API.
 - `docs/workflow.md` for how work moves between houses.
 - `docs/architecture.md` for the internal structure.
 - `docs/recovery.md`, `docs/storage.md` for interruption and retention.

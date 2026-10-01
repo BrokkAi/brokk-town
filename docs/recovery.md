@@ -12,7 +12,7 @@ the next startup turns that `run` into a **recovery hold**:
 
 ```
 Interrupted issue work on pr:42 has an uncertain outcome.
-Check GitHub and the saved bot result; then use retry --task pr:42 if unfinished.
+Check GitHub and the saved bot result; then retry pr:42 in the browser if unfinished.
 Automatic replacement work is held.
 ```
 
@@ -32,8 +32,8 @@ phase in the durable log and outcome history.
 2. If it landed, the normal inventory reconciles it and some holds clear
    themselves — an issue whose implementation pull request is recorded resolves
    its hold without operator action.
-3. If it did not land, retry the task: `bt retry --repo OWNER/REPO --task ID`.
-4. If no specific task is known, start the house again (`bt start --role R`).
+3. If it did not land, use Reconcile and retry on the task in the browser.
+4. If no specific task is known, start the house again from the browser.
 
 Repo Bot's hold is special: a repair may have pushed a commit, so inventory
 continues but repairs stay held until an operator inspects the branch. Losing an
@@ -47,7 +47,7 @@ reads.
   second incomplete attempt on the same revision retires the pull request.
 - Release Bot retries a failed release after its own delay and preserves local
   work and evidence. After its attempt budget is exhausted the job stays pending;
-  `bt retry --role release` resets the budget.
+  Retry release in the browser resets the budget.
 - An agent setup failure — an unknown model, an unsupported effort — exits before
   any work and does not consume an attempt. Correct the setting and restart.
 

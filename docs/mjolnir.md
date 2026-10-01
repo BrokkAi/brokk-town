@@ -36,25 +36,15 @@ on request or on a short interval. The catalog lists:
 - **profiles** — the agent profile a run uses;
 - **bundles** — the repositories a workspace needs.
 
-```sh
-bt execution                # cached catalog
-bt execution --refresh      # ask the daemon for a fresh catalog
-```
-
-The cache is scoped to the connection that produced it, so switching daemons
-never reuses another daemon's options.
+The browser's Execution view shows the cached catalog and can ask the daemon for
+a fresh one. The cache is scoped to the connection that produced it, so switching
+daemons never reuses another daemon's options.
 
 ## Selecting execution
 
 A selection is a `{ target_id, profile_id }` pair. An empty pair is direct local
-execution.
-
-```sh
-bt execution --repo OWNER/REPO --target TARGET --profile PROFILE          # town default
-bt execution --repo OWNER/REPO --role review --target T --profile P      # one house
-bt execution --repo OWNER/REPO --role issue --local-execution            # force local
-bt execution --repo OWNER/REPO --role issue --inherit-execution          # drop override
-```
+execution. Use the browser's Execution view to set a town default, override one
+house, force local execution, or restore inheritance.
 
 Saving a selection only stores catalog references; availability stays advisory.
 Selecting a target does not start it.
@@ -62,13 +52,8 @@ Selecting a target does not start it.
 ## Runtime pinning
 
 Before a house can be dispatched to a managed target, Town pins the exact runtime
-from an initialized session on that target:
-
-```sh
-bt execution --repo OWNER/REPO --role review --target T --profile P --runtime-session SESSION
-```
-
-The pin records the runtime identity and the session it came from, and it is
+from an initialized session on that target. The browser's Execution view selects
+that session and records the runtime identity and where it came from. The pin is
 validated on load. A house with a managed selection and no valid pin shows a hold
 ("Select a known Mjolnir runtime before dispatching this bot") instead of
 dispatching. This prevents a dispatch from silently landing on a different

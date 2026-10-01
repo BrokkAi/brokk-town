@@ -6,7 +6,8 @@ its source into one internal shape so the rest of the pipeline never learns wher
 an item came from.
 
 Funnels are configured per town in a `--config` file under `funnels`. They are
-not exposed through `bt settings`; edit the config file and restart the service.
+not exposed in the browser's Settings view; edit the config file and restart the
+service.
 
 ## The normalised model
 

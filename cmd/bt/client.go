@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
@@ -100,7 +99,7 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 	}
 	sort.Strings(ids)
 	if len(ids) == 0 {
-		fmt.Println("No towns; add one with bt add --repo OWNER/REPO")
+		fmt.Println("No towns; add one in the browser")
 	}
 	for _, id := range ids {
 		t := state.Towns[id]
@@ -172,44 +171,4 @@ func printDiagnostics(label string, report *town.DiagnosticReport) {
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
-}
-
-// listHarnesses prints the ACP registry catalog. A running Town answers, so a
-// refresh updates the catalog it uses; otherwise the CLI reads, and refreshes,
-// the same cache the next Town start loads.
-func listHarnesses(ctx context.Context, dir string, demo, refresh bool) error {
-	var catalog harness.Listing
-	if conn, alive := serviceAlive(ctx, dir); alive {
-		method, path := "GET", "/api/harnesses"
-		var body any
-		if refresh {
-			method, path, body = "POST", "/api/harnesses/refresh", map[string]any{}
-		}
-		if err := request(ctx, conn, method, path, body, &catalog); err != nil {
-			return err
-		}
-	} else {
-		local := harness.New(filepath.Join(dir, "harnesses"), demo)
-		if refresh {
-			if err := local.Refresh(ctx); err != nil {
-				return err
-			}
-		}
-		catalog = local.List()
-	}
-	fmt.Println("Official ACP registry:", catalog.Source)
-	if catalog.Demo {
-		fmt.Println("Demo uses the bundled registry offline.")
-	} else if catalog.Stale {
-		fmt.Println("Using a bundled or cached catalog; run bt harnesses --refresh to update.")
-	}
-	for _, a := range catalog.Agents {
-		availability := ""
-		if !a.Available {
-			availability = " [unavailable on this platform]"
-		}
-		fmt.Printf("%-25s %-16s %s (%s)%s\n", a.ID, a.Version, a.Name, a.Source, availability)
-	}
-	fmt.Println("custom — supply an ACP command with --agent-command")
-	return nil
 }

@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -125,7 +124,7 @@ func main() {
 	}
 }
 func run(ctx context.Context, args []string) error {
-	// Bare bt, with only flags, runs Town; a first word names a client command.
+	// Bare bt, with only flags, runs Town; a first word names a process command.
 	command := ""
 	explicit := false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -135,12 +134,6 @@ func run(ctx context.Context, args []string) error {
 	}
 	fs := flag.NewFlagSet(strings.TrimSpace("bt "+command), flag.ContinueOnError)
 	fl := addCLIFlags(fs)
-	dir, listen, demo := fl.dir, fl.listen, fl.demo
-	repo, role, task := fl.repo, fl.role, fl.task
-	agentHarness, harnessVersion := fl.harness, fl.harnessVersion
-	model, effort, agentCommand := fl.model, fl.effort, fl.agentCommand
-	inherit := fl.inherit
-	kind, title, bodyFile, requestID := fl.kind, fl.title, fl.bodyFile, fl.requestID
 	fs.Usage = func() {
 		if !explicit {
 			printRootHelp(fs.Output(), fs)
@@ -190,17 +183,17 @@ func run(ctx context.Context, args []string) error {
 	if err := checkFlags(fs, cmd, explicit); err != nil {
 		return err
 	}
-	base, err := filepath.Abs(*dir)
+	base, err := filepath.Abs(*fl.dir)
 	if err != nil {
 		return err
 	}
-	abs := runtimeDir(base, *demo)
+	abs := runtimeDir(base, *fl.demo)
 	switch command {
 	case "":
 		if *fl.daemon {
-			return startBackground(ctx, base, *demo, *listen, *fl.config)
+			return startBackground(ctx, base, *fl.demo, *fl.listen, *fl.config)
 		}
-		return serve(ctx, abs, *listen, *demo, *fl.config)
+		return serve(ctx, abs, *fl.listen, *fl.demo, *fl.config)
 	case "status":
 		return printStatus(ctx, abs, *fl.json)
 	case "shutdown":
@@ -213,338 +206,16 @@ func run(ctx context.Context, args []string) error {
 		}
 		fmt.Println("Town stopped")
 		return nil
-	case "history":
-		return historyCommand(ctx, abs, fl)
-
-	case "guide":
-		return guideCommand(ctx, abs, fl)
-	case "storage":
-		return storageCommand(ctx, abs, fl)
-	case "attention-hook":
-		return attentionHookCommand(ctx, abs, fl, fs)
-	case "execution":
-		return executionCommand(ctx, abs, fl, fs)
-	case "choices":
-		return choicesCommand(ctx, abs, fl, fs)
-	case "harnesses":
-		return listHarnesses(ctx, abs, *demo, *fl.refresh)
-	}
-	agent := map[string]any{}
-	roleSet := false
-	fs.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "role":
-			roleSet = true
-		case "harness":
-			agent["harness"] = *agentHarness
-		case "harness-version":
-			agent["version"] = *harnessVersion
-		case "model":
-			agent["model"] = *model
-		case "effort":
-			agent["effort"] = *effort
-		}
-	})
-	if *agentCommand != "" {
-		var args []string
-		if err := json.Unmarshal([]byte(*agentCommand), &args); err != nil {
-			return fmt.Errorf("--agent-command must be a JSON argument array: %w", err)
-		}
-		agent["command"] = args
-	}
-	if *inherit {
-		if command != "settings" || !roleSet || *role == "all" || *role == "repo" || len(agent) != 0 {
-			return errors.New("--inherit requires settings --role BOT and cannot be combined with agent settings")
-		}
-		agent["inherit"] = true
-	}
-	conn, err := requireService(ctx, abs)
-	if err != nil {
-		return err
-	}
-	switch command {
 	case "web":
+		conn, err := requireService(ctx, abs)
+		if err != nil {
+			return err
+		}
 		fmt.Printf("%s/#token=%s\n", conn.URL, conn.Token)
 		return nil
-	case "doctor":
-		if *repo == "" {
-			return errors.New("--repo OWNER/REPO is required")
-		}
-		var report town.DiagnosticReport
-		if err := request(ctx, conn, "POST", "/api/diagnostics", map[string]string{"town": *repo}, &report); err != nil {
-			return err
-		}
-		if *fl.json {
-			b, _ := json.MarshalIndent(report, "", "  ")
-			fmt.Println(string(b))
-		} else {
-			printDiagnostics(*repo, &report)
-		}
-		return nil
-	case "add":
-		if *repo == "" {
-			return errors.New("--repo OWNER/REPO is required")
-		}
-		var result any
-		return request(ctx, conn, "POST", "/api/towns", map[string]any{"repo": *repo, "agent": agent}, &result)
-	case "settings":
-		quietSet, workersSet := false, false
-		fs.Visit(func(f *flag.Flag) {
-			quietSet = quietSet || f.Name == "quiet-hours"
-			workersSet = workersSet || f.Name == "max-workers"
-		})
-		if *repo == "" {
-			if !quietSet && !workersSet {
-				return errors.New("--repo OWNER/REPO is required, or omit it to set --max-workers or --quiet-hours for the whole service")
-			}
-			return setServiceSettings(ctx, conn, fs, fl)
-		}
-		if workersSet {
-			return errors.New("--max-workers applies to the whole service; omit --repo")
-		}
-		var result any
-		settingsRole := ""
-		if roleSet {
-			if !town.ValidRole(town.Role(*role)) || *role == "repo" {
-				return errors.New("settings --role must be bug, feature, issue, review, or release; omit --role to edit town defaults")
-			}
-			settingsRole = *role
-		}
-		payload := map[string]any{"town": strings.ToLower(*repo), "role": settingsRole, "agent": agent}
-		if *fl.closeSeverity != "" {
-			if settingsRole != "" {
-				return errors.New("--review-close-severity is a town setting; omit --role")
-			}
-			payload["review_close_severity"] = strings.ToUpper(*fl.closeSeverity)
-		}
-		if *fl.mergePolicy != "" {
-			if settingsRole != "" {
-				return errors.New("--merge-policy is a town setting; omit --role")
-			}
-			payload["merge_policy"] = strings.ToLower(*fl.mergePolicy)
-		}
-		budgetEdited := *fl.budgetPeriod != "" || *fl.budgetAttempts != 0 || *fl.budgetMinutes != 0
-		if budgetEdited {
-			if settingsRole != "" {
-				return errors.New("a budget is a town setting; omit --role")
-			}
-			period := strings.ToLower(*fl.budgetPeriod)
-			if period == "none" {
-				if *fl.budgetAttempts != 0 || *fl.budgetMinutes != 0 {
-					return errors.New("--budget-period none removes the budget; drop the limit flags")
-				}
-				payload["budget"] = map[string]any{"budget": nil}
-			} else {
-				if period == "" {
-					return errors.New("--budget-period day|week|month is required with a budget limit")
-				}
-				if *fl.budgetAttempts == 0 && *fl.budgetMinutes == 0 {
-					return errors.New("set --budget-attempts or --budget-agent-minutes. " + town.BudgetLimitAdvice)
-				}
-				payload["budget"] = map[string]any{"budget": map[string]any{"period": period, "max_attempts": *fl.budgetAttempts, "max_agent_minutes": *fl.budgetMinutes}}
-			}
-		}
-		if quietSet {
-			if settingsRole != "" {
-				return errors.New("quiet hours are a town setting; omit --role")
-			}
-			edit, err := quietHoursEdit(*fl.quietHours, true)
-			if err != nil {
-				return err
-			}
-			payload["quiet_hours"] = edit
-		}
-		policy, edited, err := workPolicyEdit(fl, fs)
-		if err != nil {
-			return err
-		}
-		if edited {
-			if settingsRole == "" {
-				return errors.New("a work policy belongs to one bot; add --role BOT")
-			}
-			payload["work_policy"] = map[string]any{"policy": policy}
-		}
-		return request(ctx, conn, "POST", "/api/settings", payload, &result)
-	case "request":
-		if *fl.check {
-			if *repo == "" || *requestID == "" {
-				return errors.New("--check needs --repo and --request-id")
-			}
-			if *title != "" || *bodyFile != "" {
-				return errors.New("--check takes no --title or --body-file")
-			}
-			var result any
-			return request(ctx, conn, "POST", "/api/requests/check", map[string]string{"town": strings.ToLower(*repo), "id": *requestID}, &result)
-		}
-		if *repo == "" || *title == "" || *bodyFile == "" {
-			return errors.New("--repo, --title, and --body-file are required")
-		}
-		var data []byte
-		var err error
-		if *bodyFile == "-" {
-			data, err = io.ReadAll(io.LimitReader(os.Stdin, 30001))
-		} else {
-			f, e := os.Open(*bodyFile)
-			if e != nil {
-				return e
-			}
-			defer f.Close()
-			data, err = io.ReadAll(io.LimitReader(f, 30001))
-		}
-		if err != nil {
-			return err
-		}
-		if *requestID == "" {
-			key := make([]byte, 16)
-			if _, err = rand.Read(key); err != nil {
-				return err
-			}
-			*requestID = hex.EncodeToString(key)
-		}
-		fmt.Println("Submission ID:", *requestID, "(reuse with --request-id if the connection is lost)")
-		var result town.IssueRequest
-		if err = request(ctx, conn, "POST", "/api/requests", map[string]string{"town": strings.ToLower(*repo), "id": *requestID, "kind": *kind, "title": *title, "body": string(data)}, &result); err != nil {
-			return err
-		}
-		fmt.Println("Submission:", result.Status, "— view its progress in Town or bt status --json")
-		return nil
-	case "defer", "undefer":
-		if *repo == "" || *task == "" {
-			return errors.New("--repo OWNER/REPO and --task ID are required")
-		}
-		payload := map[string]string{"town": strings.ToLower(*repo), "role": "all", "action": command, "task": *task}
-		if command == "defer" {
-			until, err := deferUntil(*fl.until, time.Now())
-			if err != nil {
-				return err
-			}
-			payload["until"], payload["reason"] = until.Format(time.RFC3339), *fl.reason
-		} else if *fl.until != "" || *fl.reason != "" {
-			return errors.New("--until and --reason apply only to defer")
-		}
-		var result any
-		if err := request(ctx, conn, "POST", "/api/control", payload, &result); err != nil {
-			return err
-		}
-		if command == "defer" {
-			fmt.Printf("Snoozed %s until %s\n", *task, payload["until"])
-		} else {
-			fmt.Printf("Cleared the snooze on %s\n", *task)
-		}
-		return nil
-	case "start", "pause", "stop", "retry", "delete", "admit", "decline":
-		if *repo == "" {
-			return errors.New("--repo OWNER/REPO is required")
-		}
-		decision := command == "admit" || command == "decline"
-		if decision && *task == "" {
-			return errors.New("--task is required for a Mayoral decision")
-		}
-		if decision {
-			*role = "hall"
-		}
-		if command == "delete" {
-			*role = "all"
-		}
-		var result any
-		return request(ctx, conn, "POST", "/api/control", map[string]string{"town": strings.ToLower(*repo), "role": *role, "action": command, "task": *task}, &result)
 	default:
 		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
 	}
-}
-
-// quietHoursEdit turns --quiet-hours into the settings edit: a schedule, none
-// for no quiet hours, or, for a town, default to follow the service default.
-func quietHoursEdit(value string, forTown bool) (map[string]any, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "none":
-		return map[string]any{"windows": []town.QuietWindow{}}, nil
-	case "default":
-		if !forTown {
-			return nil, errors.New("--quiet-hours default applies to a town; the service default is a schedule or none")
-		}
-		return map[string]any{"windows": nil}, nil
-	case "":
-		return nil, errors.New("--quiet-hours needs windows such as \"mon-fri 18:00-08:00\", none, or default")
-	}
-	windows, err := town.ParseQuietHours(value)
-	if err != nil {
-		return nil, fmt.Errorf("--quiet-hours: %w", err)
-	}
-	return map[string]any{"windows": windows}, nil
-}
-
-// setServiceSettings edits the service-wide settings bt settings takes
-// without --repo: the worker capacity and the default quiet hours. Both are
-// validated before either is sent.
-func setServiceSettings(ctx context.Context, conn connection, fs *flag.FlagSet, fl *cliFlags) error {
-	var other []string
-	quietSet, workersSet := false, false
-	fs.Visit(func(f *flag.Flag) {
-		switch {
-		case f.Name == "quiet-hours":
-			quietSet = true
-		case f.Name == "max-workers":
-			workersSet = true
-		case !isGlobalFlag(f.Name):
-			other = append(other, "--"+f.Name)
-		}
-	})
-	if len(other) > 0 {
-		return fmt.Errorf("without --repo, settings edits only --max-workers and the service default --quiet-hours; %s needs --repo", strings.Join(other, ", "))
-	}
-	if workersSet && (*fl.maxWorkers < 1 || *fl.maxWorkers > town.MaximumMaxWorkers) {
-		return fmt.Errorf("--max-workers must be between 1 and %d", town.MaximumMaxWorkers)
-	}
-	var edit map[string]any
-	if quietSet {
-		var err error
-		if edit, err = quietHoursEdit(*fl.quietHours, false); err != nil {
-			return err
-		}
-	}
-	if workersSet {
-		var capacity town.Capacity
-		if err := request(ctx, conn, "POST", "/api/capacity", map[string]int{"max_workers": *fl.maxWorkers}, &capacity); err != nil {
-			return err
-		}
-		fmt.Printf("Capacity: %d active · limit %d\n", capacity.Active, capacity.Limit)
-	}
-	if !quietSet {
-		return nil
-	}
-	var saved town.ServiceConfig
-	if err := request(ctx, conn, "POST", "/api/quiet-hours", edit, &saved); err != nil {
-		return err
-	}
-	if len(saved.QuietHours) == 0 {
-		fmt.Println("Service default quiet hours: none")
-	} else {
-		fmt.Println("Service default quiet hours:", town.FormatQuietHours(saved.QuietHours))
-	}
-	return nil
-}
-
-// deferUntil reads a resume time as an RFC 3339 timestamp or as a delay from
-// now. A delay accepts Go durations (90m, 4h30m) and whole days (2d). Town
-// checks the result again: it must be in the future and within its limit.
-func deferUntil(value string, now time.Time) (time.Time, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Time{}, errors.New("--until is required: an RFC 3339 time such as 2026-01-02T15:04:05Z, or a delay such as 4h or 2d")
-	}
-	if at, err := time.Parse(time.RFC3339, value); err == nil {
-		return at.UTC(), nil
-	}
-	if days, ok := strings.CutSuffix(value, "d"); ok {
-		if n, err := strconv.Atoi(days); err == nil && n > 0 {
-			return now.Add(time.Duration(n) * 24 * time.Hour).UTC().Truncate(time.Second), nil
-		}
-	}
-	if d, err := time.ParseDuration(value); err == nil && d > 0 {
-		return now.Add(d).UTC().Truncate(time.Second), nil
-	}
-	return time.Time{}, fmt.Errorf("--until %q is neither an RFC 3339 time such as 2026-01-02T15:04:05Z nor a positive delay such as 90m, 4h or 2d", value)
 }
 
 // browserLink returns the browser address with its access key only when
@@ -899,124 +570,4 @@ func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
 		service.QuietHours = &windows
 	}
 	return towns, service, nil
-}
-
-// policyFlagNames are the settings flags that build a bot's work policy. They
-// are listed once so flag presence, not a zero value, decides what was edited:
-// --limit 0 is meaningless, but --labels "" has to be able to clear a filter.
-var policyFlagNames = map[string]bool{
-	"labels": true, "exclude-labels": true, "only": true, "focus": true,
-	"limit": true, "attempts": true, "verify": true, "clear-policy": true,
-	"release-daily-seconds": true, "release-minimum-gap-seconds": true,
-	"release-quiet-seconds": true, "release-burst": true,
-	"release-burst-window-seconds": true, "release-triage": true,
-	"release-preflight": true, "release-verification-timeout-seconds": true,
-}
-
-// splitLabels turns a comma-separated flag into the list the API takes. An
-// empty value clears the filter rather than sending one empty label.
-func splitLabels(value string) []string {
-	out := []string{}
-	for _, part := range strings.Split(value, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
-}
-
-func jsonCommand(flagName, value string) ([]string, error) {
-	var args []string
-	if err := json.Unmarshal([]byte(value), &args); err != nil {
-		return nil, fmt.Errorf("--%s must be a JSON argument array: %w", flagName, err)
-	}
-	return args, nil
-}
-
-// workPolicyEdit builds the work policy this invocation asks for, reporting
-// whether any policy flag was given at all. A nil policy with edited true is
-// the request to remove the saved one.
-func workPolicyEdit(fl *cliFlags, fs *flag.FlagSet) (map[string]any, bool, error) {
-	given := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) {
-		if policyFlagNames[f.Name] {
-			given[f.Name] = true
-		}
-	})
-	if len(given) == 0 {
-		return nil, false, nil
-	}
-	if given["clear-policy"] && *fl.clearPolicy {
-		// Clearing is all or nothing: pairing it with a filter would leave the
-		// operator guessing which one won.
-		if len(given) > 1 {
-			return nil, true, errors.New("--clear-policy removes the whole policy; run it on its own")
-		}
-		return nil, true, nil
-	}
-	policy := map[string]any{}
-	release := map[string]any{}
-	var err error
-	fs.Visit(func(f *flag.Flag) {
-		if err != nil {
-			return
-		}
-		switch f.Name {
-		case "labels":
-			policy["labels"] = splitLabels(*fl.labels)
-		case "exclude-labels":
-			policy["exclude_labels"] = splitLabels(*fl.excludeLabels)
-		case "only":
-			policy["only"] = *fl.only
-		case "focus":
-			policy["focus"] = *fl.focus
-		case "limit":
-			policy["limit"] = *fl.limit
-		case "attempts":
-			policy["attempts"] = *fl.attempts
-		case "verify":
-			var command []string
-			if command, err = jsonCommand("verify", *fl.verify); err == nil {
-				policy["verify"] = command
-			}
-		case "release-daily-seconds":
-			release["daily_seconds"] = *fl.releaseDaily
-		case "release-minimum-gap-seconds":
-			release["minimum_gap_seconds"] = *fl.releaseGap
-		case "release-quiet-seconds":
-			release["quiet_seconds"] = *fl.releaseQuiet
-		case "release-burst":
-			release["burst"] = *fl.releaseBurst
-		case "release-burst-window-seconds":
-			var seconds int
-			if seconds, err = strconv.Atoi(strings.TrimSpace(*fl.releaseWindow)); err != nil {
-				err = errors.New("--release-burst-window-seconds must be a whole number of seconds")
-				return
-			}
-			release["burst_window_seconds"] = seconds
-		case "release-triage":
-			switch strings.ToLower(strings.TrimSpace(*fl.releaseTriage)) {
-			case "on", "true", "yes":
-				release["triage"] = true
-			case "off", "false", "no":
-				release["triage"] = false
-			default:
-				err = errors.New("--release-triage must be on or off")
-			}
-		case "release-preflight":
-			var command []string
-			if command, err = jsonCommand("release-preflight", *fl.releasePreflight); err == nil {
-				release["preflight"] = command
-			}
-		case "release-verification-timeout-seconds":
-			release["verification_timeout_seconds"] = *fl.releaseVerifyTimeout
-		}
-	})
-	if err != nil {
-		return nil, true, err
-	}
-	if len(release) > 0 {
-		policy["release"] = release
-	}
-	return policy, true, nil
 }

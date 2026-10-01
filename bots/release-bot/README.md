@@ -46,7 +46,7 @@ the publication step.
 ## Configuration
 
 Town fills this configuration from the town's agent profile and the release
-house's policy (`bt settings --role release`). The package's own fields are:
+house's policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

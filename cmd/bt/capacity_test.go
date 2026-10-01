@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,48 +10,6 @@ import (
 
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
-
-func TestSettingsMaxWorkersPostsBoundedLimit(t *testing.T) {
-	seen := make(chan town.ServiceConfig, 1)
-	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/state" && r.Method == http.MethodGet {
-			// The CLI probes a running service before every command.
-			_, _ = w.Write([]byte(`{}`))
-			return
-		}
-		if r.Method != http.MethodPost || r.URL.Path != "/api/capacity" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		var cfg town.ServiceConfig
-		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-			t.Fatal(err)
-		}
-		seen <- cfg
-		_, _ = w.Write([]byte(`{"active":1,"limit":7}`))
-	}))
-	defer h.Close()
-	dir := t.TempDir()
-	conn, _ := json.Marshal(connection{URL: h.URL, Token: "test-key", PID: os.Getpid()})
-	if err := os.WriteFile(filepath.Join(dir, "connection.json"), conn, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := run(context.Background(), []string{"settings", "--state-dir", dir, "--max-workers", "7"}); err != nil {
-		t.Fatal(err)
-	}
-	if got := <-seen; got.MaxWorkers != 7 {
-		t.Fatalf("got %+v", got)
-	}
-	for _, args := range [][]string{
-		{"settings", "--state-dir", dir},
-		{"settings", "--state-dir", dir, "--max-workers", "0"},
-		{"settings", "--state-dir", dir, "--max-workers", "65"},
-		{"settings", "--state-dir", dir, "--repo", "acme/app", "--max-workers", "3"},
-	} {
-		if err := run(context.Background(), args); err == nil || !strings.Contains(err.Error(), "--max-workers") {
-			t.Fatalf("accepted invalid capacity args %v: %v", args, err)
-		}
-	}
-}
 
 func TestDecodeConfigFileReadsServiceSettingsAndTowns(t *testing.T) {
 	configs, limit, err := decodeConfigFile([]byte(`{"max_workers":9,"towns":[{"repo":"acme/team","harness":"custom","agent":{"command":["fake"]},"merge_policy":"bot","poll_seconds":60,"report_seconds":60,"max_cycles":1}]}`))

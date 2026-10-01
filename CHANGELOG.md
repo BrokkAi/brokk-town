@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Reduce `bt` to service lifecycle and browser discovery: foreground/background
+  startup, `status`, `web`, `shutdown`, `version`, and `help`. Towns, houses,
+  tasks, decisions, settings, diagnostics, history, storage, Town Guide,
+  requests, harnesses, execution placement, and the attention hook are now
+  browser and local API operations.
+
 ## 0.8.0 — 2026-10-01
 
 - Merge the eight bots into the root Go module. They stay separate packages

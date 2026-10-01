@@ -1,7 +1,7 @@
 # Configuration
 
 Town has three levels of configuration, all stored in the state directory
-(`bt status` prints the path, or pass `--state-dir`):
+(`--state-dir` selects the directory):
 
 1. **Service** — one shared scheduler: capacity, default quiet hours, the
    attention hook.
@@ -10,39 +10,23 @@ Town has three levels of configuration, all stored in the state directory
 3. **House** — one bot in one town: an independent agent profile, a work policy,
    and per-bot limits.
 
-Change any of it in the browser or with `bt settings`. A `--config` file can
-seed it at startup. Nothing is stored in the repository, and nothing is stored in
-the git checkout Town manages.
+Change any of it in the browser. A `--config` file can seed it at startup.
+Nothing is stored in the repository, and nothing is stored in the git checkout
+Town manages.
 
 ## Changing settings
 
-```sh
-# Service-wide
-bt settings --max-workers 4
-bt settings --quiet-hours "mon-fri 18:00-08:00"
-
-# Town defaults
-bt settings --repo OWNER/REPO --model gpt-5-codex --effort high
-bt settings --repo OWNER/REPO --merge-policy bot
-
-# One house
-bt settings --repo OWNER/REPO --role issue --labels bug,ready --limit 2
-bt settings --repo OWNER/REPO --role review --review-close-severity P2
-
-# Restore a house to the town defaults
-bt settings --repo OWNER/REPO --role review --inherit
-```
-
-Every flag is refused by a house that cannot honour it, so a typo cannot quietly
-change another bot's behaviour. Omitted flags preserve the stored value.
+Settings edits the service, one town, or one house. It only offers fields a
+house can honour, so a typo cannot quietly change another bot's behaviour.
+Omitted fields preserve the stored value.
 
 ## Service settings
 
-| Field | Flag | Meaning |
+| Field | Configured in | Meaning |
 | --- | --- | --- |
-| `max_workers` | `--max-workers` | Active agent workers across all towns. 1–64, default 4. |
-| `quiet_hours` | `--quiet-hours` | Default weekly quiet windows for towns that set none. |
-| `attention_hook` | `bt attention-hook` | Optional local notifier for blocked/completed attention events. |
+| `max_workers` | Settings | Active agent workers across all towns. 1–64, default 4. |
+| `quiet_hours` | Settings or config file | Default weekly quiet windows for towns that set none. |
+| `attention_hook` | Settings | Optional local notifier for blocked/completed attention events. |
 
 The attention hook is disabled by default. When enabled it receives one small
 JSON object on stdin and runs for at most ten seconds, independently of quiet
@@ -51,51 +35,51 @@ hours and never in demo mode. Command output is discarded. See
 
 ## Town defaults
 
-| JSON field | Flag(s) | Default | Meaning |
+| JSON field | Configured in | Default | Meaning |
 | --- | --- | --- | --- |
-| `repo` | `--repo` | required | `OWNER/REPO` the town serves. |
-| `branch` | — | repository default | Branch the town covers. Empty follows GitHub's default. |
-| `merge_policy` | `--merge-policy` | `bot` | `bot` (Town-created PRs), `all` (external too), or `manual` (never; pauses Release). |
-| `poll_seconds` | — | 60 | Base cadence for intake and repair work. Minimum 10. |
-| `report_seconds` | — | 1800 | Cadence for periodic town reports. Minimum 60. |
-| `max_cycles` | — | 5 | Attempts allowed per task before it is held. 1–20. |
-| `simplifier_mode` | — | `suggest` | `suggest` routes arrivals through Town Hall; `auto` lets Town decline low-value work. |
-| `bulletin_seconds` | — | 86400 | Minimum interval between Mayor bulletins. At least 600. |
-| `review_close_severity` | `--review-close-severity` | `P2` | Least severe finding that closes a PR after the second review. |
-| `budget` | `--budget-*` | none | Agent attempt/minute cap per accounting period. |
-| `quiet_hours` | `--quiet-hours` | service default | Town's own windows; `[]` opts out. |
-| `funnels` | — | none | Named source funnels. |
-| `execution` | `bt execution` | direct local | Where this town's agent work runs. |
-| `bot_execution` | `bt execution --role` | inherit | Per-house execution override. |
+| `repo` | Add Town in the browser | required | `OWNER/REPO` the town serves. |
+| `branch` | config file | repository default | Branch the town covers. Empty follows GitHub's default. |
+| `merge_policy` | Settings | `bot` | `bot` (Town-created PRs), `all` (external too), or `manual` (never; pauses Release). |
+| `poll_seconds` | config file | 60 | Base cadence for intake and repair work. Minimum 10. |
+| `report_seconds` | config file | 1800 | Cadence for periodic town reports. Minimum 60. |
+| `max_cycles` | config file | 5 | Attempts allowed per task before it is held. 1–20. |
+| `simplifier_mode` | config file | `suggest` | `suggest` routes arrivals through Town Hall; `auto` lets Town decline low-value work. |
+| `bulletin_seconds` | config file | 86400 | Minimum interval between Mayor bulletins. At least 600. |
+| `review_close_severity` | Settings | `P2` | Least severe finding that closes a PR after the second review. |
+| `budget` | Settings | none | Agent attempt/minute cap per accounting period. |
+| `quiet_hours` | Settings or config file | service default | Town's own windows; `[]` opts out. |
+| `funnels` | config file | none | Named source funnels. |
+| `execution` | Execution in the browser | direct local | Where this town's agent work runs. |
+| `bot_execution` | Execution in the browser | inherit | Per-house execution override. |
 
 ## Agent profiles
 
 A town has one default agent profile and each house can override it. A house with
-an override stays independent when the town default changes; `--inherit` returns
-it to the default.
+an override stays independent when the town default changes; restoring
+inheritance returns it to the default.
 
-| Field | Flag | Meaning |
+| Field | Configured in | Meaning |
 | --- | --- | --- |
-| `harness` | `--harness` | ACP harness ID, `anvil`, `muse-acp`, `draupnir`, or `custom`. |
-| `agent.command` | `--agent-command` | JSON argument array; only valid for `custom`. |
-| `agent.model` | `--model` | ACP model ID; empty uses the harness default. |
-| `agent.effort` | `--effort` | Reasoning effort advertised by the harness. |
-| `agent.auth_method` | — | Optional advertised authentication method. |
-| `agent.mode` | — | Optional advertised session mode. |
-| `agent.environment` | — | Extra environment variables for the harness. |
-| `harness_definition` | `--harness-version` | Pinned catalog entry, written when you select a version. |
+| `harness` | Settings | ACP harness ID, `anvil`, `muse-acp`, `draupnir`, or `custom`. |
+| `agent.command` | Settings or config file | JSON argument array; only valid for `custom`. |
+| `agent.model` | Settings | ACP model ID; empty uses the harness default. |
+| `agent.effort` | Settings | Reasoning effort advertised by the harness. |
+| `agent.auth_method` | config file | Optional advertised authentication method. |
+| `agent.mode` | config file | Optional advertised session mode. |
+| `agent.environment` | config file | Extra environment variables for the harness. |
+| `harness_definition` | Settings | Pinned catalog entry, written when you select a version. |
 
 The default harness is `codex-acp`. Selecting a different harness clears the
 stored model, effort and mode, because those belong to the harness that
-advertised them. `bt choices` and the browser read what a profile can actually
-offer before you save it. See [harnesses.md](harnesses.md).
+advertised them. Settings reads what a profile can actually offer before you
+save it. See [harnesses.md](harnesses.md).
 
 ## Work policies
 
-A work policy tells one house what to take. Only the flags a house supports are
+A work policy tells one house what to take. Only the fields a house supports are
 accepted.
 
-| Role | Supported policy flags |
+| Role | Supported policy fields |
 | --- | --- |
 | bug, feature | `labels`, `focus`, `limit`, `attempts`, `verify` |
 | issue | `labels`, `exclude-labels`, `only`, `attempts`, `verify` |
@@ -116,28 +100,25 @@ accepted.
 - `verify` is a command array that must pass; it overrides the town-level
   `verify`.
 
-`bt settings --role BOT --clear-policy` removes a policy and makes the house take
-everything it is given again.
+Clearing a policy in Settings makes the house take everything it is given again.
 
 ## Release policy
 
-Set with `bt settings --repo OWNER/REPO --role release`.
+Set in Settings for the release house. These live under
+`bot_policies.<role>.release` in a config file.
 
-These live under `bot_policies.<role>.release` in a config file; the flag is what
-`bt settings --role release` accepts.
-
-| JSON field | Flag | Default | Meaning |
+| JSON field | Configured in | Default | Meaning |
 | --- | --- | --- | --- |
-| `daily_seconds` | `--release-daily-seconds` | 86400 | Deadline after which unreleased commits are released. |
-| `minimum_gap_seconds` | `--release-minimum-gap-seconds` | 7200 | Shortest interval between two releases. |
-| `quiet_seconds` | `--release-quiet-seconds` | 900 | Branch must be still this long before a release. |
-| `burst` | `--release-burst` | 5 | Commits inside the burst window that trigger an early release. `0` disables. |
-| `burst_window_seconds` | `--release-burst-window-seconds` | 7200 | The burst window. |
-| `triage` | `--release-triage` | on | Ask the agent whether unreleased commits warrant an early release. |
-| `preflight` | `--release-preflight` | none | Command that must pass before publishing. |
-| `verification_timeout_seconds` | `--release-verification-timeout-seconds` | 1800 | Bound on the independent publication check. |
-| `workflows` | `--release-workflows` | discovered | GitHub workflows a release must see succeed. |
-| `assets` | `--release-assets` | none | Asset patterns the release must publish. |
+| `daily_seconds` | Settings or config file | 86400 | Deadline after which unreleased commits are released. |
+| `minimum_gap_seconds` | Settings or config file | 7200 | Shortest interval between two releases. |
+| `quiet_seconds` | Settings or config file | 900 | Branch must be still this long before a release. |
+| `burst` | Settings or config file | 5 | Commits inside the burst window that trigger an early release. `0` disables. |
+| `burst_window_seconds` | Settings or config file | 7200 | The burst window. |
+| `triage` | Settings or config file | on | Ask the agent whether unreleased commits warrant an early release. |
+| `preflight` | Settings or config file | none | Command that must pass before publishing. |
+| `verification_timeout_seconds` | Settings or config file | 1800 | Bound on the independent publication check. |
+| `workflows` | Settings or config file | discovered | GitHub workflows a release must see succeed. |
+| `assets` | Settings or config file | none | Asset patterns the release must publish. |
 
 See [workflow.md](workflow.md) for the cadence rules.
 
@@ -147,11 +128,11 @@ A budget bounds how much agent work a town starts in an accounting period. It
 counts **attempts** and **agent minutes**, never tokens or dollars: no bundled
 harness reports usage back to Town.
 
-| Field | Flag |
+| Field | Configured in |
 | --- | --- |
-| `period` | `--budget-period` (`day`, `week`, `month`, `none`) |
-| `max_attempts` | `--budget-attempts` |
-| `max_agent_minutes` | `--budget-agent-minutes` |
+| `period` | Settings (`day`, `week`, `month`, `none`) |
+| `max_attempts` | Settings |
+| `max_agent_minutes` | Settings |
 
 Either cap may be omitted. When the budget is exhausted, houses show a wait with
 the period that will reset them; the repository is still watched. The measured
@@ -162,11 +143,6 @@ ledger resets at the start of each period.
 Quiet hours are weekly windows on the machine's local clock. During a window
 Town starts no new agent work and makes none of its own GitHub writes. Running
 work finishes, and the repository keeps being watched.
-
-```sh
-bt settings --quiet-hours "mon-fri 18:00-08:00; sat,sun 00:00-24:00"
-bt settings --quiet-hours none
-```
 
 - One window is `DAYS HH:MM-HH:MM`; separate windows with `;`.
 - Days are `mon`…`sun`, commas and ranges are accepted, and `daily`,
@@ -191,14 +167,9 @@ specifics.
 By default an agent runs locally through the selected harness. A town can place
 supported duties on an Mjolnir target instead:
 
-```sh
-bt execution                                   # list cached targets and profiles
-bt execution --refresh                         # refresh the catalog
-bt execution --repo OWNER/REPO --target T --profile P
-bt execution --repo OWNER/REPO --role review --target T --profile P
-bt execution --repo OWNER/REPO --role issue --local-execution
-bt execution --repo OWNER/REPO --role issue --inherit-execution
-```
+The Execution view lists cached targets and profiles, refreshes the catalog, and
+saves a town default or per-house override. Local execution and inheritance are
+explicit choices in the same view.
 
 Managed review and managed issue repair are supported. Other duties show an
 explicit hold until you select direct local execution. See

@@ -46,7 +46,7 @@ stale and is never attributed to the dispatched task.
 ## Configuration
 
 Town fills this configuration from the town's agent profile and the review house's
-policy (`bt settings --role review`). The package's own fields are:
+policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

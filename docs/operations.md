@@ -20,8 +20,9 @@ SIGTERM and SIGHUP stop a foreground service; a background service is stopped by
 `bt shutdown`, which uses the authenticated local API on Windows where there is
 no portable signal.
 
-Client commands require a running service and never start one. `bt status`,
-`bt harnesses` and `bt version` also work while it is stopped.
+`bt status` and `bt version` work while the service is stopped. `bt web` and
+`bt shutdown` require a running service. Day-to-day operation happens in the
+browser.
 
 ### State directory
 
@@ -55,55 +56,34 @@ Run `bt COMMAND --help` for the exact flags. Global flags are `--state-dir` and
 | `bt status [--json]` | Running state, served towns, and full snapshot with `--json`. |
 | `bt web` | Print the browser address. |
 | `bt shutdown` | Stop the service and its work. |
-| `bt add --repo OWNER/REPO [--harness ...] [--model ...] [--effort ...]` | Add a town. |
-| `bt delete --repo OWNER/REPO` | Delete a town. GitHub state is untouched. |
-| `bt start` / `pause` / `stop --repo OWNER/REPO [--role R]` | Control a town or one house. |
-| `bt retry --repo OWNER/REPO [--role R] [--task ID]` | Retry a task, or the release budget with `--role release`. |
-| `bt defer --repo OWNER/REPO --task ID --until TIME [--reason TEXT]` | Snooze one task. |
-| `bt undefer --repo OWNER/REPO --task ID` | Clear a snooze. |
-| `bt admit` / `decline --repo OWNER/REPO --task ID` | Decide a pending Mayoral item. |
-| `bt settings ...` | Configure the service, a town, or a house. |
-| `bt request --repo OWNER/REPO (--title T --body-file F \| --check --request-id ID)` | Submit or check a GitHub issue request. |
-| `bt doctor --repo OWNER/REPO [--json]` | Read-only setup diagnostics. |
-| `bt choices --repo OWNER/REPO [--role R] [--model M] [--json]` | Available models and efforts. |
-| `bt history --repo OWNER/REPO [--task ID] [--after CURSOR] [--limit N] [--json]` | Archived terminal tasks. |
-| `bt storage --repo OWNER/REPO [--older-than-hours N] [--cleanup IDS] [--json]` | Inspect or clean local artifacts. |
-| `bt guide --repo OWNER/REPO [--ask Q \| --cancel \| --confirm --proposal-digest D] [--json]` | Town Hall conversation. |
-| `bt execution [--refresh] [--repo OWNER/REPO] [--target T --profile P] [--role R]` | List or select execution placement. |
-| `bt harnesses [--refresh]` | List the ACP registry. |
-| `bt attention-hook [--enable \| --disable \| --command-file F] [--json]` | Configure the attention hook. |
 | `bt version` | Print the version. |
 
-`--role` accepts `bug`, `feature`, `issue`, `review`, `release`, `simplifier`,
-`hall` (Mayor) and `repo`; `all` wakes every house for `start`.
+The browser and local API own everything else: adding and deleting towns,
+starting and pausing houses, retrying or snoozing tasks, admitting or declining
+Mayoral decisions, settings, diagnostics, history, storage, Town Guide, requests,
+harnesses, execution placement and the attention hook.
 
 ### Diagnostics
 
-`bt doctor --repo OWNER/REPO` runs read-only checks: whether required commands
+The browser's Diagnostics view runs read-only checks: whether required commands
 exist, whether `gh` can see the repository, whether the selected harness starts,
 and whether the verification command is usable. It never runs an agent or a
-verification command. The report is saved in town state and shown in the
-browser.
+verification command. The report is saved in town state.
 
 ### Requests
 
-`bt request` files a GitHub issue as work for a town without needing repository
-write access yourself. It writes a marker comment so a resubmission with the same
-`--request-id` is recognized instead of duplicated, and `--check` reports the
-saved outcome. Pending and uncertain submissions hold storage cleanup.
+The browser's request flow files a GitHub issue as work for a town without
+needing repository write access yourself. It writes a marker comment so a
+resubmission with the same request identity is recognized instead of duplicated.
+Pending and uncertain submissions hold storage cleanup.
 
 ### Attention hook
 
-An optional local command that receives one small JSON object on stdin when a
-town needs attention — a blocked state, a completed task, an exhausted retry
-budget. It is disabled by default, never runs in demo mode, and runs for at most
-ten seconds independently of quiet hours. Stdout and stderr are discarded.
-
-```sh
-bt attention-hook --enable --command-file hook.json   # JSON array command/argv
-bt attention-hook                                     # show current settings
-bt attention-hook --disable
-```
+The Settings view configures an optional local command that receives one small
+JSON object on stdin when a town needs attention — a blocked state, a completed
+task, an exhausted retry budget. It is disabled by default, never runs in demo
+mode, and runs for at most ten seconds independently of quiet hours. Stdout and
+stderr are discarded.
 
 The payload contains public identities and a fixed reason code only. Use it to
 drive a desktop notifier or your own monitoring; do not expect repository
@@ -127,7 +107,7 @@ Views:
 - **Execution** — Mjolnir targets, profiles and runtime selection.
 - **Outcomes** — attempt, artifact and outcome records with CSV export and
   operator judgments.
-- **Diagnostics** — the saved `bt doctor` report.
+- **Diagnostics** — the saved setup report.
 
 ## Town Guide
 
@@ -137,14 +117,8 @@ plus public settings. It cannot read the workspace, run tools, or write
 anything. It may propose one pause; the proposal is inert until you confirm its
 exact digest against current state.
 
-```sh
-bt guide --repo OWNER/REPO --ask "what is blocking the release house?"
-bt guide --repo OWNER/REPO --cancel
-bt guide --repo OWNER/REPO --confirm --proposal-digest DIGEST
-```
-
-Answers stream from service state. Ctrl+C stops watching without cancelling the
-answer; `--cancel` cancels it.
+Town Guide is available in the browser. Answers stream from service state, and a
+proposal remains inert until you confirm its exact digest against current state.
 
 ## Outcomes
 
@@ -186,7 +160,7 @@ shutdown hook.
 | `POST /api/execution`, `POST /api/execution-runtime` | Save placement and pin a runtime. |
 | `GET /api/harnesses`, `POST /api/harnesses/refresh` | ACP harness catalog. |
 | `POST /api/requests`, `POST /api/requests/check` | Submit or check an issue request. |
-| `POST /api/diagnostics` | Run `bt doctor` for a town. |
+| `POST /api/diagnostics` | Run read-only setup diagnostics for a town. |
 | `GET /api/outcomes`, `POST /api/outcomes/judgment` | Outcome report and operator judgments. |
 | `POST /api/shutdown` | Stop the service. |
 

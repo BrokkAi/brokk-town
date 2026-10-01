@@ -48,7 +48,7 @@ creating proposal issues. A changed HEAD or tracked-file edit fails the scan.
 ## Configuration
 
 Town fills this configuration from the town's agent profile and the feature
-house's work policy (`bt settings --role feature`). The package's own fields are:
+house's work policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

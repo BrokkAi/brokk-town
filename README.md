@@ -4,8 +4,8 @@ Brokk Town is a local service that runs a town of repository bots against your
 GitHub repositories. It watches what changes, files useful bug and feature
 issues, implements work, reviews and certifies pull requests, decides what is
 worth doing, keeps the branch it covers healthy, and ships releases. You drive
-it from a browser or the `bt` command line. Everything runs on your machine with
-the `gh` and agent credentials you already have.
+it from a browser, with `bt` starting and stopping the local service. Everything
+runs on your machine with the `gh` and agent credentials you already have.
 
 The eight bots are Go packages of this module. Town calls them in process: there
 is no separate bot daemon to install, no worker protocol to keep in version
@@ -67,9 +67,6 @@ Authenticate `gh` and your chosen agent, then start Town:
 ```sh
 bt                                     # foreground service
 bt web                                 # print the browser address
-bt add --repo OWNER/REPO               # add a town
-bt start --repo OWNER/REPO             # wake every house
-bt settings --max-workers 4            # service-wide agent capacity
 bt status                              # what is running
 bt shutdown                            # stop the service
 ```
@@ -77,6 +74,7 @@ bt shutdown                            # stop the service
 Bare `bt` runs in the foreground and prints its browser URL, with the access key.
 The server binds loopback only. `bt -d` starts the same service in the background;
 `bt shutdown` stops it. Ctrl+C, SIGTERM or SIGHUP stops a foreground service.
+Add, start and configure towns in the browser.
 
 `bt --demo` starts an isolated simulated town that never contacts GitHub, an
 agent or the network. It is the fastest way to look around.
@@ -98,7 +96,7 @@ identity, a work policy and a place in the pipeline.
 | Repo watchtower | repo-bot | Inventories the repository and repairs the branch it covers. |
 
 The repo watchtower starts enabled so Town can observe the repository. Every
-other house starts paused; start it from the browser or with `bt start --role`.
+other house starts paused; start it from the browser.
 
 ## How work moves
 
@@ -120,7 +118,7 @@ merge. See [docs/workflow.md](docs/workflow.md).
 ## Browser
 
 `bt web` prints a loopback URL carrying the access key. The browser shows the
-same committed state as the CLI and never writes anything the service did not
+same committed state as the API and never writes anything the service did not
 record. Views include the town board, Town Hall conversation with Town Guide,
 outcome history, storage inventory, settings, execution placement and the
 service diagnostics.
@@ -132,7 +130,9 @@ snapshot and changes nothing Town does. See [docs/themes.md](docs/themes.md).
 
 ## Command line
 
-`bt` is both the service and its client.
+`bt` starts, stops and locates the local service. All day-to-day operation —
+towns, houses, tasks, decisions, settings, diagnostics, history and storage —
+happens in the browser.
 
 | Command | Purpose |
 | --- | --- |
@@ -141,30 +141,15 @@ snapshot and changes nothing Town does. See [docs/themes.md](docs/themes.md).
 | `bt status` | Show whether Town is running and what it serves (`--json` for state). |
 | `bt web` | Print the browser address. |
 | `bt shutdown` | Stop the service and its work. |
-| `bt add` / `bt delete` | Add or delete a town. |
-| `bt start` / `pause` / `stop` | Control a town or one house (`--role`). |
-| `bt retry` / `defer` / `undefer` | Retry, snooze or wake one task. |
-| `bt admit` / `decline` | Decide a pending Mayoral decision. |
-| `bt settings` | Configure the service, a town, or one house. |
-| `bt request` | Submit or check a GitHub issue request. |
-| `bt doctor` | Run read-only setup diagnostics. |
-| `bt choices` | Read a profile's available models and efforts. |
-| `bt history` | Read archived terminal tasks. |
-| `bt storage` | Inspect and clean completed local artifacts. |
-| `bt guide` | Talk to Town Guide. |
-| `bt execution` | List or select Mjolnir execution targets. |
-| `bt harnesses` | List the ACP harness registry. |
-| `bt attention-hook` | Configure the local attention hook. |
 | `bt version` | Print the version. |
 
 Every command documents its own flags: `bt COMMAND --help`. See
-[docs/operations.md](docs/operations.md) for the full reference.
+[docs/operations.md](docs/operations.md) for the service reference.
 
 ## Configuration
 
 Settings live in Town's state directory, not in the repository. Use the browser
-or `bt settings` to change them. A `--config` file can seed service settings and
-towns at startup:
+to change them. A `--config` file can seed service settings and towns at startup:
 
 ```sh
 bt --config config.json

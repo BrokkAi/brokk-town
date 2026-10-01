@@ -47,7 +47,7 @@ an inspect-branch failure instead of being retried blindly.
 ## Configuration
 
 Town fills this configuration from the town's agent profile and the issue house's
-work policy (`bt settings --role issue`). The package's own fields are:
+work policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

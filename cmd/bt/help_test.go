@@ -23,7 +23,7 @@ func TestRootHelpHasCobraSections(t *testing.T) {
 			t.Fatalf("root help missing %q:\n%s", section, help)
 		}
 	}
-	for _, cmd := range []string{"status", "shutdown", "add", "request", "help"} {
+	for _, cmd := range []string{"status", "web", "shutdown", "version", "help"} {
 		if !strings.Contains(help, "  "+cmd+" ") {
 			t.Fatalf("root help omits command %q:\n%s", cmd, help)
 		}
@@ -38,36 +38,31 @@ func TestRootHelpHasCobraSections(t *testing.T) {
 
 func TestCommandHelpFiltersToRelevantFlags(t *testing.T) {
 	var out strings.Builder
-	printCommandHelp(&out, testFlagSet(t), "add")
-	add := out.String()
-	for _, want := range []string{"Usage:", "bt add", "Flags:", "Global Flags:", "--repo", "--harness"} {
-		if !strings.Contains(add, want) {
-			t.Fatalf("add help missing %q:\n%s", want, add)
+	printCommandHelp(&out, testFlagSet(t), "status")
+	status := out.String()
+	for _, want := range []string{"Usage:", "bt status", "Flags:", "Global Flags:", "--json", "--state-dir"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("status help missing %q:\n%s", want, status)
 		}
 	}
-	for _, other := range []string{"--max-workers", "--body-file"} {
-		if strings.Contains(add, other) {
-			t.Fatalf("add help leaks %q:\n%s", other, add)
+	for _, other := range []string{"--config", "--listen", "run Town in the background"} {
+		if strings.Contains(status, other) {
+			t.Fatalf("status help leaks %q:\n%s", other, status)
 		}
-	}
-
-	// --listen only starts Town; client commands never show it.
-	if strings.Contains(add, "--listen") {
-		t.Fatalf("add help shows --listen:\n%s", add)
 	}
 
 	out.Reset()
-	printCommandHelp(&out, testFlagSet(t), "delete")
-	if strings.Contains(out.String(), "--role") {
-		t.Fatalf("delete help offers --role:\n%s", out.String())
+	printCommandHelp(&out, testFlagSet(t), "web")
+	if strings.Contains(out.String(), "--json") {
+		t.Fatalf("web help offers --json:\n%s", out.String())
 	}
 }
 
 func TestHelpRequestsNeedNoService(t *testing.T) {
 	ctx := context.Background()
 	for _, args := range [][]string{
-		{"--help"}, {"-h"}, {"help"}, {"help", "add"},
-		{"add", "--help"}, {"settings", "-h"}, {"shutdown", "--help"}, {"version", "--help"},
+		{"--help"}, {"-h"}, {"help"}, {"help", "status"},
+		{"status", "--help"}, {"web", "-h"}, {"shutdown", "--help"}, {"version", "--help"},
 	} {
 		if err := run(ctx, args); err != nil {
 			t.Fatalf("%v: %v", args, err)
@@ -83,7 +78,7 @@ func TestUnknownCommandsPointAtHelp(t *testing.T) {
 	if err := run(ctx, []string{"help", "bogus"}); err == nil || !strings.Contains(err.Error(), "unknown command") {
 		t.Fatalf("help bogus: %v", err)
 	}
-	for _, removed := range []string{"service", "serve", "capacity", "check-request"} {
+	for _, removed := range []string{"service", "serve", "capacity", "check-request", "add", "settings", "start", "retry", "guide"} {
 		if err := run(ctx, []string{removed}); err == nil || !strings.Contains(err.Error(), "unknown command") {
 			t.Fatalf("removed command %s: %v", removed, err)
 		}
@@ -105,12 +100,9 @@ func TestCommandsRejectFlagsTheyDoNotTake(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"start", "--state-dir", dir, "--repo", "a/b", "--harness", "x"}, "--harness: not a flag of bt start"},
-		{[]string{"add", "--state-dir", dir, "--repo", "a/b", "--listen", "127.0.0.1:1"}, "--listen: not a flag of bt add"},
-		{[]string{"delete", "--state-dir", dir, "--repo", "a/b", "--role", "bug"}, "--role: not a flag of bt delete"},
 		{[]string{"status", "--state-dir", dir, "-d"}, "-d: not a flag of bt status"},
-		{[]string{"--state-dir", dir, "--repo", "a/b"}, "--repo: not a flag of bt"},
-		{[]string{"--state-dir", dir, "--max-workers", "2"}, "--max-workers: not a flag of bt"},
+		{[]string{"web", "--state-dir", dir, "--json"}, "--json: not a flag of bt web"},
+		{[]string{"--state-dir", dir, "--json"}, "--json: not a flag of bt"},
 	} {
 		err := run(ctx, tc.args)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

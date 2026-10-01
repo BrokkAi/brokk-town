@@ -43,8 +43,8 @@ creating bug issues. A changed HEAD or a tracked-file edit fails the scan.
 ## Configuration
 
 Town fills this configuration from the town's agent profile and the bug house's
-work policy, so you normally set it with `bt settings --role bug` or in the
-browser rather than by hand. The package's own fields are:
+work policy, so you normally set it in the browser rather than by hand. The
+package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

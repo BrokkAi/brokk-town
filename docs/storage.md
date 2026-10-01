@@ -2,15 +2,10 @@
 
 Town keeps two kinds of local data: the committed snapshot, which is small and
 must be kept, and per-run artifacts — checkouts, worktrees, bot state and
-transcripts — which accumulate. `bt storage` inventories the artifacts and can
-remove the ones that are provably safe to remove.
+transcripts — which accumulate. The browser's Storage view inventories the
+artifacts and can remove the ones that are provably safe to remove.
 
 ## Inventory
-
-```sh
-bt storage --repo OWNER/REPO
-bt storage --repo OWNER/REPO --older-than-hours 24 --json
-```
 
 The inventory reports, per house, bytes, files and artifact count, plus one entry
 per artifact: a stable opaque ID, its town-relative path, its kind, its role, any
@@ -37,10 +32,6 @@ Everything else — worker-owned data, active state, unmapped evidence — is
 retained with a stated reason.
 
 ## Cleanup
-
-```sh
-bt storage --repo OWNER/REPO --cleanup ID1,ID2
-```
 
 Cleanup takes the opaque IDs from a fresh inventory, never a path. It will not
 start while a **cleanup hold** applies:
@@ -74,8 +65,7 @@ inventory, into immutable objects with a digest index:
   decisions and identities.
 - A damaged object fails to read rather than silently becoming a fresh task.
 
-`bt history --repo OWNER/REPO` lists the archive; `--task ID` reads one task,
-`--after` paginates, and `--limit` (1–100) sets the page size.
+History lists the archive and opens one task at a time in the browser.
 
 ## Backups
 

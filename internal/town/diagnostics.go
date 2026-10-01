@@ -65,7 +65,7 @@ func (g MergeGate) blockers(p Pull, a *Audit, branch, repo string) []Diagnostic 
 		add("locked", "blocked", "The pull request is locked.", "Ask a repository maintainer to resolve the lock.", "")
 	}
 	if !g.PolicyKnown {
-		add("merge_policy", "unknown", "Repository merge policy is unavailable.", "Check GitHub access with bt doctor and retry the read.", "")
+		add("merge_policy", "unknown", "Repository merge policy is unavailable.", "Check Diagnostics in the browser and retry the read.", "")
 	} else if !g.SquashAllowed {
 		add("merge_strategy", "blocked", "Squash merging is disabled; Town's merge strategy is unsupported here.", "Merge manually using an allowed strategy, or ask a maintainer to enable squash merging.", "")
 	}
@@ -141,7 +141,7 @@ func (s *Supervisor) saveMergeWait(t *Town, task *Task, p Pull, checks []Diagnos
 }
 
 func (s *Supervisor) unavailableMergeWait(t *Town, task *Task, p Pull, err error) error {
-	check := Diagnostic{Code: "github_unavailable", Status: "unknown", Detail: "GitHub merge information is unavailable; no merge was attempted.", Action: "Run bt doctor --repo " + t.Config.Repo + " to check access, then let Town retry the read.", URL: fmt.Sprintf("https://github.com/%s/pull/%d", t.Config.Repo, task.Number)}
+	check := Diagnostic{Code: "github_unavailable", Status: "unknown", Detail: "GitHub merge information is unavailable; no merge was attempted.", Action: "Open Diagnostics for " + t.Config.Repo + " in the browser to check access, then let Town retry the read.", URL: fmt.Sprintf("https://github.com/%s/pull/%d", t.Config.Repo, task.Number)}
 	return errors.Join(err, s.saveMergeWait(t, task, p, []Diagnostic{check}))
 }
 

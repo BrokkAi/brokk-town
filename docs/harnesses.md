@@ -16,56 +16,35 @@ Town merges three sources into one catalog:
    as `additional` entries and are not part of the registry's version scheme.
 3. **Custom** — any ACP v1 stdio executable you name yourself.
 
-List what is available:
-
-```sh
-bt harnesses
-bt harnesses --refresh
-```
-
+The browser's Settings view lists what is available and can refresh the catalog.
 The listing shows each agent's source (`registry` or `additional`), whether it
-can run on this platform, and how it is launched. See
-[tools and the browser](../README.md) for selecting one in the settings UI.
+can run on this platform, and how it is launched.
 
 ## Selecting a harness
 
-```sh
-bt add --repo OWNER/REPO --harness codex-acp
-bt settings --repo OWNER/REPO --harness claude-acp --model claude-opus-5 --effort high
-bt settings --repo OWNER/REPO --role review --harness codex-acp
-bt settings --repo OWNER/REPO --role review --inherit
-```
+Use the browser's Settings view to select a harness for a town or one house, and
+to restore a house to the town defaults.
 
 The default harness is `codex-acp`. When you select a different harness, Town
 clears the stored model, effort and session mode, because those belong to the
 harness that advertised them. A house override stays independent of the town
-default until you `--inherit`.
+default until you restore inheritance.
 
 ### Custom harnesses
 
-```sh
-bt settings --repo OWNER/REPO --harness custom \
-  --agent-command '["your-acp-agent","--stdio"]'
-```
-
-`--agent-command` is a JSON argument array interpreted literally, with no shell.
-It is only accepted for the `custom` harness. You can add environment variables
-and an advertised auth method or session mode in a `--config` file under the
-town's `agent` object.
+Choose `custom` in Settings and enter a JSON argument array interpreted
+literally, with no shell, such as `["your-acp-agent","--stdio"]`. The command is
+only accepted for the `custom` harness. You can add environment variables and an
+advertised auth method or session mode in a `--config` file under the town's
+`agent` object.
 
 ## Model and effort
 
-Town does not guess a model catalogue. It asks the harness:
-
-```sh
-bt choices --repo OWNER/REPO
-bt choices --repo OWNER/REPO --role review --model MODEL
-```
-
-The probe starts the harness, initializes an ACP session with the same session
-config capability a real run advertises, and reads the choices. It offers no
-workspace tools. For a managed (Mjolnir) selection, the choices come from the
-daemon's profile API instead.
+Town does not guess a model catalogue. Settings asks the harness and shows the
+choices before you save them. The probe starts the harness, initializes an ACP
+session with the same session config capability a real run advertises, and reads
+the choices. It offers no workspace tools. For a managed (Mjolnir) selection, the
+choices come from the daemon's profile API instead.
 
 An empty model or effort uses the harness's own default. An unknown value is
 refused with the choices the harness actually reported.
@@ -108,8 +87,8 @@ run through a shell.
 A missing executable, an unauthenticated harness, an unsupported model and an
 unsupported effort are all reported as setup errors before any prompt. They do
 not consume a work attempt and do not count against a task's retry budget;
-correct the setting and restart. `bt doctor --repo OWNER/REPO` reports
-availability without running an agent, and the result is saved in town state.
+correct the setting and restart. Diagnostics reports availability without
+running an agent, and the result is saved in town state.
 
 Harnesses run with the service account's permissions. They are not sandboxed by
 Town, so run Town as a dedicated account, or in a container, when that matters.

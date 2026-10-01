@@ -659,8 +659,9 @@ export function profileSummary(profile) {
 
 // Quiet hours are weekly windows on the service's local clock in which Town
 // starts no new agent work and makes none of its own GitHub writes. The
-// compact form is what bt settings --quiet-hours takes: windows joined by ";",
-// each "DAYS HH:MM-HH:MM". The service validates again and has the last word.
+// compact form is what the service accepts from the browser and config file:
+// windows joined by ";", each "DAYS HH:MM-HH:MM". The service validates again
+// and has the last word.
 const quietWeek = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const quietAliases = { daily: "mon-sun", weekdays: "mon-fri", weekends: "sat,sun" };
 

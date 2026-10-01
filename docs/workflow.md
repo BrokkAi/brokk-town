@@ -150,22 +150,23 @@ attempt reconciles it rather than republishing from scratch. See
 
 ## Deferral
 
-`bt defer` snoozes one task until a chosen time. Before then Town starts no agent
-work and makes no merge for it; the rest of the house's queue keeps moving. At the
-resume time the task rejoins its queue on its own. `bt undefer` clears the snooze.
-A snooze is operator state: nothing observed on GitHub changes it.
+The browser's snooze action pauses one task until a chosen time. Before then Town
+starts no agent work and makes no merge for it; the rest of the house's queue
+keeps moving. At the resume time the task rejoins its queue on its own, and
+Resume now clears the snooze. A snooze is operator state: nothing observed on
+GitHub changes it.
 
 ## Archival
 
 Closed, merged and shipped tasks are archived after thirty days, at most 500 per
 inventory. Active, blocked, pending-decision, recovery, follow-up and source-cursor
 tasks stay hot. Archived tasks keep their identities, decisions and evidence, are
-readable with `bt history`, and are restored automatically if they reopen. See
+readable in History, and are restored automatically if they reopen. See
 [storage.md](storage.md).
 
 ## Events
 
 Every delivery and decision is appended to the town's event log and streamed to
 connected clients. Events are bounded (the most recent 512) and carry a sequence,
-time, town, kind, from/to houses, cargo and title. The browser board and the
-CLI both read them from the same committed state.
+time, town, kind, from/to houses, cargo and title. The browser board reads them
+from the same committed state.

@@ -24,15 +24,15 @@ browser, Mjolnir — is either a package it calls or a service it talks to.
 
 `cmd/bt` opens the state store, starts the supervisor, the web server, the
 harness catalog, the Mjolnir catalog and the attention watcher, then waits for a
-signal or `bt shutdown`. Client commands (`bt status`, `bt settings`, …) are the
-same binary talking to the running service over a loopback HTTP API using a
-token from the state directory.
+signal or `bt shutdown`. The small CLI (`bt status`, `bt web`, …) is the same
+binary talking to the running service over a loopback HTTP API using a token from
+the state directory; the browser uses the same API.
 
 ## Packages
 
 | Package | Responsibility |
 | --- | --- |
-| `cmd/bt` | Service entry point, CLI surface, background start, client commands, demo seeding. |
+| `cmd/bt` | Service entry point, process-control CLI, background start, demo seeding. |
 | `internal/town` | The domain: state model, store, supervisor, scheduling, reconciliation, policies, funnels, recovery, history, storage, outcomes. |
 | `internal/web` | HTTP routes and the embedded browser UI. |
 | `internal/harness` | ACP harness registry, catalog cache, archive download and launch. |
@@ -138,7 +138,7 @@ are held rather than silently run locally. See [harnesses.md](harnesses.md) and
 Town Guide is a separate bounded ACP conversation. It sees a context assembled
 from public state — worker summaries, recent failures, task counts and recent
 tasks — and has no workspace tools and no permission to write. It may propose a
-pause; the browser or CLI applies it only after the exact proposal digest is
+pause; the browser applies it only after the exact proposal digest is
 confirmed against current state. See [operations.md](operations.md).
 
 ## Demo and townsim

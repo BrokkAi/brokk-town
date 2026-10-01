@@ -339,7 +339,7 @@ func (s *Supervisor) SetQuietHours(windows []QuietWindow) error {
 	return err
 }
 
-// ParseQuietHours reads the compact form the CLI and browser accept:
+// ParseQuietHours reads the compact form the browser and config file accept:
 // windows separated by semicolons, each "DAYS HH:MM-HH:MM". DAYS is a comma
 // list of day names or ranges (mon-fri), or daily, weekdays or weekends.
 func ParseQuietHours(spec string) ([]QuietWindow, error) {
