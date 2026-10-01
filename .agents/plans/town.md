@@ -1,5 +1,26 @@
 # Brokk Town implementation plan
 
+## Town 0.7.6 release (in progress)
+
+- User requested a new Town release, conditioned on the default branch being
+  green. `master` at a7868ff equals `origin/master`; its CI run 36705981252
+  passed on 2026-09-30 and the working tree was clean.
+- Scope is the Windows work merged after `v0.7.5-town`: portable process
+  control, file locks and durable writes; `bt -d`/`bt shutdown` without Unix
+  signals; the authenticated local `POST /api/shutdown`; Windows state under
+  `%LOCALAPPDATA%\brokk-town`; and the acp-go 0.11.0 update that builds there.
+  Bots and the npm launcher still do not support Windows, and acp-go's POSIX
+  path check (BrokkAi/acp-go#45) still blocks managed Mjolnir dispatch from
+  Windows; both are stated release limits.
+- No bot source changed since its last release, so only Town is released.
+- Also repaired the literal backspace byte that the Windows commit left in
+  place of `\brokk-town` in `CHANGELOG.md`, `docs/configuration.md` and this
+  plan.
+- Publish through the tag-triggered workflow: prepare the changelog on master,
+  run the full local validation and a non-publishing packaging preflight from
+  the exact committed candidate, confirm master CI, then push immutable
+  `v0.7.6-town` and verify the four native archives and five npm packages.
+
 ## Windows support for the Town service (first part implemented)
 
 - Goal: run `bt` natively on Windows. Agreed scope for this pass is the
@@ -19,7 +40,7 @@
   `storagePathSafe`. `bt -d` starts Town with a hidden console of its own and
   passes the ready pipe as an explicitly inherited handle; `bt shutdown` on
   Windows uses a token-authenticated `POST /api/shutdown`, since there is no
-  signal for it. Windows state defaults to `%LOCALAPPDATA%rokk-town`. Muse
+  signal for it. Windows state defaults to `%LOCALAPPDATA%\brokk-town`. Muse
   config lookup falls back to `USERPROFILE` as muse-acp does.
 - Validation on Windows 11 (gcc from WinLibs for `-race`): `go vet ./...` and
   `go test -race ./...` pass for all Town packages; `bt -d --demo`, `status`,

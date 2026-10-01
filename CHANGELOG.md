@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.6 — 2026-10-01
 
 - Build and run the Town service on Windows: portable process control, file
   locks and durable writes; `bt -d` and `bt shutdown` work without Unix
@@ -8,7 +8,7 @@
   support Windows.
 - Update acp-go to 0.11.0, which builds on Windows.
 - `bt shutdown` can stop a service through the authenticated local API.
-- State defaults to `%LOCALAPPDATA%rokk-town` on Windows.
+- State defaults to `%LOCALAPPDATA%\brokk-town` on Windows.
 
 ## 0.7.5 — 2026-09-28
 
