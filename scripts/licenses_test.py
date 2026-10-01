@@ -1,8 +1,6 @@
 import hashlib
-import io
 import json
 from pathlib import Path
-import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -88,26 +86,6 @@ class LicensePolicyTests(unittest.TestCase):
         (self.dependency / "vendor/NOTICE").write_text("additional attribution\n")
         with self.assertRaisesRegex(ValueError, "inventory changed"):
             licenses.check(write=True)
-
-    def test_npm_checks_notice_bytes_even_when_archive_is_valid(self):
-        licenses.check(write=True)
-        package = self.root / "package.tgz"
-        for changed in (False, True):
-            files = licenses.legal_files()
-            if changed:
-                files["NOTICE"] = b"incorrect attribution\n"
-            files["package.json"] = b'{"license": "Apache-2.0"}'
-            with tarfile.open(package, "w:gz") as archive:
-                for name, data in files.items():
-                    entry = tarfile.TarInfo("package/" + name)
-                    entry.size = len(data)
-                    archive.addfile(entry, io.BytesIO(data))
-            if changed:
-                with self.assertRaisesRegex(ValueError, "altered legal text: NOTICE"):
-                    licenses.check_npm(package)
-            else:
-                licenses.check_npm(package)
-
 
 if __name__ == "__main__":
     unittest.main()

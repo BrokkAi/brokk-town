@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Tag-triggered release publisher. Runs in publish-packages.yml on a pushed v* tag.
+"""Tag-triggered release publisher. Runs in release-town.yml on a pushed v* tag.
 
-Builds the four native archives and five npm packages from the tagged commit,
-stages them in a draft GitHub release, publishes the npm packages with
-provenance, then finalizes the release. Pushing the tag is the release request;
-there is no dispatch flag or preflight tag.
+Builds the four native archives from the tagged commit, stages them in a draft
+GitHub release, then finalizes the release. Pushing the tag is the release
+request; there is no dispatch flag or preflight tag.
 
-Re-runs are safe: existing draft assets and published package versions are
-reused, while anything conflicting fails closed for investigation. There is no
-read-back verification: a re-run only fills in what is missing, and upload
-exit codes gate each step.
+Re-runs are safe: existing draft assets are reused, while anything conflicting
+fails closed for investigation. There is no read-back verification: a re-run
+only fills in what is missing, and upload exit codes gate each step.
 """
 
 import argparse
@@ -19,8 +17,6 @@ import os
 import subprocess
 import sys
 
-import package_installers
-import package_registry
 import package_release as release
 
 REPO = "BrokkAi/brokk-town"
@@ -96,9 +92,7 @@ def publish(directory, tag, sha, check_only=False):
     if directory.exists():
         raise ValueError("build output must not exist; use a fresh directory")
     native = directory / "native"
-    packages = directory / "packages"
     release.package(tag, native)
-    package_installers.package(tag, native, packages, sha)
     if check_only:
         log("check-only: built everything; nothing uploaded")
         return
@@ -119,7 +113,6 @@ def publish(directory, tag, sha, check_only=False):
     existing = {asset["name"] for asset in api(f"releases/{record['id']}/assets?per_page=100")}
     for name in missing_assets(native, existing):
         subprocess.run(["gh", "release", "upload", tag, str(native / name), "--repo", GH_REPO], check=True)
-    package_registry.publish_all(packages)
     api(f"releases/{record['id']}", "PATCH", {"draft": False, "make_latest": make_latest(tag)})
     log(f"Published {tag}")
 

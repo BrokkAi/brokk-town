@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import tarfile
 
 ROOT = Path(__file__).resolve().parent.parent
 LEGAL_FILES = ("LICENSE", "NOTICE", "licenses/THIRD_PARTY_NOTICES.txt")
@@ -95,18 +94,6 @@ def check(write=False):
 def legal_files():
     """The same reviewed files accompany every native and installer package."""
     return {name: (ROOT / name).read_bytes() for name in LEGAL_FILES}
-
-
-def check_npm(path):
-    with tarfile.open(path, "r:gz") as archive:
-        for filename, expected in legal_files().items():
-            name = "package/" + filename
-            matches = [m for m in archive.getmembers() if m.name == name]
-            if len(matches) != 1 or not matches[0].isfile() or archive.extractfile(matches[0]).read() != expected:
-                raise ValueError(f"npm package has missing or altered legal text: {filename}")
-        metadata = json.load(archive.extractfile("package/package.json"))
-        if metadata.get("license") != "Apache-2.0":
-            raise ValueError("npm package must declare Apache-2.0")
 
 
 if __name__ == "__main__":

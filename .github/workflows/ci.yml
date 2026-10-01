@@ -40,8 +40,8 @@ jobs:
           node-version: '24'
       - name: Check the module
         # One module covers Town and every bot, so the whole package tree is
-        # checked in a single pass. The Python, npm and installer checks run
-        # once for Town below.
+        # checked in a single pass. The browser, Python, installer and smoke
+        # checks run once for Town below.
         run: |
           unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
           if [ -n "$unformatted" ]; then
@@ -52,7 +52,7 @@ jobs:
           go test -race ./...
           go vet ./...
       - name: Build Town and run its smoke checks
-        run: npm run check && npm test && make build && python3 scripts/smoke.py && python3 scripts/smoke_mjolnir.py
+        run: make js && make build && python3 scripts/smoke.py && python3 scripts/smoke_mjolnir.py
   workflows:
     runs-on: ubuntu-latest
     steps:

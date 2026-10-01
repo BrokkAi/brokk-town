@@ -1,17 +1,27 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-10-01
 
-- Merge the eight standalone bot modules into the root Go module. Each bot stays
-  its own package, binary, npm family and release tag, but one `go.mod`/`go.sum`
-  now covers Town and every bot, so they share one Go toolchain, dependency set
-  and root license report. Per-bot release scripts and workflows still build
-  each bot from `bots/<name>`.
-- Update every bundled bot to acp-go 0.11.0, the release Town already uses,
-  and regenerate each bot's licence policy and third-party notices. No bot
-  source changed. Bug Bot's runner tests record the released `SetEffort`
-  selector matching and acp-go's drain of in-flight request handlers on
-  transport EOF.
+- Merge the eight bots into the root Go module. They stay separate packages
+  under `bots/`, but one `go.mod`/`go.sum` now covers Town and every bot, so they
+  share one toolchain, dependency set and license report.
+- Call the bots in process. The private socket worker protocol, the subprocess
+  pool, package probing and capability negotiation are gone; Town builds the
+  same bot configuration and calls the bot function directly.
+- Remove the standalone bot CLIs and their distribution. No per-bot binary, npm
+  package, Makefile or release workflow remains; a bot change ships with Town.
+- Update every bot to acp-go 0.11.0 and regenerate the third-party notices.
+- Stop publishing to a package registry. A release now builds the four native
+  archives and their checksums and publishes them as a GitHub release;
+  `install.sh` resolves the latest version from the GitHub releases API instead
+  of npm, and the npm launcher is gone.
+- Rewrite the documentation for the single-module layout: new README, AGENTS,
+  CONTRIBUTING and RELEASING, and a `docs/` set covering architecture,
+  configuration, operations, workflow, bots, funnels, recovery, storage,
+  harnesses, Mjolnir and themes.
+- Remove the duplicated per-bot legal and community files left over from the
+  standalone projects. One Apache-2.0 `LICENSE` and one `NOTICE` cover the
+  repository; the three MIT bot licenses are gone and every bot is Apache-2.0.
 
 ## 0.7.6 — 2026-10-01
 

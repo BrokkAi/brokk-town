@@ -3,9 +3,7 @@ from pathlib import Path
 import tempfile
 import tarfile
 import unittest
-from unittest.mock import patch
 
-import package_installers
 import package_release as release
 
 
@@ -37,13 +35,6 @@ class ReleaseAssets(unittest.TestCase):
         release.verify_local(self.tag, self.assets, self.sha)
         with self.assertRaisesRegex(ValueError, "exact checkout commit"):
             release.verify_local(self.tag, self.assets, "b" * 40)
-
-    def test_corrupt_assets_cannot_reach_npm_pack(self):
-        (self.assets / self.manifest["assets"][0]["name"]).write_bytes(b"corrupted")
-        with patch.object(package_installers.subprocess, "check_output") as npm:
-            with self.assertRaisesRegex(ValueError, "corrupt release asset"):
-                package_installers.package(self.tag, self.assets, self.root / "packages", self.sha)
-            npm.assert_not_called()
 
     def test_swapped_platform_payload_is_rejected_even_with_valid_checksums(self):
         first, second = self.manifest["assets"][:2]

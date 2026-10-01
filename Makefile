@@ -1,16 +1,17 @@
-.PHONY: build test check licenses smoke
+.PHONY: build test js check licenses smoke
 build:
 	python3 scripts/build.py
 test:
 	go test -race ./...
-	npm test
+	$(MAKE) js
+js:
+	@for file in internal/web/*.js; do node --check "$$file" || exit 1; done
+	node --test internal/web/*.test.js
 licenses:
 	python3 scripts/licenses.py
 check: test licenses
 	go vet ./...
 	sh -n install.sh
-	node --test --test-isolation=none npm/bt.test.cjs
-	npm run check
 	python3 -m unittest discover -s scripts -p '*_test.py'
 
 smoke: build

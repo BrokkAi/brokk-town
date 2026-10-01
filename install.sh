@@ -48,8 +48,8 @@ main() {
     releases=https://github.com/BrokkAi/brokk-town/releases
     version=${1:-latest}
     if [ "$version" = latest ]; then
-        registry=$(download "https://registry.npmjs.org/@brokkai/brokk-town/latest") || fail 'could not resolve Town version'
-        version=$(printf '%s' "$registry" | python3 -c 'import json,sys; print("v"+json.load(sys.stdin)["version"]+"-town")') || fail 'invalid Town version'
+        latest=$(download "https://api.github.com/repos/BrokkAi/brokk-town/releases/latest") || fail 'could not resolve Town version'
+        version=$(printf '%s' "$latest" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])') || fail 'invalid Town version'
     fi
     printf '%s\n' "$version" | awk '
         /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$/ { valid++ }

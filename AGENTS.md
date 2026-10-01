@@ -31,7 +31,8 @@ per-bot release. If you find code or docs that describe one, it is stale.
 
 ```sh
 make build     # python3 scripts/build.py -> bin/bt
-make test      # go test -race ./... and npm test
+make test      # go test -race ./... and the browser JavaScript tests
+make js        # node --check every browser source, then node --test
 make check     # full gate: test, vet, licenses, browser, installer and scripts
 make smoke     # build, then run the isolated demo integration checks
 ```
@@ -42,13 +43,13 @@ only touching one area, the fast loop is:
 ```sh
 go test -race ./internal/town/...      # or the package you changed
 go vet ./...
-npm run check && npm test              # browser JavaScript
+make js                                # browser JavaScript
 python3 -m unittest discover -s scripts -p '*_test.py'
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same Go checks on Linux for pull
-requests and on Linux and macOS for `master` and release tags, plus the Python,
-npm, installer and workflow-lint checks.
+requests and on Linux and macOS for `master` and release tags, plus the browser,
+Python, installer and workflow-lint checks.
 
 ## Working rules
 
@@ -77,8 +78,10 @@ npm, installer and workflow-lint checks.
 
 ## Browser conventions
 
-- `internal/web/*.js` is plain ES modules with no build step. `npm run check`
-  syntax-checks every file and `npm test` runs the Node test runner.
+- `internal/web/*.js` is plain ES modules with no build step. `make js` runs
+  `node --check` on every file and then the Node test runner. The root
+  `package.json` exists only to mark those files as ES modules; there is no npm
+  package to install or publish.
 - Render from committed state. The UI never invents state and never triggers a
   write that the service did not record.
 - Keep CSS in `internal/web/style.css`; keep per-theme drawing in `scenery.js`,
@@ -98,6 +101,6 @@ affected page in the same change:
 ## Releasing
 
 A release is a tag push: `git tag vX.Y.Z-town && git push origin vX.Y.Z-town`.
-The workflow runs CI, builds the native archives and npm packages, and publishes
-them. Do not create tags, publish packages or push to a release branch unless the
-user explicitly asked for a release. See [RELEASING.md](RELEASING.md).
+The workflow runs CI, builds the native archives, and publishes them as a GitHub
+release. Do not create tags or push to a release branch unless the user
+explicitly asked for a release. See [RELEASING.md](RELEASING.md).

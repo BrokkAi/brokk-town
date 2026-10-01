@@ -32,12 +32,11 @@ repositories; tests use fakes and the demo service.
 make check
 ```
 
-This runs, in order: `go test -race ./...`, `npm test`, `python3
-scripts/licenses.py`, `go vet ./...`, a shell syntax check of `install.sh`, the
-npm launcher tests, `npm run check` (browser syntax), and the Python unit tests
-under `scripts/`. Run it before you push. `make smoke` additionally builds the
-binary and runs the isolated demo integration checks, including the Mjolnir
-harness.
+This runs, in order: `go test -race ./...`, the browser JavaScript syntax checks
+and tests (`make js`), `python3 scripts/licenses.py`, `go vet ./...`, a shell
+syntax check of `install.sh`, and the Python unit tests under `scripts/`. Run it
+before you push. `make smoke` additionally builds the binary and runs the
+isolated demo integration checks, including the Mjolnir harness.
 
 ## What we look for
 

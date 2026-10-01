@@ -25,18 +25,13 @@ step, and no per-bot release to track. One binary (`bt`) and one release tag
 ## Install
 
 ```sh
-npm install -g @brokkai/brokk-town
-bt --help
-```
-
-Or install the native executable without Node.js:
-
-```sh
 curl -fsSL https://raw.githubusercontent.com/BrokkAi/brokk-town/master/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Or build from source with the Go version in [go.mod](go.mod):
+The shell installer downloads the latest GitHub release, verifies its SHA-256
+checksum and installs `bt`. Or build from source with the Go version in
+[go.mod](go.mod):
 
 ```sh
 make build
@@ -178,7 +173,7 @@ git tag vX.Y.Z-town && git push origin vX.Y.Z-town
 ```
 
 The tag starts the `Release town` workflow, which runs CI, builds the native
-archives and npm packages, and publishes them. See [RELEASING.md](RELEASING.md).
+archives and publishes them as a GitHub release. See [RELEASING.md](RELEASING.md).
 
 ## License
 
