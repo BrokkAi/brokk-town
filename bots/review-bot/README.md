@@ -1,253 +1,87 @@
 # Brokk Review Bot
 
-This standalone project now lives in [`BrokkAi/brokk-town/bots/review-bot`](https://github.com/BrokkAi/brokk-town/tree/master/bots/review-bot). Build and test from this directory; see [RELEASING.md](RELEASING.md) for its independent suffix-tag releases.
+Review a pull request's exact revision and certify what it found.
 
-An autonomous pull request reviewer in Go. **`brv`** watches GitHub PRs,
-investigates the exact change through Agent Client Protocol, independently
-verifies each finding, and posts a non-blocking review with inline comments
-and a summary. It never approves, requests changes, merges, or pushes fixes.
+`review-bot` is a Go package of the
+[Brokk Town](https://github.com/BrokkAi/brokk-town) module. Town runs it in
+process as the **review observatory** house, so there is no standalone binary,
+server or release tag to install. See [../../docs/bots.md](../../docs/bots.md)
+and [../../docs/workflow.md](../../docs/workflow.md).
 
-The bot uses the shared [acp-go](https://github.com/BrokkAi/acp-go) runner.
-Its CLI, terminal dashboard, private state, and release tooling follow
-[bug-bot](https://github.com/BrokkAi/bug-bot) and
-[issue-bot](https://github.com/BrokkAi/issue-bot).
+## What it does
 
-## Install and run
+1. Read the pull request's metadata, discussion, inline comments and prior review
+   summaries. Fetch the exact base and head through the repository's pull request
+   refs.
+2. Inspect the complete merge-base-to-head diff and the surrounding code in a
+   detached worktree owned by the bot's private repository.
+3. Ask the agent for concrete defects *introduced* by the change: correctness,
+   security, data loss, or a demonstrated performance regression. Style,
+   speculation, feature requests and pre-existing bugs are excluded. The cap is
+   ten findings by default and is never a quota.
+4. Verify each candidate in a fresh session and worktree, comparing its cause and
+   triggering conditions against every discussion entry and against findings
+   already accepted in this batch. Unsupported, uncertain and duplicate candidates
+   are dropped.
+5. Validate each finding's source location against both the local diff and
+   GitHub's patches. A verified finding without a valid inline anchor is reported
+   in the summary with a link to the exact source commit.
+6. Recheck eligibility, description, base and head, and the discussion, then
+   submit a single `COMMENT` review bound to the head SHA.
 
-Requires Linux or macOS, Git, authenticated GitHub CLI (`gh`), and an
-authenticated ACP coding agent. Codex through `codex-acp` is the default. If the
-adapter is missing, the bot uses `npx --yes @agentclientprotocol/codex-acp`, which
-requires Node.js and may download the adapter on first use. Explicit agent
-commands are used as configured.
+The result is a certified audit Town uses to decide the next step: a clean review
+advances the pull request, a first round of findings goes back to the issue house
+for one repair, and a second round decides between merge with follow-ups and
+closing.
 
-```sh
-npm install -g @brokkai/review-bot
-cd /path/to/repository
-brv
-```
+## What it never does
 
-You can also install a native release without Node.js or a Go toolchain:
+It never approves, requests changes, merges, or pushes to a contributor's branch.
+A review with no new findings reports coverage and limitations, not approval. A
+dry run never grants publication or merge authority.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/BrokkAi/review-bot/master/install.sh | sh
-```
+An audit describes exactly one revision. A review of any other base or head is
+stale and is never attributed to the dispatched task.
 
-To build from source, install Go 1.27.1 and run:
+## Configuration
 
-```sh
-go install github.com/BrokkAi/review-bot/cmd/brv@latest
-cd /path/to/repository
-brv
-```
+Town fills this configuration from the town's agent profile and the review house's
+policy (`bt settings --role review`). The package's own fields are:
 
-From this source checkout, `make build` creates `bin/brv`.
-Go installs into `GOBIN`, or `$(go env GOPATH)/bin`; add it to your `PATH`.
+| Field | Meaning |
+| --- | --- |
+| `remote`, `branch`, `directory`, `state_directory` | Private worktrees and state. |
+| `instruction_files` | Repository instruction files handed to the agent. |
+| `agent` | ACP command, environment, model and effort. |
+| `github.host`, `github.repo` | Enterprise host, or a local mirror's GitHub repository. |
+| `poll`, `timeout`, `retry_delay`, `attempts` | Cadence and retry budget. |
+| `labels`, `exclude_labels` | Selector for the pull requests the house may take. |
+| `max_findings` | Most findings one review may report (1–20). |
+| `pr` | Pin the house to one pull request. Town sets this for an exact dispatch. |
+| `focus` | Steer the review toward one area. |
+| `verify` | Operator command that must pass. |
+| `dry_run` | Inspect proposed review payloads without writing to GitHub. |
+| `remote_agent` | Managed-execution placement, set by Town for Mjolnir runs. |
 
-```sh
-brv /path/to/repository
-brv https://github.com/OWNER/REPO.git
-brv --once --pr 123 --dry-run
-brv --branch release/1.x --label ready --exclude-label no-review
-brv --model YOUR_MODEL --effort high
-brv --agent another-acp-agent --agent-arg=--stdio
-brv status
-brv retry --pr 123 --once
-brv version
-```
+Town's policy mapping is `labels`, `exclude_labels`, `only` → `pr`, `focus`,
+`limit` → `max_findings`, `attempts` and `verify`. Defaults: poll every 5 minutes,
+a 2-hour attempt budget, a 15-minute retry delay, 3 attempts and at most 10
+findings.
 
-No configuration file is needed. The bot detects `origin` and the remote's
-default branch, including when started from a subdirectory. `--pr` selects one
-PR but still respects the branch, draft, and label filters. Repeated `--label`
-flags require every named label; any `--exclude-label` match excludes a PR.
-Labels are compared without case sensitivity.
+A revision gets at most two attempts at any step. The first incomplete attempt
+earns one more after a short delay; the second retires the pull request for that
+revision, which Town then closes or hands to the Mayor.
 
-By default, each poll processes open, non-draft, unlocked PRs targeting the
-default branch, oldest first. Fork and bot-authored PRs are eligible. Polling
-starts immediately and repeats every five minutes. `--once` processes the
-eligible queue once and exits. It can post reviews; add `--dry-run` to inspect
-proposed review payloads without writing to GitHub. A dry run does not consume
-the live review for that revision.
-
-## How reviews work
-
-1. Read PR metadata, existing discussion, inline comments, and review summaries.
-   Fetch the exact base and PR head through the target repository's PR refs.
-2. Inspect the complete merge-base-to-head diff and surrounding code in a
-   detached worktree owned by the bot's private bare repository.
-3. Ask the agent for concrete defects introduced by the PR: correctness,
-   security, data loss, or demonstrated performance regressions. Style,
-   speculative concerns, feature requests, and unrelated existing bugs are
-   excluded. The default maximum is ten findings, never a quota.
-4. Verify each candidate in a fresh agent session and worktree. Compare its
-   cause and triggering conditions against every discussion entry and findings
-   already accepted in this batch. Unsupported, uncertain, and duplicate
-   candidates are excluded.
-5. Validate source locations against both the local diff and GitHub's diff
-   patches. Verified findings without a valid inline anchor appear in the
-   summary with links to the exact source commit.
-6. Recheck PR eligibility, description, base/head commits, and discussion.
-   Submit one `COMMENT` review bound to the head SHA. A review with no new
-   verified findings reports coverage and limitations, not approval.
-
-New head or base commits create a new review revision. Earlier reviews remain
-as history. Already reported, unchanged root causes are not repeated; a
-verified new regression after a fix can be reported with an explanation.
-
-Tests and temporary reproductions may run in isolated worktrees. Tracked-source
-or commit changes invalidate the evidence. Each verification gets a fresh
-worktree, so it cannot rely on an investigator's local reproduction artifacts.
-The default two-hour timeout covers the entire attempt, including verification.
-`--timeout`, `--attempts`, and `--max-findings` customize those limits.
-
-Publication and agent work use the caller's operating-system permissions.
-Private worktrees isolate Git state; they are not an OS sandbox. Review untrusted
-repositories in an appropriately isolated environment. The agent is instructed
-to keep GitHub writes under daemon control; this is not a credential sandbox.
-The authenticated GitHub account needs repository access and permission to
-write pull request reviews. Reviews are posted under that account and identify
-themselves as automated.
-
-## Recovery and limits
-
-Before posting, the bot saves the full payload, authenticated author, and a
-revision marker. If a response is lost, it looks for that author's marked
-review before doing anything else, even if the PR has since closed or changed.
-When the outcome remains uncertain, it retains the pending submission and
-refuses to repost. Inspect GitHub and saved state; `retry` cannot clear an
-uncertain publication.
-
-Confirmed failures retry after fifteen minutes, up to three attempts by
-default. Failed or uncertain PRs do not prevent other PRs from being processed.
-After correcting a failure, stop the daemon and use `brv retry --pr NUMBER` to
-reset that PR's exhausted attempts. Agent setup failures do not spend attempts.
-
-One daemon per repository across machines is the supported deployment model.
-Local locks prevent simultaneous instances on one account, including instances
-watching different branches. GitHub does not provide an atomic revision-check
-and review-creation operation: a PR can change immediately after the final
-check, but the review still identifies the exact commit it inspected.
-
-Incomplete GitHub pagination, unavailable exact refs, malformed agent output,
-changed discussion, and oversized command output stop that attempt. Command
-stdout is bounded at 8 MiB. Very large PRs exceeding GitHub's changed-file
-listing limit are rejected rather than partially reviewed. The bot does not
-wait for CI, respond conversationally to threads, resolve old comments, or run
-as a webhook service.
-
-## Terminal dashboard and state
-
-An interactive terminal displays queue results, active PR and commit,
-investigation/verification/publication stages, model, effort, attempts, tools,
-and activity. The dashboard adapts to resized and narrow terminals.
-
-- `1`, `2`, `3` or `Tab`: overview, reviews, and activity.
-- Arrow keys or `j`/`k`: browse reviews or scroll activity.
-- `Enter`: inspect a review's findings, evidence, summary, and failures.
-- `Esc`: return; `Page Up`/`Page Down`, `g`/`G`: scroll details.
-- `q` or `Ctrl+C`: cancel work, save progress, and restore the terminal.
-
-`--plain` selects scrolling logs; `--json` selects structured logs. They are
-mutually exclusive. Redirected output, piped input, or `TERM=dumb` also select
-scrolling logs. `NO_COLOR` disables colors. Status, version, and help do not
-open the dashboard.
-
-State defaults to `$XDG_STATE_HOME/review-bot` or `~/.local/state/review-bot`,
-with separate repository/branch directories. Review payloads, findings, and
-history live in `state.json`; private ACP transcripts are in `sessions/`.
-Normal session cleanup removes temporary worktrees. A process killed without
-cleanup can leave a worktree in the bot's own workspace; subsequent attempts
-use new worktrees. `status` prints saved state without launching an agent.
-
-## Brokk Town worker service
-
-`brv worker --socket PATH` serves one-shot PR review operations to Brokk
-Town over a private Unix-domain socket. The socket is mode `0600`; the endpoint is
-private to the local service, and the process exits after Town requests shutdown.
-
-Worker protocol v1 uses standard-library HTTP with JSON messages:
-
-- `GET /v1/initialize` returns the protocol range, bot identity, release version,
-  and capabilities. Town requires `exact-revision-review` as well as common `run` and
-  `progress` capabilities. `finding-severity` means the review result carries each
-  confirmed finding's P1, P2 or P3 rating under `severities`, which Town uses to
-  decide whether a second failed review closes the pull request.
-- `POST /v1/runs` accepts one strict JSON task and responds with contiguous
-  newline-delimited JSON events: `progress`, optional typed `result`,
-  and `error`, `canceled`, or `complete`.
-- `POST /v1/shutdown` asks the service to stop after the current stream.
-
-Version and capability negotiation happen before work starts. Town does not read
-this bot's private state files; issue and review outcomes are explicit protocol
-results when applicable, while GitHub remains the durable source for receipts.
-The schemas are independent of the Unix HTTP transport, allowing an authenticated
-TLS transport to be added later without changing worker semantics.
-
-The additive `remote-agent-v1` capability accepts `remote_agent`, an absolute
-path to the parent's private Unix socket. Investigation and verification each
-POST `{protocol: 1, head, prompt}` to `/v1/agent`, with inline repository context.
-The context includes complete discussion and exact commits; the remote agent
-reads the full diff from its checkout. Prompts over 65,536 characters are refused
-before contacting the parent, without truncating review input.
-The parent must return `{protocol: 1, head, text, evidence}` only after validating
-the exact revision and retaining its execution evidence. Missing or mismatched
-evidence is a refusal; the bot never falls back to a local agent. The bot still
-owns semantic receipt validation and GitHub publication. Existing worker v1
-requests continue to use their configured local agent.
-
-The `dry-run` capability accepts `dry_run: true` in a worker request. It performs
-the complete review without publishing or consuming the live review revision;
-its worker result cannot authorize a merge.
-
-## Optional configuration
-
-`brv --config /path/to/review-bot.json` loads an explicit JSON configuration;
-paths are relative to that file. Unknown keys are rejected. No config file is
-implicitly loaded or created. See [review-bot.example.json](review-bot.example.json).
-CLI flags override corresponding file values. `--model` and `--effort` must be
-acknowledged by the agent; unsupported explicit choices fail visibly.
-
-The optional `verify` array is an operator-supplied command run after each
-agent session in its worktree. It must succeed without changing tracked source.
-A custom `github.host` supports GitHub Enterprise instances exposing the same
-REST endpoints and PR Git refs; use `github.repo` when the clone remote is a
-local mirror.
-
-## Development and distribution
+## Development
 
 ```sh
-make check build
-python3 -m unittest discover -s scripts -p '*_test.py'
-node --test --test-isolation=none npm/brv.test.cjs
+go test -race ./bots/review-bot/...
+go vet ./...
 ```
 
-Tests use temporary Git repositories, simulated GitHub APIs and agents, and
-terminal fixtures. They do not post live reviews. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for development guidance.
+Tests use local Git fixtures and simulated GitHub and ACP outcomes; they never run
+a paid model or post a review to a live repository.
 
-Release tooling builds Linux/macOS amd64/arm64 archives and npm packages under
-`@brokkai/review-bot`. Tagged releases publish all four native archives and all
-five npm packages from the same commit. npm publication uses GitHub Actions
-trusted publishing with the `packages-publish` environment and no stored npm
-token. Release archives and packages include the license, notice, and dependency
-license report.
+## License
 
-See [RELEASING.md](RELEASING.md) for release checks and trusted publisher setup.
-
-## License and community
-
-Licensed under [Apache-2.0](LICENSE). [NOTICE](NOTICE) identifies project
-attribution. [licenses/README.md](licenses/README.md) describes dependency
-terms and generated notices included in every package.
-
-Follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities
-privately as described in [SECURITY.md](SECURITY.md).
-
-### Exact-revision worker recovery
-
-A PR may report a base commit older than the current target branch tip. The
-worker fetches that exact base commit and checks the pull head ref against the
-requested head; it still rechecks GitHub revision and discussion before posting.
-Worker results include a `status` and failure `detail` when no complete review
-is available. Only a submitted review of the exact requested base/head supplies
-findings. A stale result is not a clean review: refresh repository metadata and
-retry only after resolving the reported revision or eligibility problem.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

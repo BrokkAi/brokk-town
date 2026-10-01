@@ -1,503 +1,83 @@
 # Brokk Feature Bot
 
-This standalone project now lives in [`BrokkAi/brokk-town/bots/feature-bot`](https://github.com/BrokkAi/brokk-town/tree/master/bots/feature-bot). Build and test from this directory; see [RELEASING.md](RELEASING.md) for its independent suffix-tag releases.
+Research valuable new features in a repository and file concrete GitHub
+proposals for them.
 
-<img src="https://raw.githubusercontent.com/BrokkAi/feature-bot/master/docs/feature-reader.png" alt="Studious feature bot with glasses and an open book" width="200">
+`feature-bot` is a Go package of the
+[Brokk Town](https://github.com/BrokkAi/brokk-town) module. Town runs it in
+process as the **feature study** house, so there is no standalone binary, server
+or release tag to install. See [../../docs/bots.md](../../docs/bots.md).
 
-Research valuable new features in a repository and file concrete GitHub proposals.
-`bfb` is modeled on [bug-bot](https://github.com/BrokkAi/bug-bot) (`bbb`), with a
-feature-specific research prompt, proposal schema, and independent state. It follows
-the same Go CLI, no-config discovery, managed workspace, and shared
-[ACP runner](https://github.com/BrokkAi/acp-go) pattern as
-[issue-bot](https://github.com/BrokkAi/issue-bot) (`bib`) and
-[release-bot](https://github.com/BrokkAi/release-bot) (`brb`).
+<img src="docs/feature-reader.png" alt="Studious feature bot with glasses and an open book" width="160">
 
-**The LLM decides whether a finding duplicates an existing issue.** It compares
-user goals, capabilities, scope, and discussion across open and closed issues.
-There are no title similarity thresholds or feature fingerprint rules. Proposals
-must fit the repository's purpose, demonstrate a capability gap, explain user
-value, and include bounded scope and testable acceptance criteria. Bug fixes,
-refactors-only, speculative wishlists, and previously rejected features are excluded.
+## What it does
 
-## Install and run
+**The model decides whether a proposal duplicates an existing issue.** It compares
+user goals, capabilities, scope and discussion across every open and closed
+issue. There are no title-similarity thresholds and no feature fingerprints.
 
-The initial prerelease is `v0.1.0-rc.1`, available under npm's `next` channel
-once its publication completes. Use `npm install -g @brokkai/feature-bot@next`
-for prereleases. The stable installation commands below become available when a
-stable release is published. To build a source checkout, run `make build`.
+A proposal must fit the repository's purpose, demonstrate a real capability gap,
+explain user value, and include bounded scope and testable acceptance criteria.
+Bug fixes, refactor-only changes, speculative wishlists and previously rejected
+features are excluded.
 
-Install with npm (Node.js 18+; no Go toolchain required):
+One scan:
 
-```sh
-npm install -g @brokkai/feature-bot
-bfb /path/to/your-repo
-```
+1. Fetch the covered branch into Town's private checkout and make a detached
+   worktree at the exact revision.
+2. Download every open and closed issue and its comments, fully paginated.
+3. Have the agent study the project's purpose, current workflows, source, docs and
+   tests. Each candidate must state a user problem, the current workaround,
+   proposed behaviour, user value, scope and non-goals, testable acceptance
+   criteria, existing source paths, and evidence of both the gap and feasibility.
+   It must separate observations from assumptions, and zero findings is valid.
+4. Verify each candidate in a separate session, including a check that the
+   capability is not already supported. Uncertain and invalid candidates are
+   saved but never filed.
+5. Recheck the revision and history, then file the proposals.
 
-For a single invocation, use `npx --yes @brokkai/feature-bot`. Keep npm optional
-dependencies enabled: they supply the native Linux/macOS x64 or arm64 binary.
+Filed issues carry a hidden `<!-- feature-bot:… -->` marker, and each planned
+issue gets a request ID saved before the create call, so an interrupted
+publication is reconciled instead of duplicated.
 
-Or install a native binary with its SHA-256 checksum verified:
+## What it never does
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/BrokkAi/feature-bot/master/install.sh | sh
-```
+It never edits tracked source, commits, pushes, or writes to GitHub beyond
+creating proposal issues. A changed HEAD or tracked-file edit fails the scan.
 
-The installer puts `bfb` in `~/.local/bin`; add that directory to `PATH`.
-Set `INSTALL_DIR` to change the destination. To pin a version, download the
-script and run `sh install.sh v0.1.0`.
+## Configuration
 
-With Go 1.27.1 or newer:
+Town fills this configuration from the town's agent profile and the feature
+house's work policy (`bt settings --role feature`). The package's own fields are:
 
-```sh
-go install github.com/BrokkAi/feature-bot/cmd/bfb@latest
-```
+| Field | Meaning |
+| --- | --- |
+| `remote`, `branch`, `directory`, `state_directory` | Where the private checkout and state live. |
+| `instruction_files` | Repository instruction files handed to the agent. |
+| `agent` | ACP command, environment, model and effort. |
+| `review_model`, `review_effort` | Optional separate selection for verification. |
+| `github.host`, `github.repo` | Enterprise host, or a local mirror's GitHub repository. |
+| `poll`, `timeout`, `retry_delay`, `attempts` | Cadence and retry budget. |
+| `labels` | Labels added to new issues. Town's policy labels merge into this. |
+| `max_issues` | Most proposals one scan may file (1–20). |
+| `focus` | Steer research toward one area. |
+| `verify` | Operator command that must pass before filing. |
 
-Go installs `bfb` in `GOBIN`, or `$(go env GOPATH)/bin` by default.
-From a source checkout:
+Town's policy mapping is `labels`, `focus`, `limit` → `max_issues`, `attempts`
+and `verify`. Defaults: a scan every 30 minutes, a 2-hour attempt budget, a
+15-minute retry delay, 3 attempts, and at most 3 proposals per scan.
 
-```sh
-make build
-./bin/bfb /path/to/your-repo
-./bin/bfb /path/to/your-repo --plain
-./bin/bfb once /path/to/your-repo --dry-run
-./bin/bfb once /path/to/your-repo --focus "onboarding and reporting workflows"
-./bin/bfb /path/to/your-repo --max-issues 2 --label enhancement
-./bin/bfb /path/to/your-repo --model YOUR_MODEL_ID --effort low
-./bin/bfb /path/to/your-repo --model RESEARCH_MODEL_ID --review-model REVIEW_MODEL_ID --review-effort high
-./bin/bfb status /path/to/your-repo
-./bin/bfb report /path/to/your-repo --branch master --status dry_run > proposals.md
-./bin/bfb publish /path/to/your-repo --branch master --list
-./bin/bfb publish /path/to/your-repo --proposal SELECTOR
-./bin/bfb prune /path/to/your-repo --branch master --older-than 720h
-./bin/bfb version
-./bin/bfb retry /path/to/your-repo --once
-```
-
-Source builds require Go 1.27.1. To install the local source as `bfb`, run
-`go install ./cmd/bfb` and put your Go bin directory on `PATH`.
-Running `bfb` from inside any target repository discovers its remote and default
-branch. A Git URL also works. Flags can precede or follow the repository argument.
-
-`bfb version` prints the embedded release tag. Local builds report `dev`; binaries installed with `go install ...@version` report the module version.
-
-Runtime requirements: Git, authenticated `gh` with repository/issue read and
-issue creation access, and an authenticated ACP agent. By default it uses an
-installed `codex-acp`, falling back to `npx --yes @agentclientprotocol/codex-acp`.
-Explicit `--agent` commands are used as supplied; repeat `--agent-arg` for arguments.
-
-Starting `bfb` authorizes unattended local investigation, test execution, and
-creation of issues for the selected repository. `--dry-run` performs discovery
-and review, prints the proposed issue bodies, and saves them without filing.
-
-## Terminal dashboard
-
-Interactive runs show a live dashboard with a studious spectacles-and-book motif.
-It fits the current terminal
-or tmux pane, adjusts when the pane is resized, and keeps the repository and
-current task visible. Each pane still runs one repository.
+## Development
 
 ```sh
-bfb /path/to/repo           # live dashboard in an interactive terminal
-bfb /path/to/repo --plain   # scrolling console output and agent transcript
-bfb /path/to/repo --json    # structured logs for tools and log collectors
+go test -race ./bots/feature-bot/...
+go vet ./...
 ```
 
-The overview shows the repository, branch and commit, scan stage, active tool,
-uptime, attempt budget, and next check or retry countdown. Larger panes also
-show the discovery and review model and reasoning effort, and the investigation
-focus.
-
-**Saved** counts cover findings in the configured repository/branch state,
-including the current scan: found, filed, duplicate, pending, dry run, and skipped
-(invalid, uncertain, or stale). **Run** counters start at zero each time the
-process starts: completed scans, attempts, agent starts, tools, and error log
-events. A discovered finding is counted as filed only after publication is
-confirmed. Findings restored after restarting are included in saved totals.
-
-- `1`, `2`, `3` or `Tab`: switch between overview, proposals, and activity.
-- `↑` / `↓` or `k` / `j`: browse findings or scroll activity.
-- `Enter`: inspect the selected proposal, issue URL, scope, acceptance criteria, and review.
-- `Esc`: return from finding details. `Page Up` / `Page Down` scroll details.
-- `g` / `G`: jump to the start/end; `G` resumes following live activity.
-- `q` or `Ctrl+C`: stop the bot and its active agent, then restore the terminal.
-
-The finding browser shows the latest 200 findings, while totals include all saved
-findings. The activity view keeps recent output; full agent transcripts remain
-under the state directory. On exit, a short summary and new finding URLs stay in
-the terminal. `once` exits after its scan, and dry runs also print proposed finding
-details on exit.
-
-Piped input, redirected stderr, and `TERM=dumb` use scrolling output automatically.
-`--plain` and `--json` disable the dashboard and are mutually exclusive.
-`NO_COLOR` disables dashboard colors. `status`, `report`, `publish`, `version`, and help keep their
-existing output and never open the dashboard.
-
-## How it works
-
-1. Fetch the target branch into a managed clone and make an isolated detached
-   worktree for the scan. The original checkout and uncommitted work are preserved.
-2. Download all open and closed issues and their comments with pagination. Give
-   the investigator the complete snapshot and recent scan summaries so it can
-   avoid known proposals and explore new areas on subsequent scans.
-3. Have the agent study project purpose, current workflows, source, docs, and tests.
-   Each candidate must include a specific user problem, current workflow or workaround,
-   proposed behavior, user value, scope and non-goals, testable acceptance criteria,
-   existing source paths, and evidence of both a gap and implementation feasibility.
-   The researcher must distinguish observations from assumptions and may return zero findings.
-4. Start separate LLM review sessions to verify the evidence and compare each
-   candidate against the issue history. Large histories are supplied in batches;
-   every issue and comment is included, and each response must identify all issue
-   numbers it reviewed. Coverage errors report the expected count and missing,
-   repeated, and unexpected numbers (up to 20 per category). A rejected coverage
-   receipt gets one corrective attempt with the required number set and validation
-   error. Successful batches are saved and reused after restart when their content,
-   candidate, and source revision still match; changed batches are reviewed again.
-   Exhausted corrections leave the candidate pending and block publication.
-   A duplicate verdict links the existing report in local
-   state. Uncertain and invalid findings are saved without filing.
-5. Refresh issues before publication. New or edited reports go back to the LLM
-   for comparison. Recheck the source commit and tracked files. An optional
-   operator verifier can provide an additional gate.
-6. Create issues sequentially, including scope, acceptance criteria, evidence, and the review
-   explanation. Each newly created issue is available to the next candidate's
-   LLM review, including candidates from the same scan.
-
-Closed issues count as known proposals, including implemented, duplicate, rejected,
-or wontfix features. A reconsideration belongs to that existing issue. The bot does
-not reopen or comment on it. The reviewer independently checks that a feature is
-not already supported and rejects bug fixes or refactors without a new capability.
-
-The default is at most **three issues per scan**, a **two-hour attempt budget**,
-and another scan **30 minutes after completion**, even if the commit is unchanged.
-Recent summaries guide exploration; this is not a claim of exhaustive coverage.
-`once` runs or resumes one scan and exits. When an agent completes its research
-but the final `FEATURE_RESULT` or `FEATURE_REVIEW` line is truncated, fenced, or
-followed by prose, the daemon asks the agent once to restate that receipt from
-its own answer before treating the attempt as failed; the restated receipt is
-validated exactly like a first-pass one. Failed scans retain their candidates,
-workspace, and diagnostics; retries wait at least 15 minutes and run on the next
-poll, with three attempts before requiring `retry`. Agent setup errors stop the
-daemon without consuming an attempt. An advanced branch invalidates pending
-findings so the next eligible attempt scans the new commit.
-
-## Duplicate handling and interrupted requests
-
-Semantic duplicate detection is an LLM judgment, so it is not a guarantee.
-Incomplete history, malformed review responses, and uncertain comparisons stop
-publication. Same-title reports still reach the LLM: identical wording can hide
-different capabilities, and different wording can describe the same feature.
-
-Every planned issue gets a random request ID, saved **before** sending its create
-request and embedded as a hidden comment in the issue body. This ID identifies
-one publication attempt; it is not derived from feature content or used to classify
-duplicates. After a crash or lost response, `bfb` looks for that ID and records
-the existing issue. If its outcome is unknown and the ID is not visible, it
-refuses to send another create request. Run `once` to try reconciliation again.
-If it never appears, inspect GitHub and the saved state before repairing the
-pending entry; `retry` intentionally cannot blindly resend an ambiguous request.
-
-Confirmed HTTP rejections, such as validation or permission failures, keep the
-candidate pending. Correct the request or access problem, then run `once` to
-resume, or `retry --once` if the attempt budget is exhausted. Timeouts, server
-errors, and incomplete responses still require marker reconciliation. Older
-versions saved every create error as ambiguous; those existing `posting` entries
-still require inspection when no marker appears.
-
-A per-repository local lock coordinates instances across branches and config
-paths using the same state home. Different machines/accounts and simultaneous
-human reports cannot be locked atomically with GitHub issue creation. Run one
-active `bfb` per repository to avoid that race.
-
-## Brokk Town worker service
-
-`bfb worker --socket PATH` serves one-shot feature research operations to Brokk
-Town over a private Unix-domain socket. The socket is mode `0600`; the endpoint is
-private to the local service, and the process exits after Town requests shutdown.
-
-Worker protocol v1 uses standard-library HTTP with JSON messages:
-
-- `GET /v1/initialize` returns the protocol range, bot identity, release version,
-  and capabilities. Town requires `feature-research` as well as common `run` and
-  `progress` capabilities. Workers supporting optional discovery controls also
-  advertise `feature-research-controls`.
-- `POST /v1/runs` accepts one strict JSON task and responds with contiguous
-  newline-delimited JSON events: `progress`, optional typed `result`,
-  and `error`, `canceled`, or `complete`.
-- `POST /v1/shutdown` asks the service to stop after the current stream.
-
-A run request may include the optional `feature_research` object alongside its
-repository and agent settings, for example:
-
-```json
-{
-  "protocol": 1,
-  "remote": "https://github.com/OWNER/REPO.git",
-  "branch": "main",
-  "directory": "/srv/bfb/checkout",
-  "state_directory": "/srv/bfb/state",
-  "repo": "OWNER/REPO",
-  "host": "github.com",
-  "agent": {"command": ["codex-acp"]},
-  "feature_research": {"focus": "onboarding", "max_issues": 1}
-}
-```
-
-`focus` is a string and defaults to empty (unrestricted research). `max_issues`
-is an integer from 1 through 20 and defaults to 3 when omitted; explicit zero
-is invalid. Either field may be omitted, and each request starts with fresh
-defaults. Unknown fields and incorrect types are rejected. A fresh discovery
-prompt receives these settings and its receipt may contain zero findings, but
-cannot exceed the maximum.
-
-These options follow CLI `--focus` and `--max-issues` semantics: they control
-discovery. Resuming an already-discovered scan preserves its saved candidates;
-new options do not redirect research, regenerate or truncate that saved work.
-Reconciliation, independent review and publication gates continue to apply.
-Clients must detect the capability and include the optional fields to use them.
-
-Version and capability negotiation happen before work starts. Town does not read
-this bot's private state files; issue and review outcomes are explicit protocol
-results when applicable, while GitHub remains the durable source for receipts.
-The schemas are independent of the Unix HTTP transport, allowing an authenticated
-TLS transport to be added later without changing worker semantics.
-
-## Optional configuration
-
-`bfb --config feature-bot.json` loads a strict JSON object. No file is loaded or
-generated implicitly. Paths are resolved relative to the configuration file.
-See [feature-bot.example.json](feature-bot.example.json).
-
-```json
-{
-  "remote": "https://github.com/OWNER/REPO.git",
-  "branch": "main",
-  "directory": "var/checkout",
-  "state_directory": "var/state",
-  "poll": "30m",
-  "timeout": "2h",
-  "retry_delay": "15m",
-  "attempts": 3,
-  "max_issues": 3,
-  "focus": "",
-  "labels": [],
-  "dry_run": false,
-  "agent": {"command": ["codex-acp"]}
-}
-```
-
-Labels are optional and added only to new issues; they never filter the history.
-Use labels that already exist in the target repository. `github.host` supports
-Enterprise, and `github.repo` (`OWNER/REPO`) identifies a local mirror's GitHub
-repository. `agent` also supports `environment`, `auth_method`, `mode`, `model`,
-and `effort`, with selection handled by the shared ACP runner.
-
-Research uses `agent.model` and `agent.effort` (`--model`, `--effort`) for
-discovery and discovery receipt recovery. Independent review uses
-`review_model` and `review_effort` (`--review-model`, `--review-effort`) for
-every review batch, coverage correction and review receipt recovery, including
-pending candidates resumed from a saved scan. Each omitted review setting
-inherits its research setting; CLI flags override JSON, and blank values are
-rejected. Review runs with the same agent command, environment, authentication,
-mode, workspace, timeout and publication gates. The ACP adapter defines which
-model IDs and effort values exist: a review model or effort it does not offer
-stops with a setup error naming the review setting before any review prompt,
-keeps discovered candidates pending, creates no issue and never falls back to
-the research settings. Saved review progress records the effective review model
-and effort; changing either, or resuming progress saved before this identity
-was recorded, reviews pending candidates again from validation through every
-issue batch without repeating discovery. A review setup failure has already
-replaced saved review progress with the failed selection, so reverting the
-setting afterwards also restarts validation. Logs mark `stage=discovery` or
-`stage=review` with the effective model and effort.
-
-`verify` accepts an argument array, such as `["/opt/checks/verify-feature"]`, executed
-in the scan worktree with `FEATURE_COMMIT` and JSON `FEATURE_FINDING` in its environment.
-Keep operator verifiers outside the writable worktree. A nonzero exit blocks filing.
-
-## State and execution
-
-State defaults to `$XDG_STATE_HOME/feature-bot` or `~/.local/state/feature-bot`, keyed by
-remote and branch. JSON state is replaced atomically with fsync; private session
-transcripts live under the state directory. `status` prints saved JSON without
-starting an agent. `--json` selects structured progress logs.
-
-### Saved proposal reports
-
-`report` writes Markdown to stdout for every saved completed and active candidate,
-including findings beyond the dashboard's 200-entry limit. It includes repository,
-branch, saved status, available issue or duplicate URL, proposal fields, and
-independent review. Redirect stdout to save or share it:
-
-```sh
-bfb report --config feature-bot.json > proposals.md
-bfb report --config feature-bot.json --status dry_run > dry-run-proposals.md
-bfb report /path/to/repo --branch master > proposals.md
-```
-
-Omit `--status` to include all candidates. Supported filters are `pending`,
-`posting`, `submitted`, `duplicate`, `uncertain`, `invalid`, `dry_run`, and `stale`.
-Missing state or a filter with no matches produces an explicit no-findings report.
-
-Reporting only reads saved state: it starts no scan or agent and does not require
-`gh` or an ACP executable. Explicit configuration permits fully local reading;
-with repository discovery, pass `--branch` to avoid a default-branch network
-lookup. Use the same configuration and branch as the original run.
-Candidates discovered by this release record the commit at which their cited
-files were validated, shown as `Researched at commit`; candidates saved by older
-releases have no commit and are never attributed to another scan's commit.
-Internal workspace paths, transcripts, and publication markers are not included
-as metadata. Proposal and review prose is preserved as Markdown;
-review that content before sharing it.
-
-### Publish a saved dry-run proposal
-
-After inspecting dry-run proposals, list their selectors and publish exactly one:
-
-```sh
-bfb publish --config feature-bot.json --list
-bfb publish --config feature-bot.json --proposal 3fa2b1c0d9e8
-```
-
-`--list` reads saved state only, like `report`: it starts no agent, fetch or
-GitHub request. Each row shows a stable 12-character selector, eligibility, the
-recorded source commit and the title. Selectors are derived from the saved
-candidate and do not change across restarts; they do not reveal publication markers.
-
-`--proposal` processes only the selected proposal and never starts discovery.
-It fetches the branch and refuses unless the branch is still at the proposal's
-recorded commit, then prepares an isolated worktree at that commit, checks
-the cited source files, and runs a fresh independent review against all open
-and closed issues and discussions. The dry run's review progress is discarded
-on selection. The configured verifier, the tracked-content check, the
-pre-publication history refresh and the saved posting intent all apply as in a
-scan. A `dry_run` setting in the configuration is ignored by `publish`, and
-`--dry-run` is rejected. Other saved proposals are unchanged.
-
-- Success records the issue URL and `submitted` status. Repeating the command
-  prints the saved URL without reviewing or creating anything.
-- A duplicate, uncertain or invalid verdict prevents creation, saves that status
-  and the review explanation, and exits non-zero.
-- An incomplete review, verifier failure, changed tracked content, missing cited
-  file or confirmed create rejection keeps the proposal `dry_run` and saves the
-  selection with its failure. Run the same command to retry in the same
-  worktree; review batches already completed for this selection are reused.
-  Selecting a different proposal abandons an unfinished selection that has not
-  sent a create request. If a saved outcome was not yet retired when the
-  process stopped, the command reports it and never reviews or creates again.
-- A branch that advanced before or during publication refuses it. The proposal
-  is not adapted to the newer revision and no replacement discovery starts;
-  research again with `bfb once --dry-run`.
-- A lost create response keeps the `posting` state and the proposal's request
-  ID. Running the command again reconciles the hidden marker and never sends
-  another create request; another proposal cannot be selected until then. This
-  reconciliation also runs while a scan is active. An existing issue that
-  already carries the marker, such as a hand-copied dry-run body, is never
-  claimed: the proposal is saved as a `duplicate` of it and nothing is created.
-- Proposals saved by older releases have no recorded commit. They remain
-  readable in reports but are refused; research them again with a new dry run.
-
-Publishing (other than reconciling an unknown outcome) is refused while a scan
-is active (`once` or the daemon has unfinished work), and it takes the same
-repository locks as a scan. Each selection owns one isolated worktree. When the
-selection is resolved or replaced, that worktree is recorded for `prune`, which
-removes it only if it is clean at the recorded commit.
-
-### Reclaim completed scan workspaces
-
-Scan worktrees and research files are retained for inspection. Preview old
-successfully completed workspaces, then explicitly apply removal:
-
-```sh
-bfb prune --config feature-bot.json --older-than 720h
-bfb prune --config feature-bot.json --older-than 720h --apply
-```
-
-A successful scan records its workspace, scanned commit and completion time,
-including zero-finding and dry-run scans. The positive duration is required;
-only scans completed strictly before the cutoff qualify. Preview lists eligible
-workspaces, explains skipped records and changes neither worktrees nor saved
-state. Apply uses Git worktree removal, **including untracked and ignored
-research artifacts**. Saved proposals, reviews, issue URLs, history and
-transcripts are preserved.
-
-Pruning takes the same repository, state and checkout locks as research and
-refuses to run while research holds them. It checks workspace containment, Git
-ownership, detached HEAD, the recorded commit, tracked or staged changes and
-Git locks. Active scans (including exhausted retries and unresolved
-publication), failed or discarded scans, and workspaces without completion
-records are never removed. Symlinked paths, foreign, modified or locked
-worktrees are skipped. Interrupted cleanup can be rerun: a missing directory
-has only its matching Git registration removed, and a record is retired once
-both are gone. A directory an interrupted removal left without its `.git` file
-is deleted, and its registration removed, only when the private index matches
-the recorded commit and no remaining tracked file was modified. Otherwise it is
-skipped; inspect it, keep what you need, then delete the directory and rerun
-prune, which removes the registration once its index holds no staged changes
-(or run `git -C CHECKOUT worktree remove --force DIRECTORY` yourself). A failed
-removal, or a skip caused by a Git or filesystem error rather than a policy,
-keeps its record and makes the command exit non-zero after the remaining
-workspaces are processed.
-
-Pruning requires Git 2.36 or newer. Inherited `GIT_DIR`, `GIT_WORK_TREE`,
-`GIT_INDEX_FILE` and similar repository overrides are ignored. With explicit
-configuration, pruning needs local Git and performs no fetch,
-GitHub request or agent execution; `gh` and an ACP executable are not required.
-Repository discovery may look up the default branch; pass `--branch` to avoid
-that lookup. Use the same configuration and branch as the original scan.
-Workspaces from releases before completion records, and transcripts, remain
-externally managed; pruning never runs `git gc`.
-
-### Agent boundaries
-
-Agent instructions prohibit feature implementation, fixes,
-commits, pushes, and direct GitHub writes; tracked source changes or a changed
-HEAD invalidate the scan. Evidence is independently reviewed by the LLM, not
-proof that tests are correct. As in the sibling bots, ACP permission requests
-are automatically approved and agent commands run with the account's OS rights.
-This is not a sandbox; use an appropriate account/container for the repository.
-
-## Development and packaging
-
-```sh
-make check build
-./bin/bfb --help
-python3 -m unittest discover -s scripts -p '*_test.py'
-node --test --test-isolation=none npm/bfb.test.cjs
-```
-
-Tests use local Git fixtures and simulated ACP/GitHub outcomes; they do not run
-a paid model or create real issues. They cover semantic closed duplicates,
-same-title distinct features, rejected proposals, uncertain value or feasibility,
-feature receipt completeness, concurrent reports, partial histories, source changes,
-dry runs, retries, ambiguous POSTs, receipt coverage, configuration, locks, progress snapshots, dashboard resizing, and terminal cleanup.
-
-The inherited release workflow packages Linux/macOS amd64/arm64 archives with
-checksums. The npm launcher and packaging workflow target `@brokkai/feature-bot`
-and install `bfb`. See [RELEASING.md](RELEASING.md) for publication and verification.
-
-API references: [GitHub issues](https://docs.github.com/en/rest/issues/issues),
-[issue comments](https://docs.github.com/en/rest/issues/comments).
-## Automatic releases
-
-Push a new `v*` version tag to run the complete **Publish packages** pipeline:
-Linux/macOS checks, native GitHub assets, then all five npm packages from the
-same tag and commit. No manual package dispatch is needed. The package job runs
-only after native publication succeeds and validates package contents and local
-installs before uploading. It does not wait for npm's public index to update.
-
-For recovery, rerun failed jobs or manually dispatch `publish-packages.yml` from
-the exact existing tag with `publish=true`. The default manual `publish=false`
-validates without uploading. Existing published bytes must match on retry.
-See [RELEASING.md](RELEASING.md) for details.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) and our
-[Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately using
-[SECURITY.md](SECURITY.md).
+Tests use local Git fixtures and simulated GitHub and ACP outcomes. They never
+run a paid model or create issues in a live repository.
 
 ## License
 
-Licensed under [Apache-2.0](LICENSE). See [NOTICE](NOTICE) for project
-attribution and [licenses/README.md](licenses/README.md) for dependency terms,
-third-party notices, and the license review process.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). The character art in
+[docs/](docs/) is original and distributed under the same license.

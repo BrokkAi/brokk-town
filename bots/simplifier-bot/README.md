@@ -1,120 +1,77 @@
 # Brokk Simplifier Bot
 
-This standalone project now lives in [`BrokkAi/brokk-town/bots/simplifier-bot`](https://github.com/BrokkAi/brokk-town/tree/master/bots/simplifier-bot). Build and test from this directory; see [RELEASING.md](RELEASING.md) for its independent suffix-tag releases.
+The complexity and value reviewer of a Brokk Town.
 
-`bsb` is the complexity and value reviewer for Brokk Town. It is modeled on the
-released bug-bot worker architecture and uses the shared
-[ACP runner](https://github.com/BrokkAi/acp-go).
+`simplifier-bot` is a Go package of the
+[BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town) module. Town runs it
+in process as the **simplifier clarifier** house, so there is no standalone
+binary, server or release tag to install. See
+[../../docs/bots.md](../../docs/bots.md) and
+[../../docs/workflow.md](../../docs/workflow.md).
 
-It has two Town-selected modes:
+## What it does
 
-- **suggest** — attach a bounded admission/decline recommendation to a Mayoral
-  decision. The Mayor remains the decision maker.
-- **auto** — let Town admit routine work, decline low-value complex work, and
-  close low-value complex issues without a separate Mayoral decision.
+Town runs it in two ways.
 
-Every incoming Town issue and pull request is assessed before normal Issue Bot
-or Review Bot work. The bot also performs repository scans and files simplifier
-issues proposing removal or replacement of subsystems that add disproportionate
-complexity or provide little value. Issues created by simplifier-bot carry a
-hidden marker and are not recursively routed back through this bot.
+**assessing one arrival** — every incoming issue and external pull request is
+assessed before normal issue or review work. The assessment is a bounded
+admission or decline recommendation attached to a Mayoral decision. The Mayor
+remains the decision maker in *suggest* mode.
+
+**scanning the repository** — the bot proposes removal or replacement of
+subsystems that add disproportionate complexity or deliver little value, and files
+those proposals as marked GitHub issues.
+
+The town's `simplifier_mode` chooses what happens to an assessment:
+
+- **suggest** — the arrival goes to Town Hall and the Mayor decides.
+- **auto** — Town admits routine work, declines low-value complex work, and closes
+  low-value complex issues without a separate Mayoral decision. An operator can
+  still admit an auto-decline before the closer claims it.
 
 The implementation is deliberately conservative: it must not recommend removing
 security, privacy, correctness, accessibility, durability, observability, or
-legally required behavior, and uncertain cases are admitted for human review.
+legally required behaviour, and uncertain cases are admitted for human review.
+Issues it files carry a hidden `<!-- simplifier-bot:… -->` marker and are not
+routed back through it.
 
-## Run standalone
+## What it never does
 
-```sh
-bsb /path/to/your-repo                     # scan every poll interval, filing proposals
-bsb once /path/to/your-repo --dry-run      # one scan, save proposals without filing
-bsb /path/to/your-repo --max-proposals 2 --label simplify
-bsb assess /path/to/your-repo --issue 42   # print one assessment as JSON
-bsb assess /path/to/your-repo --pr 7 --mode auto
-bsb status /path/to/your-repo
-```
+It never edits tracked source, commits, pushes, or writes to GitHub beyond filing
+its own marked proposals. Assessments perform no GitHub writes at all. A tracked
+edit or a moved revision fails an assessment.
 
-With no configuration file, the bot discovers the repository from a checkout
-(or a subdirectory), a bare repository, or a Git URL, watches the remote's
-default branch, and keeps its own checkout and state under
-`$XDG_STATE_HOME/simplifier-bot` (default `~/.local/state/simplifier-bot`). It uses an installed
-`codex-acp`, or provisions it with `npx` when absent.
+## Configuration
 
-Every bot shares these options: `--config`, `--branch`, `--agent`,
-`--agent-arg` (repeatable), `--model`, `--effort`, `--poll`, `--timeout`,
-`--once`, `--json` (structured logs) and `--plain` (scrolling console output).
-`status` prints the saved state; `version` prints the release.
+Town fills this configuration from the town's agent profile and the simplifier
+house's policy (`bt settings --role simplifier`). The package's own fields are:
 
-Bot options: `--max-proposals`, `--dry-run`, `--label` (repeatable), and for
-`assess`, `--issue`, `--pr` and `--mode suggest|auto`. Assessments perform no
-GitHub writes.
+| Field | Meaning |
+| --- | --- |
+| `remote`, `branch`, `directory`, `state_directory` | Private checkout and state. |
+| `instruction_files` | Repository instruction files handed to the agent. |
+| `agent` | ACP command, environment, model and effort. |
+| `github.host`, `github.repo` | Enterprise host, or a local mirror's GitHub repository. |
+| `poll`, `timeout` | Scan cadence and attempt budget. |
+| `max_proposals` | Most proposals one scan may file (1–20). |
+| `labels` | Labels added to filed proposals. |
+| `verify` | Operator command that must pass. |
+| `dry_run` | Save proposals without filing them. |
 
-## Terminal dashboard
-
-Interactive runs show a live dashboard by default. It fits the current terminal
-or tmux pane and adjusts when the pane is resized.
-
-```sh
-bsb /path/to/repo           # live dashboard in an interactive terminal
-bsb /path/to/repo --plain   # scrolling console output and agent transcript
-bsb /path/to/repo --json    # structured logs for tools and log collectors
-```
-
-The overview shows the repository, branch and scanned commit, scan stage,
-active tool, uptime, and the next scan countdown; larger panes add the model and
-reasoning effort. **Saved** counts cover every proposal in the workspace state:
-proposed, filed, pending and dry run. **Run** counters start at zero each run:
-completed scans, agent starts, tools and error log events. The proposal
-browser shows the latest 200 proposals with their concern, simpler alternative,
-subsystems, evidence and issue URL. On exit, new and changed proposals stay in
-the terminal, with full details for dry runs.
-
-- `1`, `2`, `3` or `Tab`: switch between overview, proposals, and activity.
-- `↑` / `↓` or `k` / `j`: browse proposals or scroll activity.
-- `Enter`: inspect the selected proposal. `Esc` returns; `Page Up` / `Page Down` scroll.
-- `g` / `G`: jump to the start/end; `G` resumes following live activity.
-- `q` or `Ctrl+C`: stop the bot and its active agent, then restore the terminal.
-
-Piped input, redirected stderr, and `TERM=dumb` use scrolling output
-automatically. `--plain` and `--json` disable the dashboard and are mutually
-exclusive. `NO_COLOR` disables dashboard colors. `status`, `assess`, `version` and help never open the
-dashboard.
-
-## Worker protocol
-
-```sh
-bsb worker --socket PATH
-```
-
-The service speaks Brokk Town Worker Protocol v1 over a mode-0600 Unix socket.
-
-- `GET /v1/initialize` identifies `simplifier-bot`.
-- `POST /v1/runs` accepts a strict task with either an issue or PR number and
-  `mode`, or neither for a repository scan.
-- Item runs return `result.simplification`; discovery runs create marked GitHub
-  issues and return no typed result.
-- The stream is bounded newline-delimited JSON with progress, terminal result,
-  and completion events.
-
-Assessment worktrees are detached and exact-revision checked. Tracked edits and
-revision movement fail the run. GitHub issue creation uses a random durable
-request marker saved before publication; an unknown outcome is reconciled by
-marker and is never blindly reposted.
+Town's policy mapping is `labels`, `limit` → `max_proposals` and `verify`.
+Defaults: a scan every 30 minutes, a 2-hour attempt budget and at most 3
+proposals per scan.
 
 ## Development
 
-Go 1.27.1 or newer is required.
-
 ```sh
-make check
+go test -race ./bots/simplifier-bot/...
+go vet ./...
 ```
 
-Town currently pins this package as `@brokkai/simplifier-bot`. Local development
-can override the executable with the simplifier bot command setting.
-
-No release has been published from this initial implementation.
+Tests use local Git fixtures and simulated GitHub and ACP outcomes; they never run
+a paid model or create issues in a live repository.
 
 ## License
 
-Licensed under [MIT](LICENSE). Release packages include third-party notices
-for bundled dependencies, which retain their own license terms.
+MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

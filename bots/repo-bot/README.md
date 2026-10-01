@@ -1,129 +1,83 @@
 # Brokk Repo Bot
 
-This standalone project now lives in [`BrokkAi/brokk-town/bots/repo-bot`](https://github.com/BrokkAi/brokk-town/tree/master/bots/repo-bot). Build and test from this directory; see [RELEASING.md](RELEASING.md) for its independent suffix-tag releases.
+Observe a repository, and keep the branch Town covers healthy.
 
-`brp` is the repository observer for Brokk Town, and the house that keeps the
-branch it covers healthy. It is modeled on the released bug-bot worker
-architecture and uses the shared [ACP runner](https://github.com/BrokkAi/acp-go).
+`repo-bot` is a Go package of the
+[Brokk Town](https://github.com/BrokkAi/brokk-town) module. Town runs it in
+process as the **repo watchtower** house, so there is no standalone binary,
+server or release tag to install. See [../../docs/bots.md](../../docs/bots.md).
 
-It has two duties in one run:
+## What it does
 
-- **Inventory** — one complete observation of the repository: the branch this
-  town covers, its exact head, every issue, pull request and release, the
-  commits the branch gained since Town last looked, and proof of which commits a
-  published release already contains. Town applies that inventory to its own
-  task graph; this bot never interprets Town state.
-- **Branch health** — read the checks reported on the branch head and, when they
-  are failing, repair the branch with an agent and publish the fix.
+One run has two duties.
 
-A partial inventory is never reported as a whole one: a paginated read that
-cannot be completed is an error, because Town would otherwise treat what is
-missing as gone.
+**inventory** — a complete observation of the repository: the branch this town
+covers, its exact head, every issue, pull request and release, the commits the
+branch gained since Town last looked, and proof of which commits a published
+release already contains. Town applies that inventory to its own task graph;
+this bot never interprets Town state.
+
+A partial inventory is never reported as a whole one. A paginated read that cannot
+be completed is an error, because Town would otherwise treat what is missing as
+deleted.
+
+**branch health** — read the checks GitHub reports on the branch head and, when
+they are failing, repair the branch with one agent attempt and publish the fix.
 
 ## Repairing a failing branch
 
-When the branch head is red, the bot runs one agent attempt in a private
-worktree checked out at that exact revision, and publishes the result only if it
-passes the operator's verification command. The commit is fast-forwarded onto
-the branch, so a branch that moved while the agent worked is left alone and
-observed again on the next run.
+When the head is red the bot runs one agent attempt in a private worktree checked
+out at that exact revision, and publishes the result only if it passes the
+operator's verification command. The commit is fast-forwarded onto the branch, so
+a branch that moved while the agent worked is left alone and observed again on
+the next run.
 
-Attempts are budgeted per revision and the budget is spent before the agent
-starts, so a poll every minute cannot start an agent every minute on the same
-red branch, and an attempt that crashes the process is not free. A new failing
-revision starts a fresh budget. A push the repository's own protection rules
-refuse ends the repair immediately: no further attempt can land it.
+Attempts are budgeted per revision and the budget is spent *before* the agent
+starts, so a fast poll cannot start an agent on every tick, and a crash is not
+free. A new failing revision starts a fresh budget. A push the repository's
+protection rules refuse ends the repair immediately, because no further attempt
+could land it.
 
-The repair prompt names the failing checks and what they reported, and tells the
-agent that a check, test or assertion may never be disabled, skipped, weakened
-or deleted to reach green. Publishing is the bot's own step; the agent does not
-commit, push, or touch Git history.
+The repair prompt names the failing checks and what they reported, and instructs
+the agent that a check, test or assertion may never be disabled, skipped,
+weakened or deleted to reach green. Publishing is the bot's own step; the agent
+does not commit, push, or touch Git history.
 
 The bot pushes the repair directly to the branch it covers. Where that branch is
-protected, configure Town's merge policy and the branch's own rules
-accordingly — this bot does not open a pull request instead.
+protected, configure the branch's rules and Town's merge policy accordingly; this
+bot does not open a pull request instead.
 
-## Run standalone
+## Configuration
 
-```sh
-brp /path/to/your-repo                    # observe and repair every poll interval
-brp once /path/to/your-repo --dry-run     # one observation; commit a repair locally only
-brp /path/to/your-repo --agent ""         # observe and report, never repair
-brp status /path/to/your-repo
-```
+Town fills this configuration from the town's agent profile and the repo house's
+policy. The package's own fields are:
 
-With no configuration file, the bot discovers the repository from a checkout
-(or a subdirectory), a bare repository, or a Git URL, watches the remote's
-default branch, and keeps its own checkout and state under
-`$XDG_STATE_HOME/repo-bot` (default `~/.local/state/repo-bot`). It uses an installed
-`codex-acp`, or provisions it with `npx` when absent.
+| Field | Meaning |
+| --- | --- |
+| `remote`, `branch`, `directory`, `state_directory` | Private checkout and state. |
+| `instruction_files` | Repository instruction files handed to the agent. |
+| `agent` | ACP command, environment, model and effort. |
+| `github.host`, `github.repo` | Enterprise host, or a local mirror's GitHub repository. |
+| `timeout`, `poll` | Attempt budget and observation interval. |
+| `max_repairs` | Agent attempts allowed per failing revision (1–10). |
+| `verify` | Operator command that must pass before a repair is published. |
+| `dry_run` | Commit a repair locally without publishing it. |
 
-Every bot shares these options: `--config`, `--branch`, `--agent`,
-`--agent-arg` (repeatable), `--model`, `--effort`, `--poll`, `--timeout`,
-`--once`, `--json` (structured logs) and `--plain` (scrolling console output).
-`status` prints the saved state; `version` prints the release.
-
-Bot options: `--max-repairs` and `--dry-run`. Each observation is logged with the
-branch head, open issue and pull request counts, releases, new commits and the
-branch health. Without an agent the bot reports a failing branch and leaves it.
-
-## Terminal dashboard
-
-Interactive runs show a live dashboard by default. It fits the current terminal
-or tmux pane and adjusts when the pane is resized.
-
-```sh
-brp /path/to/repo           # live dashboard in an interactive terminal
-brp /path/to/repo --plain   # scrolling console output and agent transcript
-brp /path/to/repo --json    # structured logs for tools and log collectors
-```
-
-The overview shows the repository, branch and observed head, stage (inventory,
-checks, repair, verification, publication), active tool, uptime, and the next
-observation countdown; larger panes add the model and reasoning effort.
-**Branch** is the latest health with open issues, open pull requests and
-releases. **Saved** counts the last 100 observations kept in the workspace
-state, how many found the branch red, and how many published a repair. The
-observation browser shows each run's head, counts, failing checks, repair
-attempts, published commit and errors. On exit, new observations stay in the
-terminal, with full details for failures.
-
-- `1`, `2`, `3` or `Tab`: switch between overview, observations, and activity.
-- `↑` / `↓` or `k` / `j`: browse observations or scroll activity.
-- `Enter`: inspect the selected observation. `Esc` returns; `Page Up` / `Page Down` scroll.
-- `g` / `G`: jump to the start/end; `G` resumes following live activity.
-- `q` or `Ctrl+C`: stop the bot and its active agent, then restore the terminal.
-
-Piped input, redirected stderr, and `TERM=dumb` use scrolling output
-automatically. `--plain` and `--json` disable the dashboard and are mutually
-exclusive. `NO_COLOR` disables dashboard colors. `status`, `version` and help never open the
-dashboard.
-
-## Worker protocol
-
-```sh
-brp worker --socket PATH
-```
-
-The service speaks Brokk Town Worker Protocol v1 over a mode-0600 Unix socket.
-
-- `GET /v1/initialize` identifies `repo-bot` and advertises `run`, `progress`,
-  `repo-inventory` and `branch-health`.
-- `POST /v1/runs` accepts a strict task. Beyond the shared fields it reads
-  `since_head` (the branch head Town last observed) and `commits` (the revisions
-  Town still needs release ancestry for).
-- Runs return `result.inventory` and `result.health`. The inventory is reported
-  even when the health duty fails, because Town's view of the repository must
-  not depend on an agent.
-- The stream is bounded newline-delimited JSON with progress, terminal result,
-  and completion events.
-
-A run with no agent configured reports a failing branch without repairing it.
+Town's policy mapping is `limit` → `max_repairs` and `verify`. Defaults: a 1-hour
+attempt budget, observation every 15 minutes, and at most 3 repair attempts per
+revision. Repo Bot holds an agent slot only while repairing; inventory runs
+without one.
 
 ## Development
 
 ```sh
-make check
-node --test npm/brp.test.cjs
-python3 -m unittest discover -s scripts -p '*_test.py'
+go test -race ./bots/repo-bot/...
+go vet ./...
 ```
+
+Tests use local Git fixtures and simulated GitHub and ACP outcomes; they never
+run a paid model or push to a live repository.
+
+## License
+
+MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
