@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	bot "github.com/BrokkAi/feature-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/feature-bot"
 	"io"
 	"log/slog"
 	"os"

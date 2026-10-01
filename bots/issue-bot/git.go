@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/BrokkAi/issue-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/issue-bot/internal/osrun"
 )
 
 type checkout struct{ config Config }

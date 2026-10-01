@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	"github.com/BrokkAi/review-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/review-bot/internal/osrun"
 )
 
 func canonicalTestDir(t *testing.T) string {

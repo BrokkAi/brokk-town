@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BrokkAi/repo-bot/internal/worker"
+	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
 
 // startWorker serves the worker on a socket under a short temporary directory:

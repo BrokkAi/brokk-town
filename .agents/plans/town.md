@@ -1225,6 +1225,15 @@
 
 ## Bots on acp-go 0.11.0
 
+- Follow-up request: merge the eight standalone bot modules into the root Go
+  module. Each bot remains its own package (`github.com/BrokkAi/brokk-town/bots/NAME`),
+  binary, npm family and release tag; nine `go.mod`/`go.sum` pairs collapse to
+  one. Town still never imports a bot package and still talks to bot binaries
+  over the worker protocol. Root `licenses/policy.json` and notices now cover
+  uniseg, x/sys and x/term alongside acp-go; the per-bot license checks keep
+  passing unchanged because they resolve the root module graph, which selects
+  exactly those four dependencies. Release workflows read `go.mod` instead of a
+  per-bot manifest, and project discovery keys off each bot's release script.
 - User asked to bring every bundled bot to the latest acp-go, matching Town's
   v0.11.0. All eight bots moved from v0.1.0, v0.8.0, v0.8.1 or v0.10.0 to
   v0.11.0. No bot source changed. Each bot's `licenses/policy.json` and

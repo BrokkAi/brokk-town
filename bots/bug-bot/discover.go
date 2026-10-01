@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/bug-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/bug-bot/internal/osrun"
 )
 
 // Discover configures a managed checkout from a working tree (including a

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	"github.com/BrokkAi/feature-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/feature-bot/internal/osrun"
 )
 
 type engine struct {

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	bot "github.com/BrokkAi/issue-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/issue-bot"
 	"io"
 	"log/slog"
 	"os"

@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	bot "github.com/BrokkAi/release-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/release-bot"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )

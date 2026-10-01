@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BrokkAi/simplifier-bot/internal/worker"
+	"github.com/BrokkAi/brokk-town/bots/simplifier-bot/internal/worker"
 )
 
 func TestAppendLabelsKeepsDefaultsAndDropsDuplicates(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	bot "github.com/BrokkAi/release-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/release-bot"
 )
 
 func historyCommand(cfg bot.Config, tag string, jsonOutput bool, out io.Writer) error {

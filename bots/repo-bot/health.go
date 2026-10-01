@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/repo-bot/internal/osrun"
-	"github.com/BrokkAi/repo-bot/internal/worker"
+	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
 
 type BranchHealth = worker.BranchHealth

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Merge the eight standalone bot modules into the root Go module. Each bot stays
+  its own package, binary, npm family and release tag, but one `go.mod`/`go.sum`
+  now covers Town and every bot, so they share one Go toolchain, dependency set
+  and root license report. Per-bot release scripts and workflows still build
+  each bot from `bots/<name>`.
 - Update every bundled bot to acp-go 0.11.0, the release Town already uses,
   and regenerate each bot's licence policy and third-party notices. No bot
   source changed. Bug Bot's runner tests record the released `SetEffort`

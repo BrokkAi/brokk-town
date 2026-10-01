@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	bot "github.com/BrokkAi/simplifier-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/simplifier-bot"
 )
 
 func cliFixture(t *testing.T) string {

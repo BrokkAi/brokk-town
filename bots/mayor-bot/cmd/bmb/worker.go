@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	bot "github.com/BrokkAi/mayor-bot"
-	"github.com/BrokkAi/mayor-bot/internal/worker"
+	bot "github.com/BrokkAi/brokk-town/bots/mayor-bot"
+	"github.com/BrokkAi/brokk-town/bots/mayor-bot/internal/worker"
 )
 
 func workerCommand(ctx context.Context, args []string, version string) error {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BrokkAi/repo-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/osrun"
 )
 
 func discoveryDir(t *testing.T) string {

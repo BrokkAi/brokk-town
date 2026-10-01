@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/BrokkAi/acp-go/runner"
-	bot "github.com/BrokkAi/feature-bot"
-	"github.com/BrokkAi/feature-bot/internal/worker"
+	bot "github.com/BrokkAi/brokk-town/bots/feature-bot"
+	"github.com/BrokkAi/brokk-town/bots/feature-bot/internal/worker"
 )
 
 func TestWorkerCapabilities(t *testing.T) {

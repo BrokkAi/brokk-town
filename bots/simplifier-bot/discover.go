@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/simplifier-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/simplifier-bot/internal/osrun"
 )
 
 // Discover configures a managed checkout from a working tree (including a

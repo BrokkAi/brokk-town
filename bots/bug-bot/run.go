@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	"github.com/BrokkAi/bug-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/bug-bot/internal/osrun"
 )
 
 // Agent startup can fail transiently: the ACP process may lose a race for shared

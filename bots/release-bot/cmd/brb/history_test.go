@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	bot "github.com/BrokkAi/release-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/release-bot"
 )
 
 func TestHistoryOfflineAndSelection(t *testing.T) {

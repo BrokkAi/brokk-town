@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/BrokkAi/repo-bot/internal/worker"
+	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
 
 // Request is what Town asks for: one complete observation of the repository,

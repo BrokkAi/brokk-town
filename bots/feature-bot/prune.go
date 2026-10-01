@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/feature-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/feature-bot/internal/osrun"
 )
 
 // Prune previews completed scan workspaces older than olderThan; apply removes

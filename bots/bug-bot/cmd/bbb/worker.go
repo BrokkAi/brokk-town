@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"strings"
 
-	bot "github.com/BrokkAi/bug-bot"
-	"github.com/BrokkAi/bug-bot/internal/worker"
+	bot "github.com/BrokkAi/brokk-town/bots/bug-bot"
+	"github.com/BrokkAi/brokk-town/bots/bug-bot/internal/worker"
 )
 
 func workerCommand(ctx context.Context, args []string, version string) error {

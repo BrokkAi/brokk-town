@@ -15,7 +15,7 @@ import (
 	"strings"
 	"syscall"
 
-	bot "github.com/BrokkAi/simplifier-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/simplifier-bot"
 	"golang.org/x/term"
 )
 

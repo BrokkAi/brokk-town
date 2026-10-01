@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/bug-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/bug-bot/internal/osrun"
 )
 
 type Issue struct {

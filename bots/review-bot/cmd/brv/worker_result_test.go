@@ -1,8 +1,8 @@
 package main
 
 import (
-	bot "github.com/BrokkAi/review-bot"
-	"github.com/BrokkAi/review-bot/internal/worker"
+	bot "github.com/BrokkAi/brokk-town/bots/review-bot"
+	"github.com/BrokkAi/brokk-town/bots/review-bot/internal/worker"
 	"strings"
 	"testing"
 )

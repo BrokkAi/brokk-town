@@ -6,7 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	bot "github.com/BrokkAi/review-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/review-bot"
 	"io"
 	"log/slog"
 	"os"

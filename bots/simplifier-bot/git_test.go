@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BrokkAi/simplifier-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/simplifier-bot/internal/osrun"
 )
 
 // originGit runs git inside a test's origin repository with a fixed identity.

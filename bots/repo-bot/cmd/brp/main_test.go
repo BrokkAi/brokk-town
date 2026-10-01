@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	bot "github.com/BrokkAi/repo-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/repo-bot"
 )
 
 func cliFixture(t *testing.T, agent string) string {

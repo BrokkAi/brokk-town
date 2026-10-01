@@ -144,8 +144,10 @@ commands, tests, documentation and packaging:
 | mayor-bot | bmb |
 
 Build any bot by running `go build ./cmd/<command>` inside its directory.
-Town never imports bot Go packages. Each module chooses its own released acp-go
-dependency. The only integration boundary is the local worker protocol.
+Town never imports bot Go packages. The eight bots are packages of the root
+module and share its released acp-go dependency, while keeping their own
+versions, npm packages and release tags. The only integration boundary is the
+local worker protocol.
 
 Town uses `npx --yes -- @brokkai/PROJECT@latest version` to resolve a bot, then
 starts the exact reported version with `worker --socket PATH`. Protocol ranges,
@@ -156,8 +158,8 @@ npm's cache, not installed beside `bt`.
 
 ## Development
 
-`make check` runs independent Go race tests and vet in all nine modules, browser
-syntax/tests, launcher tests, packaging tests and license checks. `make smoke`
+`make check` runs Go race tests and vet for the root module (including every
+bot), browser syntax/tests, launcher tests, packaging tests and license checks. `make smoke`
 builds the complete suite and runs isolated demo integration checks. Use fake
 GitHub and agents for write tests; never use live repository automation as a test.
 

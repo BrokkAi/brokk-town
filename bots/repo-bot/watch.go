@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	"github.com/BrokkAi/repo-bot/internal/worker"
+	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
 
 // Watch runs the bot on its own: it observes the repository every poll

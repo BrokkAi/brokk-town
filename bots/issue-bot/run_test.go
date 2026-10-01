@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	"github.com/BrokkAi/issue-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/issue-bot/internal/osrun"
 )
 
 func canonicalTestDir(t *testing.T) string {

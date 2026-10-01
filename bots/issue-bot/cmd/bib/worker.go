@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	bot "github.com/BrokkAi/issue-bot"
-	"github.com/BrokkAi/issue-bot/internal/worker"
+	bot "github.com/BrokkAi/brokk-town/bots/issue-bot"
+	"github.com/BrokkAi/brokk-town/bots/issue-bot/internal/worker"
 )
 
 func workerCommand(ctx context.Context, args []string, version string) error {

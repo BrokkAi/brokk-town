@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/BrokkAi/mayor-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/mayor-bot/internal/osrun"
 )
 
 type checkout struct{ config Config }

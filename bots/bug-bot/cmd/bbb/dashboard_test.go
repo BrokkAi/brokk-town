@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	bot "github.com/BrokkAi/bug-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/bug-bot"
 	"github.com/rivo/uniseg"
 )
 

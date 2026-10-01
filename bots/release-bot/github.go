@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/release-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/bots/release-bot/internal/osrun"
 )
 
 type github struct {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BrokkAi/repo-bot/internal/worker"
+	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/worker"
 )
 
 func TestObservationSummarizesARun(t *testing.T) {

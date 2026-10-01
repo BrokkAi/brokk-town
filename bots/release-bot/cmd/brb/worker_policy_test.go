@@ -8,8 +8,8 @@ import (
 
 	"github.com/BrokkAi/acp-go/runner"
 
-	bot "github.com/BrokkAi/release-bot"
-	"github.com/BrokkAi/release-bot/internal/worker"
+	bot "github.com/BrokkAi/brokk-town/bots/release-bot"
+	"github.com/BrokkAi/brokk-town/bots/release-bot/internal/worker"
 )
 
 func TestWorkerPolicyAppliesReleaseCadence(t *testing.T) {

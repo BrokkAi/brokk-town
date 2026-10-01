@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	bot "github.com/BrokkAi/repo-bot"
+	bot "github.com/BrokkAi/brokk-town/bots/repo-bot"
 	"github.com/rivo/uniseg"
 )
 
