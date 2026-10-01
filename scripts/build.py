@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Town alone; independently released bots run through npx."""
+"""Build the Town binary; its bots are packages of this module."""
 import argparse
 import os
 from pathlib import Path

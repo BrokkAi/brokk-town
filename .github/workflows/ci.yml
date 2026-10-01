@@ -39,8 +39,9 @@ jobs:
         with:
           node-version: '24'
       - name: Check every module
-        # Every module runs even after one fails, so a single broken module does
-        # not hide the rest the way an early exit would.
+        # Town and every bot share the root module; this checks the Go of each
+        # package tree. The Python, npm and installer checks run once for Town
+        # below, since the bots are no longer separately distributed.
         run: |
           set -u
           failed=''
@@ -56,10 +57,6 @@ jobs:
               fi
               go test -race ./... || exit
               go vet ./... || exit
-              python3 scripts/licenses.py || exit
-              python3 -m unittest discover -s scripts -p '*_test.py' || exit
-              node --test --test-isolation=none npm/*.test.cjs || exit
-              sh -n install.sh || exit
             ) || failed="$failed $project"
             echo '::endgroup::'
           done
