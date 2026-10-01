@@ -66,6 +66,14 @@ func TestACPAgentHelper(t *testing.T) {
 		{"id": "reasoning_effort", "name": "Effort", "category": "thought_level", "type": "select", "currentValue": "low", "options": []map[string]string{{"value": "low", "name": "Low"}, {"value": "high", "name": "High"}}},
 	}
 	if scenario == "uncategorized-effort" {
+		// acp-go identifies an uncategorized effort selector by its
+		// conventional "reasoning_effort" id.
+		delete(options[1], "category")
+	}
+	if scenario == "thought-level-id-only" {
+		// A bare "thought_level" id without a category is not recognized:
+		// acp-go v0.8.1 dropped v0.1.0's fallback to it, so setup fails before
+		// the effort is selected.
 		options[1]["id"] = "thought_level"
 		delete(options[1], "category")
 	}
@@ -89,6 +97,11 @@ func TestACPAgentHelper(t *testing.T) {
 		}
 		options[i]["currentValue"] = value
 		reply(selection, map[string]any{"configOptions": options})
+		if scenario == "thought-level-id-only" && i == 0 {
+			// The unrecognized effort selector fails setup locally, so no
+			// further request arrives. Exit instead of blocking on a read.
+			os.Exit(0)
+		}
 	}
 	prompt := request("session/prompt")
 	params := prompt["params"].(map[string]any)
@@ -150,10 +163,16 @@ func testACPProcess(t *testing.T, scenario string) agentProcess {
 }
 
 func TestAgentProcessACP(t *testing.T) {
-	for _, scenario := range []string{"success", "reject", "cancel", "uncategorized-effort", "disconnect-terminal"} {
+	for _, scenario := range []string{"success", "reject", "cancel", "uncategorized-effort", "thought-level-id-only", "disconnect-terminal"} {
 		t.Run(scenario, func(t *testing.T) {
 			process := testACPProcess(t, scenario)
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			timeout := 10 * time.Second
+			if scenario == "disconnect-terminal" {
+				// acp-go drains in-flight request handlers before surfacing
+				// transport EOF, so this run ends at the caller's deadline.
+				timeout = 3 * time.Second
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			type result struct {
 				text string
@@ -191,6 +210,10 @@ func TestAgentProcessACP(t *testing.T) {
 				if got.err != nil || got.text != "no findings" {
 					t.Fatalf("Execute = %q, %v", got.text, got.err)
 				}
+			case "thought-level-id-only":
+				if got.text != "" || !errors.As(got.err, &setup) || !strings.Contains(got.err.Error(), "does not advertise ACP reasoning effort selection") {
+					t.Fatalf("setup result = %+v", got)
+				}
 			case "reject":
 				if !errors.As(got.err, &setup) || !strings.Contains(got.err.Error(), "model unavailable") || got.text != "" {
 					t.Fatalf("setup result = %+v", got)
@@ -200,7 +223,10 @@ func TestAgentProcessACP(t *testing.T) {
 					t.Fatalf("cancel error = %v", got.err)
 				}
 			case "disconnect-terminal":
-				if !errors.Is(got.err, io.EOF) || ctx.Err() != nil || got.text != "" {
+				// The agent exits while a terminal command outlives it. acp-go
+				// waits for that handler before reporting EOF, so the run is
+				// bounded by the caller's context rather than failing fast.
+				if !errors.Is(got.err, context.DeadlineExceeded) || ctx.Err() == nil || errors.As(got.err, &setup) || got.text != "" {
 					t.Fatalf("disconnect result = %+v, context error = %v", got, ctx.Err())
 				}
 			}

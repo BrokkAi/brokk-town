@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Update every bundled bot to acp-go 0.11.0, the release Town already uses,
+  and regenerate each bot's licence policy and third-party notices. No bot
+  source changed. Bug Bot's runner tests record the released `SetEffort`
+  selector matching and acp-go's drain of in-flight request handlers on
+  transport EOF.
+
 ## 0.7.6 — 2026-10-01
 
 - Build and run the Town service on Windows: portable process control, file

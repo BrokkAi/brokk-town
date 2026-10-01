@@ -1212,15 +1212,39 @@
 - v0.1.0's uncategorized `thought_level` effort fallback is gone. An agent
   that advertises effort only that way gets a setup error when an effort is
   configured, and Town's choices list no efforts for it.
-- feature-bot is on acp-go v0.10.0, whose typed setup errors replace the
-  lifecycle it had copied from v0.7.0. `selectionError` reads
-  `runner.SetupError.Phase`: in `select model`/`select effort`, an
+- All eight bots are on acp-go v0.11.0, matching Town. feature-bot's typed
+  setup errors replaced the lifecycle it had copied from v0.7.0;
+  `selectionError` reads `runner.SetupError.Phase`: in
+  `select model`/`select effort`, an
   `acp.UnknownSelectionError` (value not offered) is reported as not
   accepted, naming the stage setting to change; any other failure there,
   including `acp.UnsupportedSelectionError` and untyped errors such as an
   unconfirmed selection, is a failure to select naming the same setting.
   Other phases pass through unchanged. An untyped error is never read as an
   agent rejection.
+
+## Bots on acp-go 0.11.0
+
+- User asked to bring every bundled bot to the latest acp-go, matching Town's
+  v0.11.0. All eight bots moved from v0.1.0, v0.8.0, v0.8.1 or v0.10.0 to
+  v0.11.0. No bot source changed. Each bot's `licenses/policy.json` and
+  `licenses/THIRD_PARTY_NOTICES.txt` were regenerated; acp-go's LICENSE is
+  unchanged and v0.11.0 adds the NOTICE the four bots that moved off v0.1.0
+  were missing.
+- Bug Bot's runner tests recorded two released acp-go behaviour changes.
+  `SetEffort` matches an uncategorized selector only by its conventional
+  `reasoning_effort` id, so a bare `thought_level` id without a category is now
+  a setup error (v0.1.0's fallback). The test keeps positive coverage for the
+  conventional id and asserts the setup error for the bare one.
+- acp-go drains in-flight request handlers before it surfaces transport EOF. An
+  agent that exits while a terminal `wait_for_exit` is pending is therefore
+  bounded by the caller's context instead of failing fast with `io.EOF`; Bug
+  Bot's `disconnect-terminal` test records that bound. Town bounds every bot
+  run with its own timeout, so the run still terminates.
+- Open: acp-go's read loop calls `tasks.Wait()` before `stop(io.EOF)`, so a
+  handler blocked on the host cannot observe the closed transport until the
+  host closes. Suggested upstream fix: signal request cancellation before
+  draining in-flight handlers.
 
 ## bug-bot workspace setup command (#96)
 
