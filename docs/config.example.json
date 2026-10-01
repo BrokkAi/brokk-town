@@ -1,0 +1,81 @@
+{
+  "max_workers": 4,
+  "quiet_hours": [
+    { "days": ["sat", "sun"], "start": "00:00", "end": "24:00" }
+  ],
+  "attention_hook": {
+    "enabled": false
+  },
+  "towns": [
+    {
+      "repo": "OWNER/REPO",
+      "branch": "main",
+      "merge_policy": "bot",
+      "poll_seconds": 60,
+      "report_seconds": 1800,
+      "max_cycles": 5,
+      "simplifier_mode": "suggest",
+      "bulletin_seconds": 86400,
+      "review_close_severity": "P2",
+      "agent": {
+        "model": "gpt-5-codex",
+        "effort": "medium"
+      },
+      "bot_agents": {
+        "review": {
+          "harness": "claude-acp",
+          "agent": { "model": "claude-opus-5", "effort": "high" }
+        }
+      },
+      "verify": [],
+      "budget": {
+        "period": "day",
+        "max_attempts": 40,
+        "max_agent_minutes": 240
+      },
+      "bot_policies": {
+        "issue": {
+          "labels": ["ready"],
+          "exclude_labels": ["blocked"],
+          "limit": 2,
+          "attempts": 3
+        },
+        "release": {
+          "release": {
+            "daily_seconds": 86400,
+            "minimum_gap_seconds": 7200,
+            "quiet_seconds": 900,
+            "burst": 5,
+            "burst_window_seconds": 7200,
+            "triage": true,
+            "verification_timeout_seconds": 1800,
+            "workflows": ["ci.yml", "release-town.yml"],
+            "assets": ["brokk-town-*-linux-amd64.tar.gz", "checksums.txt"]
+          }
+        }
+      },
+      "funnels": [
+        {
+          "id": "inbox",
+          "provider": "github",
+          "location": { "repository": "OWNER/REPO" },
+          "filter": { "query": "is:issue is:open", "include_labels": "bug,feature" },
+          "enabled": true,
+          "read_only": true,
+          "priority_policy": "first-observed",
+          "overlap": "independent"
+        },
+        {
+          "id": "triage-channel",
+          "provider": "slack",
+          "location": { "channel": "C0123456789" },
+          "credentials": { "name": "slack/triage", "backend": "environment" },
+          "enabled": false,
+          "read_only": true,
+          "priority_policy": "message-order",
+          "overlap": "deduplicate"
+        }
+      ]
+    }
+  ]
+}
