@@ -38,32 +38,19 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
-      - name: Check every module
-        # Town and every bot share the root module; this checks the Go of each
-        # package tree. The Python, npm and installer checks run once for Town
-        # below, since the bots are no longer separately distributed.
+      - name: Check the module
+        # One module covers Town and every bot, so the whole package tree is
+        # checked in a single pass. The Python, npm and installer checks run
+        # once for Town below.
         run: |
-          set -u
-          failed=''
-          for project in . bots/*; do
-            echo "::group::$project"
-            (
-              cd "$project"
-              unformatted="$(gofmt -l .)"
-              if [ -n "$unformatted" ]; then
-                echo "gofmt reported unformatted files:"
-                echo "$unformatted"
-                exit 1
-              fi
-              go test -race ./... || exit
-              go vet ./... || exit
-            ) || failed="$failed $project"
-            echo '::endgroup::'
-          done
-          if [ -n "$failed" ]; then
-            echo "failed modules:$failed"
+          unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt reported unformatted files:"
+            echo "$unformatted"
             exit 1
           fi
+          go test -race ./...
+          go vet ./...
       - name: Build Town and run its smoke checks
         run: npm run check && npm test && make build && python3 scripts/smoke.py && python3 scripts/smoke_mjolnir.py
   workflows:
