@@ -98,7 +98,7 @@ accepted.
 | Role | Supported policy flags |
 | --- | --- |
 | bug, feature | `labels`, `focus`, `limit`, `attempts`, `verify` |
-| issue | `labels`, `exclude-labels`, `only`, `limit`, `attempts`, `verify` |
+| issue | `labels`, `exclude-labels`, `only`, `attempts`, `verify` |
 | review | `labels`, `exclude-labels`, `only`, `focus`, `limit`, `attempts`, `verify` |
 | release | `attempts`, `verify`, plus every release flag below |
 | simplifier | `labels`, `limit`, `verify` |

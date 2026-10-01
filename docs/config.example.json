@@ -37,8 +37,8 @@
         "issue": {
           "labels": ["ready"],
           "exclude_labels": ["blocked"],
-          "limit": 2,
-          "attempts": 3
+          "attempts": 3,
+          "verify": ["go", "test", "./..."]
         },
         "release": {
           "release": {
