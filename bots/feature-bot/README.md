@@ -79,5 +79,5 @@ run a paid model or create issues in a live repository.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). The character art in
+Apache-2.0. See [LICENSE](../../LICENSE) and [NOTICE](../../NOTICE). The character art in
 [docs/](docs/) is original and distributed under the same license.

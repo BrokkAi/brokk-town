@@ -84,4 +84,4 @@ never publish a real release or package.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0. See [LICENSE](../../LICENSE) and [NOTICE](../../NOTICE).

@@ -65,4 +65,4 @@ to a live repository.
 
 ## License
 
-MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0. See [LICENSE](../../LICENSE) and [NOTICE](../../NOTICE).

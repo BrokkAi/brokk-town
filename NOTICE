@@ -9,7 +9,12 @@ Process execution, terminal key decoding, and license checking foundations
 are adapted from BrokkAi/review-bot, BrokkAi/bug-bot, and BrokkAi/issue-bot,
 also licensed under Apache-2.0. Modified for the local multi-repository service.
 
-Town artwork was generated for this project; see docs/ARTWORK.md.
+The bot packages under bots/ are part of this project and are licensed under the
+same Apache-2.0 terms. Each is an internal package of the module rather than a
+separately distributed or separately licensed project, so there is one LICENSE
+and one notice for the whole repository.
+
+Town artwork was generated for this project; see docs/themes.md.
 
 internal/harness/registry.json includes an unmodified index snapshot from the
 Agent Client Protocol registry (https://github.com/agentclientprotocol/registry),

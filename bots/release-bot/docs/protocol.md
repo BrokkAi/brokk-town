@@ -1,6 +1,6 @@
 # Protocol sources and implementation
 
-The ACP client is maintained in [BrokkAi/acp-go](https://github.com/BrokkAi/acp-go), using Go's standard library. The pinned v0.8.0 release includes types generated from the official ACP JSON Schemas; upstream's NOTICE records their Apache-2.0 attribution, which is included in our third-party notices. The bot uses the v1 runner and its reusable client host. Protocol field names, method names and wire values match the specification.
+The ACP client is maintained in [BrokkAi/acp-go](https://github.com/BrokkAi/acp-go), using Go's standard library. The module pins acp-go 0.11.0, whose types are generated from the official ACP JSON Schemas; upstream's NOTICE records their Apache-2.0 attribution, which is included in our third-party notices. The bot uses the v1 runner and its reusable client host. Protocol field names, method names and wire values match the specification.
 
 Sources consulted on 2026-09-07:
 
