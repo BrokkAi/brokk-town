@@ -5,13 +5,19 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func TestConfiguredLocalMirror(t *testing.T) {
 	for _, name := range []string{"published.git", "published:mirror.git"} {
 		t.Run(name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.Contains(name, ":") {
+				t.Skip("Windows paths cannot contain a colon")
+			}
 			for _, cwd := range []string{"config directory", "other directory"} {
 				t.Run(cwd, func(t *testing.T) {
 					_, remote := discoveryRepo(t)
@@ -79,6 +85,7 @@ func TestConfigRemotePaths(t *testing.T) {
 }
 
 func TestStrictConfigAndPaths(t *testing.T) {
+	testplatform.RequireSymlinks(t)
 	p := filepath.Join(canonicalTestDir(t), "config.json")
 	for _, raw := range []string{
 		`{"remote":"","github":{"repo":"o/r"}}`,

@@ -45,9 +45,9 @@ go vet ./...
 make js                                # browser JavaScript
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same Go checks on Linux for pull
-requests and on Linux and macOS for `master`, plus the browser and
-workflow-lint checks.
+CI (`.github/workflows/ci.yml`) runs the race-enabled Go checks on Linux for
+pull requests and on Linux and macOS for `master`, a build, vet and test pass
+on Windows for `master`, plus the browser and workflow-lint checks.
 
 ## Working rules
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Run `bt` on Windows again. The eight bots now share Town's portable process
+  runner, file locking and durable writes, and Git path checks accept Windows
+  separators. Releases publish Windows zip archives for amd64 and arm64, and CI
+  tests the module on Windows.
 - Reduce `bt` to service lifecycle and browser discovery: foreground/background
   startup, `status`, `web`, `shutdown`, `version`, and `help`. Towns, houses,
   tasks, decisions, settings, diagnostics, history, storage, Town Guide,

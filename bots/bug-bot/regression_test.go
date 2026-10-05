@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 // Reproduces the real ACP message sequence that previously lost valid receipts.
@@ -42,7 +44,7 @@ for line in sys.stdin:
     send(dict(jsonrpc='2.0', id=request['id'], result=result))
 `)
 	e.agent = func(cfg Config, _ string) Agent {
-		cfg.Agent.Command = []string{"python3", script}
+		cfg.Agent.Command = []string{testplatform.Python(t), script}
 		cfg.Agent.Environment = map[string]string{
 			"BUG_DIG_SCAN":   "BUG_RESULT " + jsonContextCompact(ScanResult{Summary: "Reproduced parser failure", Findings: []Finding{finding()}}),
 			"BUG_DIG_REVIEW": jsonContextCompact(Review{Verdict: "new", Reason: "Independently reproduced", Checked: []int{}}),
@@ -93,6 +95,7 @@ func TestDefinitePostRejectionCanRetry(t *testing.T) {
 }
 
 func testDefinitePostRejectionCanRetry(t *testing.T, explicit bool) {
+	testplatform.SkipPOSIXFakes(t)
 	e, s, _, _, _ := fixture(t)
 	if explicit {
 		e.config.Attempts = 1

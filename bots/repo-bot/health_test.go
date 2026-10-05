@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 type verdict struct {
@@ -146,6 +148,7 @@ func TestInventoryOnlyConfigurationReportsWithoutRepairing(t *testing.T) {
 // real repository: the agent's edit is committed on the exact failing revision
 // and fast-forwarded onto the branch only after verification passes.
 func TestRepairPublishesAVerifiedFixOntoTheBranch(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	origin, head := originRepository(t)
 	root := t.TempDir()
 	cfg := DefaultConfig()

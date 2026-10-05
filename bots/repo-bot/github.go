@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
 var sha = regexp.MustCompile(`^[0-9a-f]{40}$`)

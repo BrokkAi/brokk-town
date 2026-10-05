@@ -9,10 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func fakeGH(t *testing.T) string {
 	t.Helper()
+	testplatform.SkipPOSIXFakes(t)
 	dir := canonicalTestDir(t)
 	script := `#!/usr/bin/env python3
 import json, os, sys, urllib.parse

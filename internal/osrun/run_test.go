@@ -3,15 +3,39 @@ package osrun
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
+// TestMain re-executes the test binary as a small environment reporter for
+// TestRunWithoutRemovesInheritedVariables, so the test needs no POSIX shell.
+func TestMain(m *testing.M) {
+	if os.Getenv("OSRUN_HELPER") == "1" {
+		fmt.Fprintf(os.Stdout, "%s|%s", os.Getenv("OSRUN_INHERITED"), os.Getenv("OSRUN_KEPT"))
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func TestRunWithoutRemovesInheritedVariables(t *testing.T) {
+	t.Setenv("OSRUN_HELPER", "1")
+	t.Setenv("OSRUN_INHERITED", "leak")
+	out, err := RunWithout(context.Background(), "", map[string]string{"OSRUN_KEPT": "kept"}, []string{"OSRUN_INHERITED"}, os.Args[0])
+	if err != nil || out != "|kept" {
+		t.Fatalf("%q %v", out, err)
+	}
+}
+
 func TestFailedCommandNeverReturnsTruncatedResponse(t *testing.T) {
-	text, err := Run(context.Background(), "", nil, "python3", "-c", "import sys; sys.stdout.write('x' * ((8 << 20) + 1)); sys.exit(1)")
+	python := testplatform.Python(t)
+	text, err := Run(context.Background(), "", nil, python, "-c", "import sys; sys.stdout.write('x' * ((8 << 20) + 1)); sys.exit(1)")
 	var exit *exec.ExitError
 	if text != "" || err == nil || !strings.Contains(err.Error(), "exceeded 8 MiB") || !errors.As(err, &exit) {
 		t.Fatalf("truncated failure exposed as a complete response: bytes=%d, err=%v", len(text), err)
@@ -33,6 +57,7 @@ func TestTailIsBoundedAndUTF8(t *testing.T) {
 	}
 }
 func TestProcessTreeCancellation(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
@@ -47,8 +72,9 @@ func TestProcessTreeCancellation(t *testing.T) {
 // A failing command's message is persisted and pushed to every connected
 // client, so it must not carry the whole captured output.
 func TestFailureMessageCarriesBoundedOutput(t *testing.T) {
+	python := testplatform.Python(t)
 	script := "import sys; sys.stdout.write('o' * 200000); sys.stderr.write('e' * 200000); sys.exit(3)"
-	text, err := Run(context.Background(), "", nil, "python3", "-c", script)
+	text, err := Run(context.Background(), "", nil, python, "-c", script)
 	if err == nil {
 		t.Fatal("failing command reported success")
 	}

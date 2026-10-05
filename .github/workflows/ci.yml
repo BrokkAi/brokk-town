@@ -57,6 +57,24 @@ jobs:
           git diff --exit-code -- licenses/THIRD_PARTY_NOTICES.txt
       - name: Build Town
         run: make js && make build
+  windows:
+    # Windows runs the whole module build, vet and tests under PowerShell. It
+    # is separate from the matrix because the Unix steps use a POSIX shell, and
+    # the account's runner limit keeps pull requests on Ubuntu.
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Check the module
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./...
   workflows:
     runs-on: ubuntu-latest
     steps:

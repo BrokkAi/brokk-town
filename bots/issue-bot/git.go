@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/BrokkAi/brokk-town/bots/issue-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/pathcmp"
 )
 
 type checkout struct{ config Config }
@@ -77,7 +78,7 @@ func (g checkout) open(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if root != g.config.Directory {
+	if !pathcmp.Same(root, g.config.Directory) {
 		return errors.New("directory must be the root of a managed checkout")
 	}
 	common, err := g.git(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -124,7 +125,7 @@ func (g checkout) prepare(ctx context.Context, j *Job) (checkout, error) {
 		if err != nil {
 			return work, err
 		}
-		if root != work.config.Directory {
+		if !pathcmp.Same(root, work.config.Directory) {
 			return work, errors.New("issue directory is not a worktree root")
 		}
 		common, err := work.git(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")

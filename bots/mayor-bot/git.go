@@ -7,7 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/BrokkAi/brokk-town/bots/mayor-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/pathcmp"
 )
 
 type checkout struct{ config Config }
@@ -33,7 +34,7 @@ func (g checkout) open(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if root != g.config.Directory {
+	if !pathcmp.Same(root, g.config.Directory) {
 		return errors.New("directory must be the root of a managed clone")
 	}
 	remote, err := g.git(ctx, "remote", "get-url", "origin")
@@ -97,7 +98,7 @@ func (g checkout) itemWorktree(ctx context.Context, name, rev string) (checkout,
 // see them, and verify only inspects tracked source.
 func (g checkout) pristine(ctx context.Context, rev string) bool {
 	root, err := g.git(ctx, "rev-parse", "--show-toplevel")
-	if err != nil || root != g.config.Directory {
+	if err != nil || !pathcmp.Same(root, g.config.Directory) {
 		return false
 	}
 	head, err := g.git(ctx, "rev-parse", "HEAD")
@@ -129,7 +130,7 @@ func (g checkout) verify(ctx context.Context, expected string) error {
 	if err != nil {
 		return err
 	}
-	if root != g.config.Directory {
+	if !pathcmp.Same(root, g.config.Directory) {
 		return errors.New("item directory is not its worktree root")
 	}
 	head, err := g.git(ctx, "rev-parse", "HEAD")

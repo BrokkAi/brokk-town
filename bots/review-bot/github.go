@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/bots/review-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
 type PRRef struct {

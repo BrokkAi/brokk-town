@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/durable"
+	"github.com/BrokkAi/brokk-town/internal/filelock"
 )
 
 type State struct {
@@ -87,12 +89,7 @@ func writeState(cfg Config, state *State) error {
 	if err = os.Rename(f.Name(), filepath.Join(cfg.StateDirectory, "state.json")); err != nil {
 		return err
 	}
-	dir, err := os.Open(cfg.StateDirectory)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return durable.SyncDir(cfg.StateDirectory)
 }
 func requestID() (string, error) {
 	b := make([]byte, 16)
@@ -109,11 +106,11 @@ func lockFile(path string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := filelock.TryLock(f); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("another process holds %s: %w", path, err)
 	}
-	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
+	return func() { _ = filelock.Unlock(f); _ = f.Close() }, nil
 }
 func lockConfig(cfg Config) (func(), error) {
 	base, err := stateHome()

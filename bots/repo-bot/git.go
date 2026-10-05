@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/pathcmp"
 )
 
 type checkout struct{ config Config }
@@ -35,7 +36,7 @@ func (g checkout) open(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if root != g.config.Directory {
+	if !pathcmp.Same(root, g.config.Directory) {
 		return errors.New("directory must be the root of a managed clone")
 	}
 	remote, err := g.git(ctx, "remote", "get-url", "origin")

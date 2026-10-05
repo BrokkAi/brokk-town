@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func TestRepairBundleImportVerifiesHistoryExactCommitAndOperatorChecks(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	// The importer also starts Git, so isolate every child process, including
 	// those outside the fixture helper. Detached maintenance can otherwise keep
 	// writing .git/objects/pack while t.TempDir removes the private repository.

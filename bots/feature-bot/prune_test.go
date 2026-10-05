@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func completedFixture(t *testing.T) (engine, *State, CompletedWorkspace) {
@@ -28,6 +30,14 @@ func completedFixture(t *testing.T) (engine, *State, CompletedWorkspace) {
 		t.Fatalf("missing completion: %+v", saved)
 	}
 	return e, saved, saved.Workspaces[0]
+}
+
+// registeredWorktree reports whether Git lists dir as a worktree of clone. Git
+// prints forward slashes on Windows, so both paths are compared in that form.
+func registeredWorktree(t *testing.T, clone, dir string) bool {
+	t.Helper()
+	listing := filepath.ToSlash(localGit(t, clone, "worktree", "list", "--porcelain"))
+	return strings.Contains(listing, filepath.ToSlash(dir))
 }
 
 func TestPrunePreviewAgeAndApply(t *testing.T) {
@@ -55,7 +65,7 @@ func TestPrunePreviewAgeAndApply(t *testing.T) {
 	if err := prune(ctx, e.config, time.Hour, false, &out, boundary.Add(time.Nanosecond)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "eligible") {
+	if !strings.Contains(out.String(), "eligible \"") {
 		t.Fatal(out.String())
 	}
 	after, _ := os.ReadFile(filepath.Join(e.config.StateDirectory, "state.json"))
@@ -71,7 +81,7 @@ func TestPrunePreviewAgeAndApply(t *testing.T) {
 	if _, err := os.Stat(w.Directory); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("workspace survives: %v", err)
 	}
-	if strings.Contains(localGit(t, e.config.Directory, "worktree", "list", "--porcelain"), w.Directory) {
+	if registeredWorktree(t, e.config.Directory, w.Directory) {
 		t.Fatal("registration survives")
 	}
 	afterState, err := ReadState(e.config)
@@ -95,6 +105,9 @@ func TestPrunePreviewAgeAndApply(t *testing.T) {
 func TestPruneProtectedWorkspaces(t *testing.T) {
 	for _, kind := range []string{"tracked", "staged", "locked", "attached", "head", "foreign", "symlink", "parent-symlink", "active", "ambiguous", "active-alias", "assume-unchanged", "legacy"} {
 		t.Run(kind, func(t *testing.T) {
+			if kind == "symlink" || kind == "parent-symlink" || kind == "active-alias" {
+				testplatform.RequireSymlinks(t)
+			}
 			e, s, w := completedFixture(t)
 			switch kind {
 			case "tracked":
@@ -186,7 +199,7 @@ func TestPruneInterruptedRemoval(t *testing.T) {
 			if err != nil || len(s.Workspaces) != 0 {
 				t.Fatalf("%+v %v", s, err)
 			}
-			if strings.Contains(localGit(t, e.config.Directory, "worktree", "list", "--porcelain"), w.Directory) {
+			if registeredWorktree(t, e.config.Directory, w.Directory) {
 				t.Fatal("registration survives")
 			}
 		})
@@ -289,6 +302,7 @@ func TestCompletionLifecycle(t *testing.T) {
 }
 
 func TestPrunePartialRemovalFailure(t *testing.T) {
+	testplatform.SkipPOSIXFakes(t)
 	e, s, first := completedFixture(t)
 	if err := e.step(context.Background(), s, true); err != nil {
 		t.Fatal(err)
@@ -346,7 +360,7 @@ func TestPruneMissingWorkspacePreservesStagedData(t *testing.T) {
 	if !strings.Contains(out.String(), "staged modifications") {
 		t.Fatal(out.String())
 	}
-	if !strings.Contains(localGit(t, e.config.Directory, "worktree", "list", "--porcelain"), w.Directory) {
+	if !registeredWorktree(t, e.config.Directory, w.Directory) {
 		t.Fatal("lost staged index registration")
 	}
 }
@@ -385,7 +399,7 @@ func TestPruneFinishesRemovalWithoutGitFile(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, statErr := os.Stat(w.Directory)
-			registered := strings.Contains(localGit(t, e.config.Directory, "worktree", "list", "--porcelain"), w.Directory)
+			registered := registeredWorktree(t, e.config.Directory, w.Directory)
 			if kind == "partial" {
 				if !strings.Contains(out.String(), "interrupted removal") || !errors.Is(statErr, os.ErrNotExist) || registered || len(s.Workspaces) != 0 {
 					t.Fatalf("interrupted removal not finished: %s %v %v %+v", out.String(), statErr, registered, s.Workspaces)
@@ -400,6 +414,7 @@ func TestPruneFinishesRemovalWithoutGitFile(t *testing.T) {
 }
 
 func TestPruneOperationalErrorsFail(t *testing.T) {
+	testplatform.SkipPOSIXFakes(t)
 	e, _, w := completedFixture(t)
 	realGit, err := exec.LookPath("git")
 	if err != nil {

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/bots/mayor-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
 // Issue is one GitHub issue with its comment bodies, as the Mayor reads it.

@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/bots/simplifier-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
 type Issue struct {

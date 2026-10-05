@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/bots/repo-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
 
 // checkReader is the branch verdict this duty works from. The GitHub client

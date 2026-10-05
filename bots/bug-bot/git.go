@@ -7,7 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/BrokkAi/brokk-town/bots/bug-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/pathcmp"
 )
 
 type checkout struct{ config Config }
@@ -50,7 +51,7 @@ func (g checkout) verify(ctx context.Context, s *Scan) error {
 	if err != nil {
 		return err
 	}
-	if root != s.Directory {
+	if !pathcmp.Same(root, s.Directory) {
 		return errors.New("scan directory is not its worktree root")
 	}
 	head, err := g.git(ctx, "rev-parse", "HEAD")
@@ -89,7 +90,7 @@ func (g checkout) open(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if root != g.config.Directory {
+	if !pathcmp.Same(root, g.config.Directory) {
 		return errors.New("directory must be the root of a managed clone")
 	}
 	remote, err := g.git(ctx, "remote", "get-url", "origin")

@@ -15,7 +15,8 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
-	"github.com/BrokkAi/brokk-town/bots/bug-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func canonicalTestDir(t *testing.T) string {
@@ -149,6 +150,7 @@ func fixture(t *testing.T) (engine, *State, *fakeSource, *fakeAgent, string) {
 }
 
 func TestRunSymlinkDirectory(t *testing.T) {
+	testplatform.RequireSymlinks(t)
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
 			e, _, _, _, _ := fixture(t)
@@ -198,6 +200,7 @@ func TestRunSymlinkDirectory(t *testing.T) {
 }
 
 func TestRunSymlinkOverlapRejected(t *testing.T) {
+	testplatform.RequireSymlinks(t)
 	e, _, _, _, _ := fixture(t)
 	alias := filepath.Join(canonicalTestDir(t), "alias")
 	if err := os.Symlink(filepath.Dir(e.config.Directory), alias); err != nil {

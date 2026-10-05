@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 // proposalFinding returns a distinct finding the fake reviewer does not treat as
@@ -244,6 +246,7 @@ func TestPublishReviewGatesPreserveExplanation(t *testing.T) {
 }
 
 func TestPublishVerifiesSourceAndEvidence(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	for _, mode := range []string{"verifier", "tracked", "missing-file"} {
 		t.Run(mode, func(t *testing.T) {
 			e, s, f, _, _ := dryRunProposals(t, 1)

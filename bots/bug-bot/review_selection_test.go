@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
+
 	"github.com/BrokkAi/acp-go/runner"
 )
 
@@ -270,7 +272,7 @@ for line in sys.stdin:
         continue
     send(dict(jsonrpc='2.0', id=request['id'], result=result))
 `)
-	e.config.Agent.Command = []string{"python3", script}
+	e.config.Agent.Command = []string{testplatform.Python(t), script}
 	e.config.Agent.Model = "scout"
 	e.config.Agent.Environment = map[string]string{
 		"BUG_PROMPTS": record,
@@ -288,14 +290,14 @@ for line in sys.stdin:
 	if err := e.step(ctx, s, true); !errors.As(err, &setup) || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("expected setup error for unsupported review model, got %v", err)
 	}
-	if got, _ := os.ReadFile(record); string(got) != "scan scout\n" || source.creates != 0 || s.Scan.Candidates[0].Status != "pending" {
-		t.Fatalf("prompts %q, creates %d, scan %+v", got, source.creates, s.Scan)
+	if raw, _ := os.ReadFile(record); strings.ReplaceAll(string(raw), "\r\n", "\n") != "scan scout\n" || source.creates != 0 || s.Scan.Candidates[0].Status != "pending" {
+		t.Fatalf("prompts %q, creates %d, scan %+v", raw, source.creates, s.Scan)
 	}
 	e.config.ReviewModel = ptr("judge")
 	if err := e.step(ctx, s, true); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := os.ReadFile(record); string(got) != "scan scout\nreview judge\n" || source.creates != 1 {
-		t.Fatalf("prompts %q, creates %d", got, source.creates)
+	if raw, _ := os.ReadFile(record); strings.ReplaceAll(string(raw), "\r\n", "\n") != "scan scout\nreview judge\n" || source.creates != 1 {
+		t.Fatalf("prompts %q, creates %d", raw, source.creates)
 	}
 }

@@ -10,11 +10,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+
+	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 const setupTask = "Running workspace setup"
@@ -74,6 +76,7 @@ func TestSetupConfig(t *testing.T) {
 // Setup runs in the detached worktree with BUG_COMMIT at HEAD, and the untracked
 // and ignored prerequisites it creates are visible to discovery and review.
 func TestSetupPreparesWorktreeForAgents(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	e, s, f, a, source := fixture(t)
 	localGit(t, source, "switch", "main")
 	writeTestFile(t, filepath.Join(source, ".gitignore"), "deps/\n")
@@ -108,6 +111,7 @@ mkdir -p deps && echo installed > deps/tool && echo "$BUG_COMMIT" > .prepared`)
 // Setup runs once per attempt, not per startup retry or review batch, and again
 // when a later attempt resumes pending review.
 func TestSetupRunsOncePerAttempt(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	e, s, f, a, _ := fixture(t)
 	for i := range 25 {
 		f.items = append(f.items, Issue{Number: i + 1, Title: "Unrelated", Body: "Unrelated report", State: "open"})
@@ -144,6 +148,7 @@ func TestSetupRunsOncePerAttempt(t *testing.T) {
 // A failed setup consumes the attempt, keeps pending findings unpublished, and
 // waits the retry delay from when the failure completed.
 func TestSetupFailureConsumesAttempt(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	e, s, f, a, _ := fixture(t)
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	e.now = func() time.Time { return now }
@@ -190,6 +195,7 @@ func TestSetupFailureConsumesAttempt(t *testing.T) {
 
 // Timeout and cancellation kill the setup process tree and stop the attempt.
 func TestSetupTimeoutAndCancellation(t *testing.T) {
+	testplatform.SkipPOSIXFakes(t)
 	for _, mode := range []string{"timeout", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			e, s, _, a, _ := fixture(t)
@@ -231,9 +237,9 @@ func TestSetupTimeoutAndCancellation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for deadline := time.Now().Add(5 * time.Second); syscall.Kill(pid, 0) == nil; time.Sleep(10 * time.Millisecond) {
+			for deadline := time.Now().Add(5 * time.Second); osrun.Alive(pid); time.Sleep(10 * time.Millisecond) {
 				if time.Now().After(deadline) {
-					syscall.Kill(pid, syscall.SIGKILL)
+					_ = osrun.KillGroup(pid)
 					t.Fatal("setup child process survived")
 				}
 			}
@@ -243,6 +249,7 @@ func TestSetupTimeoutAndCancellation(t *testing.T) {
 
 // Setup may add prerequisites but not move HEAD or edit tracked source.
 func TestSetupSourceChangesRefused(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	for mode, script := range map[string]string{
 		"edit":   "echo generated > README.md",
 		"commit": "git -c user.name=Fixture -c user.email=fixture@example.com commit -q --allow-empty -m moved",
@@ -267,6 +274,7 @@ func TestSetupSourceChangesRefused(t *testing.T) {
 // Dry runs prepare the workspace; status, report, waiting polls and
 // reconciliation-only completion do not.
 func TestSetupExecutionPaths(t *testing.T) {
+	testplatform.RequirePOSIXShell(t)
 	t.Setenv("BUG_BOT_SETUP_SENTINEL", "sentinel-value")
 	e, s, f, _, _ := fixture(t)
 	runs := setupCounter(t, &e, `test -n "$BUG_BOT_SETUP_SENTINEL"`)

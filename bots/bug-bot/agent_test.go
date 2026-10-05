@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -261,7 +262,7 @@ func TestAgentProcessStartupFailure(t *testing.T) {
 	process.config.Agent.Command = []string{filepath.Join(t.TempDir(), "missing-agent")}
 	_, err := process.Execute(context.Background(), "investigate")
 	var setup *runner.SetupError
-	if !errors.As(err, &setup) || !errors.Is(err, os.ErrNotExist) {
+	if !errors.As(err, &setup) || (!errors.Is(err, os.ErrNotExist) && !errors.Is(err, exec.ErrNotFound)) {
 		t.Fatalf("startup error = %v", err)
 	}
 }

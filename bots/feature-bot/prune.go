@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/bots/feature-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/pathcmp"
 )
 
 // Prune previews completed scan workspaces older than olderThan; apply removes
@@ -101,7 +102,7 @@ func prune(ctx context.Context, cfg Config, age time.Duration, apply bool, out i
 	if err != nil {
 		return err
 	}
-	if root != cfg.Directory {
+	if !pathcmp.Same(root, cfg.Directory) {
 		return errors.New("directory must be the root of a managed clone")
 	}
 	remote, err := g.pruneGit(ctx, "remote", "get-url", "origin")
@@ -215,7 +216,7 @@ func (g checkout) pruneCheck(ctx context.Context, w CompletedWorkspace) (pruneAc
 				entry.locked = true
 			}
 		}
-		if entry.path == w.Directory {
+		if pathcmp.Same(entry.path, w.Directory) {
 			registered = &entry
 			break
 		}
@@ -270,14 +271,14 @@ func (g checkout) pruneCheck(ctx context.Context, w CompletedWorkspace) (pruneAc
 	if err != nil {
 		return 0, err
 	}
-	if strings.TrimSpace(string(back)) != filepath.Join(w.Directory, ".git") {
+	if !pathcmp.Same(strings.TrimSpace(string(back)), filepath.Join(w.Directory, ".git")) {
 		return 0, pruneSkip("worktree registration points to another directory")
 	}
 	root, err := work.pruneGit(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return 0, err
 	}
-	if root != w.Directory {
+	if !pathcmp.Same(root, w.Directory) {
 		return 0, pruneSkip("scan directory is not its worktree root")
 	}
 	if err := checkIndexFlags(ctx, work); err != nil {
@@ -326,7 +327,7 @@ func (g checkout) checkAdminIndex(ctx context.Context, common string, w Complete
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(string(back)) != filepath.Join(w.Directory, ".git") {
+		if !pathcmp.Same(strings.TrimSpace(string(back)), filepath.Join(w.Directory, ".git")) {
 			continue
 		}
 		if _, err := g.pruneGit(ctx, "--git-dir="+admin, "diff", "--no-ext-diff", "--ignore-submodules=none", "--cached", "--exit-code", w.Commit, "--"); err != nil {

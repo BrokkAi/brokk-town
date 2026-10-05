@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func localGit(t *testing.T, dir string, args ...string) string {
@@ -57,6 +59,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	testplatform.SkipPOSIXFakes(t)
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote.git")
 	source := filepath.Join(dir, "developer")

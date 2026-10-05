@@ -7,12 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 // A real gh subprocess fixture exercises endpoint parameters, complete pagination,
 // PR exclusion, closed-issue discussion, structured fields and response checks.
 func githubFixture(t *testing.T) githubClient {
 	t.Helper()
+	testplatform.SkipPOSIXFakes(t)
 	dir := canonicalTestDir(t)
 	script := `#!/usr/bin/env python3
 import json, os, sys

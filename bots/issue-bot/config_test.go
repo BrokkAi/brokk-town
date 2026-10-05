@@ -4,9 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func TestConfigPathsAndStrictJSON(t *testing.T) {
+	testplatform.RequireSymlinks(t)
 	path := filepath.Join(t.TempDir(), "bot.json")
 	for _, raw := range []string{`{"remote":"https://github.com/o/r.git","unknown":true}`, `{"remote":"https://github.com/o/r.git"} {}`, `{"remote":"https://github.com/o/r.git","poll":"0s"}`, `{"remote":"https://github.com/o/r.git","claim_timeout":"10s"}`, `{"remote":"https://github.com/o/r.git","directory":"x","state_directory":"x/sub"}`} {
 		writeTestFile(t, path, raw)

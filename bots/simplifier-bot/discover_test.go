@@ -7,7 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BrokkAi/brokk-town/bots/simplifier-bot/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/osrun"
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func discoveryDir(t *testing.T) string {
@@ -137,9 +138,7 @@ func TestDiscoveryFromCwdAndMissingRemote(t *testing.T) {
 func TestAgentFallbackHonorsExplicitCommands(t *testing.T) {
 	dir := discoveryDir(t)
 	t.Setenv("PATH", dir)
-	if err := os.WriteFile(filepath.Join(dir, "npx"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testplatform.WriteStubExecutable(t, dir, "npx")
 	cfg := DefaultConfig()
 	if err := ResolveAgent(&cfg, true); err != nil {
 		t.Fatal(err)
@@ -151,9 +150,7 @@ func TestAgentFallbackHonorsExplicitCommands(t *testing.T) {
 	if ResolveAgent(&cfg, false) == nil {
 		t.Fatal("explicit missing executable was replaced")
 	}
-	if err := os.WriteFile(filepath.Join(dir, "codex-acp"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testplatform.WriteStubExecutable(t, dir, "codex-acp")
 	cfg = DefaultConfig()
 	if err := ResolveAgent(&cfg, true); err != nil || cfg.Agent.Command[0] != "codex-acp" {
 		t.Fatalf("installed adapter not preferred: %v", err)

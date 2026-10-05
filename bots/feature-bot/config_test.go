@@ -5,9 +5,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func TestStrictConfigAndPaths(t *testing.T) {
+	testplatform.RequireSymlinks(t)
 	p := filepath.Join(canonicalTestDir(t), "config.json")
 	for _, raw := range []string{
 		`{"remote":"https://github.com/o/r.git","unknown":true}`,

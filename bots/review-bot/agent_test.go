@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func TestReviewWorkflowThroughRealACPSubprocesses(t *testing.T) {
@@ -42,7 +44,7 @@ for line in sys.stdin:
 	if err := os.WriteFile(script, []byte(source), 0600); err != nil {
 		t.Fatal(err)
 	}
-	e.config.Agent.Command = []string{"python3", script}
+	e.config.Agent.Command = []string{testplatform.Python(t), script}
 	e.agent = func(c Config) Agent { return agentProcess{c, e.log} }
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -58,7 +60,7 @@ for line in sys.stdin:
 	}
 	for _, session := range sessions {
 		info, err := session.Info()
-		if err != nil || info.Mode().Perm() != 0600 {
+		if err != nil || !testplatform.OwnerOnly(info.Mode()) {
 			t.Fatal("transcript permissions", err)
 		}
 	}

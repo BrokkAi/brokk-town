@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func TestConfiguration(t *testing.T) {
@@ -47,6 +49,7 @@ func TestConfiguration(t *testing.T) {
 	}
 }
 func TestSymlinkDirectoryOverlap(t *testing.T) {
+	testplatform.RequireSymlinks(t)
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "real"), 0700); err != nil {
 		t.Fatal(err)

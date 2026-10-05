@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/pathcmp"
 )
 
 func TestPrivateWorktreeLeavesOtherBotsAlone(t *testing.T) {
@@ -37,7 +39,7 @@ func TestPrivateWorktreeLeavesOtherBotsAlone(t *testing.T) {
 	if err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("expected linked worktree gitfile: %v %v", info, err)
 	}
-	if common := localGit(t, cfg.Directory, "rev-parse", "--path-format=absolute", "--git-common-dir"); common != g.repositoryDirectory() {
+	if common := localGit(t, cfg.Directory, "rev-parse", "--path-format=absolute", "--git-common-dir"); !pathcmp.Same(common, g.repositoryDirectory()) {
 		t.Fatalf("worktree does not own its Git storage: %s", common)
 	}
 	first, err := g.startBranch(ctx)

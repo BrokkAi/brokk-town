@@ -47,9 +47,10 @@ export PATH="$PWD/bin:$PATH"
 
 ### Without Go
 
-Every release also publishes prebuilt archives for Linux and macOS on amd64 and
-arm64 on the [releases page](https://github.com/BrokkAi/brokk-town/releases).
-Download the archive for your platform, unpack it, and put `bt` on your `PATH`:
+Every release also publishes prebuilt archives for Linux, macOS and Windows on
+amd64 and arm64 on the [releases page](https://github.com/BrokkAi/brokk-town/releases).
+Download the archive for your platform, unpack it, and put `bt` on your `PATH`.
+Linux and macOS ship as `.tar.gz`; Windows ships as `.zip`:
 
 ```sh
 tar -xzf brokk-town_v0.8.1_linux_amd64.tar.gz
@@ -179,8 +180,8 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
 The tag starts the `Release town` workflow, which runs
-[GoReleaser](https://goreleaser.com/) to build the archives for Linux and
-macOS, checksum them, and publish a GitHub release.
+[GoReleaser](https://goreleaser.com/) to build the archives for Linux, macOS
+and Windows, checksum them, and publish a GitHub release.
 
 ## License
 

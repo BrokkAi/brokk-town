@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/durable"
+	"github.com/BrokkAi/brokk-town/internal/filelock"
 )
 
 const stateFormat = 1
@@ -89,11 +91,11 @@ func lockFile(path string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := filelock.TryLock(f); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("another process holds %s: %w", path, err)
 	}
-	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
+	return func() { _ = filelock.Unlock(f); _ = f.Close() }, nil
 }
 
 // ReadState returns the durable repair state, or nil when this workspace has
@@ -190,5 +192,5 @@ func writeState(cfg Config, s *State) error {
 		os.Remove(name)
 		return err
 	}
-	return nil
+	return durable.SyncDir(cfg.StateDirectory)
 }

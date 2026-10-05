@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 // Exercise the actual gh argument construction and JSON pagination over a real
@@ -51,6 +53,7 @@ func TestGitHubPeer(t *testing.T) {
 	os.Exit(0)
 }
 func TestGitHubPaginationExcludesPullRequests(t *testing.T) {
+	testplatform.SkipPOSIXFakes(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +153,7 @@ func TestCoordinationPeer(t *testing.T) {
 }
 func coordinationClient(t *testing.T, mode string) githubClient {
 	t.Helper()
+	testplatform.SkipPOSIXFakes(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

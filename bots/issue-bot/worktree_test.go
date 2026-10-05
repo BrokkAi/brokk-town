@@ -2,6 +2,7 @@ package issuebot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/pathcmp"
 )
 
 func TestPrivateWorktreesLeaveSourceAndOtherIssuesAlone(t *testing.T) {
@@ -43,7 +46,7 @@ func TestPrivateWorktreesLeaveSourceAndOtherIssuesAlone(t *testing.T) {
 	if err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("management checkout is not a linked worktree: %v %v", info, err)
 	}
-	if common := localGit(t, cfg.Directory, "rev-parse", "--path-format=absolute", "--git-common-dir"); common != g.repositoryDirectory() {
+	if common := localGit(t, cfg.Directory, "rev-parse", "--path-format=absolute", "--git-common-dir"); !pathcmp.Same(common, g.repositoryDirectory()) {
 		t.Fatalf("Git storage is not private: %s", common)
 	}
 	if branch := localGit(t, cfg.Directory, "branch", "--show-current"); branch != "" {
@@ -149,7 +152,8 @@ func TestRetryPreservesEditsAndMergeConflictWhileBaseAdvances(t *testing.T) {
 	f.e.agent = func(cfg Config) Agent {
 		return scriptedAgent(func(ctx context.Context, prompt string) (Result, error) {
 			calls++
-			if !strings.Contains(prompt, cfg.Directory) || cfg.Directory == f.e.config.Directory {
+			workspace, _ := json.Marshal(cfg.Directory)
+			if !strings.Contains(prompt, string(workspace[1:len(workspace)-1])) || cfg.Directory == f.e.config.Directory {
 				t.Fatal("agent context did not identify its issue worktree")
 			}
 			if calls == 1 {

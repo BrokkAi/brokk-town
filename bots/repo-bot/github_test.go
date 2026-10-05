@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 // fakeGitHub puts a `gh` on PATH that answers the endpoint it is given from a
@@ -16,6 +18,7 @@ import (
 // test can never pass on a request nobody meant to answer.
 func fakeGitHub(t *testing.T, answers map[string]string) func() []string {
 	t.Helper()
+	testplatform.SkipPOSIXFakes(t)
 	dir, err := os.MkdirTemp("", "brp-gh-")
 	if err != nil {
 		t.Fatal(err)
