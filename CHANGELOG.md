@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update acp-go to 0.12.0. Agent-side ACP paths now accept either platform's
+  absolute form, so managed Mjolnir dispatch works from a Windows Town.
 - Run `bt` on Windows again. The eight bots now share Town's portable process
   runner, file locking and durable writes, and Git path checks accept Windows
   separators. Releases publish Windows zip archives for amd64 and arm64, and CI
