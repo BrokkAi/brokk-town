@@ -134,6 +134,11 @@ func Discover(ctx context.Context, target, branch string) (Config, error) {
 }
 
 func isRemoteURL(value string) bool {
+	// A Windows drive path ("C:\repo" or "C:/repo") parses as a URL with a
+	// one-letter scheme, but it names a local repository.
+	if len(value) >= 2 && value[1] == ':' && ('a' <= value[0] && value[0] <= 'z' || 'A' <= value[0] && value[0] <= 'Z') {
+		return false
+	}
 	if u, err := url.Parse(value); err == nil && u.Scheme != "" {
 		return true
 	}
