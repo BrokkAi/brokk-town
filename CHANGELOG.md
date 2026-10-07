@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — 2026-10-07
 
 - Fix the Windows test failures that kept the default branch red: ACP fixture
   agents no longer hold the transport open while the runner tears it down, the
