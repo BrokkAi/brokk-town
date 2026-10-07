@@ -50,7 +50,7 @@ func runSimulatedACP(t *testing.T, ctx context.Context, dir, script string, agen
 	}
 	record := filepath.Join(dir, "calls.jsonl")
 	agent.Command = []string{exe, "-test.run=^TestACPAgentHelper$"}
-	agent.Environment = map[string]string{"BROKK_ACP_HELPER": script, "BROKK_ACP_RECORD": record}
+	agent.Environment = map[string]string{"SLOPCOP_ACP_HELPER": script, "SLOPCOP_ACP_RECORD": record}
 	town := &Town{ID: "acme/orchard", Config: Config{Agent: agent}}
 	tree := sessionTree{dir: workspace, repository: filepath.Join(state, "repository.git")}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -207,14 +207,14 @@ func TestChoicesMatchTheSelectorsARunUses(t *testing.T) {
 	}
 }
 
-// TestACPAgentHelper speaks ACP over stdio when BROKK_ACP_HELPER names a
+// TestACPAgentHelper speaks ACP over stdio when SLOPCOP_ACP_HELPER names a
 // script. It records every request it receives, before answering it.
 func TestACPAgentHelper(t *testing.T) {
-	script := os.Getenv("BROKK_ACP_HELPER")
+	script := os.Getenv("SLOPCOP_ACP_HELPER")
 	if script == "" {
 		return
 	}
-	record, err := os.OpenFile(os.Getenv("BROKK_ACP_RECORD"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	record, err := os.OpenFile(os.Getenv("SLOPCOP_ACP_RECORD"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		os.Exit(3)
 	}

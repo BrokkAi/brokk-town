@@ -44,7 +44,7 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 	if err != nil {
 		return err
 	}
-	report(Progress{Phase: "starting", Task: "Loading recorded bulletins"})
+	report(Progress{Phase: "starting", Task: "Loading the recorded blotter"})
 	// covered is where this process's last window left off when that window
 	// recorded no bulletin: an empty window ends at its Until, a failed one
 	// still owes everything from its Since.
@@ -55,7 +55,7 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 			mu.Lock()
 			wake = since.Add(time.Duration(cfg.Poll))
 			mu.Unlock()
-			report(Progress{Phase: "waiting", Task: "Next bulletin"})
+			report(Progress{Phase: "waiting", Task: "Next blotter entry"})
 			if err := pause(ctx, wait); err != nil {
 				return err
 			}
@@ -79,7 +79,7 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 				return err
 			}
 			if err != nil {
-				log.Error("Bulletin paused", "error", err)
+				log.Error("Blotter paused", "error", err)
 				mu.Lock()
 				wake = time.Now().Add(time.Duration(cfg.Poll))
 				mu.Unlock()
@@ -90,7 +90,7 @@ func Watch(ctx context.Context, cfg Config, log *slog.Logger, once bool) error {
 				mu.Lock()
 				wake = time.Now().Add(time.Duration(cfg.Poll))
 				mu.Unlock()
-				report(Progress{Phase: "waiting", Task: "Next bulletin"})
+				report(Progress{Phase: "waiting", Task: "Next blotter entry"})
 			}
 			if err := pause(ctx, time.Duration(cfg.Poll)); err != nil {
 				return err

@@ -1,25 +1,26 @@
-# Brokk Repo Bot
+# Repo Bot
 
-Observe a repository, and keep the branch Town covers healthy.
+Observe a repository, and keep the branch the precinct covers healthy.
 
 `repo-bot` is a Go package of the
-[Brokk Town](https://github.com/BrokkAi/brokk-town) module. Town runs it in
-process as the **repo watchtower** house, so there is no standalone binary,
-server or release tag to install. See [../../docs/bots.md](../../docs/bots.md).
+[SlopCop Squad](https://github.com/BrokkAi/brokk-town) module. Repo Bot staffs the
+**Patrol** unit (role key `repo`), and the Squad runs it in process, so there is
+no standalone binary, server or release tag to install. See
+[../../docs/bots.md](../../docs/bots.md).
 
 ## What it does
 
 One run has two duties.
 
-**inventory** — a complete observation of the repository: the branch this town
-covers, its exact head, every issue, pull request and release, the commits the
-branch gained since Town last looked, and proof of which commits a published
-release already contains. Town applies that inventory to its own task graph;
-this bot never interprets Town state.
+**inventory** — a complete observation of the repository: the branch this
+precinct covers, its exact head, every issue, pull request and release, the
+commits the branch gained since the Squad last looked, and proof of which
+commits a published release already contains. The Squad applies that inventory
+to its own task graph; this bot never interprets the Squad's state.
 
-A partial inventory is never reported as a whole one. A paginated read that cannot
-be completed is an error, because Town would otherwise treat what is missing as
-deleted.
+A partial inventory is never reported as a whole one. A paginated read that
+cannot be completed is an error, because the Squad would otherwise treat what is
+missing as deleted.
 
 **branch health** — read the checks GitHub reports on the branch head and, when
 they are failing, repair the branch with one agent attempt and publish the fix.
@@ -44,13 +45,13 @@ weakened or deleted to reach green. Publishing is the bot's own step; the agent
 does not commit, push, or touch Git history.
 
 The bot pushes the repair directly to the branch it covers. Where that branch is
-protected, configure the branch's rules and Town's merge policy accordingly; this
-bot does not open a pull request instead.
+protected, configure the branch's rules and the precinct's merge policy
+accordingly; this bot does not open a pull request instead.
 
 ## Configuration
 
-Town fills this configuration from the town's agent profile and the repo house's
-policy. The package's own fields are:
+The Squad fills this configuration from the precinct's agent profile and the
+Patrol unit's policy. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |
@@ -63,10 +64,10 @@ policy. The package's own fields are:
 | `verify` | Operator command that must pass before a repair is published. |
 | `dry_run` | Commit a repair locally without publishing it. |
 
-Town's policy mapping is `limit` → `max_repairs` and `verify`. Defaults: a 1-hour
-attempt budget, observation every 15 minutes, and at most 3 repair attempts per
-revision. Repo Bot holds an agent slot only while repairing; inventory runs
-without one.
+The Squad's policy mapping is `limit` → `max_repairs` and `verify`. Defaults:
+a 1-hour attempt budget, observation every 15 minutes, and at most 3 repair
+attempts per revision. Repo Bot holds an agent slot only while repairing;
+inventory runs without one.
 
 ## Development
 

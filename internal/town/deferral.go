@@ -129,7 +129,7 @@ func (s *Supervisor) Defer(id, taskID string, until time.Time, reason string) er
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		return st.deferTask(t, t.Tasks[taskID], until, reason, s.now())
 	})

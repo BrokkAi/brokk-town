@@ -113,7 +113,7 @@ func TestAddRepoRestoreOverlaysOnlySuppliedSettings(t *testing.T) {
 	if got := s.Snapshot().Towns[x.ID].Config; got.MergePolicy != "all" || got.Budget == nil || len(got.Funnels) != 1 {
 		t.Fatal("merge policy restore", got.MergePolicy, got.Budget, got.Funnels)
 	}
-	if _, err := sup.AddRepo(x.ID, "", AgentSettings{}); err == nil || err.Error() != "town already exists" {
+	if _, err := sup.AddRepo(x.ID, "", AgentSettings{}); err == nil || err.Error() != "precinct already exists" {
 		t.Fatal("added a live town again", err)
 	}
 }
@@ -126,7 +126,7 @@ func TestDeleteOfDeletedTownIsUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	events := len(s.Snapshot().Events)
-	if err := sup.Delete(x.ID); err == nil || err.Error() != "unknown town" {
+	if err := sup.Delete(x.ID); err == nil || err.Error() != "unknown precinct" {
 		t.Fatal("deleted a deleted town", err)
 	}
 	if err := sup.Control(x.ID, "all", "delete", ""); err == nil {

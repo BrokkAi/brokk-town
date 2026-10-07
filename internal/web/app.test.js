@@ -194,10 +194,6 @@ function installFixture() {
     const opening = html.slice(html.lastIndexOf("<", at), html.indexOf(">", at) + 1);
     element.tagName = opening.match(/^<([a-z]+)/i)?.[1]?.toUpperCase() || "DIV";
     element.className = opening.match(/class="([^"]*)"/)?.[1] || "";
-    // A themed label carries the key its string is swapped by; the fixture
-    // keeps it so a skin test can assert on what the page actually shows.
-    const skinKey = opening.match(/data-skin-text="([^"]+)"/)?.[1];
-    if (skinKey) element.dataset.skinText = skinKey;
     elements[id] = element;
   }
   // The inspector heading spans a line break in the source HTML; retain it as
@@ -225,7 +221,7 @@ function installFixture() {
       if (existing) return existing;
       return Object.values(elements).map((element) => element.querySelector(selector)).find(Boolean) || null;
     }
-    if (selector === ".world") return elements.world;
+    if (selector === ".precinct") return (elements.precinct ||= new Element("section", "precinct"));
     if (selector === ".activity") return elements.journal?.parent || elements.activity || (elements.journal && (elements.journal.parent = new Element("section", "activity")));
     if (selector === ".town-controls") return elements["town-toggle"]?.parent || elements["town-toggle"];
     return Object.values(elements).find((element) => element.matches(selector)) || Object.values(elements).map((element) => element.querySelector(selector)).find(Boolean) || null;
@@ -330,14 +326,14 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   };
   await import(`./app.js?dom-test=${Date.now()}`);
   for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(elements["capacity-summary"].textContent, "1/4 workers");
+  assert.equal(elements["capacity-summary"].textContent, "1/4 on duty");
   assert.equal(elements["town-version"].textContent, "v0.1.2");
-  assert.equal(elements["help-version"].textContent, "Brokk Town v0.1.2");
+  assert.equal(elements["help-version"].textContent, "SlopCop Squad v0.1.2");
 
   const views = document.querySelectorAll("#view-switcher [data-view]");
   views.find((button) => button.dataset.view === "board").onclick();
   assert.equal(elements.board.hidden, false);
-  assert.equal(elements.world.hidden, true);
+  assert.equal(elements.precinct.hidden, true);
   assert.equal(elements.compact.hidden, true);
   const boardLists = elements.board.querySelectorAll("[data-board-list]");
   assert.equal(boardLists.length, 6, "board exposes each populated column as its own list");
@@ -374,42 +370,42 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   views.find((button) => button.dataset.view === "compact").onclick();
   assert.equal(elements.compact.hidden, false);
   assert.equal(elements.board.hidden, true);
-  document.dispatchEvent({ type: "keydown", key: "t", target: new Element("div") });
-  assert.equal(elements.world.hidden, true, "Town view preserves all-town overview until a town is selected");
+  document.dispatchEvent({ type: "keydown", key: "p", target: new Element("div") });
+  assert.equal(elements.precinct.hidden, true, "Precinct view preserves all-town overview until a town is selected");
   document.dispatchEvent({ type: "keydown", key: "b", target: new Element("div") });
   assert.equal(elements.board.hidden, false, "keyboard shortcut opens Board");
   document.dispatchEvent({ type: "keydown", key: "c", target: new Element("div") });
   assert.equal(elements.compact.hidden, false, "keyboard shortcut opens Compact");
 
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  assert.equal(elements["town-state"].hidden, false, "header shows the town's wake state");
-  assert.equal(elements["town-state"].textContent, "Awake · 4 agents");
-  assert.equal(elements["town-toggle"].textContent, "Ⅱ Pause the town", "toggle offers the action that changes state");
+  assert.equal(elements["town-state"].hidden, false, "header shows the town's duty state");
+  assert.equal(elements["town-state"].textContent, "On patrol · 4 units");
+  assert.equal(elements["town-toggle"].textContent, "Ⅱ Stand down", "toggle offers the action that changes state");
   assert.equal(elements["town-toggle"].classList.contains("primary"), false);
-  assert.equal(elements["pause-all"].hidden, true, "no separate pause-all when every agent is awake");
-  const houseLabel = (role) =>
-    elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === role).textContent;
-  assert.match(houseLabel("review"), /claude/, "the village names each house's harness");
-  assert.match(houseLabel("review"), /claude-opus-5/, "the village names each house's model");
-  assert.match(houseLabel("review"), /high/, "the village names each house's effort");
-  assert.match(houseLabel("issue"), /codex/, "a house inheriting town defaults still shows them");
-  assert.match(houseLabel("issue"), /medium/, "a house inheriting town defaults still shows its effort");
-  assert.match(houseLabel("repo"), /repo-repair-model/, "the watchtower names its repair profile");
-  assert.match(houseLabel("simplifier"), /SIMPLIFIER/, "a house painted from its own sprite still gets a label");
-  assert.match(houseLabel("simplifier"), /codex/, "the clarifier names the harness it inherits");
+  assert.equal(elements["pause-all"].hidden, true, "no separate stand-down when every unit is deployed");
+  const unitCard = (role) =>
+    elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === role).textContent;
+  assert.match(unitCard("review"), /claude/, "the roster names each unit's harness");
+  assert.match(unitCard("review"), /claude-opus-5/, "the roster names each unit's model");
+  assert.match(unitCard("review"), /high/, "the roster names each unit's effort");
+  assert.match(unitCard("issue"), /codex/, "a unit inheriting town defaults still shows them");
+  assert.match(unitCard("issue"), /medium/, "a unit inheriting town defaults still shows its effort");
+  assert.match(unitCard("repo"), /repo-repair-model/, "Patrol names its repair profile");
+  assert.match(unitCard("simplifier"), /MAG.*Magistrate.*Simplifier Bot/s, "a unit reads as callsign, name and the bot staffing it");
+  assert.match(unitCard("simplifier"), /codex/, "the Magistrate names the harness it inherits");
   assert.ok(
-    elements.houses.innerHTML.includes('class="profile own"'),
-    "a house with its own profile is distinguished from an inheriting one",
+    elements.roster.innerHTML.includes('class="profile own"'),
+    "a unit with its own profile is distinguished from an inheriting one",
   );
-  assert.ok(elements.houses.innerHTML.includes('class="profile inherited'), "inherited profiles are marked as inherited");
-  document.dispatchEvent({ type: "keydown", key: "8", target: new Element("div") });
-  assert.match(elements.inspection.textContent, /THE CLARIFIER/, "the eighth shortcut visits Simplifier Bot");
-  document.dispatchEvent({ type: "keydown", key: "t", target: new Element("div") });
-  assert.equal(elements.houses.innerHTML.includes("workload-counts"), false, "houses use the compact count line");
-  assert.match(houseLabel("simplifier"), /0 \/ 1 \/ 1/);
-  assert.match(elements.houses.innerHTML, /class="house-counts" title="0 active · 1 waiting · 1 blocked"/);
-  assert.match(houseLabel("hall"), /1 to decide/);
-  assert.match(elements.board.textContent, /simplifier · waiting.*0 active.*1 waiting.*1 blocked/s);
+  assert.ok(elements.roster.innerHTML.includes('class="profile inherited'), "inherited profiles are marked as inherited");
+  document.dispatchEvent({ type: "keydown", key: "7", target: new Element("div") });
+  assert.match(elements.inspection.textContent, /LAB · Examines the evidence/, "the seventh shortcut opens Forensics, seventh on the roster");
+  document.dispatchEvent({ type: "keydown", key: "4", target: new Element("div") });
+  assert.match(elements.inspection.textContent, /MAG · Arraignment/, "the fourth shortcut opens the Magistrate");
+  document.dispatchEvent({ type: "keydown", key: "p", target: new Element("div") });
+  assert.match(unitCard("simplifier"), /0 active.*1 waiting.*1 blocked/s, "each unit shows its caseload");
+  assert.match(unitCard("hall"), /1 awaiting ruling/, "the Probation Judge counts what waits on a ruling");
+  assert.match(elements.board.textContent, /MAG Magistrate · standing by.*0 active.*1 waiting.*1 blocked/s);
   assert.match(elements.inspection.textContent, /1 issue · 1 pull request · 1 blocked/);
   const intakeScroll = elements.inspection.querySelector(".house-task-queue");
   intakeScroll.scrollTop = 127;
@@ -422,20 +418,20 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.ok(elements.inspection.querySelectorAll("[data-task]").some((button) => button.dataset.task === "issue:144"), "backlog beyond forty items remains accessible");
 
   assert.ok(elements.inspection.innerHTML.indexOf('data-task="issue:70"') < elements.inspection.innerHTML.indexOf('class="agent-card"'), "intake is visible before agent configuration");
-  assert.match(elements.board.textContent, /Simplifier queue/);
-  assert.match(elements.board.textContent, /Awaiting Simplifier/);
+  assert.match(elements.board.textContent, /Arraignment/);
+  assert.match(elements.board.textContent, /At arraignment/);
 
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
-  assert.match(elements.inspection.textContent, /Authority:.*create pull requests/, "house controls explain their write authority");
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  assert.match(elements.inspection.textContent, /Jurisdiction:.*create pull requests/, "unit controls explain their write authority");
   assert.match(elements.inspection.textContent, /Harness.*codex-acp/s, "the inspector spells the harness out in full");
   assert.match(elements.inspection.textContent, /Effort.*medium/s, "the inspector spells the effort out in full");
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "repo").onclick();
-  assert.match(elements.inspection.textContent, /Configure agent/, "the watchtower exposes its repair profile");
-  assert.match(elements.inspection.textContent, /Inventory runs without an agent/, "the watchtower explains when its profile is used");
-  // Arriving from another house, so the clarifier's own label is what opens it.
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "simplifier").onclick();
-  assert.match(elements.inspection.textContent, /Authority:.*file simplification issues/, "the clarifier's label opens the clarifier");
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "repo").onclick();
+  assert.match(elements.inspection.textContent, /Configure agent/, "Patrol exposes its repair profile");
+  assert.match(elements.inspection.textContent, /Inventory runs without an agent/, "Patrol explains when its profile is used");
+  // Arriving from another unit, so the Magistrate's own tag is what opens it.
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "simplifier").onclick();
+  assert.match(elements.inspection.textContent, /Jurisdiction:.*file simplification issues/, "the Magistrate's tag opens the Magistrate");
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-outcome-days]").find((button) => button.dataset.outcomeDays === "0").onclick();
   await elements.inspection.querySelectorAll("[data-export-outcomes]")[0].onclick();
   const outcomeExport = requests.find((request) => request.url.startsWith("/api/outcomes"));
@@ -443,42 +439,42 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(createdLinks.at(-1).download, "acme-project-outcomes-all.csv");
   await elements["town-toggle"].onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"all"')), true);
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   const decision = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3");
-  assert.ok(decision, "Town Hall shows work awaiting the Mayor");
+  assert.ok(decision, "the Probation Judge shows cases awaiting a ruling");
   decision.onclick();
-  assert.match(decision.textContent, /issue #3/, "Town Hall card carries the source number");
+  assert.match(decision.textContent, /issue #3/, "the Probation Judge's card carries the source number");
   assert.match(elements.inspection.textContent, /Issue #3/);
-  assert.match(elements.inspection.textContent, /Issue Bot/, "decision names its destination");
-  assert.match(elements.inspection.textContent, /Simplifier Bot · suggest mode · decline/);
+  assert.match(elements.inspection.textContent, /Caseworker/, "the ruling names where the case goes");
+  assert.match(elements.inspection.textContent, /Magistrate · suggest mode · to the tank/);
   assert.match(elements.inspection.textContent, /second registry for one caller/);
-  assert.match(elements.inspection.textContent, /Demo town/, "demo explains why no live body follows");
+  assert.match(elements.inspection.textContent, /Training exercise/, "the training exercise explains why no live body follows");
   assert.equal(requests.some((request) => request.url === "/api/task-detail"), false, "demo never fetches live details");
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"')), true);
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   const declined = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "pr:4");
-  assert.ok(declined, "Town Hall lists work Simplifier declined");
+  assert.ok(declined, "the Probation Judge lists cases the Magistrate sent to the tank");
   declined.onclick();
-  assert.match(elements.inspection.textContent, /Simplifier declined this/, "the overrule explains itself");
+  assert.match(elements.inspection.textContent, /The Magistrate sent this to the Slop Tank/, "the overrule explains itself");
   globalThis.confirm = () => false;
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"task":"pr:4"')), false, "refusing the confirmation sends nothing");
-  globalThis.confirm = (message) => { assert.match(message, /over Simplifier's decline/); return true; };
+  globalThis.confirm = (message) => { assert.match(message, /probation over the Magistrate's ruling/); return true; };
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   globalThis.confirm = () => true;
-  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"') && request.options.body.includes('"task":"pr:4"')), true, "admitting anyway uses the Mayoral decision command");
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
-  assert.match(elements.inspection.textContent, /Mayor Bot waiting/, "Town Hall shows Mayor Bot's status");
-  assert.match(elements.inspection.textContent, /What changed/, "Town Hall carries the bulletin feed");
-  assert.match(elements.inspection.textContent, /Exports you can trust/, "the latest bulletin title is shown");
-  assert.match(elements.inspection.textContent, /Download reports as CSV/, "bulletin items are listed");
-  assert.match(elements.inspection.textContent, /PR #14/, "bulletin items cite their pull requests");
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"') && request.options.body.includes('"task":"pr:4"')), true, "probation anyway uses the ruling command");
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  assert.match(elements.inspection.textContent, /Judge Bot standing by/, "the Probation Judge shows Judge Bot's status");
+  assert.match(elements.inspection.textContent, /The blotter/, "the Probation Judge keeps the blotter");
+  assert.match(elements.inspection.textContent, /Exports you can trust/, "the latest blotter entry is shown");
+  assert.match(elements.inspection.textContent, /Download reports as CSV/, "blotter items are listed");
+  assert.match(elements.inspection.textContent, /PR #14/, "blotter items cite their pull requests");
   const pauseMayor = elements.inspection.querySelectorAll("button").find((button) => button.dataset.action === "pause");
-  assert.ok(pauseMayor, "Town Hall offers to pause Mayor Bot");
+  assert.ok(pauseMayor, "the Probation Judge offers to stand Judge Bot down");
   await pauseMayor.onclick();
-  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"hall"')), true, "pausing Mayor Bot is a house control");
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"hall"')), true, "standing Judge Bot down is a unit control");
 
   elements["capacity-settings"].onclick();
   assert.equal(elements["capacity-dialog"].open, true);
@@ -514,7 +510,7 @@ async function openMayoralDecision(taskDetail) {
   await import(`./app.js?live-detail=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   return { elements, requests };
@@ -536,7 +532,7 @@ test("mayoral inspection loads live GitHub details on open", async () => {
   assert.match(elements.inspection.textContent, /octo/);
   assert.match(elements.inspection.textContent, /4 comments/);
   assert.match(elements.inspection.textContent, /Issue #3/);
-  assert.match(elements.inspection.textContent, /Issue Bot/);
+  assert.match(elements.inspection.textContent, /Caseworker/);
 });
 
 test("mayoral inspection stays decidable when live details fail", async () => {
@@ -546,7 +542,7 @@ test("mayoral inspection stays decidable when live details fail", async () => {
   assert.ok(requests.some((request) => request.url === "/api/task-detail"));
   assert.match(elements.inspection.textContent, /Live details unavailable/);
   assert.match(elements.inspection.textContent, /gh exploded/);
-  assert.match(elements.inspection.textContent, /Admit to town/, "the decision stays available");
+  assert.match(elements.inspection.textContent, /Grant probation/, "the ruling stays available");
 });
 
 test("an open decision keeps its markup across snapshots and puts the decision above the body", async () => {
@@ -581,7 +577,7 @@ test("an open decision keeps its markup across snapshots and puts the decision a
   await import(`./app.js?inspection-stability=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
 
@@ -602,7 +598,7 @@ test("an open decision keeps its markup across snapshots and puts the decision a
   assert.match(elements.inspection.textContent, /A long body the Mayor reads/);
 });
 
-test("the inbox lists every town's decisions, opens the right Town Hall, and decides in place", async () => {
+test("the inbox lists every precinct's rulings, opens the right court, and rules in place", async () => {
   const elements = installFixture();
   const requests = [];
   const other = {
@@ -633,12 +629,12 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
 
   assert.equal(elements["inbox-count"].textContent, "3", "header badge counts decisions and stuck work across towns");
   assert.equal(elements["inbox-count"].hidden, false);
-  assert.ok(elements["inbox-count"].classList.contains("decisions"), "badge highlights pending Mayoral decisions");
-  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /2 awaiting your decision · 1 need attention/);
+  assert.ok(elements["inbox-count"].classList.contains("decisions"), "badge highlights pending rulings");
+  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /2 awaiting your ruling · 1 stuck/);
   const betaLink = elements.towns.querySelectorAll("[data-town]").find((button) => button.dataset.town === "beta/tools");
-  assert.match(betaLink.textContent, /1 to decide/, "sidebar shows each town's pending decisions");
-  assert.match(betaLink.textContent, /1 attention/, "sidebar shows each town's stuck work");
-  assert.match(elements.overview.textContent, /to decide/, "overview cards show decisions waiting");
+  assert.match(betaLink.textContent, /1 to rule on/, "sidebar shows each town's pending rulings");
+  assert.match(betaLink.textContent, /1 stuck/, "sidebar shows each town's stuck cases");
+  assert.match(elements.overview.textContent, /awaiting ruling/, "overview cards show rulings waiting");
 
   document.dispatchEvent({ type: "keydown", key: "i", target: new Element("div") });
   assert.equal(elements["inbox-dialog"].open, true, "keyboard shortcut opens the inbox");
@@ -646,10 +642,12 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   assert.deepEqual(
     opens.map((button) => [button.dataset.inboxTown, button.dataset.inboxHouse, button.dataset.inboxTask]),
     [["acme/project", "hall", "issue:3"], ["beta/tools", "hall", "pr:12"], ["beta/tools", "review", ""]],
-    "decisions from every town lead (an unknown age counts as the longest wait), then stuck work names the house to inspect",
+    "rulings from every town lead (an unknown age counts as the longest wait), then stuck work names the unit to inspect",
   );
-  assert.match(elements["inbox-list"].textContent, /outside arrival/);
-  assert.match(elements["inbox-list"].textContent, /Review Bot/);
+  assert.match(elements["inbox-list"].textContent, /civilian report/);
+  assert.match(elements["inbox-list"].textContent, /Forensics/);
+  assert.match(elements["inbox-list"].textContent, /Open in court/);
+  assert.match(elements["inbox-list"].textContent, /Send to the tank/);
   assert.match(elements["inbox-list"].textContent, /gh exploded/, "failed workers carry their error");
 
   opens[1].onclick();
@@ -659,14 +657,14 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   assert.equal(elements["inspector-town"].textContent, "beta/tools", "the inspector switches to the item's town");
   assert.match(elements.inspection.textContent, /Contributor PR for beta/);
   assert.match(elements.inspection.textContent, /PR #12/);
-  assert.ok(elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task"), "the decision is right there");
+  assert.ok(elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task"), "the ruling is right there");
 
   elements["inbox-toggle"].onclick();
   const decline = elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxTask === "issue:3" && button.dataset.inboxDecide === "decline");
-  assert.ok(decline, "decisions can be made from the inbox");
+  assert.ok(decline, "rulings can be made from the inbox");
   await decline.onclick();
   const control = requests.find((request) => request.url === "/api/control" && request.options.body.includes('"action":"decline"'));
-  assert.ok(control, "declining from the inbox sends the control command");
+  assert.ok(control, "dismissing from the inbox sends the decline control command");
   assert.deepEqual(JSON.parse(control.options.body), { town: "acme/project", role: "hall", action: "decline", task: "issue:3" }, "the command targets the item's own town, not the selected one");
   assert.equal(elements["inbox-error"].textContent, "");
 
@@ -680,7 +678,7 @@ test("the inbox lists every town's decisions, opens the right Town Hall, and dec
   const configure = elements["inbox-list"].querySelectorAll("[data-inbox-configure]")[0];
   configure.onclick();
   assert.equal(elements["settings-dialog"].open, true);
-  assert.equal(elements["agent-role"].value, "feature", "opens the failed bot's agent settings");
+  assert.equal(elements["agent-role"].value, "feature", "opens the failed unit's agent settings");
   assert.equal(elements["inspector-town"].textContent, "beta/tools");
   elements["settings-dialog"].close();
   elements["inbox-toggle"].onclick();
@@ -717,7 +715,7 @@ test("reopening a Mayoral card refreshes live details and retries failures", asy
     }) };
   });
   assert.match(elements.inspection.textContent, /Live details unavailable/);
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.filter((request) => request.url === "/api/task-detail").length, 2);
@@ -735,10 +733,10 @@ test("responsive and reduced-motion contracts remain shipped in the stylesheet",
   // Effort is an ordinal, so each level has to be distinguishable at a glance.
   for (const rank of ["default", "low", "medium", "high", "max", "custom"])
     assert.match(css, new RegExp(`\\.profile-chip\\.rank-${rank}\\s*\\{`), `effort rank ${rank} has no shade`);
-  assert.match(css, /\.profile\.own\s+\.profile-chip/, "a profile set for one house is marked apart from an inherited one");
+  assert.match(css, /\.profile\.own\s+\.profile-chip/, "a profile set for one unit is marked apart from an inherited one");
 });
 
-// openTownHall renders one snapshot and opens the Town Hall inspector. The
+// openTownHall renders one snapshot and opens the Courthouse file. The
 // client keeps its own copy of a delivered snapshot, so a test that needs
 // different town state installs a fresh fixture rather than mutating this one.
 async function openTownHall(budget, adjust) {
@@ -763,7 +761,7 @@ async function openTownHallPanel(budget, adjust = () => {}) {
   await import(`./app.js?budget=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   return elements.inspection;
 }
 
@@ -777,7 +775,7 @@ test("an exhausted agent budget explains itself and never renders absent telemet
     advice: "Town cannot cap token or dollar spend: no bundled agent harness reports usage back to Town.",
     usage: null, cost_usd: null,
   });
-  assert.match(text, /Agent budget/, "Town Hall shows the budget");
+  assert.match(text, /Agent budget/, "the Courthouse shows the budget");
   assert.match(text, /12 of 12 agent attempts/, "the ceiling is shown against the spend");
   assert.match(text, /5 agent minutes/, "measured agent time is shown in minutes");
   assert.match(text, /2 attempts reported no elapsed time/, "unmeasured attempts are called out");
@@ -795,27 +793,27 @@ test("a town with no budget still reports the agent spend it measured", async ()
     advice: "Town cannot cap token or dollar spend.", usage: null, cost_usd: null,
   });
   assert.match(text, /3 agent attempts/, "spend is reported without a budget");
-  assert.match(text, /No budget set for this town/, "an absent budget is stated plainly");
+  assert.match(text, /No budget set for this precinct/, "an absent budget is stated plainly");
   assert.doesNotMatch(text, /New agent work resumes/, "an unlimited town is not described as held");
 });
 
-test("Town Hall shows quiet hours as a scheduled pause, with Mayor Bot's quiet dot", async () => {
+test("the Courthouse shows quiet hours as a scheduled pause, with Judge Bot's quiet dot", async () => {
   const panel = await openTownHallPanel(null, (town) => {
     town.quiet_hours = { source: "service", active: true, until: "2026-09-22T08:00:00Z", windows: [], reason: "" };
     town.workers.hall = { ...(town.workers.hall || {}), role: "hall", enabled: true, status: "quiet" };
   });
-  assert.match(panel.innerHTML, /<h2>Quiet hours<\/h2><p class="quiet-held">/, "Town Hall explains the hold");
+  assert.match(panel.innerHTML, /<h2>Quiet hours<\/h2><p class="quiet-held">/, "the Courthouse explains the hold");
   assert.match(panel.textContent, /Quiet hours until .*service default.*running work finishes/);
-  assert.match(panel.innerHTML, /dot quiet"><\/i>Mayor Bot quiet hours/, "Mayor Bot's dot and status read as quiet");
+  assert.match(panel.innerHTML, /dot quiet"><\/i>Judge Bot quiet hours/, "Judge Bot's dot and status read as quiet");
 });
 
-test("the world legend explains the quiet dot, and the quiet windows input is labelled", () => {
+test("the roster legend explains the quiet dot, and the quiet windows input is labelled", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
-  assert.match(html, /<i class="dot quiet"><\/i\s*><span id="legend-quiet" data-skin-text="legend-quiet"/);
+  assert.match(html, /<i class="dot quiet"><\/i><span id="legend-quiet">Quiet hours<\/span>/);
   assert.match(html, /id="settings-quiet-hours"[^>]*aria-label="[^"]+"/, "the town's quiet windows input is labelled");
 });
 
-test("a house shows its work policy and marks the inventory that policy holds back", async () => {
+test("a unit shows its work policy and marks the inventory that policy holds back", async () => {
   const elements = installFixture();
   const live = structuredClone(state);
   live.seq = 1;
@@ -838,41 +836,33 @@ test("a house shows its work policy and marks the inventory that policy holds ba
   await import(`./app.js?policy=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   const text = elements.inspection.textContent;
-  assert.match(text, /WORK POLICY/, "the house states its policy");
+  assert.match(text, /WORK POLICY/, "the unit states its policy");
   assert.match(text, /Takes work labelled agent-ready/, "the policy is spelled out");
   assert.match(text, /1 inventory item is held back/, "the held-back count is reported");
   const held = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:2");
   assert.ok(held, "filtered work stays listed rather than vanishing");
-  assert.match(held.textContent, /held by this house/, "filtered work says why it is not eligible");
+  assert.match(held.textContent, /held by this unit/, "filtered work says why it is not eligible");
   assert.equal(held.className.includes("filtered"), true, "filtered work is marked apart");
   const eligible = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5");
   assert.ok(eligible, "eligible work is still queued");
-  assert.doesNotMatch(eligible.textContent, /held by this house/, "eligible work is not marked as filtered");
+  assert.doesNotMatch(eligible.textContent, /held by this unit/, "eligible work is not marked as filtered");
 });
 
-// The Frontline skin is a theme: it repaints labels and the map, keeps a
-// per-browser choice, and never edits the snapshot it is drawn from.
-async function openFrontline({ search = "", extraTowns = [] } = {}) {
+// The Precinct view stands one precinct's open cases in the rooms of the
+// building, puts the thrown-out ones behind bars, and reads every transfer on
+// the radio by callsign. A suspect opens its file; an officer's tag opens the
+// unit.
+test("the precinct stands open cases in their rooms, opens case files, and reads transfers by callsign", async () => {
   const elements = installFixture();
-  document.body = document.createElement("body");
-  const stored = new Map();
-  globalThis.localStorage = {
-    getItem: (key) => (stored.has(key) ? stored.get(key) : null),
-    setItem: (key, value) => stored.set(key, String(value)),
-  };
-  // The token decides whether the client streams at all, so the fixture keeps
-  // the one installFixture hands to the other tests.
-  globalThis.location = { hash: "#token=test-key", pathname: "/", search };
-  const live = structuredClone(baseState);
-  live.demo = false;
-  for (const id of extraTowns) {
-    const town = structuredClone(live.towns["acme/project"]);
-    town.id = id;
-    town.config.repo = id;
-    live.towns[id] = town;
-  }
+  const live = structuredClone({ ...state, seq: 1, demo: false });
+  live.towns["acme/project"].tasks["issue:9"] = { id: "issue:9", kind: "issue", number: 9, title: "Fresh lead", house: "simplifier", stage: "simplifying" };
+  live.towns["acme/project"].tasks["pr:10"] = { id: "pr:10", kind: "pr", number: 10, title: "Stuck exam", house: "review", stage: "queued", blocked: true };
+  live.events = [
+    { seq: 1, town: "acme/project", kind: "delivery", from: "outside", to: "hall", cargo: "issue:3", title: "An external issue arrived for a ruling", at: "2026-09-21T12:00:00Z" },
+    { seq: 1, town: "acme/project", kind: "decision", from: "simplifier", to: "hall", cargo: "issue:3", title: "The Magistrate advises the court", at: "2026-09-21T12:00:01Z" },
+  ];
   const message = `data: ${JSON.stringify(live)}\n\n`;
   let served = false;
   globalThis.fetch = async (url) => {
@@ -882,98 +872,44 @@ async function openFrontline({ search = "", extraTowns = [] } = {}) {
     if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
     return { ok: true, json: async () => ({}) };
   };
-  await import(`./app.js?frontline=${search}-${Date.now()}-${Math.random()}`);
+  await import(`./app.js?precinct=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  return { elements, stored, live };
-}
 
-test("the frontline skin relabels the town, holds its own faction, and leaves state alone", async () => {
-  const { elements, stored, live } = await openFrontline();
-  assert.equal(document.body.dataset.skin, "town");
-  assert.equal(elements["legend-active"].textContent, "Working");
-  assert.equal(elements["activity-heading"].textContent, "Along the way");
-  assert.equal(elements["faction-picker"].hidden, true, "the town skin has no armies");
-  assert.equal(elements["skin-note"].hidden, true);
+  const cast = elements.caseflow.innerHTML;
+  const roomOf = (task) => cast.match(new RegExp(`data-task="${task.replace(":", "\\:")}" data-room="([^"]+)"`))?.[1];
+  assert.equal(roomOf("issue:9"), "magistrate", "an arrival is arraigned before the Magistrate");
+  assert.equal(roomOf("issue:3"), "judge", "a case awaiting a ruling waits in Probation Court");
+  assert.equal(roomOf("issue:2"), "rehab", "work on probation sits with the Caseworker");
+  assert.equal(roomOf("pr:10"), "forensics", "a pull request sits in the evidence lab");
+  assert.equal(roomOf("pr:4"), "holding", "a dismissed case is locked in the Slop Tank");
+  assert.match(cast, /class="suspect look-stuck" data-task="pr:10"/, "a stuck case is marked");
+  assert.match(cast, /class="suspect look-cuffed" data-task="pr:4"/, "and slop in the tank wears cuffs");
+  assert.ok(cast.indexOf('data-task="pr:10"') < cast.indexOf('data-task="pr:1"'), "a stuck case stands at the front of its room");
+  assert.match(cast, /<span class="case-tag">PR 10<\/span>/, "a suspect reads by its case number");
+  assert.match(elements.roster.innerHTML, /class="tank-tag"[^>]*>1 in custody</, "the tank counts who it holds");
+  assert.equal((elements["scene-art"].innerHTML.match(/class="cop cop-/g) || []).length, 8, "every unit has its officer in the building");
+  assert.match(elements["scene-art"].innerHTML, /PROBATION COURT/, "the courthouse is next door");
 
-  const before = JSON.stringify(live);
-  elements.skin.click();
-  assert.equal(document.body.dataset.skin, "frontline");
-  assert.equal(stored.get("brokk-town-skin"), "frontline", "the chosen theme is remembered");
-  assert.equal(elements["legend-active"].textContent, "Engaged");
-  assert.equal(elements["legend-blocked"].textContent, "Needs support");
-  assert.equal(elements["activity-heading"].textContent, "Along the front");
-  assert.equal(elements["all-towns"].textContent, "▧ All bases");
-  assert.equal(elements["clock-eyebrow"].textContent, "CAMPAIGN CLOCK");
-  assert.match(elements["clock-note"].textContent, /strike/);
-  assert.equal(elements["faction-picker"].hidden, false, "a base flies an army");
-  assert.equal(elements["skin-note"].hidden, false);
-  assert.match(elements["skin-note"].textContent, /nothing here writes to GitHub/);
-  assert.match(elements["town-meta"].textContent, /base · sector \d+/);
+  const suspect = elements.caseflow.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:2");
+  suspect.onclick();
+  assert.equal(elements.inspector.classList.contains("open"), true, "a suspect opens its file");
+  assert.match(elements.inspection.textContent, /← Caseworker/, "the case file belongs to the unit holding it");
+  assert.match(elements.inspection.textContent, /Queue this change/);
 
-  const options = elements["faction-select"].children;
-  assert.equal(options.length, 4, "auto plus one option per army");
-  assert.match(options[0].textContent, /^Automatic · /);
+  assert.match(elements.journal.innerHTML, /<span class="event-route">CIV → JDG<\/span>/, "a transfer reads by callsign");
+  assert.match(elements.journal.innerHTML, /<span class="event-route">DECISION<\/span>/, "other traffic reads by kind");
+  const line = elements.journal.querySelectorAll("button").find((button) => button.dataset.cargo === "issue:3");
+  line.onclick();
+  assert.match(elements.inspection.textContent, /Outside request/, "a radio line opens its case");
 
-  // A base names its own structures; the town's names are gone.
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
-  assert.match(elements.inspection.textContent, /Muster Yard|Weaver Ring|Brood Vault/);
-  assert.doesNotMatch(elements.inspection.textContent, /THE WORKSHOP/);
+  elements.caseflow.querySelectorAll("[data-task]").find((button) => button.dataset.task === "pr:4").onclick();
+  assert.match(elements.inspection.textContent, /Speculative matrix/, "slop in the tank opens its case file");
 
-  elements["faction-select"].value = "hive";
-  elements["faction-select"].onchange();
-  assert.equal(
-    stored.get("brokk-town-factions"),
-    JSON.stringify({ "acme/project": "hive" }),
-    "the banner a player picks is saved",
-  );
-  assert.match(elements["town-meta"].textContent, /Hive base · sector \d+/);
-  assert.equal(JSON.stringify(live), before, "the theme never edits town state");
-
-  elements.skin.click();
-  assert.equal(document.body.dataset.skin, "town");
-  assert.equal(elements["legend-active"].textContent, "Working");
-  assert.equal(elements["faction-picker"].hidden, true);
-  assert.match(elements.inspection.textContent, /THE WORKSHOP/, "the town names come back");
-});
-
-test("?skin=frontline opens the war map for whoever the link is sent to", async () => {
-  const { elements } = await openFrontline({ search: "?skin=frontline" });
-  assert.equal(document.body.dataset.skin, "frontline");
-  assert.equal(elements["activity-eyebrow"].textContent, "LIVE FIELD JOURNAL");
-  assert.equal(elements["skin"].textContent, "Theme: Frontline");
-  assert.equal(elements["skin"].title, "Switch back to the Brokk Town neighbourhood");
-});
-
-test("Frontline overview shows each base's race art even when races repeat", async () => {
-  const { elements } = await openFrontline({ search: "?skin=frontline",
-    extraTowns: ["acme/repo-3", "acme/repo-5"] });
-  const links = elements.towns.querySelectorAll("[data-town]");
-  assert.equal(new Set(links.map((link) => link.dataset.faction)).size, 2);
-  assert.equal(links.filter((link) => link.dataset.faction === "vanguard").length, 2);
-  elements["all-towns"].click();
-  const cards = elements.overview.querySelectorAll("[data-visit]");
-  assert.equal(new Set(cards.map((card) => card.dataset.faction)).size, 2);
-  assert.equal((elements.overview.innerHTML.match(/town-card-houses frontline-card-art/g) || []).length, 3);
-  for (const label of ["Vanguard", "Hive"])
-    assert.match(elements.overview.textContent, new RegExp(label));
-});
-
-test("a faction choice survives blocked browser storage for the session", async () => {
-  const { elements } = await openFrontline({ search: "?skin=frontline" });
-  let reads = 0;
-  localStorage.getItem = () => { reads++; return null; };
-  localStorage.setItem = () => { throw new Error("storage unavailable"); };
-
-  elements["faction-select"].value = "hive";
-  elements["faction-select"].onchange();
-  assert.equal(elements["faction-select"].value, "hive");
-  assert.match(elements["town-meta"].textContent, /Hive base/);
-
-  elements.skin.click();
-  elements.skin.click();
-  assert.equal(elements["faction-select"].value, "hive", "the choice lasts through redraws");
-  assert.equal(reads, 0, "redraws do not read browser storage");
+  const hall = elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall");
+  assert.match(hall.textContent, /JDG.*Probation Judge.*Judge Bot/s, "the Probation Judge is staffed by Judge Bot");
+  hall.onclick();
+  assert.match(elements.inspection.innerHTML, /JDG · Probation or the tank/, "the Probation Judge's file opens from its tag");
 });
 
 test("the task inspector snoozes a task and resumes a snoozed one", async () => {
@@ -995,7 +931,7 @@ test("the task inspector snoozes a task and resumes a snoozed one", async () => 
   await import(`./app.js?snooze=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   assert.match(elements.inspection.textContent, /1 snoozed/, "the house queue counts snoozed work");
   const snoozedCard = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5");
   assert.match(snoozedCard.textContent, /Snoozed until/, "the queue card says when the task resumes");
@@ -1026,7 +962,7 @@ test("the task inspector snoozes a task and resumes a snoozed one", async () => 
   assert.equal(body.until, new Date(local).toISOString().replace(/\.\d{3}Z$/, "Z"));
   assert.equal(elements["snooze-dialog"].open, false);
 
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5").onclick();
   assert.match(elements.inspection.textContent, /Snoozed until/);
   assert.match(elements.inspection.textContent, /vendor API not released/);
@@ -1161,7 +1097,7 @@ test("a write in flight stays disabled across snapshot redraws and focus returns
   await import(`./app.js?inflight=${Date.now()}-${Math.random()}`);
   await flush();
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
 
   const pause = elements.inspection.querySelectorAll("[data-action]").find((button) => button.dataset.action === "pause");
   pause.focus();
@@ -1246,7 +1182,7 @@ test("a write that never answers is released at its deadline, and paired control
     assert.match(elements.error.textContent, /may still have been applied/, "a lost answer is reported as uncertain, not failed");
 
     // The inspector's Admit and Decline are one decision.
-    elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+    elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
     elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
     const find = (id) => elements.inspection.querySelectorAll("button").find((button) => button.id === id);
     const admitting = find("admit-task").onclick();
@@ -1295,7 +1231,7 @@ test("setup diagnostics run on request and render saved unknown facts for the se
   await import(`./app.js?diagnostics=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
+  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
   assert.equal(requests.length, 0, "rendering must not start diagnostics");
   const button = elements.inspection.querySelector("#check-setup");
   const pending = button.onclick();
@@ -1329,7 +1265,7 @@ test("an older merge report does not hide the task's current explanation", async
     await import(`./app.js?merge-report=${Date.now()}-${Math.random()}`);
     for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
     elements.towns.querySelectorAll("[data-town]")[0].onclick();
-    elements.houses.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
+    elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
     elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "pr:1").onclick();
     assert.match(elements.inspection.textContent, /Last merge check.*old-head.*old-base.*Checks failed/s);
     if (detail.startsWith("Ready to retry")) assert.ok(elements.inspection.textContent.includes(detail), "the latest pause/retry reason is visible alongside the historical check");

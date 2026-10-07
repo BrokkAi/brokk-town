@@ -1,5 +1,5 @@
-Brokk Town
-Copyright 2026 Brokk.ai and contributors
+SlopCop Squad
+Copyright 2026 SlopCop.ai and contributors
 
 This project is licensed under the Apache License, Version 2.0.
 See LICENSE for the full terms. Third-party terms and attribution are
@@ -13,8 +13,6 @@ The bot packages under bots/ are part of this project and are licensed under the
 same Apache-2.0 terms. Each is an internal package of the module rather than a
 separately distributed or separately licensed project, so there is one LICENSE
 and one notice for the whole repository.
-
-Town artwork was generated for this project; see docs/themes.md.
 
 internal/harness/registry.json includes an unmodified index snapshot from the
 Agent Client Protocol registry (https://github.com/agentclientprotocol/registry),

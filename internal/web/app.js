@@ -1,13 +1,9 @@
 import { historyPanel } from "./history.js";
 
-import { guidePanel, paintGuide } from "./guide.js";
+import { guidePanel } from "./guide.js";
 import { storagePanel } from "./storage.js";
 import {
-  positions,
-  houseNames,
   houseAuthority,
-  houseShortcuts,
-  routePosition,
   queueFor,
   settled,
   issueJobDetails,
@@ -17,7 +13,6 @@ import {
   snoozeRequest,
   defaultSnoozeUntil,
   localInputValue,
-  visibleEvents,
   outcomeReport,
   safeURL,
   townSummary,
@@ -49,8 +44,20 @@ import {
 } from "./town.js";
 import { attentionSettings } from "./attention.js";
 import { management } from "./manage.js";
-import { easeDelivery } from "./scenery.js";
-import { factions, skinFor, normalizeSkin } from "./skins.js";
+import {
+  units,
+  unitOrder,
+  isUnit,
+  callsign,
+  unitName,
+  unitBot,
+  dutyStatus,
+  dutyLight,
+  caseNumber,
+  radioRoute,
+  roster,
+} from "./precinct.js";
+import { rooms as sceneRooms, placeCases, sceneArt, suspectArt, posts, tagSpot, overflowSpot, at, barsBox, changes as sceneChanges, play } from "./scene.js";
 const $ = (s) => document.querySelector(s),
   esc = (value) =>
     String(value ?? "").replace(
@@ -66,64 +73,24 @@ const $ = (s) => document.querySelector(s),
     );
 let token =
   new URLSearchParams(location.hash.slice(1)).get("token") ||
-  sessionStorage.getItem("brokk-town-token") ||
+  sessionStorage.getItem("slopcop-squad-token") ||
   "";
 
-// The theme is a look, not a lever: switching it repaints the same snapshot
-// and never opens a socket, sends a command, or writes to GitHub. The choice
-// lives in this browser only, and ?skin=frontline makes a link that opens the
-// war map for someone else.
-let skin = (() => {
-  let requested = "";
-  try {
-    requested = new URLSearchParams(location.search || "").get("skin") || "";
-  } catch {
-    requested = "";
-  }
-  try {
-    return normalizeSkin(requested || localStorage.getItem("brokk-town-skin"));
-  } catch {
-    return normalizeSkin(requested);
-  }
-})();
-let activeSkin = skinFor(skin);
-const factionOverrides = (() => {
-  try {
-    const stored = JSON.parse(localStorage.getItem("brokk-town-factions") || "{}");
-    return stored && typeof stored === "object" ? stored : {};
-  } catch {
-    return {};
-  }
-})();
-function saveFactionOverride(townId, faction) {
-  if (faction) factionOverrides[townId] = faction;
-  else delete factionOverrides[townId];
-  try {
-    localStorage.setItem("brokk-town-factions", JSON.stringify(factionOverrides));
-  } catch {
-    /* Private browsing keeps the choice for this session only. */
-  }
-}
-// Each base's automatic race comes from its repository. Different bases may
-// share one of the three races; a browser choice changes only that base.
-function currentFaction(townId = selectedTown) {
-  return activeSkin.faction(townId, factionOverrides[townId]);
-}
 if (token) {
-  sessionStorage.setItem("brokk-town-token", token);
+  sessionStorage.setItem("slopcop-squad-token", token);
   history.replaceState(null, "", location.pathname);
 }
 let overview = (() => {
-  try { return localStorage.getItem("brokk-town-scope") !== "town"; }
+  try { return localStorage.getItem("slopcop-squad-scope") !== "town"; }
   catch { return true; }
 })();
 function saveScope() {
-  try { localStorage.setItem("brokk-town-scope", overview ? "all" : "town"); }
+  try { localStorage.setItem("slopcop-squad-scope", overview ? "all" : "town"); }
   catch {}
 }
 let viewMode = (() => {
   try {
-    return normalizeView(localStorage.getItem("brokk-town-view"));
+    return normalizeView(localStorage.getItem("slopcop-squad-view"));
   } catch {
     return "town";
   }
@@ -131,7 +98,7 @@ let viewMode = (() => {
 let state = null,
   selectedTown = (() => {
     try {
-      return localStorage.getItem("brokk-town-selected") || "";
+      return localStorage.getItem("slopcop-squad-selected") || "";
     } catch {
       return "";
     }
@@ -139,7 +106,6 @@ let state = null,
   selectedHouse = "hall",
   selectedTask = "",
   sequence = null,
-  moving = [],
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
   streamAbort = null,
   servedVersion = "";
@@ -163,50 +129,11 @@ async function fetchLiveDetail(townId, taskId) {
   }
   if (selectedTown === townId && selectedTask === taskId) renderInspection();
 }
-const canvas = $("#world"),
-  ctx = canvas.getContext("2d"),
-  buildings = new Image(),
-  actors = new Image(),
-  simplifierClarifier = new Image(),
-  featureStudy = new Image(),
-  featureReader = new Image();
-buildings.src = "/assets/buildings-atlas.png";
-actors.src = "/assets/actors-atlas.png";
-simplifierClarifier.src = "/assets/simplifier-clarifier.png";
-featureStudy.src = "/assets/feature-study.png";
-featureReader.src = "/assets/feature-reader.png";
-const crops = [
-  [0, 0, 512, 512],
-  [512, 0, 512, 480],
-  [1024, 0, 512, 512],
-  [0, 512, 512, 512],
-  [512, 480, 512, 544],
-  [1024, 512, 512, 512],
-];
-let field = null,
-  fieldTown = null;
-const actorCrops = [
-  [116, 145, 333, 296],
-  [86, 145, 311, 293],
-  [175, 145, 213, 296],
-  [49, 77, 428, 327],
-  [62, 95, 434, 311],
-  [163, 110, 232, 306],
-];
-const indices = {
-  bug: 0, issue: 1, review: 2, release: 3, repo: 4, hall: 5, feature: 6,
-};
-const standaloneBuildings = { feature: featureStudy, simplifier: simplifierClarifier };
-// A house stands on the map whether its art comes from the shared atlas or
-// from its own sprite, so every lookup asks whether the role has a house at
-// all rather than which sheet it was painted on.
-const isHouse = (role) =>
-  indices[role] !== undefined || standaloneBuildings[role] !== undefined;
 // A write that gets no answer is not a failed write: Town may have applied it
 // before the connection stalled. The message says so rather than inviting a
 // blind retry.
 const writeTimeoutMs = 30000;
-const writeTimeoutMessage = `Town did not answer within ${writeTimeoutMs / 1000} seconds. The request may still have been applied; check its state before trying again.`;
+const writeTimeoutMessage = `The Squad did not answer within ${writeTimeoutMs / 1000} seconds. The request may still have been applied; check its state before trying again.`;
 async function api(path, body, signal) {
   let response;
   try {
@@ -319,7 +246,7 @@ async function connect() {
         $("#connect-dialog").showModal();
         return;
       }
-      throw new Error("Town service unavailable");
+      throw new Error("SlopCop Squad is unavailable");
     }
     $("#connection").textContent = "Connected";
     $("#connection-dot").className = "dot active";
@@ -351,14 +278,10 @@ async function connect() {
 }
 function receive(next) {
   if (sequence !== null && next.seq >= sequence) {
-    for (const event of visibleEvents(next.events, sequence, selectedTown)) {
-      if (event.kind === "delivery" && viewMode === "town" && !overview && motion && !document.hidden)
-        moving.push({ ...event, start: performance.now() });
-    }
+    // The scene walks what changed between this snapshot and the last.
   } else {
-    moving = [];
+    lastCast = null;
   }
-  moving = moving.slice(-24);
   sequence = next.seq;
   state = next;
   // The page's assets belong to the binary that served them. When a restart
@@ -374,7 +297,7 @@ function receive(next) {
   $("#town-version").textContent = serviceVersion;
   $("#town-version").hidden = !serviceVersion;
   $("#town-version").title = serviceVersion;
-  $("#help-version").textContent = serviceVersion ? `Brokk Town ${serviceVersion}` : "";
+  $("#help-version").textContent = serviceVersion ? `SlopCop Squad ${serviceVersion}` : "";
   if (!state.towns[selectedTown]) {
     selectedTown = Object.keys(state.towns)[0] || "";
     selectedTask = "";
@@ -402,7 +325,7 @@ function capacityInfo() {
 // budgetBlock reports what the accounting period measured. Absent telemetry is
 // spelled "not reported" everywhere: a town whose agents never sent usage has
 // not spent nothing, Town simply does not know.
-// policyBlock states what this house's filters admit, and how much of the
+// policyBlock states what this unit's filters admit, and how much of the
 // repository's inventory they hold back. A filtered item stays listed and
 // marked: an operator has to be able to see what their own filter excluded.
 function policyBlock(t, house) {
@@ -412,7 +335,7 @@ function policyBlock(t, house) {
   ).length;
   if (!policy) {
     return held
-      ? `<p class="muted">${held} item${held === 1 ? "" : "s"} in this town are held back by another house's filter.</p>`
+      ? `<p class="muted">${held} item${held === 1 ? "" : "s"} in this precinct are held back by another unit's filter.</p>`
       : "";
   }
   const excluded = held
@@ -428,7 +351,7 @@ function quietBlock(t) {
   const held = t?.quiet_hours?.active;
   const body = note
     ? `<p class="${held ? "quiet-held" : "muted"}">${esc(note)}</p>`
-    : '<p class="muted">No quiet hours. Set weekly windows in Town settings, or a service default under Capacity.</p>';
+    : '<p class="muted">No quiet hours. Set weekly windows in Precinct settings, or a service default under Squad settings.</p>';
   return `<h2>Quiet hours</h2>${body}`;
 }
 function budgetBlock(t) {
@@ -455,16 +378,16 @@ function budgetBlock(t) {
     : "";
   const ceiling = budget.configured
     ? ""
-    : '<p class="muted">No budget set for this town. Agent work is bounded only by worker capacity and the per-task attempt limits.</p>';
+    : '<p class="muted">No budget set for this precinct. Agent work is bounded only by worker capacity and the per-task attempt limits.</p>';
   return `<h2>Agent budget</h2>${held}<p class="muted">This ${esc(budget.period)} (resets ${esc(resets)}): ${esc(attempts)} · ${esc(time)}${esc(untimed)}.</p><p class="muted">Tokens ${esc(usage)} · cost ${esc(cost)}. ${esc(budget.advice || "")}</p>${ceiling}`;
 }
 
 function selectView(mode) {
   mode = normalizeView(mode);
   viewMode = mode;
-  moving = [];
+  lastCast = null;
   try {
-    localStorage.setItem("brokk-town-view", mode);
+    localStorage.setItem("slopcop-squad-view", mode);
   } catch {
     /* Private browsing may disable persistence; the in-memory selector remains usable. */
   }
@@ -472,7 +395,6 @@ function selectView(mode) {
 }
 
 function renderViewSwitcher() {
-  $("#operations-mode").hidden = viewMode === "town";
   document.querySelectorAll("#view-switcher [data-view]").forEach((button) => {
     const selected = button.dataset.view === viewMode;
     button.tabIndex = selected ? 0 : -1;
@@ -481,96 +403,17 @@ function renderViewSwitcher() {
   });
 }
 
-// applySkin paints the chrome a skin supplies: body attribute for the
-// stylesheet, every data-skin-text label, and the canvas description. It
-// touches no town state, so it is safe to call on any snapshot or redraw.
-function applySkin() {
-  activeSkin = skinFor(skin);
-  activeSkin.prepare?.();
-  if (document.body) document.body.dataset.skin = activeSkin.id;
-  document.querySelectorAll("[data-skin-text]").forEach((element) => {
-    const key = element.dataset?.skinText,
-      value = key ? activeSkin.text[key] : undefined;
-    if (value !== undefined) element.textContent = value;
-  });
-  const button = $("#skin");
-  if (button) {
-    button.textContent = activeSkin.switchLabel;
-    button.title = activeSkin.switchTitle;
-    button.dataset.skin = activeSkin.id;
-    button.setAttribute(
-      "aria-label",
-      `${activeSkin.switchLabel}. ${activeSkin.switchTitle}`,
-    );
-  }
-  const note = $("#skin-note");
-  if (note) {
-    note.textContent = activeSkin.note;
-    note.hidden = !activeSkin.note;
-  }
-  if (canvas) canvas.setAttribute("aria-label", activeSkin.text["world-aria"]);
-  // The cached backdrop belongs to the base and its banner, so it is dropped
-  // whenever either could have changed.
-  field = null;
-  fieldTown = null;
-}
-
-function selectSkin(next) {
-  skin = normalizeSkin(next);
-  try {
-    localStorage.setItem("brokk-town-skin", skin);
-  } catch {
-    /* Private browsing keeps the theme for this session only. */
-  }
-  moving = [];
-  applySkin();
-  if (state) render();
-}
-
-// A base flies one faction. The picker shows what the repository derives and
-// lets a player rename the banner without changing anything Town does.
-function renderFactionPicker(t) {
-  const picker = $("#faction-picker"),
-    select = $("#faction-select");
-  if (!picker || !select) return;
-  picker.hidden = !activeSkin.supportsFactions || !t;
-  if (picker.hidden) return;
-  const options = [
-    { value: "", label: `Automatic · ${activeSkin.factionLabel(activeSkin.faction(t.id))}` },
-    ...factions.map((f) => ({ value: f.id, label: `${f.name} · ${f.species}` })),
-  ];
-  const signature = options.map((o) => `${o.value}|${o.label}`).join("\n");
-  if (select.dataset.options !== signature) {
-    select.dataset.options = signature;
-    select.replaceChildren(
-      ...options.map((o) => {
-        const option = document.createElement("option");
-        option.value = o.value;
-        option.textContent = o.label;
-        return option;
-      }),
-    );
-  }
-  const override = factionOverrides[t.id];
-  select.value = factions.some((f) => f.id === override) ? override : "";
-  select.onchange = () => {
-    saveFactionOverride(t.id, select.value);
-    applySkin();
-    render();
-  };
-}
-
 function renderCapacity() {
   const { active, limit } = capacityInfo();
-  $("#capacity-summary").textContent = `${active}/${limit} workers`;
+  $("#capacity-summary").textContent = `${active}/${limit} on duty`;
   $("#capacity-current").textContent = `${active} active · limit ${limit}`;
   if (!$("#capacity-dialog").open)
     $("#capacity-input").value = String(limit);
 }
 
 // Every surface spells a dispatch profile the same way: harness, model and
-// effort as three chips, dimmed when the house simply inherits town defaults
-// and outlined when an operator chose it for that house.
+// effort as three chips, dimmed when the unit simply inherits town defaults
+// and outlined when an operator chose it for that unit.
 function summaryChips(p, extra = "") {
   return `<span class="profile ${p.inherited ? "inherited" : "own"}${p.live ? " live" : ""}${extra ? ` ${extra}` : ""}" title="${esc(p.title)}"><b class="profile-chip harness">${esc(p.harness)}</b><b class="profile-chip model">${esc(p.model)}</b><b class="profile-chip effort rank-${esc(p.rank)}">${esc(p.effort)}</b></span>`;
 }
@@ -621,6 +464,10 @@ function restoreBoardViewport(board, viewport) {
       ?.focus({ preventScroll: true });
   }
 }
+// Board and Compact list units in roster order, the way a case moves.
+function inRosterOrder(workers) {
+  return [...workers].sort((a, b) => unitOrder.indexOf(a.role) - unitOrder.indexOf(b.role));
+}
 function workloadText(counts) {
   return `${counts.active} active · ${counts.waiting} waiting · ${counts.blocked} blocked`;
 }
@@ -638,10 +485,10 @@ function renderBoard() {
     ? towns
         .map((item) => {
           const townName = item.town?.config?.repo || item.town?.id || "Town";
-          const workerCards = item.workers
+          const workerCards = inRosterOrder(item.workers)
             .map((worker) => ({ worker, counts: houseWorkload(item.town, worker.role) }))
             .filter(({ worker, counts }) => worker.active || worker.status === "failed" || counts.waiting || counts.blocked)
-            .map(({ worker, counts }) => `<button class="board-worker ${counts.blocked || worker.status === "failed" ? "failed" : ""}" data-board-town="${esc(item.town.id)}" data-board-house="${esc(worker.role)}"><strong>${esc(worker.role)} · ${esc(worker.status)}</strong>${workloadChips(counts)}<small>${profileChips(worker.profile, worker.role)}</small></button>`)
+            .map(({ worker, counts }) => `<button class="board-worker ${counts.blocked || worker.status === "failed" ? "failed" : ""}" data-board-town="${esc(item.town.id)}" data-board-house="${esc(worker.role)}"><strong>${esc(callsign(worker.role))} ${esc(unitName(worker.role))} · ${esc(dutyStatus(worker.status))}</strong>${workloadChips(counts)}<small>${profileChips(worker.profile, worker.role)}</small></button>`)
             .join("");
           const cards = boardColumns
             .map((column) => {
@@ -652,15 +499,15 @@ function renderBoard() {
               return `<div class="board-column status-${esc(column.id)} ${esc(classes)}"><h3>${esc(column.label)} <span>${tasks.length}</span></h3><div class="board-column-list" data-board-list="${esc(listKey)}" role="region" tabindex="0" aria-label="${esc(`${townName} ${column.label} tasks`)}">${tasks
                 .map(
                   (task) =>
-                    `<button class="board-task" data-board-town="${esc(item.town.id)}" data-board-task="${esc(task.id)}" data-board-house="${esc(task.house || "hall")}"><strong>${esc(task.title || task.id)}</strong><small><span class="status-chip status-${esc(task.statusClass)}">${esc(task.statusLabel)}</span> · ${esc(task.house || "town")}${task.number ? ` · #${task.number}` : ""}</small><small>${queuedProfileText(task)}</small></button>`,
+                    `<button class="board-task" data-board-town="${esc(item.town.id)}" data-board-task="${esc(task.id)}" data-board-house="${esc(task.house || "hall")}"><strong>${esc(task.title || task.id)}</strong><small><span class="status-chip status-${esc(task.statusClass)}">${esc(task.statusLabel)}</span> · ${esc(task.house ? unitName(task.house) : "town")}${task.number ? ` · #${task.number}` : ""}</small><small>${queuedProfileText(task)}</small></button>`,
                 )
                 .join("")}</div></div>`;
             })
             .join("");
-          return `<article class="board-town"><header><div><span class="eyebrow">${esc(townName.split("/")[0] || "TOWN")}</span><h2>${esc(townName.split("/").slice(1).join("/") || townName)}</h2></div><button class="quiet board-visit" data-board-visit="${esc(item.town.id)}">Open town →</button></header>${workerCards ? `<div class="board-workers"><h3>Workers</h3>${workerCards}</div>` : ""}<div class="board-columns" data-board-columns="${esc(item.town.id)}">${cards || '<p class="muted">No work recorded yet.</p>'}</div></article>`;
+          return `<article class="board-town"><header><div><span class="eyebrow">${esc(townName.split("/")[0] || "TOWN")}</span><h2>${esc(townName.split("/").slice(1).join("/") || townName)}</h2></div><button class="quiet board-visit" data-board-visit="${esc(item.town.id)}">Open precinct →</button></header>${workerCards ? `<div class="board-workers"><h3>Units</h3>${workerCards}</div>` : ""}<div class="board-columns" data-board-columns="${esc(item.town.id)}">${cards || '<p class="muted">No cases on file yet.</p>'}</div></article>`;
         })
         .join("")
-    : '<div class="overview-empty"><h2>No towns to show.</h2><p>Add a repository to start tracking operations.</p></div>';
+    : '<div class="overview-empty"><h2>No precincts yet.</h2><p>Add a repository with New precinct to start tracking cases.</p></div>';
   board
     .querySelectorAll("[data-board-visit]")
     .forEach((button) => (button.onclick = () => { selectView("town"); selectTown(button.dataset.boardVisit); }));
@@ -683,19 +530,19 @@ function renderCompact() {
   $("#compact").innerHTML = towns
     .map((item) => {
       const repo = item.town?.config?.repo || item.town?.id || "Town";
-      return `<article class="compact-town"><div class="compact-title"><h2>${esc(repo)}</h2><span>${item.active} active · ${item.attention} attention</span></div><div class="compact-workers">${item.workers
+      return `<article class="compact-town"><div class="compact-title"><h2>${esc(repo)}</h2><span>${item.active} on a case · ${item.attention} stuck</span></div><div class="compact-workers">${inRosterOrder(item.workers)
         .map(
           (worker) =>
-            `<button class="compact-worker" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(worker.role)}"><i class="dot ${worker.active ? "active" : worker.status === "failed" ? "blocked" : worker.status === "quiet" ? "quiet" : "waiting"}"></i><strong>${esc(worker.role)}</strong><small>${esc(worker.status)}</small><small>${profileChips(worker.profile, worker.role)}</small><small>${esc(scheduleLabel(worker))}</small></button>`,
+            `<button class="compact-worker" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(worker.role)}"><i class="dot ${worker.active ? "active" : dutyLight(worker.status)}"></i><strong>${esc(callsign(worker.role))} ${esc(unitName(worker.role))}</strong><small>${esc(dutyStatus(worker.status))}</small><small>${profileChips(worker.profile, worker.role)}</small><small>${esc(scheduleLabel(worker))}</small></button>`,
         )
         .join("")}</div><div class="compact-tasks">${item.tasks
         .map(
           (task) =>
             `<button class="compact-task status-${esc(task.statusClass)}" data-compact-town="${esc(item.town.id)}" data-compact-house="${esc(task.house || "hall")}" data-compact-task="${esc(task.id)}"><span>${esc(task.statusLabel)}</span><strong>${esc(task.title || task.id)}</strong><small>${queuedProfileText(task)}</small></button>`,
         )
-        .join("") || '<span class="muted">No open work.</span>'}</div></article>`;
+        .join("") || '<span class="muted">No open cases.</span>'}</div></article>`;
     })
-    .join("") || '<div class="overview-empty"><h2>No towns to show.</h2></div>';
+    .join("") || '<div class="overview-empty"><h2>No precincts yet.</h2></div>';
   $("#compact")
     .querySelectorAll("[data-compact-house]")
     .forEach(
@@ -736,7 +583,7 @@ const guideUI = guidePanel({api, getTown:town, getState:()=>state, onOpen:()=>ch
 function renderTownControls(t) {
  $("#town-storage").disabled = !t;
  $("#town-history").disabled = !t;
- $("#town-history").textContent = t?.archived_tasks ? `History (${t.archived_tasks})` : "History";
+ $("#town-history").textContent = t?.archived_tasks ? `Case archive (${t.archived_tasks})` : "Case archive";
   const toggle = $("#town-toggle"),
     pauseAll = $("#pause-all"),
     chip = $("#town-state"),
@@ -746,24 +593,24 @@ function renderTownControls(t) {
   if (!t) {
     chip.hidden = true;
     pauseAll.hidden = true;
-    toggle.textContent = activeSkin.rewrite("▶ Wake the town");
+    toggle.textContent = "▶ Start patrol";
     toggle.dataset.action = "start";
     detail.hidden = true;
     return;
   }
   const controls = townControls(t);
   chip.hidden = false;
-  chip.textContent = activeSkin.rewrite(controls.status);
+  chip.textContent = controls.status;
   chip.className = `status-chip status-${controls.statusClass}`;
-  toggle.textContent = activeSkin.rewrite(controls.primary.label);
+  toggle.textContent = controls.primary.label;
   toggle.dataset.action = controls.primary.action;
   toggle.classList.toggle("primary", controls.primary.action === "start");
-  toggle.title = activeSkin.rewrite(controls.detail || controls.primary.label);
-  detail.textContent = activeSkin.rewrite(controls.detail || "");
+  toggle.title = controls.detail || controls.primary.label;
+  detail.textContent = controls.detail || "";
   detail.hidden = !controls.detail;
   pauseAll.hidden = !controls.secondary;
   if (controls.secondary)
-    pauseAll.textContent = activeSkin.rewrite(controls.secondary.label);
+    pauseAll.textContent = controls.secondary.label;
   const townBusy = pendingWrites.has(commandKey(t.id, "all", "", ""));
   toggle.disabled = townBusy;
   pauseAll.disabled = townBusy;
@@ -775,34 +622,28 @@ function render() {
   const t = town();
   renderViewSwitcher();
   renderCapacity();
-  renderFactionPicker(t);
   $("#mode").hidden = !state.demo;
   $("#demo-note").hidden = !state.demo;
   $("#empty").hidden = !!t;
   renderTownControls(t);
   guideUI.render();
-  $("#repo-owner").textContent = t ? t.config.repo.split("/")[0] : "WELCOME TO";
+  $("#repo-owner").textContent = t ? t.config.repo.split("/")[0] : "SLOPCOP SQUAD";
   $("#town-name").textContent = t
     ? t.config.repo.split("/")[1]
-    : "Your next little town";
+    : "No precinct open";
   const needs = inbox(state);
   const townNeeds = (id) => needs.towns[id] || { decisions: 0, attention: 0 };
   $("#town-meta").textContent = t
-    ? activeSkin.meta(
-        t.id,
-        `${t.config.branch || "Reading repository…"} · ${Object.values(t.workers).filter((w) => w.status === "working").length} agents at work · ${townNeeds(t.id).decisions} ${activeSkin.stats.decisions} · ${townNeeds(t.id).attention} ${activeSkin.stats.attention}`,
-        currentFaction(t.id),
-      )
-    : activeSkin.text["empty-meta"];
+    ? `${t.config.branch || "Reading repository…"} · ${Object.values(t.workers).filter((w) => w.status === "working").length} on a case · ${townNeeds(t.id).decisions} awaiting ruling · ${townNeeds(t.id).attention} stuck`
+    : "Put a repository under watch to open its precinct.";
   $("#towns").innerHTML = Object.values(state.towns)
     .map((item) => {
       const counts = townNeeds(item.id);
-      const faction = activeSkin.supportsFactions ? currentFaction(item.id) : "";
       const flags = [
-        counts.decisions ? `<span class="town-flag decide">${counts.decisions} to decide</span>` : "",
-        counts.attention ? `<span class="town-flag attention">${counts.attention} attention</span>` : "",
+        counts.decisions ? `<span class="town-flag decide">${counts.decisions} to rule on</span>` : "",
+        counts.attention ? `<span class="town-flag attention">${counts.attention} stuck</span>` : "",
       ].join("");
-      return `<button class="town-link ${item.id === selectedTown ? "selected" : ""}" data-town="${esc(item.id)}"${faction ? ` data-faction="${esc(faction)}"` : ""}><strong>▧ ${esc(item.config.repo.split("/")[1])}</strong><small>${esc(item.config.repo.split("/")[0])} · ${faction ? `${esc(activeSkin.factionLabel(faction))} · ` : ""}${Object.values(item.workers).filter((w) => w.enabled).length} awake</small>${flags ? `<span class="town-flags">${flags}</span>` : ""}</button>`;
+      return `<button class="town-link ${item.id === selectedTown ? "selected" : ""}" data-town="${esc(item.id)}"><strong>${esc(item.config.repo.split("/")[1])}</strong><small>${esc(item.config.repo.split("/")[0])} · ${Object.values(item.workers).filter((w) => w.enabled).length} on duty</small>${flags ? `<span class="town-flags">${flags}</span>` : ""}</button>`;
     })
     .join("");
   $("#towns")
@@ -817,7 +658,7 @@ function render() {
   renderBoard();
   renderCompact();
   showError(t?.error || "");
-  renderHouses();
+  renderPrecinct();
   renderInspection();
   renderJournal();
   renderManagement();
@@ -836,13 +677,13 @@ function selectTown(id) {
   if (!state?.towns[id]) throw new Error("Unknown town");
   selectedTown = id;
   try {
-    localStorage.setItem("brokk-town-selected", id);
+    localStorage.setItem("slopcop-squad-selected", id);
   } catch {
     /* Keep the selection for this session when persistence is unavailable. */
   }
   selectedTask = "";
   clearLiveDetail();
-  moving = [];
+  lastCast = null;
   overview = false;
   saveScope();
   render();
@@ -852,31 +693,26 @@ function renderOverview() {
   $("#overview").hidden = !overview || operations;
   $("#board").hidden = viewMode !== "board";
   $("#compact").hidden = viewMode !== "compact";
-  $(".world").hidden = overview || operations;
+  $(".precinct").hidden = overview || operations;
   $(".activity").hidden = overview || operations;
   $("#inspector").hidden = operations ? !$("#inspector").classList.contains("open") : overview;
   $(".town-controls").hidden = overview;
   $("#all-towns").classList.toggle("selected", overview);
   if (!overview) return;
-  $("#repo-owner").textContent = activeSkin.text["overview-owner"];
-  $("#town-name").textContent = activeSkin.text["overview-title"];
+  $("#repo-owner").textContent = "CITYWIDE";
+  $("#town-name").textContent = "All precincts. One force.";
   const townCount = Object.keys(state.towns).length;
-  $("#town-meta").textContent = `${townCount} ${activeSkin.text[townCount === 1 ? "unit-repository" : "unit-repositories"]} · independent workers, queues, and releases`;
+  $("#town-meta").textContent = `${townCount} precinct${townCount === 1 ? "" : "s"} · independent units, caseloads and releases`;
   $("#overview").innerHTML =
     Object.values(state.towns)
       .map((t) => {
         const stats = townSummary(t),
           spread = projectTown(t).profiles,
-          faction = currentFaction(t.id),
-          badge = activeSkin.supportsFactions
-            ? `<span class="faction-badge">${esc(activeSkin.factionLabel(faction))}</span>` : "",
-          art = activeSkin.supportsFactions
-            ? `<div class="town-card-houses frontline-card-art" aria-hidden="true"><span class="base-mini hall"></span><span class="base-mini bug"></span><span class="base-mini release"></span></div>`
-            : `<div class="town-card-houses" aria-hidden="true"></div>`;
-        return `<button class="town-card" data-visit="${esc(t.id)}"${faction ? ` data-faction="${esc(faction)}"` : ""}><span class="eyebrow">${esc(t.config.repo.split("/")[0])}</span><h2>${esc(t.config.repo.split("/")[1])}</h2>${badge}${spread.distinct.length === 1 ? summaryChips(spread.distinct[0]) : `<span class="profile mixed" title="${esc(spread.distinct.map((p) => p.text).join("\n"))}">${esc(spread.label)}${spread.overrides ? ` · ${spread.overrides} custom` : ""}</span>`}${art}<div class="town-stats"><span><strong>${stats.busy}</strong> ${esc(activeSkin.stats.working)}</span><span><strong>${stats.queued}</strong> ${esc(activeSkin.stats.queued)}</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> ${esc(activeSkin.stats.decisions)}</span><span><strong>${stats.blocked + stats.failed}</strong> ${esc(activeSkin.stats.attention)}</span></div><p>${esc(repositoryStatus(t))}</p><small>${esc(stats.release)} · ${esc(activeSkin.visit)}</small></button>`;
+          stuck = stats.blocked + stats.failed;
+        return `<button class="town-card" data-visit="${esc(t.id)}"><span class="eyebrow">${esc(t.config.repo.split("/")[0])}</span><h2>${esc(t.config.repo.split("/")[1])}</h2>${spread.distinct.length === 1 ? summaryChips(spread.distinct[0]) : `<span class="profile mixed" title="${esc(spread.distinct.map((p) => p.text).join("\n"))}">${esc(spread.label)}${spread.overrides ? ` · ${spread.overrides} custom` : ""}</span>`}<div class="town-stats"><span><strong>${stats.busy}</strong> on a case</span><span><strong>${stats.queued}</strong> open cases</span><span class="${stats.decisions ? "stat-decide" : ""}"><strong>${stats.decisions}</strong> awaiting ruling</span><span class="${stuck ? "stat-stuck" : ""}"><strong>${stuck}</strong> stuck</span></div><p>${esc(repositoryStatus(t))}</p><small>${esc(stats.release)} · Open precinct →</small></button>`;
       })
       .join("") ||
-    `<div class="overview-empty"><h2>Your world starts with one repository.</h2><p>${esc(activeSkin.text["overview-empty-body"])}</p></div>`;
+    `<div class="overview-empty"><h2>No precincts yet.</h2><p>Add one with New precinct above. Each repository gets its own precinct and its own units.</p></div>`;
   $("#overview")
     .querySelectorAll("[data-visit]")
     .forEach((b) => (b.onclick = () => selectTown(b.dataset.visit)));
@@ -884,7 +720,7 @@ function renderOverview() {
 $("#all-towns").onclick = () => {
   overview = true;
   saveScope();
-  moving = [];
+  lastCast = null;
   if (state) render();
 };
 
@@ -957,46 +793,104 @@ $("#capacity-form").onsubmit = async (event) => {
     submit.disabled = false;
   }
 };
-function pendingDecisions(t) {
-  return queueFor(t || {}, "hall").filter((task) => task.mayoral_decision === "pending" && !task.blocked).length;
-}
-// simplifierDeclined marks work Simplifier declined in auto mode. The decline
-// is final unless the Mayor admits it anyway.
+// simplifierDeclined marks work the Magistrate sent to the tank in auto mode. The
+// dismissal is final unless the court admits it anyway.
 function simplifierDeclined(task) {
   return task.house === "hall" && task.stage === "declined" && !task.mayoral_decision && task.simplification?.mode === "auto" && task.simplification?.decision === "decline";
 }
-function renderHouses() {
-  const t = town(),
-    faction = currentFaction(t?.id);
-  $("#houses").innerHTML = Object.entries(positions)
-    .filter(([role]) => isHouse(role))
-    .map(([role, [x, y]]) => {
-      const w = t?.workers[role],
-        worker = projectWorker(t, role, w),
-        counts = houseWorkload(t, role),
-        status = role === "hall" && worker.status !== "working" ? `${pendingDecisions(t)} to decide` : worker.status,
-        houseLabel = activeSkin.houseLabel(role, faction),
-        dot =
-          status === "working" || status === "pausing"
-            ? "active"
-            : status === "blocked" || status === "failed"
-              ? "blocked"
-              : status === "quiet"
-                ? "quiet"
-                : "waiting";
-      // The label has room for two lines above the road, and the second one
-      // now carries the dispatch profile: the status word moves onto the dot
-      // the legend already explains, and into the label's tooltip.
-      const words = status.replaceAll("_", " "),
-        profile = role === "hall" ? null : profileSummary(worker.profile),
-        agentLabel = role === "hall" ? "" : profile.text,
-        name = `<i class="dot ${dot}"></i><span class="house-name">${activeSkin.houseLabelMarkup(role, faction)}</span>`;
-      return `<button class="house ${selectedHouse === role ? "selected" : ""}" style="left:${x / 11.2}%;top:${y / 6.8}%;" data-house="${role}" aria-label="Visit ${esc(houseLabel)}, ${esc(words)}, ${workloadText(counts)}${agentLabel ? `, ${agentLabel}` : ""}" title="${esc(houseLabel)} · ${esc(words)} · ${workloadText(counts)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${houseShortcuts.indexOf(role) + 1}"><span class="house-label"><strong>${name}</strong>${role === "hall" ? `<small class="hall-count">${esc(words)}</small>` : `${profileChips(worker.profile, role)}<span class="house-counts" title="${workloadText(counts)}" aria-label="${workloadText(counts)}"><span class="workload-active" title="Active items">${counts.active}</span> / <span title="Waiting items">${counts.waiting}</span> / <span class="workload-blocked" title="Blocked items">${counts.blocked}</span></span>`}</span></button>`;
+// The Precinct view draws only when its markup changed: the snapshot stream
+// redraws on every event, and rewriting identical markup would restart every
+// officer's loop and every suspect's wobble mid-step.
+let artMarkup = "",
+  tagMarkup = "",
+  castMarkup = "";
+// The last placements the scene showed, so the next snapshot can walk each
+// suspect from where it stood. They only carry over while the scene stays in
+// view on the same precinct; anything else starts the scene still.
+let lastCast = null,
+  lastCastTown = "";
+const busyGuide = (turn) => ["queued", "gathering", "answering"].includes(turn?.status);
+function renderPrecinct() {
+  const t = town();
+  const showing = !!t && !overview && viewMode === "town" && !document.hidden;
+  const units = t ? roster(t) : [];
+  const lights = Object.fromEntries(units.map((unit) => [unit.role, unit.light]));
+  const art = t ? sceneArt({ repo: t.config.repo, lights }) : "";
+  if (art !== artMarkup) {
+    artMarkup = art;
+    $("#scene-art").innerHTML = art;
+  }
+  const { placed, overflow, counts } = t ? placeCases(t) : { placed: [], overflow: {}, counts: {} };
+  // Every officer wears a tag: callsign, name, light and caseload, opening to
+  // the bot, its status and its dispatch profile on hover or focus.
+  const where = posts(lights);
+  const asked = new Set(t?.guide?.turns?.find(busyGuide)?.houses || []);
+  const tags = units
+    .map((unit) => {
+      const [x, y] = tagSpot(unit.role, where[unit.role]);
+      const open = unit.counts.active + unit.counts.waiting + unit.counts.blocked;
+      const load = unit.role === "hall" ? unit.rulings : open;
+      const profile = unit.role === "hall" ? null : profileSummary(unit.worker.profile);
+      const summary = `${unit.name}, ${unit.status}, ${unit.role === "hall" ? `${unit.rulings} awaiting ruling, ` : ""}${workloadText(unit.counts)}${profile ? `, ${profile.text}` : ""}`;
+      return `<button class="unit-tag light-${unit.light}${selectedHouse === unit.role ? " selected" : ""}${asked.has(unit.role) ? " radioed" : ""}" data-house="${unit.role}" style="${at(x, y)}" aria-label="Open ${esc(summary)}" aria-keyshortcuts="${unitOrder.indexOf(unit.role) + 1}" title="${esc(`${unit.callsign} · ${unit.name} · ${unit.bot}\n${unit.duty}`)}${profile ? `\n${esc(profile.title)}` : ""}"><span class="tag-line"><span class="tag-sign">${unit.callsign}</span><strong>${esc(unit.name)}</strong><i class="dot ${unit.light}"></i>${load ? `<b class="tag-count">${load}</b>` : ""}</span><span class="tag-more"><small>${esc(unit.bot)} · ${esc(unit.status)}${unit.role === "hall" ? ` · ${unit.rulings} awaiting ruling` : ""}</small>${profile ? profileChips(unit.worker.profile, unit.role) : ""}${workloadChips(unit.counts)}</span></button>`;
     })
     .join("");
-  $("#houses")
-    .querySelectorAll("button")
-    .forEach((b) => (b.onclick = () => chooseHouse(b.dataset.house)));
+  const extra = Object.entries(overflow)
+    .map(([room, n]) => {
+      const [x, y] = overflowSpot(room);
+      return `<button class="overflow" data-house="${room === "holding" ? "hall" : sceneRooms[room].roles[0]}" style="${at(x, y)}" title="${n} more">+${n}</button>`;
+    })
+    .join("");
+  const tank = t ? `<span class="tank-tag" style="${at(330, 532)}">${counts.holding || 0} in custody</span>` : "";
+  const tagsHtml = tags + extra + tank;
+  const tagList = $("#roster");
+  if (tagsHtml !== tagMarkup || !tagList.children?.length) {
+    tagMarkup = tagsHtml;
+    tagList.innerHTML = tagsHtml;
+    tagList.querySelectorAll("button").forEach((b) => (b.onclick = () => chooseHouse(b.dataset.house)));
+  }
+  // Every open case is a suspect in its room.
+  const cast = placed
+    .map((p) => {
+      const what = `${caseNumber(p.task)} · ${p.task.title || p.id}`;
+      const where = p.look === "cuffed" ? "In the Slop Tank" : p.look === "reformed" ? "Reformed, waiting for the release bus" : `${unitName(p.task.house)} · ${p.task.statusLabel}`;
+      return `<button class="suspect look-${p.look}" data-task="${esc(p.id)}" data-room="${p.room}" style="${at(p.x, p.y)}" aria-label="${esc(`${what}. ${where}`)}" title="${esc(`${what}\n${where}`)}">${suspectArt(p.look)}<span class="case-tag">${esc(caseNumber(p.task))}</span></button>`;
+    })
+    .join("");
+  const castList = $("#caseflow");
+  if (cast !== castMarkup || !castList.children?.length) {
+    castMarkup = cast;
+    castList.innerHTML = cast;
+    castList.querySelectorAll("[data-task]").forEach((b) => (b.onclick = () => openCase(b.dataset.task)));
+  }
+  $("#scene").hidden = !t;
+  // Walk every suspect the snapshot moved, from where it stood.
+  const now = new Map(placed.map((p) => [p.id, { room: p.room, x: p.x, y: p.y, look: p.look }]));
+  if (showing && motion && lastCast && lastCastTown === selectedTown) {
+    const diff = sceneChanges(lastCast, now, t);
+    if (diff.moved.length || diff.arrived.length || diff.gone.length)
+      play(
+        {
+          fx: $("#transfers"),
+          find: (id) => [...castList.querySelectorAll("[data-task]")].find((b) => b.dataset.task === id),
+        },
+        diff,
+        (state?.events || []).filter((e) => e.town === selectedTown),
+      );
+  }
+  lastCast = showing ? now : null;
+  lastCastTown = selectedTown;
+}
+// openCase opens a case file from anywhere a case shows up: a suspect in the
+// scene, a radio line, the inbox.
+function openCase(id, house = "") {
+  const task = town()?.tasks[id];
+  if (!task) return;
+  selectedHouse = isUnit(task.house) ? task.house : isUnit(house) ? house : "hall";
+  selectedTask = task.id;
+  clearLiveDetail();
+  $("#inspector").classList.add("open");
+  render();
 }
 // The snapshot stream re-renders the inspector on every event. Rewriting
 // identical markup tears the panel down mid-read and drops the reader back at
@@ -1059,19 +953,18 @@ function workerButtons(controls, role) {
     const pending = busy(commandKey(selectedTown, role, action, ""));
     return `<button${primary ? ' class="primary"' : ""} data-action="${action}"${pending || (controls[action] ? "" : " disabled")}>${label}</button>`;
   };
-  return `<div class="inspector-actions">${button("start", "▶ Start", true)}${button("pause", "Ⅱ Pause")}${button("stop", "■ Stop")}</div>`;
+  return `<div class="inspector-actions">${button("start", "▶ Deploy", true)}${button("pause", "Ⅱ Stand down")}${button("stop", "■ Stop now")}</div>`;
 }
 function renderInspection() {
   const t = town(),
     out = $("#inspection"),
-    faction = currentFaction(t?.id),
-    houseLabel = activeSkin.houseLabel(selectedHouse, faction);
-  $("#inspector-town").textContent =
-    t?.config.repo || activeSkin.text["inspector-empty-title"];
+    houseLabel = unitName(selectedHouse),
+    unit = units[selectedHouse];
+  $("#inspector-town").textContent = t?.config.repo || "UNIT FILE";
   if (!t) {
     writeInspection(
       out,
-      '<h2>Take a look around</h2><p class="muted">Add a repository to establish the first town.</p>',
+      '<h2>Pick a unit</h2><p class="muted">Put a repository under watch to open its first precinct.</p>',
     );
     return;
   }
@@ -1083,15 +976,15 @@ function renderInspection() {
       sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
     const taskBusy = (action, role) => busy(commandKey(selectedTown, role, action, selectedTask));
     const mayorActions = simplifierDeclined(task)
-      ? `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>Admit anyway</button></div><p class="muted">Simplifier declined this. Admitting overrules it and sends it to ${task.kind === "issue" ? "Issue Bot" : "Review Bot"}.</p>`
+      ? `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>Grant probation anyway</button></div><p class="muted">The Magistrate sent this to the Slop Tank. Probation overrules that and sends it to ${task.kind === "issue" ? "the Caseworker" : "Forensics"}.</p>`
       : task.mayoral_decision !== "pending"
       ? ""
-        : `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit to town"}</button><button id="decline-task" class="danger"${taskBusy("decline", "hall")}>Decline</button></div><p class="muted">Nothing will act on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until you decide.</p>`;
+        : `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>${task.audit?.verdict === "changes_needed" ? "Review again" : "Grant probation"}</button><button id="decline-task" class="danger"${taskBusy("decline", "hall")}>Send to the tank</button></div><p class="muted">Nothing acts on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until it is ruled on.</p>`;
     const isMayor = task.mayoral_decision === "pending";
     const liveCapable = isMayor && (task.kind === "issue" || task.kind === "pr") && task.number > 0;
     const kindLabel = task.kind === "pr" ? "PR" : task.kind === "issue" ? "Issue" : task.kind;
     const mayorMeta = liveCapable
-      ? `<p><strong>${esc(kindLabel)} #${task.number}</strong> · ${esc(decisionReason(task))}${task.updated ? ` · updated ${esc(new Date(task.updated).toLocaleString())}` : ""}</p><p class="muted">Admitting sends this to ${task.kind === "issue" ? "Issue Bot" : "Review Bot"}.</p>`
+      ? `<p><strong>${esc(kindLabel)} #${task.number}</strong> · ${esc(decisionReason(task))}${task.updated ? ` · updated ${esc(new Date(task.updated).toLocaleString())}` : ""}</p><p class="muted">Probation sends this to ${task.kind === "issue" ? "the Caseworker" : "Forensics"}.</p>`
       : "";
     let liveBlock = "";
     if (liveCapable) {
@@ -1103,7 +996,7 @@ function renderInspection() {
       if (liveDetail.status === "loading") {
         liveBlock = `<p class="muted">Loading live details from GitHub…</p>`;
       } else if (liveDetail.status === "demo") {
-        liveBlock = `<p class="muted">Demo town: simulated arrival, no live source.</p>`;
+        liveBlock = `<p class="muted">Training exercise: simulated arrival, no live source.</p>`;
       } else if (liveDetail.status === "failed") {
         liveBlock = `<p class="muted">Live details unavailable${liveDetail.error ? `: ${esc(liveDetail.error)}` : ""}. The summary above is current as of the last sync.</p>`;
       } else {
@@ -1115,16 +1008,16 @@ function renderInspection() {
       }
     }
     const simplifier = task.simplification
-      ? `<section class="advisor-note"><strong>Simplifier Bot · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
+      ? `<section class="advisor-note"><strong>Magistrate · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision === "decline" ? "to the tank" : task.simplification.decision === "admit" ? "set free" : task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
       : "";
-    const detailText = task.merge_wait && task.stage === "ready" && (task.detail || "").trim() === diagnosticSummary(task.merge_wait) ? "" : task.detail || (liveCapable ? "" : "Following the next step through town.");
+    const detailText = task.merge_wait && task.stage === "ready" && (task.detail || "").trim() === diagnosticSummary(task.merge_wait) ? "" : task.detail || (liveCapable ? "" : "Following the case.");
     const snooze = projected.snooze;
     const snoozeBlock = snooze
-      ? `<section class="snooze-note" aria-label="Snooze"><strong>${esc(snoozeLabel(task))}</strong>${snooze.reason ? `<p>${esc(snooze.reason)}</p>` : ""}<p class="muted">Resumes ${esc(snooze.until.toLocaleString())} without any action. Its house keeps working the rest of the queue; no agent starts and no merge happens for this task until then.</p><div class="inspector-actions"><button id="snooze-task" type="button">Change snooze…</button><button id="clear-snooze" type="button"${taskBusy("undefer", selectedHouse)}>Resume now</button></div></section>`
+      ? `<section class="snooze-note" aria-label="Snooze"><strong>${esc(snoozeLabel(task))}</strong>${snooze.reason ? `<p>${esc(snooze.reason)}</p>` : ""}<p class="muted">Resumes ${esc(snooze.until.toLocaleString())} without any action. Its unit keeps working the rest of the caseload; no agent starts and no merge happens for this case until then.</p><div class="inspector-actions"><button id="snooze-task" type="button">Change snooze…</button><button id="clear-snooze" type="button"${taskBusy("undefer", selectedHouse)}>Resume now</button></div></section>`
       : taskSnoozable(task)
         ? `<div class="inspector-actions"><button id="snooze-task" type="button">Snooze…</button></div>`
         : "";
-    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}${snoozeBlock}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${task.merge_wait && task.stage === "ready" ? `<section><h3>Last merge check</h3>${diagnosticBlock(task.merge_wait)}</section>` : ""}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? `<button id="retry-task" class="primary"${taskBusy("retry", selectedHouse)}>Reconcile and retry</button>${snooze ? '<p class="muted">Retry clears the block but keeps the snooze: the task still waits for its resume time unless you choose Resume now.</p>' : ""}` : ""}`))
+    if (!writeInspection(out, `<button id="back-house" class="quiet">← ${esc(houseLabel)}</button><h2>${esc(task.title)}</h2><div class="status-line status-${esc(projected.statusClass)}"><span class="status-chip">${esc(projected.statusLabel)}</span> · ${esc(task.stage)}${task.external ? " · external arrival" : ""}</div>${mayorActions}${snoozeBlock}<div class="task-detail">${safeURL(task.url) ? `<a href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">Open at source ↗</a>` : ""}${mayorMeta}${simplifier}${sourceSummary}${task.merge_wait && task.stage === "ready" ? `<section><h3>Last merge check</h3>${diagnosticBlock(task.merge_wait)}</section>` : ""}${detailText ? `<p>${esc(detailText)}</p>` : ""}${issueJobDetails(task).map((detail) => `<p>${esc(detail)}</p>`).join("")}${task.head ? `<p>Revision <code>${esc(task.head.slice(0, 10))}</code> · repair round ${task.cycles}</p>` : ""}${liveBlock}${task.audit ? `<h3>${esc(task.audit.verdict.replaceAll("_", " "))}</h3><p>${esc(task.audit.summary)}</p>${task.audit.findings.map((f) => `<p><strong>${esc(f.state)}</strong> ${esc(f.detail)}</p>`).join("")}` : ""}${projected.intent?.detail ? `<p class="uncertainty-note">${esc(projected.intent.detail)}</p>` : ""}</div>${taskRetryEligible(task) || projected.status === "uncertain_write" || projected.status === "inconclusive" ? `<button id="retry-task" class="primary"${taskBusy("retry", selectedHouse)}>Reconcile and retry</button>${snooze ? '<p class="muted">Retry clears the block but keeps the snooze: the case still waits for its resume time unless you choose Resume now.</p>' : ""}` : ""}`))
       return;
     $("#back-house").onclick = () => {
       selectedTask = "";
@@ -1143,7 +1036,7 @@ function renderInspection() {
       decline = decisionButtons.find((button) => button.id === "decline-task");
     if (admit)
       admit.onclick = () => {
-        if (simplifierDeclined(task) && !globalThis.confirm(`Admit ${task.kind === "pr" ? "PR" : "issue"} #${task.number} over Simplifier's decline? Town will act on it, and the decline cannot be restored.`)) return;
+        if (simplifierDeclined(task) && !globalThis.confirm(`Grant ${task.kind === "pr" ? "PR" : "issue"} #${task.number} probation over the Magistrate's ruling? The Squad will act on it, and the ruling cannot be restored.`)) return;
         return command("admit", "hall", selectedTask);
       };
     if (decline) decline.onclick = () => command("decline", "hall", selectedTask);
@@ -1151,10 +1044,10 @@ function renderInspection() {
   }
   if (selectedHouse === "hall") {
     const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
-    // Newest first and capped, like the other Town Hall feeds.
+    // Newest first and capped, like the other court feeds.
     const overrulable = Object.values(t.tasks || {}).filter(simplifierDeclined).sort((a, b) => (b.number ?? 0) - (a.number ?? 0));
     const overrulableBlock = overrulable.length
-      ? `<h3>Declined by Simplifier</h3>${overrulable.slice(0, 20).map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · you can admit it anyway</small></button>`).join("")}${overrulable.length > 20 ? `<p class="muted">${overrulable.length - 20} older declined items are not shown.</p>` : ""}`
+      ? `<h3>Sent to the tank by the Magistrate</h3>${overrulable.slice(0, 20).map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · you can grant probation anyway</small></button>`).join("")}${overrulable.length > 20 ? `<p class="muted">${overrulable.length - 20} older dismissals are not shown.</p>` : ""}`
       : "";
     const outcomes = outcomeReport(t.outcomes || [], outcomeDays > 0 ? new Date(Date.now() - outcomeDays * 86400000) : new Date(0));
     const metric = (value, label) => `<span><strong>${value}</strong>${label}</span>`;
@@ -1171,9 +1064,9 @@ function renderInspection() {
     const mayor = t.workers?.hall,
       projectedMayor = projectWorker(t, "hall", mayor),
       mayorControls = workerControls(mayor);
-    const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : projectedMayor.status === "failed" ? "blocked" : projectedMayor.status === "quiet" ? "quiet" : "waiting"}"></i>Mayor Bot ${esc(projectedMayor.status === "quiet" ? "quiet hours" : projectedMayor.status)}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div>${workerButtons(mayorControls, "hall")}<p class="muted">${mayor?.enabled ? "Mayor Bot judges each arrival below as it comes in, with its reason kept on the task, and writes the bulletin when work merges." : "Start Mayor Bot to have it judge arrivals for you and write the bulletin. Until then, decisions wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
+    const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : dutyLight(projectedMayor.status)}"></i>Judge Bot ${esc(dutyStatus(projectedMayor.status))}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div>${workerButtons(mayorControls, "hall")}<p class="muted">${mayor?.enabled ? "Judge Bot rules on each arrival below as it comes in, probation or the Slop Tank, with its reason kept on the case, and writes the blotter when work merges." : "Deploy Judge Bot to have it rule on arrivals and keep the blotter. Until then, rulings wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
     const bulletinRows = (t.bulletins || []).slice().reverse().slice(0, 20).map((b) => `<article class="bulletin"><h4>${esc(b.title)}</h4><p class="muted">${esc(new Date(b.since).toLocaleString())} – ${esc(new Date(b.until).toLocaleString())} · ${(b.pulls || []).length} merged</p><p>${esc(b.summary)}</p>${(b.items || []).map((item) => `<div class="bulletin-item"><span class="status-chip status-${esc(item.kind)}">${esc(item.kind)}</span> <strong>${esc(item.title)}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${(item.pulls || []).map((n) => `PR #${n}`).join(", ")}${(item.issues || []).length ? ` · ${item.issues.map((n) => `issue #${n}`).join(", ")}` : ""}</small></div>`).join("")}</article>`).join("");
-    if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline("hall", faction))}</p><h2>${esc(activeSkin.text["hall-title"])}</h2>${mayorBlock}<p class="muted">${mayor?.enabled ? "Outside work and proposed features are judged by Mayor Bot as they arrive; anything it cannot judge waits here for you." : "Outside work and proposed features wait for your clearance."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a decision" : "your decision"}</small></button>`).join("") || '<p class="muted">No arrivals need a decision.</p>'}${overrulableBlock}<h2>What changed</h2><p class="muted">Mayor Bot's bulletin for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">No bulletin yet. Mayor Bot writes one after work merges, at most every few hours.</p>'}${quietBlock(t)}${budgetBlock(t)}${setupBlock(t, "hall")}<h2>Automation outcomes</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding judgments: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>News from repo-bot</h2>${
+    if (!writeInspection(out, `<p class="worker-type">${esc(`${unit.callsign} · ${unit.tagline}`)}</p><h2>${esc(unit.name)}</h2><p class="unit-bot">Judge Bot presiding</p>${mayorBlock}<p class="muted">${mayor?.enabled ? "Judge Bot rules on civilian reports and unit proposals as they arrive; anything it cannot rule on waits here for you." : "Civilian reports and unit proposals wait for your ruling."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a ruling" : "your ruling"}</small></button>`).join("") || '<p class="muted">Nothing awaits a ruling.</p>'}${overrulableBlock}<h2>The blotter</h2><p class="muted">Judge Bot's public record for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">The blotter is empty. Judge Bot writes an entry after work merges, at most every few hours.</p>'}${quietBlock(t)}${budgetBlock(t)}${setupBlock(t, "hall")}<h2>Clearance stats</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding verdicts: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>Patrol reports</h2>${
       t.reports
         .slice()
         .reverse()
@@ -1182,7 +1075,7 @@ function renderInspection() {
             `<article class="report"><time>${new Date(r.at).toLocaleTimeString()}</time><h4>${esc(r.title)}</h4><p>${esc(r.body)}</p></article>`,
         )
         .join("") ||
-      '<p class="muted">The first report will arrive after the repository check.</p>'
+      '<p class="muted">The first report comes in after Patrol\'s first pass.</p>'
     }`))
       return;
     bindSetup(out, t.id);
@@ -1232,22 +1125,22 @@ function renderInspection() {
     : "";
   const healthNote = selectedHouse === "repo" ? branchHealthNote(t.health) : "";
   const healthDetails = healthNote ? `<p class="muted">${esc(healthNote)}</p>` : "";
-  const agentDetails = `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${selectedHouse === "repo" ? "Inventory runs without an agent. The configured agent starts only to repair a failing branch." : agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this house only" : "Inherited from this town's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
-  if (!writeInspection(out, `<p class="worker-type">${esc(activeSkin.houseTagline(selectedHouse, faction))}</p><h2>${esc(houseLabel)}</h2><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : projectedWorker.status === "failed" ? "blocked" : projectedWorker.status === "quiet" ? "quiet" : "waiting"}"></i>${esc(projectedWorker.status === "quiet" ? "quiet hours" : projectedWorker.status)}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div>${projectedWorker.status === "quiet" ? `<p class="quiet-held">${esc(quietNote(t))}</p>` : ""}${workerButtons(controls, selectedHouse)}${workloadChips(houseWorkload(t, selectedHouse))}${policyBlock(t, selectedHouse)}<h3>${esc(activeSkin.queueHeading(queue.length))}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
+  const agentDetails = `<div class="agent-card"><h3>${projectedWorker.active ? "RUNNING NOW" : "NEXT RUN"}</h3><dl class="agent-profile"><dt>Harness</dt><dd>${esc(agent.harness || "codex-acp")}${agent.harness_version ? ` <span class="muted">${esc(agent.harness_version)}</span>` : ""}</dd><dt>Model</dt><dd>${agent.model ? esc(agent.model) : '<span class="muted">harness default</span>'}</dd><dt>Effort</dt><dd>${agent.effort ? esc(agent.effort) : '<span class="muted">harness default</span>'}</dd></dl><p class="muted">${selectedHouse === "repo" ? "Inventory runs without an agent. The configured agent starts only to repair a failing branch." : agent.source === "active" ? "Captured when this run was dispatched" : agent.inherited === false ? "Set for this unit only" : "Inherited from this precinct's defaults"}</p><button id="configure-agent" type="button">Configure agent</button></div>`;
+  if (!writeInspection(out, `<p class="worker-type">${esc(`${unit.callsign} · ${unit.tagline}`)}</p><h2>${esc(houseLabel)}</h2><p class="unit-bot">${esc(unitBot(selectedHouse))} · ${esc(unit.duty)}</p><div class="status-line"><i class="dot ${projectedWorker.active ? "active" : dutyLight(projectedWorker.status)}"></i>${esc(dutyStatus(projectedWorker.status))}${w.next && Date.parse(w.next) > Date.now() ? ` · next check ${new Date(w.next).toLocaleTimeString()}` : ""}</div>${projectedWorker.status === "quiet" ? `<p class="quiet-held">${esc(quietNote(t))}</p>` : ""}${workerButtons(controls, selectedHouse)}${workloadChips(houseWorkload(t, selectedHouse))}${policyBlock(t, selectedHouse)}<h3>CASELOAD · ${queue.length}</h3><p class="queue-summary">${esc(queueSummary)}</p><div class="house-task-queue">${
 
     queue
       .map(
         (task) =>
-          `<button class="task-card${task.policy_excluded ? " filtered" : ""}" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectedQueue.get(task.id).snooze ? snoozeLabel(task) : projectedQueue.get(task.id).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · needs attention" : ""}${task.policy_excluded ? " · held by this house\u2019s filter" : ""}</small></button>`,
+          `<button class="task-card${task.policy_excluded ? " filtered" : ""}" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(projectedQueue.get(task.id).snooze ? snoozeLabel(task) : projectedQueue.get(task.id).statusLabel)}${task.external ? " · external" : ""}${task.blocked ? " · stuck" : ""}${task.policy_excluded ? " · held by this unit\u2019s filter" : ""}</small></button>`,
       )
-      .join("") || '<p class="muted">Nothing waiting at the door.</p>'
-  }</div><h3>LATEST ACTIVITY</h3><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Finds useful new features by studying this repository" : selectedHouse === "simplifier" ? "Reviews arrivals and researches lower-complexity alternatives" : "Waiting for work"))}</p><p class="authority"><strong>Authority:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}${agentDetails}${healthDetails}${funnelDetails}${setupBlock(t, selectedHouse)}<h3>WORKBENCH LOG</h3><div class="worker-logs">${
+      .join("") || '<p class="muted">No open cases.</p>'
+  }</div><h3>LAST REPORTED</h3><p class="muted">${esc(w.task || (selectedHouse === "feature" ? "Looks for useful new capabilities by studying this repository" : selectedHouse === "simplifier" ? "Screens arrivals and researches lower-complexity alternatives" : "Standing by for a case"))}</p><p class="authority"><strong>Jurisdiction:</strong> ${esc(houseAuthority(selectedHouse, t.config.merge_policy))}</p>${w.error ? `<p class="muted">${esc(w.error)}</p>` : ""}${agentDetails}${healthDetails}${funnelDetails}${setupBlock(t, selectedHouse)}<h3>UNIT LOG</h3><div class="worker-logs">${
     esc(
       (w.logs || [])
         .slice(-35)
         .map((l) => `${new Date(l.at).toLocaleTimeString()}  ${l.text}`)
         .join("\n"),
-    ) || "No activity yet."
+    ) || "Nothing on the log yet."
   }</div>`))
     return;
   bindSetup(out, t.id);
@@ -1269,8 +1162,7 @@ function renderInspection() {
   );
 }
 function renderJournal() {
-  const faction = currentFaction(),
-    events = (state?.events || [])
+  const events = (state?.events || [])
     .filter((e) => e.town === selectedTown)
     .slice(-30)
     .reverse();
@@ -1279,16 +1171,16 @@ function renderJournal() {
     events
       .map(
         (e) =>
-          `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span class="event-route">${esc(e.kind === "delivery" ? activeSkin.routeLabel(e, faction) : activeSkin.rewrite(e.kind))}</span><button data-cargo="${esc(e.cargo || "")}" data-house="${esc(e.to || "hall")}">${esc(e.title)}</button></li>`,
+          `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span class="event-route">${esc(radioRoute(e))}</span><button data-cargo="${esc(e.cargo || "")}" data-house="${esc(e.to || "hall")}">${esc(e.title)}</button></li>`,
       )
       .join("") ||
-    '<li class="muted">The journal will fill as work moves through town.</li>';
+    '<li class="muted">Quiet on the radio. Traffic shows up here as cases move.</li>';
   $("#journal")
     .querySelectorAll("button")
     .forEach(
       (b) =>
         (b.onclick = () => {
-          selectedHouse = isHouse(b.dataset.house) ? b.dataset.house : "hall";
+          selectedHouse = isUnit(b.dataset.house) ? b.dataset.house : "hall";
           selectedTask = b.dataset.cargo;
           $("#inspector").classList.add("open");
           renderInspection();
@@ -1385,8 +1277,8 @@ async function command(action, role = "all", task = "", townId = selectedTown) {
     }
   });
 }
-// The inbox lists what waits on the Mayor in every town and points at the
-// exact house where the decision or retry lives.  It re-renders on every
+// The inbox lists what waits on a ruling in every town and points at the
+// exact unit where the ruling or retry lives.  It re-renders on every
 // snapshot so a decision made elsewhere disappears without a reload.
 function inboxLabel(item) {
   const kind = item.kind === "pr" ? "PR" : item.kind === "issue" ? "Issue" : item.kind;
@@ -1409,16 +1301,16 @@ function renderInbox(needs = inbox(state)) {
   count.hidden = !needs.total;
   count.classList.toggle("decisions", needs.decisions.length > 0);
   const summary = needs.total
-    ? `${needs.decisions.length} awaiting your decision · ${needs.attention.length} need attention`
+    ? `${needs.decisions.length} awaiting your ruling · ${needs.attention.length} stuck`
     : "Nothing needs you right now";
-  toggle.title = `${summary} · across every town`;
+  toggle.title = `${summary} · across every precinct`;
   toggle.setAttribute("aria-label", `Needs you: ${summary}`);
   const openButton = (item, label, primary) =>
     `<button class="${primary ? "primary" : ""}" data-inbox-key="open:${esc(item.task || item.house)}" data-inbox-town="${esc(item.town)}" data-inbox-house="${esc(item.house)}" data-inbox-task="${esc(item.task)}" data-inbox-open="1">${label}</button>`;
   // One decision per task at a time, whichever of its two buttons was pressed.
   const deciding = (item) => busy(commandKey(item.town, "hall", "admit", item.task));
   const decisionCard = (item) =>
-    `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · admitting sends it to ${item.kind === "issue" ? "Issue Bot" : "Review Bot"}</small></div><div class="inbox-actions">${openButton(item, "Open in Town Hall", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit"${deciding(item)}>${item.reviewAgain ? "Review again" : "Admit"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline"${deciding(item)}>Decline</button></div></article>`;
+    `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · probation sends it to ${item.kind === "issue" ? "the Caseworker" : "Forensics"}</small></div><div class="inbox-actions">${openButton(item, "Open in court", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit"${deciding(item)}>${item.reviewAgain ? "Review again" : "Grant probation"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline"${deciding(item)}>Send to the tank</button></div></article>`;
   const expanded = new Set([...$("#inbox-list").querySelectorAll("[data-inbox-detail]")]
     .filter((detail) => detail.open).map((detail) => detail.dataset.inboxDetail));
   const attentionCard = (item) => {
@@ -1429,16 +1321,16 @@ function renderInbox(needs = inbox(state)) {
       ? `<a class="primary" data-inbox-key="workflow:${esc(item.house)}" data-inbox-town="${esc(item.town)}" href="${esc(guidance.workflow)}" target="_blank" rel="noopener noreferrer">View failed workflow ↗</a>` : "";
     const retry = guidance.retryRelease
       ? `<button data-inbox-key="retry:release" data-inbox-town="${esc(item.town)}" data-inbox-retry="1">Retry release…</button>` : "";
-    return `<article class="inbox-item attention"><div class="inbox-context"><strong>${esc(guidance.title)}</strong><small><span class="status-chip status-${esc(item.statusClass)}">${esc(item.statusLabel)}</span> · ${esc([houseNames[item.house] || item.house, ...inboxLabel(item)].join(" · "))}</small><p>${esc(guidance.summary)}</p><p class="inbox-next">${esc(guidance.next)}</p>${item.detail ? `<details data-inbox-detail="${esc(JSON.stringify([item.town, item.task || item.house]))}"><summary data-inbox-key="details:${esc(item.task || item.house)}" data-inbox-town="${esc(item.town)}">Technical details</summary><small>${esc(item.detail)}</small></details>` : ""}</div><div class="inbox-actions">${configure}${workflow}${retry}${openButton(item, item.task ? "View task" : "View bot &amp; logs", !configure && !workflow)}</div></article>`;
+    return `<article class="inbox-item attention"><div class="inbox-context"><strong>${esc(guidance.title)}</strong><small><span class="status-chip status-${esc(item.statusClass)}">${esc(item.statusLabel)}</span> · ${esc([isUnit(item.house) ? unitName(item.house) : item.house, ...inboxLabel(item)].join(" · "))}</small><p>${esc(guidance.summary)}</p><p class="inbox-next">${esc(guidance.next)}</p>${item.detail ? `<details data-inbox-detail="${esc(JSON.stringify([item.town, item.task || item.house]))}"><summary data-inbox-key="details:${esc(item.task || item.house)}" data-inbox-town="${esc(item.town)}">Technical details</summary><small>${esc(item.detail)}</small></details>` : ""}</div><div class="inbox-actions">${configure}${workflow}${retry}${openButton(item, item.task ? "Open case" : "Open unit &amp; log", !configure && !workflow)}</div></article>`;
   };
   $("#inbox-list").innerHTML =
     (needs.decisions.length
-      ? `<h2>Awaiting your decision <span class="count">${needs.decisions.length}</span></h2>${inboxGroups(needs.decisions, decisionCard)}`
+      ? `<h2>Awaiting your ruling <span class="count">${needs.decisions.length}</span></h2>${inboxGroups(needs.decisions, decisionCard)}`
       : "") +
     (needs.attention.length
-      ? `<h2>Needs attention <span class="count">${needs.attention.length}</span></h2>${inboxGroups(needs.attention, attentionCard)}`
+      ? `<h2>Stuck <span class="count">${needs.attention.length}</span></h2>${inboxGroups(needs.attention, attentionCard)}`
       : "") ||
-    '<p class="muted">Nothing needs you right now. New arrivals and stuck work will appear here from every town.</p>';
+    '<p class="muted">Nothing needs you right now. New rulings and stuck cases from every precinct show up here.</p>';
   $("#inbox-list").querySelectorAll("[data-inbox-detail]").forEach((detail) => {
     detail.open = expanded.has(detail.dataset.inboxDetail);
   });
@@ -1481,7 +1373,7 @@ function openInboxItem(id, house, task) {
   if (!state?.towns[id]) return;
   $("#inbox-dialog").close();
   selectTown(id);
-  inspectOperation(id, isHouse(house) ? house : "hall", task);
+  inspectOperation(id, isUnit(house) ? house : "hall", task);
 }
 async function decideFromInbox(id, task, action) {
   const key = commandKey(id, "hall", action, task);
@@ -1505,114 +1397,6 @@ function openInbox() {
 }
 $("#inbox-toggle").onclick = openInbox;
 $("#close-inbox").onclick = () => $("#inbox-dialog").close();
-function sprite(image, index, x, y, size) {
-  if (!image.complete || !image.naturalWidth) return;
-  const crop =
-    image === buildings
-      ? crops[index]
-      : [
-          (index % 3) * 512 + actorCrops[index][0],
-          Math.floor(index / 3) * 512 + actorCrops[index][1],
-          ...actorCrops[index].slice(2),
-        ];
-  const width = image === buildings ? size : (size * crop[2]) / crop[3];
-  ctx.drawImage(image, ...crop, x - width / 2, y - size / 2, width, size);
-}
-function singleSprite(image, x, y, height) {
-  if (!image.complete || !image.naturalWidth) return;
-  const width = (height * image.naturalWidth) / image.naturalHeight;
-  ctx.drawImage(image, x - width / 2, y - height / 2, width, height);
-}
-function draw(now) {
-  if (overview || viewMode !== "town" || document.hidden) {
-    requestAnimationFrame(draw);
-    return;
-  }
-  const t = town(),
-    faction = currentFaction(),
-    // The backdrop belongs to a base and its banner: a new town, a new theme
-    // or a new faction all require a repaint.
-    key = `${activeSkin.id}\u0000${selectedTown}\u0000${faction || ""}`;
-  if (!field || fieldTown !== key) {
-    field = activeSkin.landscape(selectedTown, faction);
-    fieldTown = key;
-  }
-  ctx.drawImage(field, 0, 0);
-  for (const [role, [x, y]] of Object.entries(positions)) {
-    if (!isHouse(role)) continue;
-    if (role === selectedHouse) {
-      ctx.fillStyle = "#b0e98115";
-      ctx.beginPath();
-      ctx.ellipse(x, y + 72, 118, 28, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    activeSkin.paintInstallation(ctx, { role, x, y, faction, now, motion }, () => {
-      if (standaloneBuildings[role]) singleSprite(standaloneBuildings[role], x, y, 235);
-      else sprite(buildings, indices[role], x, y, role === "repo" ? 220 : 235);
-    });
-    const w = t?.workers[role];
-    const working = w?.status === "working" || w?.status === "pausing";
-    if (working || activeSkin.showIdleOccupants) {
-      let threat = null;
-      if (motion && activeSkin.showIdleOccupants)
-        for (const m of moving) {
-          const elapsed = now - m.start;
-          if (m.town !== selectedTown || m.to !== role ||
-              elapsed < activeSkin.travelMs * 0.68 ||
-              elapsed >= activeSkin.travelMs + activeSkin.impactMs) continue;
-          const p = routePosition(m.from, m.to,
-            easeDelivery(Math.min(1, elapsed / activeSkin.travelMs)));
-          if (Math.hypot(p.x - x, p.y - (y + 60)) < 190) threat = p;
-        }
-      activeSkin.paintOccupants(ctx, { role, x, y, faction, now, motion, working, threat }, (index, px = 0, py = 0, size = 52) =>
-        index === "feature"
-          ? singleSprite(featureReader, px, py, 58)
-          : sprite(actors, index, px, py, size),
-      );
-    }
-  }
-
-  paintGuide(ctx, {town:t, now, motion, visual:guideUI.visual(), positions});
-  const travel = activeSkin.travelMs;
-  moving = moving.filter((m) => now - m.start < travel + activeSkin.impactMs);
-  if (motion)
-    for (const m of moving) {
-      if (m.town !== selectedTown) continue;
-      const elapsed = now - m.start,
-        progress = Math.min(1, elapsed / travel),
-        p = routePosition(
-          m.from,
-          m.to,
-          easeDelivery(progress),
-        ),
-        right = p.direction >= 0,
-        strikeFaction = activeSkin.strikeFaction(m, faction),
-        strike = {
-          x: p.x,
-          y: p.y,
-          from: m.from,
-          to: m.to,
-          cargo: m.cargo,
-          now,
-          progress,
-          direction: right ? 1 : -1,
-          faction: strikeFaction,
-          motion,
-        };
-      if (elapsed <= travel)
-        activeSkin.drawStrike(ctx, strike, (index, px, py, size) =>
-          sprite(actors, index, px, py, size),
-        );
-      else if (activeSkin.impactMs)
-        activeSkin.drawImpact(ctx, {
-          x: p.x,
-          y: p.y,
-          faction: strikeFaction,
-          age: (elapsed - travel) / activeSkin.impactMs,
-        });
-    }
-  requestAnimationFrame(draw);
-}
 $("#town-toggle").onclick = () => command($("#town-toggle").dataset.action || "start");
 $("#pause-all").onclick = () => command("pause");
 $("#close-inspector").onclick = closeInspector;
@@ -1642,23 +1426,22 @@ $("#add-form").onsubmit = async (e) => {
   }
 };
 function motionUI() {
+  document.body?.classList?.toggle("still", !motion);
   $("#motion").textContent = motion ? "Motion on" : "Motion off";
   $("#motion").setAttribute("aria-pressed", String(motion));
 }
 $("#motion").onclick = () => {
   motion = !motion;
-  if (!motion) moving = [];
+  if (!motion) lastCast = null;
   motionUI();
 };
 motionUI();
-$("#skin").onclick = () =>
-  selectSkin(activeSkin.id === "frontline" ? "town" : "frontline");
-applySkin();
+$("#scene-bars")?.setAttribute("style", barsBox());
 matchMedia("(prefers-reduced-motion: reduce)").addEventListener(
   "change",
   (e) => {
     motion = !e.matches;
-    moving = [];
+    lastCast = null;
     motionUI();
   },
 );
@@ -1672,39 +1455,18 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "?") $("#help-dialog").showModal();
   if (e.key.toLowerCase() === "i") openInbox();
-  if (e.key.toLowerCase() === "t") selectView("town");
+  if (e.key.toLowerCase() === "p") selectView("town");
   if (e.key.toLowerCase() === "b") selectView("board");
   if (e.key.toLowerCase() === "c") selectView("compact");
   if (e.key === "Escape") closeInspector();
-  if (/^[1-9]$/.test(e.key) && houseShortcuts[Number(e.key) - 1])
-    chooseHouse(houseShortcuts[Number(e.key) - 1]);
+  if (/^[1-8]$/.test(e.key)) chooseHouse(unitOrder[Number(e.key) - 1]);
 });
-canvas.onclick = (e) => {
-  const r = canvas.getBoundingClientRect(),
-    x = ((e.clientX - r.left) * 1120) / r.width,
-    y = ((e.clientY - r.top) * 680) / r.height;
-  for (const m of moving) {
-    const p = routePosition(
-      m.from,
-      m.to,
-      easeDelivery(Math.min(1, (performance.now() - m.start) / activeSkin.travelMs)),
-    );
-    if (Math.hypot(x - p.x, y - p.y) < 50) {
-      selectedTask = m.cargo;
-      selectedHouse = isHouse(m.to) ? m.to : "hall";
-      $("#inspector").classList.add("open");
-      renderInspection();
-      return;
-    }
-  }
-};
 setInterval(() => {
   $("#clock").textContent = new Date().toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
 }, 1000);
-requestAnimationFrame(draw);
 connect();
 
 // Read and navigation tools mirror the visible multi-town controls. Worker

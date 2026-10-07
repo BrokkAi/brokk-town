@@ -119,8 +119,8 @@ func Platform() string {
 }
 func supplements() []Entry {
 	return []Entry{
-		{ID: "brokkai/anvil", Name: "Anvil", Version: "installed", Repository: "https://github.com/BrokkAi/anvil", Description: "Brokk.ai's ACP agent runtime", Distribution: Distribution{Npx: &Package{Package: "@brokkai/anvil"}}, Setup: "Runs @brokkai/anvil with npx; requires npx on the service PATH. Configure its model provider first."},
-		{ID: "brokkai/muse-acp", Name: "Muse ACP", Version: "installed", Repository: "https://github.com/BrokkAi/muse-acp", Description: "Brokk.ai's ACP adapter for Muse Code", Distribution: Distribution{Npx: &Package{Package: "@brokkai/muse-acp"}}, Setup: "Runs @brokkai/muse-acp with npx; requires npx on the service PATH. Muse Code must also be installed and authenticated with muse login."},
+		{ID: "brokkai/anvil", Name: "Anvil", Version: "installed", Repository: "https://github.com/BrokkAi/anvil", Description: "SlopCop.ai's ACP agent runtime", Distribution: Distribution{Npx: &Package{Package: "@brokkai/anvil"}}, Setup: "Runs @brokkai/anvil with npx; requires npx on the service PATH. Configure its model provider first."},
+		{ID: "brokkai/muse-acp", Name: "Muse ACP", Version: "installed", Repository: "https://github.com/BrokkAi/muse-acp", Description: "SlopCop.ai's ACP adapter for Muse Code", Distribution: Distribution{Npx: &Package{Package: "@brokkai/muse-acp"}}, Setup: "Runs @brokkai/muse-acp with npx; requires npx on the service PATH. Muse Code must also be installed and authenticated with muse login."},
 		{ID: "foundev/draupnir", Name: "Draupnir", Version: "installed", Repository: "https://github.com/foundev/draupnir", Description: "Portable ACP agent runtime", Command: []string{"draupnir"}, Setup: "Uses draupnir on PATH. Configure its model provider first. Install using the repository's release instructions."},
 	}
 }
@@ -264,7 +264,7 @@ func (c *Catalog) List() Listing {
 			setup = "Runs the registry's Python package with uvx (install uv first)."
 		default:
 			_, available = e.Distribution.Binary[Platform()]
-			setup = "Downloads the registry's native archive into Town's private cache when first used."
+			setup = "Downloads the registry's native archive into the Squad's private cache when first used."
 			if !available {
 				setup = "No registry distribution for " + Platform() + ". Use a custom command for a separately installed agent."
 			}

@@ -88,7 +88,7 @@ func TestManagedChoicesUseRolePlacementAndPreserveLocalPins(t *testing.T) {
 }
 
 // The default mj executable is the npm release through npx; an explicit
-// BT_MJOLNIR_COMMAND prefix passes through untouched.
+// SLOPCOP_SQUAD_MJOLNIR_COMMAND prefix passes through untouched.
 func TestMjolnirCommandDefaultsToNpx(t *testing.T) {
 	if got := mjolnirCommand(nil); !reflect.DeepEqual(got, []string{"npx", "--yes", "--", "@brokkai/mjolnir"}) {
 		t.Fatal(got)
@@ -236,7 +236,7 @@ func TestManagedExecutionIsHeldWithoutBudgetOrLocalFallback(t *testing.T) {
 	if _, err := bot.Run(context.Background(), st.Towns[x.ID], Review, func(Progress) {}, slog.Default()); err == nil || !strings.Contains(err.Error(), "configured Mjolnir connection") {
 		t.Fatal(err)
 	}
-	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{}); err == nil || !strings.Contains(err.Error(), "Configure BT_MJOLNIR") {
+	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{}); err == nil || !strings.Contains(err.Error(), "Configure SLOPCOP_SQUAD_MJOLNIR") {
 		t.Fatal("local model probe was not refused", err)
 	}
 	if err := s.SetExecution(x.ID, Review, &mjolnir.Selection{}); err != nil {
@@ -306,7 +306,7 @@ func TestManagedSelectionPreservesUncertaintyAndBlocksInheritedProfileProbe(t *t
 		t.Fatal(w)
 	}
 	// Inheriting the agent profile must not also inherit its execution location.
-	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{Inherit: true}); err == nil || !strings.Contains(err.Error(), "Configure BT_MJOLNIR") {
+	if _, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{Inherit: true}); err == nil || !strings.Contains(err.Error(), "Configure SLOPCOP_SQUAD_MJOLNIR") {
 		t.Fatal(err)
 	}
 	checks := s.setupChecks(context.Background(), store.Snapshot().Towns[x.ID].Config)

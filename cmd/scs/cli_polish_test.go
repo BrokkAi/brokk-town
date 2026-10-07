@@ -36,7 +36,7 @@ func TestRequestReportsServiceError(t *testing.T) {
 	defer h.Close()
 	var out any
 	err := request(context.Background(), connection{URL: h.URL, Token: "test-key"}, "POST", "/api/requests", map[string]string{}, &out)
-	if err == nil || err.Error() != "town service: request body exceeds the 64 KiB limit" {
+	if err == nil || err.Error() != "SlopCop Squad service: request body exceeds the 64 KiB limit" {
 		t.Fatal(err)
 	}
 }
@@ -62,11 +62,11 @@ func TestBannersKeepAccessKeyOffRedirectedOutput(t *testing.T) {
 		stubTerminal(t, false)
 		for _, demo := range []bool{false, true} {
 			got := banner(demo)
-			if strings.Contains(got, "secret-key") || !strings.Contains(got, "run bt web") {
+			if strings.Contains(got, "secret-key") || !strings.Contains(got, "run scs web") {
 				t.Fatalf("%s redirected: %q", name, got)
 			}
 		}
-		if got := banner(true); !strings.Contains(got, "bt web --demo") {
+		if got := banner(true); !strings.Contains(got, "scs web --demo") {
 			t.Fatalf("%s redirected demo: %q", name, got)
 		}
 	}

@@ -37,12 +37,12 @@ func recoverDefaultBranchFailure(s *State, t *Town, now time.Time) bool {
 
 func recoveryDetail(role Role, taskID string) string {
 	if role == Repo {
-		return "An interrupted repository run may have published a branch repair. Repository inventory continues, but further repairs are held. Check the branch and saved bot result, then start Repo Bot to authorize repairs."
+		return "An interrupted repository run may have published a branch repair. Repository inventory continues, but further repairs are held. Check the branch and saved bot result, then deploy Patrol to authorize repairs."
 	}
 	if taskID != "" {
 		return fmt.Sprintf("Interrupted %s work on %s has an uncertain outcome. Check GitHub and the saved bot result; then use retry --task %s if unfinished. Automatic replacement work is held.", role, taskID, taskID)
 	}
-	return fmt.Sprintf("Interrupted %s scan has an uncertain outcome. Check recent GitHub issues for work that landed; start the %s house to authorize another scan. Automatic replacement work is held.", role, role)
+	return fmt.Sprintf("Interrupted %s scan has an uncertain outcome. Check recent GitHub issues for work that landed; deploy %s to authorize another scan. Automatic replacement work is held.", role, unitName(role))
 }
 
 // An inventory request carries no agent and cannot publish a repair. Losing

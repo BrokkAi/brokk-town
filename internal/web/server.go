@@ -18,7 +18,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-//go:embed index.html style.css app.js town.js tools.js manage.js execution.js attention.js storage.js history.js guide.js scenery.js skins.js frontline.js assets/*
+//go:embed index.html style.css badge.svg app.js town.js precinct.js animation.js scene.js tools.js manage.js execution.js attention.js storage.js history.js guide.js
 var files embed.FS
 
 type Server struct {
@@ -32,7 +32,7 @@ type Server struct {
 	// interface. A nil handle means live details are unavailable.
 	TaskGitHub taskGitHub
 	// Shutdown, when set, stops the service after the request is answered. It
-	// is how bt shutdown reaches a service it cannot signal, as on Windows.
+	// is how scs shutdown reaches a service it cannot signal, as on Windows.
 	Shutdown func()
 }
 
@@ -215,7 +215,7 @@ func (s *Server) outcomeJudgment(w http.ResponseWriter, r *http.Request) {
 	err := s.Store.Update(func(state *town.State) error {
 		current := state.Towns[strings.ToLower(input.Town)]
 		if current == nil || current.Deleted {
-			return fmt.Errorf("unknown town")
+			return fmt.Errorf("unknown precinct")
 		}
 		return current.JudgeOutcome(input.Outcome, input.Value, input.Explanation, time.Now())
 	})
@@ -447,12 +447,12 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	snapshot := s.Store.Snapshot()
 	if snapshot.Demo {
-		problem(w, "demo towns have no live source", http.StatusConflict)
+		problem(w, "training-exercise precincts have no live source", http.StatusConflict)
 		return
 	}
 	t := snapshot.Towns[strings.ToLower(input.Town)]
 	if t == nil {
-		problem(w, "unknown town", 404)
+		problem(w, "unknown precinct", 404)
 		return
 	}
 	task := t.Tasks[input.Task]

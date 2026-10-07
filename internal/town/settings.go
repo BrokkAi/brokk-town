@@ -33,7 +33,7 @@ func (a AgentSettings) validateRole(role Role) error {
 	}
 	if a.Inherit {
 		if role == "" {
-			return errors.New("town defaults cannot inherit agent settings")
+			return errors.New("precinct defaults cannot inherit agent settings")
 		}
 		if a.Harness != nil || a.Model != nil || a.Effort != nil || a.Command != nil || a.Version != nil {
 			return errors.New("inherit cannot be combined with agent overrides")
@@ -136,7 +136,7 @@ func agentConfig(ctx context.Context, c Config, root string) (runner.AgentConfig
 	}
 	// After the merge: the derivation already reads through whatever config
 	// directory the operator pointed at, so the redirect has to outrank it.
-	// BROKK_TOWN_MUSE_PERMISSIONS=keep is the opt-out.
+	// SLOPCOP_SQUAD_MUSE_PERMISSIONS=keep is the opt-out.
 	if harness.Canonical(c.harness()) == "brokkai/muse-acp" {
 		if home := museConfigHome(root, merged); home != "" {
 			merged["XDG_CONFIG_HOME"] = home
@@ -221,7 +221,7 @@ func (s *Supervisor) add(repo string, prepare func(existing *Town) (Config, erro
 	id := strings.ToLower(repo)
 	for key := range s.running {
 		if strings.HasPrefix(key, id+":") {
-			return "", errors.New("town workers are still stopping; try again shortly")
+			return "", errors.New("the precinct's units are still stopping; try again shortly")
 		}
 	}
 	err := s.Store.Update(func(st *State) error {
@@ -230,7 +230,7 @@ func (s *Supervisor) add(repo string, prepare func(existing *Town) (Config, erro
 		}
 		existing := st.Towns[id]
 		if existing != nil && !existing.Deleted {
-			return errors.New("town already exists")
+			return errors.New("precinct already exists")
 		}
 		cfg, err := prepare(existing)
 		if err != nil {
@@ -240,9 +240,9 @@ func (s *Supervisor) add(repo string, prepare func(existing *Town) (Config, erro
 		if err != nil {
 			return err
 		}
-		title := "Town established; reporter is checking the repository"
+		title := "Precinct established; Patrol is checking the repository"
 		if existing != nil {
-			title = "Town restored with the new settings; recovery records retained"
+			title = "Precinct restored with the new settings; recovery records retained"
 		}
 		st.Event(t.ID, "town", "operator", "repo", "", title, s.now())
 		return nil
@@ -256,7 +256,7 @@ func (s *Supervisor) Delete(id string) error {
 	if err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		t.Deleted = true
 		for _, w := range t.Workers {
@@ -265,10 +265,10 @@ func (s *Supervisor) Delete(id string) error {
 		for _, r := range t.Requests {
 			if r.Status == "queued" {
 				r.Status = "canceled"
-				r.Detail = "Submission canceled when the town was deleted."
+				r.Detail = "Submission canceled when the precinct was deleted."
 			}
 		}
-		st.Event(id, "town", "operator", "hall", "", "Town deleted; recovery records retained", s.now())
+		st.Event(id, "town", "operator", "hall", "", "Precinct deleted; recovery records retained", s.now())
 		return nil
 	}); err != nil {
 		return err
@@ -370,7 +370,7 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		if mergePolicy != nil {
 			t.Config.MergePolicy = *mergePolicy
@@ -433,11 +433,11 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 			}
 			t.Config.BotAgents[role] = cfg.botAgent()
 		}
-		target, title := "hall", "Town agent defaults saved for the next worker run"
+		target, title := "hall", "Precinct agent defaults saved for the next worker run"
 		if role != "" {
 			target, title = string(role), string(role)+" agent settings saved for the next worker run"
 			if settings.Inherit {
-				title = string(role) + " now inherits the town agent defaults"
+				title = string(role) + " now inherits the precinct agent defaults"
 			}
 		}
 		st.Event(id, "settings", "operator", target, "", title, s.now())
@@ -537,7 +537,7 @@ func selectValues(option *schema.SessionConfigOption) ([]ChoiceValue, error) {
 func ProbeAgent(ctx context.Context, cfg Config, roots ...string) (AgentChoices, error) {
 	prepareCtx, cancelPrepare := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancelPrepare()
-	dir, err := os.MkdirTemp("", "brokk-town-choices-*")
+	dir, err := os.MkdirTemp("", "slopcop-squad-choices-*")
 	if err != nil {
 		return AgentChoices{}, err
 	}
@@ -575,7 +575,7 @@ func ProbeAgent(ctx context.Context, cfg Config, roots ...string) (AgentChoices,
 	// Advertise the same session config support as runner.Execute, so an agent
 	// that gates its selectors on it reports what a real run would see. No
 	// workspace capabilities: discovery never serves files or terminals.
-	init, err := c.InitializeWithInfo(ctx, acp.Capabilities{Session: acp.ConfigOptionsClientCapabilities(true)}, acp.ClientInfo{Name: "brokk-town", Version: "dev"})
+	init, err := c.InitializeWithInfo(ctx, acp.Capabilities{Session: acp.ConfigOptionsClientCapabilities(true)}, acp.ClientInfo{Name: "slopcop-squad", Version: "dev"})
 	if err != nil {
 		return AgentChoices{}, errors.New("harness initialization failed; check its installation and login")
 	}
@@ -618,7 +618,7 @@ func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, s
 	t := s.Store.Snapshot().Towns[id]
 	if t == nil || t.Deleted {
 		s.mu.Unlock()
-		return AgentChoices{}, errors.New("unknown town")
+		return AgentChoices{}, errors.New("unknown precinct")
 	}
 	execution := t.Config.ExecutionForRole(role)
 	if settings.Inherit {

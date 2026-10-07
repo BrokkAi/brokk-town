@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// This file gives bt a cobra-style help surface without the cobra
+// This file gives scs a cobra-style help surface without the cobra
 // dependency: Usage / Available Commands / Flags sections, per-command
 // help, and a help command. Flag parsing stays on the standard library.
 
@@ -25,12 +25,12 @@ type cliFlags struct {
 // command surface. Day-to-day operation lives in the browser and local API.
 func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl := &cliFlags{}
-	fl.daemon = fs.Bool("d", false, "run Town in the background")
+	fl.daemon = fs.Bool("d", false, "run SlopCop Squad in the background")
 	fl.dir = fs.String("state-dir", stateHome(), "private state directory")
 	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address to serve on")
-	fl.demo = fs.Bool("demo", false, "the isolated simulated town")
+	fl.demo = fs.Bool("demo", false, "the isolated training exercise (simulated precincts)")
 	fl.config = fs.String("config", "", "optional JSON array or object with max_workers, quiet_hours and towns, applied at startup")
-	fl.json = fs.Bool("json", false, "print the full town state as JSON (status)")
+	fl.json = fs.Bool("json", false, "print the full Squad state as JSON (status)")
 	return fl
 }
 
@@ -46,17 +46,17 @@ type commandInfo struct {
 // select which service a client talks to.
 var globalFlagNames = []string{"demo", "state-dir"}
 
-// runFlagNames start Town: bare bt in the foreground, or bt -d.
+// runFlagNames start Town: bare scs in the foreground, or scs -d.
 var runFlagNames = []string{"config", "d", "listen"}
 
-// rootCommand is bare bt, which runs Town rather than a client command.
+// rootCommand is bare scs, which runs Town rather than a client command.
 var rootCommand = commandInfo{flags: runFlagNames}
 
 var cliCommands = []commandInfo{
-	{name: "status", short: "Show whether Town is running and its towns", long: "Show whether Town is running, where, and which towns it serves. Use --json for the full town state.", args: "[flags]", flags: []string{"json"}},
-	{name: "web", short: "Print the browser address for the town", long: "Print the browser address, with its access key, for the running town.", args: "[flags]", flags: nil},
-	{name: "shutdown", short: "Stop Town and its bots", long: "Stop the running Town service and all its bot processes. Use it for a town started with bt -d; Ctrl+C stops one in the foreground.", args: "[flags]", flags: nil},
-	{name: "version", short: "Print the version", long: "Print the bt version.", args: "", flags: nil},
+	{name: "status", short: "Show whether the Squad is running and its precincts", long: "Show whether the Squad is running, where, and which precincts it serves. Use --json for the full Squad state.", args: "[flags]", flags: []string{"json"}},
+	{name: "web", short: "Print the browser address for the Squad", long: "Print the browser address, with its access key, for the running Squad.", args: "[flags]", flags: nil},
+	{name: "shutdown", short: "Stop the Squad and its bots", long: "Stop the running SlopCop Squad service and all its bot processes. Use it for a Squad started with scs -d; Ctrl+C stops one in the foreground.", args: "[flags]", flags: nil},
+	{name: "version", short: "Print the version", long: "Print the scs version.", args: "", flags: nil},
 }
 
 func findCommand(name string) *commandInfo {
@@ -170,21 +170,21 @@ func writeCommands(out io.Writer, cmds []commandInfo) {
 // printRootHelp renders the top-level help: description, usage, commands,
 // flags, and the --help pointer.
 func printRootHelp(out io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintln(out, "Brokk Town — a local service with a browser.")
-	fmt.Fprintln(out, "Run bt in the foreground, or bt -d in the background. Ctrl+C or bt shutdown stops Town and its bots.")
-	fmt.Fprintln(out, "Use bt web for the browser address. Manage towns, houses, tasks and settings in the browser.")
+	fmt.Fprintln(out, "SlopCop Squad — a local service with a browser.")
+	fmt.Fprintln(out, "Run scs in the foreground, or scs -d in the background. Ctrl+C or scs shutdown stops the Squad and its bots.")
+	fmt.Fprintln(out, "Use scs web for the browser address. Manage precincts, units, cases and settings in the browser.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
-	fmt.Fprintln(out, "  bt [command] [flags]")
-	fmt.Fprintln(out, "  bt [flags]")
+	fmt.Fprintln(out, "  scs [command] [flags]")
+	fmt.Fprintln(out, "  scs [flags]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Available Commands:")
 	withHelp := append(append([]commandInfo(nil), cliCommands...), commandInfo{name: "help", short: "Show help for a command"})
 	writeCommands(out, withHelp)
 	fmt.Fprintln(out)
-	writeFlagSection(out, fs, append(append([]string(nil), runFlagNames...), globalFlagNames...), "Flags", "bt")
+	writeFlagSection(out, fs, append(append([]string(nil), runFlagNames...), globalFlagNames...), "Flags", "scs")
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, `Use "bt [command] --help" for more information about a command.`)
+	fmt.Fprintln(out, `Use "scs [command] --help" for more information about a command.`)
 }
 
 // printCommandHelp renders help for one command with its own flags plus the
@@ -198,7 +198,7 @@ func printCommandHelp(out io.Writer, fs *flag.FlagSet, name string) {
 	fmt.Fprintln(out, c.long)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
-	usage := "  bt " + c.name
+	usage := "  scs " + c.name
 	if c.args != "" {
 		usage += " " + c.args
 	}
@@ -208,8 +208,8 @@ func printCommandHelp(out io.Writer, fs *flag.FlagSet, name string) {
 	}
 	if len(c.flags) > 0 {
 		fmt.Fprintln(out)
-		writeFlagSectionWithHelp(out, fs, c.flags, "Flags", "bt "+c.name, false)
+		writeFlagSectionWithHelp(out, fs, c.flags, "Flags", "scs "+c.name, false)
 	}
 	fmt.Fprintln(out)
-	writeFlagSection(out, fs, globalFlagNames, "Global Flags", "bt "+c.name)
+	writeFlagSection(out, fs, globalFlagNames, "Global Flags", "scs "+c.name)
 }

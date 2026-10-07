@@ -516,7 +516,7 @@ func TestRepairThatNeverReachedGitHubKeepsItsRecoveryPaths(t *testing.T) {
 				return
 			}
 			// Retry reaches the resume path, which checks the saved worktree.
-			if err == nil || !strings.Contains(err.Error(), "saved repair directory is outside this town") {
+			if err == nil || !strings.Contains(err.Error(), "saved repair directory is outside this precinct") {
 				t.Fatalf("retry never reached the resume path: %v", err)
 			}
 		})

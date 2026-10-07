@@ -47,7 +47,7 @@ func TestPolicyValidationMatchesWhatEachHouseSupports(t *testing.T) {
 		{"issue takes no focus", Issue, BotPolicy{Focus: "anything"}, "does not take a focus"},
 		{"issue takes no limit", Issue, BotPolicy{Limit: 5}, "does not take a limit"},
 		{"repo takes no attempt limit", Repo, BotPolicy{Attempts: 3}, "does not take an attempt limit"},
-		{"release settings belong to release", Review, BotPolicy{Release: &ReleasePolicy{Burst: 2, BurstWindowSeconds: 60}}, "belong to the release house"},
+		{"release settings belong to release", Review, BotPolicy{Release: &ReleasePolicy{Burst: 2, BurstWindowSeconds: 60}}, "belong to the Release unit"},
 
 		{"a label cannot be required and excluded", Issue, BotPolicy{Labels: []string{"Ready"}, ExcludeLabels: []string{"ready"}}, "both required and excluded"},
 		{"limits stay in range", Review, BotPolicy{Limit: maximumPolicyLimit + 1}, "limit must be between"},
@@ -274,7 +274,7 @@ func TestPolicyPublicViewWithholdsCommandArguments(t *testing.T) {
 func TestPolicyConfigValidationRejectsUnknownHouse(t *testing.T) {
 	cfg := DefaultConfig("acme/unknown")
 	cfg.BotPolicies = map[Role]BotPolicy{Role("mayor-bot"): {Limit: 1}}
-	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "unknown house") {
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "unknown unit") {
 		t.Fatalf("validation error = %v", err)
 	}
 	cfg.BotPolicies = map[Role]BotPolicy{Issue: {Focus: "nope"}}

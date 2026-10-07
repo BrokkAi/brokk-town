@@ -10,7 +10,7 @@ import (
 
 // LinkedPull can belong to anyone, on any branch or fork. A closed PR also
 // counts: the operator asked for issues that do not already have a PR. The one
-// exception is a PR Brokk Town closed after review and asked the bot to replace;
+// exception is a PR SlopCop Squad closed after review and asked the bot to replace;
 // the caller names those and they are skipped.
 type LinkedPull struct {
 	Number int    `json:"number"`

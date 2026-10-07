@@ -15,7 +15,7 @@ test("history reads only on explicit navigation, replaces pages and keeps its to
  await fields["history-older"].onclick();assert.equal(fields["history-items"].children.length,1);
  assert.deepEqual(calls[1],{url:"/api/history",body:{town:"acme/first",after:"cursor",limit:50}});
  await fields["history-items"].children[0].children[4].children[0].onclick();
- assert.deepEqual(calls[2].body,{town:"acme/first",task:"issue:1"});assert.match(fields["history-detail"].textContent,/Mayor decision: declined/);
+ assert.deepEqual(calls[2].body,{town:"acme/first",task:"issue:1"});assert.match(fields["history-detail"].textContent,/Ruling: declined/);
 });
 test("history cancels closed requests and ignores late responses and double clicks", async () => {
  let finish,signal,calls=0;

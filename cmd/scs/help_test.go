@@ -9,7 +9,7 @@ import (
 
 func testFlagSet(t *testing.T) *flag.FlagSet {
 	t.Helper()
-	fs := flag.NewFlagSet("bt test", flag.ContinueOnError)
+	fs := flag.NewFlagSet("scs test", flag.ContinueOnError)
 	addCLIFlags(fs)
 	return fs
 }
@@ -18,7 +18,7 @@ func TestRootHelpHasCobraSections(t *testing.T) {
 	var out strings.Builder
 	printRootHelp(&out, testFlagSet(t))
 	help := out.String()
-	for _, section := range []string{"Usage:", "Available Commands:", "Flags:", `Use "bt [command] --help"`} {
+	for _, section := range []string{"Usage:", "Available Commands:", "Flags:", `Use "scs [command] --help"`} {
 		if !strings.Contains(help, section) {
 			t.Fatalf("root help missing %q:\n%s", section, help)
 		}
@@ -40,12 +40,12 @@ func TestCommandHelpFiltersToRelevantFlags(t *testing.T) {
 	var out strings.Builder
 	printCommandHelp(&out, testFlagSet(t), "status")
 	status := out.String()
-	for _, want := range []string{"Usage:", "bt status", "Flags:", "Global Flags:", "--json", "--state-dir"} {
+	for _, want := range []string{"Usage:", "scs status", "Flags:", "Global Flags:", "--json", "--state-dir"} {
 		if !strings.Contains(status, want) {
 			t.Fatalf("status help missing %q:\n%s", want, status)
 		}
 	}
-	for _, other := range []string{"--config", "--listen", "run Town in the background"} {
+	for _, other := range []string{"--config", "--listen", "run SlopCop Squad in the background"} {
 		if strings.Contains(status, other) {
 			t.Fatalf("status help leaks %q:\n%s", other, status)
 		}
@@ -72,7 +72,7 @@ func TestHelpRequestsNeedNoService(t *testing.T) {
 
 func TestUnknownCommandsPointAtHelp(t *testing.T) {
 	ctx := context.Background()
-	if err := run(ctx, []string{"bogus"}); err == nil || !strings.Contains(err.Error(), "unknown command") || !strings.Contains(err.Error(), "bt --help") {
+	if err := run(ctx, []string{"bogus"}); err == nil || !strings.Contains(err.Error(), "unknown command") || !strings.Contains(err.Error(), "scs --help") {
 		t.Fatalf("bogus command: %v", err)
 	}
 	if err := run(ctx, []string{"help", "bogus"}); err == nil || !strings.Contains(err.Error(), "unknown command") {
@@ -83,10 +83,10 @@ func TestUnknownCommandsPointAtHelp(t *testing.T) {
 			t.Fatalf("removed command %s: %v", removed, err)
 		}
 	}
-	if err := run(ctx, []string{"--state-dir", t.TempDir(), "extra"}); err == nil || !strings.Contains(err.Error(), "Run 'bt --help'") {
-		t.Fatalf("extra arg to bare bt: %v", err)
+	if err := run(ctx, []string{"--state-dir", t.TempDir(), "extra"}); err == nil || !strings.Contains(err.Error(), "Run 'scs --help'") {
+		t.Fatalf("extra arg to bare scs: %v", err)
 	}
-	if err := run(ctx, []string{"status", "extra"}); err == nil || !strings.Contains(err.Error(), "unexpected arguments") || !strings.Contains(err.Error(), "bt status --help") {
+	if err := run(ctx, []string{"status", "extra"}); err == nil || !strings.Contains(err.Error(), "unexpected arguments") || !strings.Contains(err.Error(), "scs status --help") {
 		t.Fatalf("extra arg: %v", err)
 	}
 }
@@ -100,9 +100,9 @@ func TestCommandsRejectFlagsTheyDoNotTake(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"status", "--state-dir", dir, "-d"}, "-d: not a flag of bt status"},
-		{[]string{"web", "--state-dir", dir, "--json"}, "--json: not a flag of bt web"},
-		{[]string{"--state-dir", dir, "--json"}, "--json: not a flag of bt"},
+		{[]string{"status", "--state-dir", dir, "-d"}, "-d: not a flag of scs status"},
+		{[]string{"web", "--state-dir", dir, "--json"}, "--json: not a flag of scs web"},
+		{[]string{"--state-dir", dir, "--json"}, "--json: not a flag of scs"},
 	} {
 		err := run(ctx, tc.args)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

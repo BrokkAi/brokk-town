@@ -38,7 +38,7 @@ func (s TownIntentStore) SaveWriteIntent(_ context.Context, intent WriteIntent) 
 	return s.Store.Update(func(state *State) error {
 		t := state.Towns[s.TownID]
 		if t == nil {
-			return fmt.Errorf("unknown town")
+			return fmt.Errorf("unknown precinct")
 		}
 		if t.FunnelIntents == nil {
 			t.FunnelIntents = map[string]*WriteIntent{}
@@ -111,7 +111,7 @@ func ReconcileFunnelPage(s *State, t *Town, page DiscoveryPage, now time.Time) e
 func (s *Supervisor) reconcileFunnels(ctx context.Context, townID string) error {
 	t := s.Store.Snapshot().Towns[townID]
 	if t == nil {
-		return fmt.Errorf("unknown town")
+		return fmt.Errorf("unknown precinct")
 	}
 	configs := append(FunnelConfigs(nil), t.Config.Funnels...)
 	sort.Slice(configs, func(i, j int) bool { return configs[i].ID < configs[j].ID })
@@ -159,7 +159,7 @@ func (s *Supervisor) ApplySourceLifecycle(ctx context.Context, townID, taskID st
 	snapshot := s.Store.Snapshot()
 	t := snapshot.Towns[townID]
 	if t == nil {
-		return LifecycleResult{}, fmt.Errorf("unknown town")
+		return LifecycleResult{}, fmt.Errorf("unknown precinct")
 	}
 	task := t.Tasks[taskID]
 	if task == nil || task.Source == nil {

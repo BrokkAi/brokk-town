@@ -20,7 +20,7 @@ export function historyPanel({ api, getTown }) {
       const result = await api("/api/history", body, signal);
       if (generation !== version) return;
       if (task) {
-        $("history-detail").textContent = [`${result.id} · ${result.stage}`, result.title, result.detail, result.mayoral_decision ? `Mayor decision: ${result.mayoral_decision}` : "", result.audit?.summary || ""].filter(Boolean).join("\n\n");
+        $("history-detail").textContent = [`${result.id} · ${result.stage}`, result.title, result.detail, result.mayoral_decision ? `Ruling: ${result.mayoral_decision}` : "", result.audit?.summary || ""].filter(Boolean).join("\n\n");
       } else {
         next = result.next || "";
         $("history-detail").textContent = "";
@@ -36,7 +36,7 @@ export function historyPanel({ api, getTown }) {
         });
         $("history-items").replaceChildren(...rows);
       }
-      $("history-status").textContent = "Saved history. Reopened work returns to the active town automatically.";
+      $("history-status").textContent = "Saved history. Reopened cases return to the active precinct automatically.";
     } catch (error) {
       if (generation === version) { $("history-error").textContent = signal.aborted ? "History lookup stopped. You can refresh to try again." : error.message; $("history-status").textContent = ""; }
     } finally { if (generation === version) { busy = false; controls(); } }

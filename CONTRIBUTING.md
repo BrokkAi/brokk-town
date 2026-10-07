@@ -1,13 +1,13 @@
-# Contributing to Brokk Town
+# Contributing to SlopCop Squad
 
-Thanks for helping. Town is one Go module that runs a local service, an
+Thanks for helping. SlopCop Squad is one Go module that runs a local service, an
 embedded browser UI and eight in-process bots. This document covers the working
 agreement; [AGENTS.md](AGENTS.md) has the same material in a shorter form for
 automated contributors.
 
 ## Before you start
 
-- For a bug, open an issue with the version (`bt version`), your platform, the
+- For a bug, open an issue with the version (`scs version`), your platform, the
   exact command or browser action, and what you expected instead.
 - For a behaviour change, open an issue first so the design is agreed before the
   code. Small fixes and documentation changes can go straight to a pull request.
@@ -43,7 +43,7 @@ and tests (`make js`), and `go vet ./...`. Run it before you push.
   paths that matter — refusals, cancellation, uncertain outcomes and restart.
 - **No live side effects.** Tests must never use a real GitHub repository, a live
   agent, a published registry, or your personal credentials. Use the fakes in
-  `internal/town`, the demo service (`bt --demo`), or the fixture servers the
+  `internal/town`, the demo service (`scs --demo`), or the fixture servers the
   existing tests already use.
 - **Privacy.** Worker logs, snapshots and API responses must not leak tokens,
   credential-file contents, absolute local paths, or agent command vectors. If
@@ -73,15 +73,15 @@ pull request.
 
 - settings and policies → `docs/configuration.md`
 - commands, browser, API → `docs/operations.md`
-- pipeline and houses → `docs/workflow.md`
+- pipeline, units and the glossary → `docs/workflow.md`
 - internals → `docs/architecture.md`
 
 ## Releases
 
-Maintainers publish by pushing a `vX.Y.Z` tag. The `Release town` workflow runs
-GoReleaser, which builds the archives, checksums them, and publishes the GitHub
-release. Contributors do not need to do anything for a release and should not
-create tags.
+Maintainers publish by pushing a `vX.Y.Z` tag. The `Release` workflow
+(`.github/workflows/release-town.yml`) runs GoReleaser, which builds the
+archives, checksums them, and publishes the GitHub release. Contributors do
+not need to do anything for a release and should not create tags.
 
 ## Code of conduct
 

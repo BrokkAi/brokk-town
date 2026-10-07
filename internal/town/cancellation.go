@@ -23,13 +23,13 @@ func cancellationDetail(ctx context.Context, err error, phase string) string {
 	case stopRequested(ctx):
 		detail = "Worker attempt canceled by operator stop"
 	case cause != nil && cause != context.Canceled:
-		detail = "Worker attempt canceled because Town's service context ended: " + cancellationText(cause.Error(), 2048)
+		detail = "Worker attempt canceled because the Squad's service context ended: " + cancellationText(cause.Error(), 2048)
 	case cause != nil:
-		detail = "Worker attempt canceled because Town's service context ended; cause was not provided"
+		detail = "Worker attempt canceled because the Squad's service context ended; cause was not provided"
 	case errors.As(err, &reported):
-		detail = "Worker reported cancellation while Town's dispatch context remained active: " + cancellationText(reported.detail, 2048)
+		detail = "Worker reported cancellation while the Squad's dispatch context remained active: " + cancellationText(reported.detail, 2048)
 	default:
-		detail = "Worker attempt returned cancellation while Town's dispatch context remained active; cause was not provided"
+		detail = "Worker attempt returned cancellation while the Squad's dispatch context remained active; cause was not provided"
 	}
 	if phase = strings.TrimSpace(phase); phase != "" {
 		detail += "; last phase: " + cancellationText(phase, 128)

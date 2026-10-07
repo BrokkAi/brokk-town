@@ -85,7 +85,7 @@ var policySupported = map[Role]policySupport{
 	Simplifier: {labels: true, limit: "proposals", verify: true},
 	Release:    {attempts: true, verify: true, release: true},
 	Repo:       {limit: "repair attempts per revision", verify: true},
-	Hall:       {limit: "bulletin items", verify: true},
+	Hall:       {limit: "blotter items", verify: true},
 }
 
 // MaximumPolicyLabels bounds one filter so a pasted list cannot turn every
@@ -199,7 +199,7 @@ func (p *BotPolicy) Validate(role Role) error {
 	}
 	if p.Release != nil {
 		if !support.release {
-			return fmt.Errorf("release settings belong to the release house, not %s", role)
+			return fmt.Errorf("release settings belong to the Release unit, not %s", role)
 		}
 		if err := p.Release.validate(); err != nil {
 			return err
@@ -420,7 +420,7 @@ func (p BotPolicy) summary(role Role) string {
 		}
 	}
 	if len(parts) == 0 {
-		return "Takes every item this house is given, with the bot's own defaults."
+		return "Takes every case this unit is given, with the bot's own defaults."
 	}
 	return "Takes work " + strings.Join(parts, ", ") + "."
 }

@@ -21,7 +21,7 @@ func (s *Supervisor) Diagnose(ctx context.Context, id string) (*DiagnosticReport
 	state := s.Store.Snapshot()
 	t := state.Towns[id]
 	if t == nil || t.Deleted {
-		return nil, errors.New("unknown town")
+		return nil, errors.New("unknown precinct")
 	}
 	s.mu.Lock()
 	if s.diagnosing {
@@ -35,7 +35,7 @@ func (s *Supervisor) Diagnose(ctx context.Context, id string) (*DiagnosticReport
 	defer cancel()
 	report := &DiagnosticReport{At: s.now().UTC()}
 	if state.Demo {
-		report.Checks = []Diagnostic{{Code: "demo", Status: "unknown", Detail: "Demo uses simulated workers and GitHub; live setup has not been checked.", Action: "Run diagnostics in a non-demo Town to check its setup."}}
+		report.Checks = []Diagnostic{{Code: "demo", Status: "unknown", Detail: "The training exercise uses simulated units and GitHub; live setup has not been checked.", Action: "Run diagnostics in a precinct outside the training exercise to check its setup."}}
 	} else {
 		report.Checks = s.setupChecks(ctx, t.Config)
 	}
@@ -50,7 +50,7 @@ func (s *Supervisor) Diagnose(ctx context.Context, id string) (*DiagnosticReport
 		}
 		current := st.Towns[id]
 		if current == nil || current.Deleted {
-			return errors.New("town was deleted during diagnostics")
+			return errors.New("precinct was deleted during diagnostics")
 		}
 		if !reflect.DeepEqual(current.Config, t.Config) {
 			return errors.New("settings changed during diagnostics; run them again")
@@ -68,9 +68,9 @@ func (s *Supervisor) setupChecks(ctx context.Context, c Config) []Diagnostic {
 	}
 	for _, bin := range []string{"git", "gh", "npx"} {
 		if _, err := exec.LookPath(bin); err != nil {
-			add(bin, "", "blocked", bin+" is unavailable on the Town service PATH.", "Install "+bin+" and restart Town with a PATH that includes it.")
+			add(bin, "", "blocked", bin+" is unavailable on the SlopCop Squad service PATH.", "Install "+bin+" and restart SlopCop Squad with a PATH that includes it.")
 		} else {
-			add(bin, "", "passed", bin+" is available on the Town service PATH.", "")
+			add(bin, "", "passed", bin+" is available on the SlopCop Squad service PATH.", "")
 		}
 	}
 	_, ghErr := exec.LookPath("gh")
@@ -81,7 +81,7 @@ func (s *Supervisor) setupChecks(ctx context.Context, c Config) []Diagnostic {
 		actor, err := s.GitHub.Actor(readCtx)
 		cancel()
 		if err != nil || actor == "" {
-			add("github_auth", "", "unknown", "GitHub could not confirm the service account's authentication.", "Check network access and run gh auth status or gh auth login as the Town service user.")
+			add("github_auth", "", "unknown", "GitHub could not confirm the service account's authentication.", "Check network access and run gh auth status or gh auth login as the SlopCop Squad service user.")
 		} else {
 			add("github_auth", "", "passed", "GitHub confirmed an authenticated service account.", "")
 		}
@@ -112,13 +112,13 @@ func (s *Supervisor) setupChecks(ctx context.Context, c Config) []Diagnostic {
 		}
 		status, detail, action := agentSetup(cfg, s.Harnesses)
 		add("agent", role, status, detail, action)
-		add("agent_auth", role, "unknown", "Agent authentication is not detectable without starting the configured harness.", "Use the harness's own authentication/status command as the Town service user; no agent session was started.")
+		add("agent_auth", role, "unknown", "Agent authentication is not detectable without starting the configured harness.", "Use the harness's own authentication/status command as the SlopCop Squad service user; no agent session was started.")
 		verify := c.Verify
 		if p := c.BotPolicies[role]; len(p.Verify) > 0 {
 			verify = p.Verify
 		}
 		if len(verify) == 0 {
-			add("verify", role, "unknown", "No explicit verification command is configured; the bot may use its own defaults.", "Set this house's verification command if you require specific checks.")
+			add("verify", role, "unknown", "No explicit verification command is configured; the bot may use its own defaults.", "Set this unit's verification command if you require specific checks.")
 		} else {
 			status, detail, action = commandSetup(verify[0], "Verification command")
 			add("verify", role, status, detail+" It was not executed.", action)
@@ -138,7 +138,7 @@ func commandSetup(command, label string) (string, string, string) {
 		return "unknown", label + " uses a checkout-relative executable.", "Verify the executable exists and is executable in the bot's checkout before starting work."
 	}
 	if _, err := exec.LookPath(command); err != nil {
-		return "blocked", label + " executable is unavailable to the Town service.", "Check its configured executable and the service PATH, then run diagnostics again."
+		return "blocked", label + " executable is unavailable to the SlopCop Squad service.", "Check its configured executable and the service PATH, then run diagnostics again."
 	}
 	return "passed", label + " executable is available.", ""
 }

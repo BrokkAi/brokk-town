@@ -31,7 +31,7 @@ func Run(ctx context.Context, config runner.AgentConfig, directory, prompt strin
 	env := []string{}
 	for _, entry := range cmd.Env {
 		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "GH_") || strings.HasPrefix(key, "GITHUB_") || strings.HasPrefix(key, "BROKK_TOWN_") {
+		if strings.HasPrefix(key, "GH_") || strings.HasPrefix(key, "GITHUB_") || strings.HasPrefix(key, "SLOPCOP_SQUAD_") || strings.HasPrefix(key, "BROKK_TOWN_") {
 			continue
 		}
 		env = append(env, entry)
@@ -76,7 +76,7 @@ func Run(ctx context.Context, config runner.AgentConfig, directory, prompt strin
 	defer connection.Close()
 	caps := acp.Capabilities{}
 	caps.Session = acp.ConfigOptionsClientCapabilities(true)
-	init, err := connection.InitializeWithInfo(ctx, caps, acp.ClientInfo{Name: "brokk-town-guide", Version: "1"})
+	init, err := connection.InitializeWithInfo(ctx, caps, acp.ClientInfo{Name: "slopcop-squad-guide", Version: "1"})
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func deny(_ context.Context, method string, _ json.RawMessage) (any, error) {
 	if method == "session/request_permission" {
 		return map[string]any{"outcome": map[string]string{"outcome": "cancelled"}}, nil
 	}
-	return nil, &acp.RPCError{Code: -32601, Message: "Town Guide has no tools or write capabilities"}
+	return nil, &acp.RPCError{Code: -32601, Message: "The Desk Sergeant has no tools or write capabilities"}
 }
 
 // Workspace contains no repository, private state or credentials.

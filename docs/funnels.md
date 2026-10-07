@@ -1,12 +1,12 @@
 # Funnels
 
-A funnel brings work into a town from a source other than the repository's own
-issues. Town has two providers: **GitHub** and **Slack**. Every funnel normalises
-its source into one internal shape so the rest of the pipeline never learns where
-an item came from.
+A funnel brings work into a precinct from a source other than the repository's
+own issues. The Squad has two providers: **GitHub** and **Slack**. Every funnel
+normalises its source into one internal shape so the rest of the pipeline never
+learns where an item came from.
 
-Funnels are configured per town in a `--config` file under `funnels`. They are
-not exposed in the browser's Settings view; edit the config file and restart the
+Funnels are configured per precinct in a `--config` file under `funnels`. They
+are not exposed in the browser's Settings; edit the config file and restart the
 service.
 
 ## The normalised model
@@ -64,15 +64,15 @@ When several funnels match the same underlying work:
 ## Credentials
 
 A funnel's `credentials` is a `{ name, backend }` reference, never a token.
-Town resolves it immediately before each request, so rotation takes effect on the
-next request without restarting, and no credential can be serialized into state
-or a snapshot.
+The Squad resolves it immediately before each request, so rotation takes effect
+on the next request without restarting, and no credential can be serialized
+into state or a snapshot.
 
 ## FunnelConfig fields
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Funnel name, unique within the town. |
+| `id` | Funnel name, unique within the precinct. |
 | `provider` | `github` or `slack`. |
 | `location` | Provider-specific source, for example `{"repository": "OWNER/REPO"}` or `{"channel": "C0123456789"}`. Required. |
 | `filter` | Provider-specific selector, for example labels. Public keys only. |
@@ -111,8 +111,8 @@ With `read_only` false, a transition maps onto labels through actions such as
 
 ```json
 "transitions": {
-  "working": [{ "name": "update_labels", "parameters": { "add": "town-working", "remove": "ready" } }],
-  "blocked": [{ "name": "add_labels", "parameters": { "labels": "town-blocked" } }]
+  "working": [{ "name": "update_labels", "parameters": { "add": "squad-working", "remove": "ready" } }],
+  "blocked": [{ "name": "add_labels", "parameters": { "labels": "squad-blocked" } }]
 }
 ```
 
@@ -140,7 +140,7 @@ remains authoritative for a missing scope, and a refused scope is reported
 rather than retried forever.
 
 Every write carries an invisible idempotency marker
-(`<!-- brokk-town-slack:… -->`), so a retried reaction or reply is recognised
+(`<!-- slopcop-squad-slack:… -->`), so a retried reaction or reply is recognised
 instead of repeated. Identity mapping from a message back to its funnel is only
 needed by the generic adapter methods, not by the low-level history read.
 
@@ -152,4 +152,5 @@ needed by the generic adapter methods, not by the low-level history read.
   never treated as deletion.
 - A write whose outcome is unknown is kept as an unresolved intent and retried
   against the same idempotency marker; it is never assumed to have failed.
-- The demo town uses read-only funnels with synthetic items only.
+- The training exercise (demo mode) uses read-only funnels with synthetic items
+  only.

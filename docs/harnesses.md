@@ -1,50 +1,50 @@
 # Agent harnesses
 
-A harness is an ACP agent executable that Town drives: it receives a prompt, a
-workspace and a session, and does the actual coding or reasoning work. Every
-house has a harness; so does Town Guide.
+A harness is an ACP agent executable that the Squad drives: it receives a
+prompt, a workspace and a session, and does the actual coding or reasoning work.
+Every unit has a harness; so does the Desk Sergeant.
 
 ## Where harnesses come from
 
-Town merges three sources into one catalog:
+The Squad merges three sources into one catalog:
 
 1. **The official ACP registry** — `https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`.
-   Town keeps a bundled copy and a cached copy under the state directory, and
-   refreshes the catalog on request or in the background. A refresh failure keeps
-   the cached catalog.
+   The Squad keeps a bundled copy and a cached copy under the state directory,
+   and refreshes the catalog on request or in the background. A refresh failure
+   keeps the cached catalog.
 2. **Bundled supplements** — `anvil`, `muse-acp` and `draupnir`. These are listed
    as `additional` entries and are not part of the registry's version scheme.
 3. **Custom** — any ACP v1 stdio executable you name yourself.
 
-The browser's Settings view lists what is available and can refresh the catalog.
+The browser's Settings list what is available and can refresh the catalog.
 The listing shows each agent's source (`registry` or `additional`), whether it
 can run on this platform, and how it is launched.
 
 ## Selecting a harness
 
-Use the browser's Settings view to select a harness for a town or one house, and
-to restore a house to the town defaults.
+Use the browser's Settings to select a harness for a precinct or one unit, and
+to restore a unit to the precinct defaults.
 
-The default harness is `codex-acp`. When you select a different harness, Town
-clears the stored model, effort and session mode, because those belong to the
-harness that advertised them. A house override stays independent of the town
-default until you restore inheritance.
+The default harness is `codex-acp`. When you select a different harness, the
+Squad clears the stored model, effort and session mode, because those belong to
+the harness that advertised them. A unit override stays independent of the
+precinct default until you restore inheritance.
 
 ### Custom harnesses
 
 Choose `custom` in Settings and enter a JSON argument array interpreted
 literally, with no shell, such as `["your-acp-agent","--stdio"]`. The command is
 only accepted for the `custom` harness. You can add environment variables and an
-advertised auth method or session mode in a `--config` file under the town's
-`agent` object.
+advertised auth method or session mode in a `--config` file under the
+precinct's `agent` object.
 
 ## Model and effort
 
-Town does not guess a model catalogue. Settings asks the harness and shows the
-choices before you save them. The probe starts the harness, initializes an ACP
-session with the same session config capability a real run advertises, and reads
-the choices. It offers no workspace tools. For a managed (Mjolnir) selection, the
-choices come from the daemon's profile API instead.
+The Squad does not guess a model catalogue. Settings asks the harness and shows
+the choices before you save them. The probe starts the harness, initializes an
+ACP session with the same session config capability a real run advertises, and
+reads the choices. It offers no workspace tools. For a managed (Mjolnir)
+selection, the choices come from the daemon's profile API instead.
 
 An empty model or effort uses the harness's own default. An unknown value is
 refused with the choices the harness actually reported.
@@ -56,10 +56,10 @@ the entry:
 
 - **Custom command** — the executable is resolved on `PATH`; missing means a
   clear setup error.
-- **`npx` / `uvx` package** — Town runs `npx --yes -- PACKAGE [args]` (or `uvx`),
-  requiring the launcher on `PATH`. This is how `anvil`, `muse-acp` and Mjolnir
-  are launched by default.
-- **Registry binary** — Town downloads the platform archive into
+- **`npx` / `uvx` package** — the Squad runs `npx --yes -- PACKAGE [args]` (or
+  `uvx`), requiring the launcher on `PATH`. This is how `anvil`, `muse-acp` and
+  Mjolnir are launched by default.
+- **Registry binary** — the Squad downloads the platform archive into
   `<state-dir>/harnesses/installed/<id>-<platform>`, verifies the archive
   checksum when the registry supplies one, unpacks it inside the cache, marks the
   installation, chmods the command `0700`, and installs it with an atomic rename
@@ -75,10 +75,12 @@ run through a shell.
   must be on the service `PATH`.
 - **muse-acp** — launched through `npx`. Muse composes a session permission
   profile from your own `permissions.default_profile` setting, and a profile its
-  stdio host cannot reach refuses every session. Town derives an ACP-only config
-  directory that omits that one key and symlinks everything else back to your real
-  directory, so credentials and trust decisions stay shared and live. Set
-  `BROKK_TOWN_MUSE_PERMISSIONS=keep` to launch against the unmodified config.
+  stdio host cannot reach refuses every session. The Squad derives an ACP-only
+  config directory that omits that one key and symlinks everything else back to
+  your real directory, so credentials and trust decisions stay shared and live.
+  Set `SLOPCOP_SQUAD_MUSE_PERMISSIONS=keep` to launch against the unmodified
+  config.
+  The pre-rename `BROKK_TOWN_MUSE_PERMISSIONS=keep` is still honoured.
 - **draupnir** — a `PATH` supplement. Install it using its own release
   instructions and configure its model provider first.
 
@@ -86,9 +88,10 @@ run through a shell.
 
 A missing executable, an unauthenticated harness, an unsupported model and an
 unsupported effort are all reported as setup errors before any prompt. They do
-not consume a work attempt and do not count against a task's retry budget;
+not consume a work attempt and do not count against a case's retry budget;
 correct the setting and restart. Diagnostics reports availability without
-running an agent, and the result is saved in town state.
+running an agent, and the result is saved in the precinct's state.
 
 Harnesses run with the service account's permissions. They are not sandboxed by
-Town, so run Town as a dedicated account, or in a container, when that matters.
+the Squad, so run SlopCop Squad as a dedicated account, or in a container, when
+that matters.

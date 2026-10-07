@@ -101,13 +101,13 @@ func (s *Supervisor) AskGuide(id string, q GuideQuestion) (GuideTurn, error) {
 	id = strings.ToLower(id)
 	q.Question = strings.TrimSpace(q.Question)
 	if !guideID(q.ID) || q.Question == "" || len(q.Question) > guideQuestionBytes || !utf8.ValidString(q.Question) {
-		return GuideTurn{}, errors.New("guide question requires an 8–64 character request ID and 1–4096 bytes of text")
+		return GuideTurn{}, errors.New("a question for the Desk Sergeant requires an 8–64 character request ID and 1–4096 bytes of text")
 	}
 	var answer GuideTurn
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		q.Question = guideRedactor(t.Config)(q.Question)
 		if t.Guide == nil {
@@ -129,7 +129,7 @@ func (s *Supervisor) AskGuide(id string, q GuideQuestion) (GuideTurn, error) {
 		}
 		for _, turn := range g.Turns {
 			if guideBusy(turn.Status) {
-				return errors.New("wait for or cancel the current guide answer")
+				return errors.New("wait for or cancel the Desk Sergeant's current answer")
 			}
 		}
 		now := s.now()
@@ -148,11 +148,11 @@ func (s *Supervisor) CancelGuide(id, turnID string) error {
 	return s.Store.Update(func(st *State) error {
 		t := st.Towns[strings.ToLower(id)]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		turn := t.Guide.turn(turnID)
 		if turn == nil {
-			return errors.New("unknown guide question")
+			return errors.New("unknown Desk Sergeant question")
 		}
 		if guideBusy(turn.Status) {
 			t.Guide.Revision++
@@ -168,11 +168,11 @@ func (s *Supervisor) ConfirmGuide(id, turnID, digest string) error {
 	snapshot := s.Store.Snapshot()
 	t := snapshot.Towns[id]
 	if t == nil || t.Deleted {
-		return errors.New("unknown town")
+		return errors.New("unknown precinct")
 	}
 	turn := t.Guide.turn(turnID)
 	if turn == nil || turn.Proposal == nil {
-		return errors.New("unknown guide proposal")
+		return errors.New("unknown Desk Sergeant proposal")
 	}
 	p := turn.Proposal
 	if p.Digest != digest {
@@ -184,7 +184,7 @@ func (s *Supervisor) ConfirmGuide(id, turnID, digest string) error {
 	return s.control(id, p.Role, p.Action, "", func(current *Town) error {
 		turn := current.Guide.turn(turnID)
 		if turn == nil || turn.Status != "complete" || turn.Proposal == nil {
-			return errors.New("guide proposal is no longer available")
+			return errors.New("the Desk Sergeant's proposal is no longer available")
 		}
 		proposal := turn.Proposal
 		if proposal.Status == "confirmed" {
@@ -200,7 +200,7 @@ func (s *Supervisor) ConfirmGuide(id, turnID, digest string) error {
 	})
 }
 
-var errGuideAlreadyConfirmed = errors.New("guide proposal was already confirmed")
+var errGuideAlreadyConfirmed = errors.New("the Desk Sergeant's proposal was already confirmed")
 
 func guideControlDigest(t *Town, role Role) string {
 	// Scheduling, settings and recovery changes invalidate a stale proposal. Logs
@@ -236,7 +236,7 @@ func guideProposal(text string, t *Town) (string, *GuideProposal, error) {
 	if dec.Decode(&proposal) != nil || dec.Decode(new(any)) != io.EOF || proposal.Action != "pause" || !ValidRole(proposal.Role) {
 		return strings.TrimSpace(text[:start]), nil, errors.New("guide proposed an unsupported control; use the inspector")
 	}
-	p := &GuideProposal{Action: "pause", Role: proposal.Role, Description: fmt.Sprintf("Pause the %s worker in %s after its current work finishes.", proposal.Role, t.ID), Digest: guideControlDigest(t, proposal.Role), Status: "proposed"}
+	p := &GuideProposal{Action: "pause", Role: proposal.Role, Description: fmt.Sprintf("Stand down %s (%s) in %s after its current case finishes.", unitName(proposal.Role), proposal.Role, t.ID), Digest: guideControlDigest(t, proposal.Role), Status: "proposed"}
 	return strings.TrimSpace(text[:start]), p, nil
 }
 

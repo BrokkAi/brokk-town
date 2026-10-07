@@ -1,12 +1,13 @@
-# Brokk Review Bot
+# Review Bot
 
 Review a pull request's exact revision and certify what it found.
 
 `review-bot` is a Go package of the
-[Brokk Town](https://github.com/BrokkAi/brokk-town) module. Town runs it in
-process as the **review observatory** house, so there is no standalone binary,
-server or release tag to install. See [../../docs/bots.md](../../docs/bots.md)
-and [../../docs/workflow.md](../../docs/workflow.md).
+[SlopCop Squad](https://github.com/BrokkAi/brokk-town) module. Review Bot staffs
+the **Forensics** unit (role key `review`), and the Squad runs it in process, so
+there is no standalone binary, server or release tag to install. See
+[../../docs/bots.md](../../docs/bots.md) and
+[../../docs/workflow.md](../../docs/workflow.md).
 
 ## What it does
 
@@ -29,10 +30,10 @@ and [../../docs/workflow.md](../../docs/workflow.md).
 6. Recheck eligibility, description, base and head, and the discussion, then
    submit a single `COMMENT` review bound to the head SHA.
 
-The result is a certified audit Town uses to decide the next step: a clean review
-advances the pull request, a first round of findings goes back to the issue house
-for one repair, and a second round decides between merge with follow-ups and
-closing.
+The result is a certified audit the Squad uses to decide the next step: a clean
+review advances the pull request, a first round of findings goes back to the
+Caseworker for one repair, and a second round decides between merge with
+follow-ups and closing.
 
 ## What it never does
 
@@ -41,12 +42,12 @@ A review with no new findings reports coverage and limitations, not approval. A
 dry run never grants publication or merge authority.
 
 An audit describes exactly one revision. A review of any other base or head is
-stale and is never attributed to the dispatched task.
+stale and is never attributed to the dispatched case.
 
 ## Configuration
 
-Town fills this configuration from the town's agent profile and the review house's
-policy in the browser. The package's own fields are:
+The Squad fills this configuration from the precinct's agent profile and the
+Forensics unit's policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |
@@ -55,22 +56,23 @@ policy in the browser. The package's own fields are:
 | `agent` | ACP command, environment, model and effort. |
 | `github.host`, `github.repo` | Enterprise host, or a local mirror's GitHub repository. |
 | `poll`, `timeout`, `retry_delay`, `attempts` | Cadence and retry budget. |
-| `labels`, `exclude_labels` | Selector for the pull requests the house may take. |
+| `labels`, `exclude_labels` | Selector for the pull requests the unit may take. |
 | `max_findings` | Most findings one review may report (1–20). |
-| `pr` | Pin the house to one pull request. Town sets this for an exact dispatch. |
+| `pr` | Pin the unit to one pull request. The Squad sets this for an exact dispatch. |
 | `focus` | Steer the review toward one area. |
 | `verify` | Operator command that must pass. |
 | `dry_run` | Inspect proposed review payloads without writing to GitHub. |
-| `remote_agent` | Managed-execution placement, set by Town for Mjolnir runs. |
+| `remote_agent` | Managed-execution placement, set by the Squad for Mjolnir runs. |
 
-Town's policy mapping is `labels`, `exclude_labels`, `only` → `pr`, `focus`,
-`limit` → `max_findings`, `attempts` and `verify`. Defaults: poll every 5 minutes,
-a 2-hour attempt budget, a 15-minute retry delay, 3 attempts and at most 10
-findings.
+The Squad's policy mapping is `labels`, `exclude_labels`, `only` → `pr`,
+`focus`, `limit` → `max_findings`, `attempts` and `verify`. Defaults: poll every
+5 minutes, a 2-hour attempt budget, a 15-minute retry delay, 3 attempts and at
+most 10 findings.
 
 A revision gets at most two attempts at any step. The first incomplete attempt
 earns one more after a short delay; the second retires the pull request for that
-revision, which Town then closes or hands to the Mayor.
+revision, which the Squad then closes or hands to the Probation Judge for a
+ruling.
 
 ## Development
 

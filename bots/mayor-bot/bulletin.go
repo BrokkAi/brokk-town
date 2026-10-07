@@ -82,7 +82,7 @@ type engine struct {
 func (e engine) bulletin(ctx context.Context, s *State, window Window) (Report, error) {
 	report := Report{Window: window, Pulls: []int{}}
 	if window.Since.IsZero() || !window.Until.After(window.Since) {
-		return report, errors.New("bulletin window needs a start before its end")
+		return report, errors.New("blotter window needs a start before its end")
 	}
 	e.observe(Progress{Phase: "loading", Task: "Refreshing repository and merged pull requests"})
 	base := checkout{config: e.config}

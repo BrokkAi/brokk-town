@@ -1,4 +1,4 @@
-// Package repobot observes one GitHub repository for Brokk Town and keeps the
+// Package repobot observes one GitHub repository for SlopCop Squad and keeps the
 // branch it covers healthy. It reports a complete inventory and, when the
 // branch is failing its checks, repairs it with an agent.
 package repobot

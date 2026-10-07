@@ -406,7 +406,7 @@ func TestChoicesUseModelSpecificEffortWithoutPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Agent = runner.AgentConfig{Command: []string{exe, "-test.run=TestChoiceAgentHelper"}, Environment: map[string]string{"BROKK_CHOICE_HELPER": "1"}, Model: "careful"}
+	c.Agent = runner.AgentConfig{Command: []string{exe, "-test.run=TestChoiceAgentHelper"}, Environment: map[string]string{"SLOPCOP_CHOICE_HELPER": "1"}, Model: "careful"}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	result, err := ProbeAgent(ctx, c)
@@ -419,7 +419,7 @@ func TestChoicesUseModelSpecificEffortWithoutPrompt(t *testing.T) {
 }
 
 func TestChoiceAgentHelper(t *testing.T) {
-	if os.Getenv("BROKK_CHOICE_HELPER") != "1" {
+	if os.Getenv("SLOPCOP_CHOICE_HELPER") != "1" {
 		return
 	}
 	scanner := bufio.NewScanner(os.Stdin)

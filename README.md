@@ -1,16 +1,17 @@
-# Brokk Town
+# SlopCop Squad
 
-Brokk Town is a local service that runs a town of repository bots against your
-GitHub repositories. It watches what changes, files useful bug and feature
-issues, implements work, reviews and certifies pull requests, decides what is
-worth doing, keeps the branch it covers healthy, and ships releases. You drive
-it from a browser, with `bt` starting and stopping the local service. Everything
-runs on your machine with the `gh` and agent credentials you already have.
+SlopCop Squad is a local service that puts a squad of repository bots on your
+GitHub repositories; each repository under its watch is a precinct. It watches
+what changes, files useful bug and feature issues, implements work, reviews and
+certifies pull requests, rules on what is worth doing, keeps the branch it
+covers healthy, and ships releases. You drive it from a browser, with `scs`
+starting and stopping the local service. Everything runs on your machine with
+the `gh` and agent credentials you already have.
 
-The eight bots are Go packages of this module. Town calls them in process: there
-is no separate bot daemon to install, no worker protocol to keep in version
-step, and no per-bot release to track. One binary (`bt`) and one release tag
-(`vX.Y.Z`) cover the whole project.
+The eight bots are Go packages of this module. The Squad calls them in process:
+there is no separate bot daemon to install, no worker protocol to keep in
+version step, and no per-bot release to track. One binary (`scs`) and one
+release tag (`vX.Y.Z`) cover the whole project.
 
 ## Requirements
 
@@ -18,8 +19,9 @@ step, and no per-bot release to track. One binary (`bt`) and one release tag
   `go install`. The release binaries need no toolchain.
 - Git.
 - [`gh`](https://cli.github.com/) authenticated for the repositories you add.
-- An ACP agent harness. Town ships an official registry catalog and installs or
-  launches the harness you select; `codex-acp` through `npx` is a common choice.
+- An ACP agent harness. The Squad ships an official registry catalog and
+  installs or launches the harness you select; `codex-acp` through `npx` is a
+  common choice.
 - Node.js when the selected harness or Mjolnir is distributed through `npx`.
 
 ## Install
@@ -27,17 +29,20 @@ step, and no per-bot release to track. One binary (`bt`) and one release tag
 Go 1.27.1 or newer:
 
 ```sh
-go install github.com/BrokkAi/brokk-town/cmd/bt@latest
+go install github.com/BrokkAi/brokk-town/cmd/scs@latest
 export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
 To pin a specific release:
 
 ```sh
-go install github.com/BrokkAi/brokk-town/cmd/bt@v0.8.1
+go install github.com/BrokkAi/brokk-town/cmd/scs@vX.Y.Z
 ```
 
-`go install` records the module version in the binary, so `bt version` reports
+Releases up to v0.10.0 were published as Brokk Town and install `cmd/bt`
+instead. See [Upgrading from Brokk Town](docs/operations.md#upgrading-from-brokk-town).
+
+`go install` records the module version in the binary, so `scs version` reports
 what you installed. Or build from a checkout:
 
 ```sh
@@ -49,122 +54,142 @@ export PATH="$PWD/bin:$PATH"
 
 Every release also publishes prebuilt archives for Linux, macOS and Windows on
 amd64 and arm64 on the [releases page](https://github.com/BrokkAi/brokk-town/releases).
-Download the archive for your platform, unpack it, and put `bt` on your `PATH`.
+Download the archive for your platform, unpack it, and put `scs` on your `PATH`.
 Linux and macOS ship as `.tar.gz`; Windows ships as `.zip`:
 
 ```sh
-tar -xzf brokk-town_v0.8.1_linux_amd64.tar.gz
-install -m 755 bt "$HOME/.local/bin/bt"
+tar -xzf slopcop-squad_vX.Y.Z_linux_amd64.tar.gz
+install -m 755 scs "$HOME/.local/bin/scs"
 ```
 
-Each archive contains `bt`, `LICENSE`, `NOTICE` and
+Each archive contains `scs`, `LICENSE`, `NOTICE` and
 `licenses/THIRD_PARTY_NOTICES.txt`. The release's `checksums.txt` verifies the
 download.
 
 ## First run
 
-Authenticate `gh` and your chosen agent, then start Town:
+Authenticate `gh` and your chosen agent, then start SlopCop Squad:
 
 ```sh
-bt                                     # foreground service
-bt web                                 # print the browser address
-bt status                              # what is running
-bt shutdown                            # stop the service
+scs                                     # foreground service
+scs web                                 # print the browser address
+scs status                              # what is running
+scs shutdown                            # stop the service
 ```
 
-Bare `bt` runs in the foreground and prints its browser URL, with the access key.
-The server binds loopback only. `bt -d` starts the same service in the background;
-`bt shutdown` stops it. Ctrl+C, SIGTERM or SIGHUP stops a foreground service.
-Add, start and configure towns in the browser.
+Bare `scs` runs in the foreground and prints its browser URL, with the access key.
+The server binds loopback only. `scs -d` starts the same service in the background;
+`scs shutdown` stops it. Ctrl+C, SIGTERM or SIGHUP stops a foreground service.
+Add, start and configure precincts in the browser.
 
-`bt --demo` starts an isolated simulated town that never contacts GitHub, an
-agent or the network. It is the fastest way to look around.
+`scs --demo` starts a training exercise: an isolated simulated precinct that
+never contacts GitHub, an agent or the network. It is the fastest way to look
+around.
 
-## Houses
+## Units
 
-Town is organised as houses, one per bot. Every house has a lifetime agent
-identity, a work policy and a place in the pipeline.
+Each precinct is staffed by eight units, one per bot. Every unit has a lifetime
+agent identity, a work policy and a post in the precinct. Configuration, the
+local API and state still call a unit a `house` and name it by its role key.
 
-| House | Bot | Work |
-| --- | --- | --- |
-| Bug greenhouse | bug-bot | Investigates the repository and files new, non-duplicate bug issues. |
-| Feature study | feature-bot | Researches valuable new capabilities and files concrete proposals. |
-| Simplifier clarifier | simplifier-bot | Reviews arrivals for disproportionate complexity and low value. |
-| Town Hall | mayor-bot | Judges arrivals awaiting a Mayoral decision and writes the town bulletin. |
-| Issue workshop | issue-bot | Claims issues, implements them, and opens or repairs pull requests. |
-| Review observatory | review-bot | Investigates each exact revision, certifies findings, and posts reviews. |
-| Release depot | release-bot | Batches unreleased commits and publishes a verified release. |
-| Repo watchtower | repo-bot | Inventories the repository and repairs the branch it covers. |
+| Unit | Callsign | Bot | Role key | Work |
+| --- | --- | --- | --- | --- |
+| Patrol | PTL | Repo Bot | `repo` | Inventories the repository and repairs the branch it covers. |
+| Bug Detective | BUG | Bug Bot | `bug` | Investigates the repository and files new, non-duplicate bug issues. |
+| Feature Detective | FTR | Feature Bot | `feature` | Researches valuable new capabilities and files concrete proposals. |
+| Magistrate | MAG | Simplifier Bot | `simplifier` | Arraigns every arrival, weighing its complexity against its value. |
+| Probation Judge | JDG | Judge Bot | `hall` | Grants each arrival probation or sends it to the Slop Tank, and keeps the precinct's blotter. |
+| Caseworker | CWK | Issue Bot | `issue` | Rehabilitates slop on probation: implements it, and opens or repairs the pull request. |
+| Forensics | LAB | Review Bot | `review` | Examines each exact revision, certifies findings, and posts reviews. |
+| Release | REL | Release Bot | `release` | Batches unreleased commits and publishes a verified release. |
 
-The repo watchtower starts enabled so Town can observe the repository. Every
-other house starts paused; start it from the browser.
+Each bot is a package under `bots/` (`bots/repo-bot`, `bots/bug-bot`, …);
+Judge Bot is `bots/mayor-bot`. Patrol starts deployed (enabled) so the Squad
+can observe the repository. Every other unit starts stood down (paused); deploy
+it from the browser. The [glossary](docs/workflow.md#glossary) maps each browser
+term to the identifier configuration, the API and state use for it.
 
 ## How work moves
 
-Repo Bot performs the repository inventory that becomes tasks in the town
-snapshot; Town decides which house owns each task; the owning bot runs one
-focused session; Town commits the result, checks GitHub again, and moves the task
-on. Town also makes its own bounded GitHub writes — the merge, closing a declined
-issue or pull request, filing follow-ups, submitting a request — each idempotent
-and gated on a fresh read. Nothing is dispatched twice, and an interrupted
-session leaves a recovery hold instead of being silently retried.
+Patrol (Repo Bot) performs the repository inventory that becomes cases (tasks)
+in the precinct's snapshot; the Squad decides which unit owns each case; the
+owning bot runs one focused session; the Squad commits the result, checks
+GitHub again, and moves the case on. The Squad also makes its own bounded
+GitHub writes — the merge, closing an issue or pull request sent to the Slop
+Tank, filing follow-ups, submitting a request — each idempotent and gated on a
+fresh read. Nothing is dispatched twice, and an interrupted session leaves a
+recovery hold instead of being silently retried.
 
-An issue normally travels intake → simplification → Hall → issue workshop →
-review → merge. A pull request normally travels intake → simplification → Hall →
-review → merge. Town only merges a revision it independently certified,
-targeting the branch it covers, with the checks GitHub reports green. Follow-ups
-below the review close threshold are filed as issues rather than blocking the
-merge. See [docs/workflow.md](docs/workflow.md).
+An issue normally travels intake → arraignment (Magistrate) → probation
+(Probation Judge) → Caseworker → Forensics → merge. A pull request normally
+travels intake → arraignment → probation → Forensics → merge. Slop the judges
+throw out goes to the Slop Tank instead. The Squad only merges a revision it
+independently certified, targeting the branch it covers, with the checks GitHub
+reports green. Follow-ups below the review close threshold are filed as issues
+rather than blocking the merge. See [docs/workflow.md](docs/workflow.md).
 
 ## Browser
 
-`bt web` prints a loopback URL carrying the access key. The browser shows the
+`scs web` prints a loopback URL carrying the access key. The browser shows the
 same committed state as the API and never writes anything the service did not
-record. Views include the town board, Town Hall conversation with Town Guide,
-outcome history, storage inventory, settings, execution placement and the
-service diagnostics.
+record. It has three views of the same snapshot:
 
-The board has two themes. **Town** is the default village view. **Frontline**
-draws each repository as a base flying one of three armies and each delivery as
-a strike between installations. The theme is only a look: it reads the same
-snapshot and changes nothing Town does. See [docs/themes.md](docs/themes.md).
+- **Precinct** — the default single-precinct view: an animated cutaway of the
+  precinct house and the courthouse next door, with each unit's robot officer
+  at its post and every open case standing in the room of the unit holding it,
+  and the Radio, the precinct's live event log.
+- **Board** — the case flow: units and cases in columns by stage, for one
+  precinct or all of them.
+- **Compact** — units and cases as a dense list, for one precinct or all of
+  them.
+
+From a precinct you can ask the Desk Sergeant about it, file a report, open the
+Case archive and the Evidence locker, and change its Precinct settings. Squad
+settings hold the service-wide capacity, quiet hours and attention hook, and
+Needs you collects the rulings and stuck work from every precinct. The precinct
+scene — slop walking between rooms when its case moves, the Slop Tank of cases
+thrown out, and the release bus that takes the reformed away — only decorates
+that committed state, and the Motion toggle stops its animation. The browser is
+plain HTML, CSS and JavaScript modules; there are no themes and no image
+assets. See [docs/operations.md](docs/operations.md#browser).
 
 ## Command line
 
-`bt` starts, stops and locates the local service. All day-to-day operation —
-towns, houses, tasks, decisions, settings, diagnostics, history and storage —
-happens in the browser.
+`scs` starts, stops and locates the local service. All day-to-day operation —
+precincts, units, cases, rulings, settings, diagnostics, the Case archive and
+the Evidence locker — happens in the browser.
 
 | Command | Purpose |
 | --- | --- |
-| `bt` | Run the service in the foreground. |
-| `bt -d` | Run the service in the background. |
-| `bt status` | Show whether Town is running and what it serves (`--json` for state). |
-| `bt web` | Print the browser address. |
-| `bt shutdown` | Stop the service and its work. |
-| `bt version` | Print the version. |
+| `scs` | Run the service in the foreground. |
+| `scs -d` | Run the service in the background. |
+| `scs status` | Show whether the Squad is running and what it serves (`--json` for state). |
+| `scs web` | Print the browser address. |
+| `scs shutdown` | Stop the service and its work. |
+| `scs version` | Print the version. |
 
-Every command documents its own flags: `bt COMMAND --help`. See
+Every command documents its own flags: `scs COMMAND --help`. See
 [docs/operations.md](docs/operations.md) for the service reference.
 
 ## Configuration
 
-Settings live in Town's state directory, not in the repository. Use the browser
-to change them. A `--config` file can seed service settings and towns at startup:
+Settings live in the Squad's state directory, not in the repository. Use the
+browser to change them. A `--config` file can seed service settings and
+precincts at startup:
 
 ```sh
-bt --config config.json
+scs --config config.json
 ```
 
-The file is either a JSON array of town configurations or an object with
-`max_workers`, `quiet_hours`, `attention_hook` and `towns`. See
+The file is either a JSON array of precinct configurations or an object with
+`max_workers`, `quiet_hours`, `attention_hook` and `towns` (the precincts). See
 [docs/configuration.md](docs/configuration.md) and
 [docs/config.example.json](docs/config.example.json).
 
 ## Development
 
 ```sh
-make build     # build bin/bt
+make build     # build bin/scs
 make check     # race tests, browser tests and vet
 ```
 
@@ -179,9 +204,9 @@ A release is a tag push:
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-The tag starts the `Release town` workflow, which runs
-[GoReleaser](https://goreleaser.com/) to build the archives for Linux, macOS
-and Windows, checksum them, and publish a GitHub release.
+The tag starts the `Release` workflow (`.github/workflows/release-town.yml`),
+which runs [GoReleaser](https://goreleaser.com/) to build the archives for
+Linux, macOS and Windows, checksum them, and publish a GitHub release.
 
 ## License
 

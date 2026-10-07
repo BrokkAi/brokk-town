@@ -85,8 +85,8 @@ func TestDeclinedProposalIsClosedAtSourceExactlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	task = store.Snapshot().Towns[x.ID].Tasks["issue:12"]
-	if strings.Contains(task.Detail, "outside work") {
-		t.Fatalf("internal proposal was declined as outside work: %q", task.Detail)
+	if strings.Contains(task.Detail, "civilian report") {
+		t.Fatalf("internal proposal was dismissed as a civilian report: %q", task.Detail)
 	}
 
 	for pass := 0; pass < 2; pass++ {
