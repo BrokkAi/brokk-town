@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix the Windows test failures that kept the default branch red: ACP fixture
+  agents no longer hold the transport open while the runner tears it down, the
+  bug-bot setup fixture checks the worktree root without comparing platform
+  path spellings, and every bot treats a Windows drive path as a local
+  repository instead of a URL. Mjolnir now stops its adapter before closing the
+  ACP connection, so a pending Windows pipe read cannot block teardown.
 - Update acp-go to 0.12.1. Agent-side ACP paths accept either platform's
   absolute form, so managed Mjolnir dispatch works from a Windows Town, and the
   generated elicitation types carry their required schema and URL fields again.
