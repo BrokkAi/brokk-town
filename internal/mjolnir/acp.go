@@ -98,7 +98,11 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 			_ = conn.CancelSession(cancelCtx, session.SessionID)
 			cancel()
 		}
-		_ = conn.Close() // EOF asks the adapter to interrupt any owned active turn.
+		// Closing stdin is the EOF that asks the adapter to interrupt any owned
+		// active turn. Do it before conn.Close: acp-go closes the stdout pipe
+		// first, and on Windows that close waits for the read loop, which only
+		// ends when the adapter exits.
+		_ = in.Close()
 		timer := time.NewTimer(10 * time.Second)
 		defer timer.Stop()
 		select {
@@ -107,6 +111,7 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 			kill()
 			<-done
 		}
+		_ = conn.Close()
 	}()
 	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	_, initErr := conn.InitializeWithInfo(initCtx, acp.Capabilities{}, acp.ClientInfo{Name: "brokk-town", Version: "1"})
