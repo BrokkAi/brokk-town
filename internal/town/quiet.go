@@ -262,7 +262,7 @@ func quietStateIn(windows []QuietWindow, source string, now time.Time) QuietStat
 			return state
 		}
 		state.Until = wallClockAfter(now, delta)
-		state.Reason = fmt.Sprintf("Quiet hours until %s. No new agent work or GitHub writes by Town start until then; running work finishes and the repository is still watched.", state.Until.Format("Mon 15:04"))
+		state.Reason = fmt.Sprintf("Quiet hours until %s. No new agent work or GitHub writes by the Squad start until then; running work finishes and the repository is still watched.", state.Until.Format("Mon 15:04"))
 		return state
 	}
 	next := minutesPerWeek

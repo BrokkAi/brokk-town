@@ -50,10 +50,10 @@ func (g MergeGate) blockers(p Pull, a *Audit, branch, repo string) []Diagnostic 
 		out = append(out, Diagnostic{Code: code, Status: status, Detail: detail, Action: action, URL: link + suffix})
 	}
 	if branch == "" || p.Base.Ref != branch || g.BaseRef != branch {
-		add("target_branch", "blocked", fmt.Sprintf("Targets %s (gate: %s), but this town covers %s.", p.Base.Ref, g.BaseRef, branch), "Check the PR target and town branch; Town only merges into its configured branch.", "")
+		add("target_branch", "blocked", fmt.Sprintf("Targets %s (gate: %s), but this precinct covers %s.", p.Base.Ref, g.BaseRef, branch), "Check the PR target and precinct branch; the Squad only merges into its configured branch.", "")
 	}
 	if !a.Clean(g.Base, g.Head) || p.Head.SHA != g.Head || p.Base.SHA != g.Base {
-		add("town_review", "blocked", "Town review is missing, incomplete, or stale for the observed base and head.", "Let Repo Bot refresh the revision and Review Bot certify it before merging.", "/files")
+		add("town_review", "blocked", "The Squad's review is missing, incomplete, or stale for the observed base and head.", "Let Repo Bot refresh the revision and Review Bot certify it before merging.", "/files")
 	}
 	if p.State != "open" || g.State != "OPEN" {
 		add("pr_state", "blocked", "The pull request is no longer open, or its state is unavailable.", "Check its state on GitHub and let Repo Bot reconcile it.", "")
@@ -67,10 +67,10 @@ func (g MergeGate) blockers(p Pull, a *Audit, branch, repo string) []Diagnostic 
 	if !g.PolicyKnown {
 		add("merge_policy", "unknown", "Repository merge policy is unavailable.", "Check Diagnostics in the browser and retry the read.", "")
 	} else if !g.SquashAllowed {
-		add("merge_strategy", "blocked", "Squash merging is disabled; Town's merge strategy is unsupported here.", "Merge manually using an allowed strategy, or ask a maintainer to enable squash merging.", "")
+		add("merge_strategy", "blocked", "Squash merging is disabled; the Squad's merge strategy is unsupported here.", "Merge manually using an allowed strategy, or ask a maintainer to enable squash merging.", "")
 	}
 	if g.MergeQueue != nil {
-		add("merge_queue", "blocked", "The target branch uses a merge queue, which Town cannot drive.", "Use GitHub's merge queue; Repo Bot will observe the confirmed merge.", "")
+		add("merge_queue", "blocked", "The target branch uses a merge queue, which the Squad cannot drive.", "Use GitHub's merge queue; Repo Bot will observe the confirmed merge.", "")
 	}
 	switch g.Review {
 	case "REVIEW_REQUIRED":
@@ -82,9 +82,9 @@ func (g MergeGate) blockers(p Pull, a *Audit, branch, repo string) []Diagnostic 
 		add("approval", "unknown", "GitHub's review decision is unavailable or unrecognized.", "Inspect the PR reviews on GitHub and retry the read.", "")
 	}
 	if g.Mergeable == "CONFLICTING" || g.MergeState == "DIRTY" {
-		add("conflicts", "blocked", "The pull request has merge conflicts.", "Have the branch owner resolve conflicts, then obtain a new Town review.", "")
+		add("conflicts", "blocked", "The pull request has merge conflicts.", "Have the branch owner resolve conflicts, then obtain a new review from the Squad.", "")
 	} else if g.Mergeable != "MERGEABLE" {
-		add("mergeability", "unknown", "GitHub has not determined mergeability.", "Wait for GitHub to calculate it; Town will check again.", "")
+		add("mergeability", "unknown", "GitHub has not determined mergeability.", "Wait for GitHub to calculate it; the Squad will check again.", "")
 	}
 	if g.MergeState != "CLEAN" || (g.Checks != nil && g.Checks.State != "SUCCESS") {
 		if g.Checks == nil {
@@ -141,7 +141,7 @@ func (s *Supervisor) saveMergeWait(t *Town, task *Task, p Pull, checks []Diagnos
 }
 
 func (s *Supervisor) unavailableMergeWait(t *Town, task *Task, p Pull, err error) error {
-	check := Diagnostic{Code: "github_unavailable", Status: "unknown", Detail: "GitHub merge information is unavailable; no merge was attempted.", Action: "Open Diagnostics for " + t.Config.Repo + " in the browser to check access, then let Town retry the read.", URL: fmt.Sprintf("https://github.com/%s/pull/%d", t.Config.Repo, task.Number)}
+	check := Diagnostic{Code: "github_unavailable", Status: "unknown", Detail: "GitHub merge information is unavailable; no merge was attempted.", Action: "Open Diagnostics for " + t.Config.Repo + " in the browser to check access, then let the Squad retry the read.", URL: fmt.Sprintf("https://github.com/%s/pull/%d", t.Config.Repo, task.Number)}
 	return errors.Join(err, s.saveMergeWait(t, task, p, []Diagnostic{check}))
 }
 

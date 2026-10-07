@@ -154,10 +154,10 @@ func (s *Supervisor) answerGuide(parent context.Context, id, turnID string) {
 				turn.Status = "complete"
 				if err != nil || strings.TrimSpace(answer) == "" {
 					turn.Status = "failed"
-					turn.Detail = "Guide could not complete this answer. Check the configured harness login, read-only mode, model and effort; no proposal was dispatched."
+					turn.Detail = "The Desk Sergeant could not complete this answer. Check the configured harness login, read-only mode, model and effort; no proposal was dispatched."
 					if ctx.Err() != nil {
 						turn.Status = "cancelled"
-						turn.Detail = "Guide stopped or reached its two-minute deadline. No proposal was dispatched."
+						turn.Detail = "The Desk Sergeant stopped or reached the two-minute deadline. No proposal was dispatched."
 					}
 					return nil
 				}
@@ -187,7 +187,7 @@ func (s *Supervisor) answerGuide(parent context.Context, id, turnID string) {
 					t.Guide.Revision++
 					turn.Answer = read()
 					turn.Status = "cancelled"
-					turn.Detail = "Guide stopped or reached its two-minute deadline. No proposal was dispatched."
+					turn.Detail = "The Desk Sergeant stopped or reached the two-minute deadline. No proposal was dispatched."
 					turn.Updated = s.now()
 				}
 				return nil
@@ -261,12 +261,12 @@ func demoGuide(ctx context.Context, t *Town, turnID string, emit func(string) er
 			queued++
 		}
 	}
-	answer := fmt.Sprintf("Demo Town Guide: %s has %d queued or intake tasks and %d blocked tasks. ", t.ID, queued, blocked)
-	answer += "The worker inspector shows each house's status and recent failures. Town settings show the model, effort, work filters and quiet hours. These are simulated observations. Uncertain writes remain unresolved, and zero new review comments does not prove a clean review."
+	answer := fmt.Sprintf("Desk Sergeant, training exercise: %s has %d cases queued or in screening and %d blocked cases. ", t.ID, queued, blocked)
+	answer += "The unit inspector shows each unit's status and recent failures. Precinct settings show the model, effort, work filters and quiet hours. These are simulated observations. Uncertain writes remain unresolved, and zero new review comments does not prove a clean review."
 	question := strings.ToLower(t.Guide.turn(turnID).Question)
 	for _, role := range Roles {
 		if strings.Contains(question, "pause") && strings.Contains(question, string(role)) {
-			answer += "\nI can propose pausing this worker after its current work finishes. Confirm the exact action below to apply it.\nTOWN_GUIDE_PROPOSAL {\"action\":\"pause\",\"role\":\"" + string(role) + "\"}"
+			answer += "\nI can propose standing this unit down after its current case finishes. Confirm the exact action below to apply it.\nTOWN_GUIDE_PROPOSAL {\"action\":\"pause\",\"role\":\"" + string(role) + "\"}"
 			break
 		}
 	}

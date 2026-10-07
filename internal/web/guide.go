@@ -55,7 +55,7 @@ func (s *Server) guide(w http.ResponseWriter, r *http.Request) {
 	}
 	t := s.Store.Snapshot().Towns[input.Town]
 	if t == nil || t.Deleted {
-		problem(w, "unknown town", http.StatusBadRequest)
+		problem(w, "unknown precinct", http.StatusBadRequest)
 		return
 	}
 	conversation := t.Guide

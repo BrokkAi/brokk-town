@@ -37,7 +37,7 @@ func managedSupported(t *Town, role Role) bool {
 	return role == Review || (role == Issue && nextTask(t, Issue, "fixes", time.Now()) != nil)
 }
 
-// mjolnirCommand resolves the mj executable: an explicit BT_MJOLNIR_COMMAND
+// mjolnirCommand resolves the mj executable: an explicit SLOPCOP_SQUAD_MJOLNIR_COMMAND
 // prefix, or the npm release through npx when none is configured.
 func mjolnirCommand(configured []string) []string {
 	if len(configured) > 0 {
@@ -123,7 +123,7 @@ func (m *managedDispatch) finish(ctx context.Context) error {
 // startRemoteAgent exposes only a single frozen review revision on a private
 // socket. It cannot run arbitrary commands, switch targets, publish, or merge.
 func startRemoteAgent(ctx context.Context, m *managedDispatch, head string) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "bt-agent-")
+	dir, err := os.MkdirTemp("", "sct-agent-")
 	if err != nil {
 		return "", nil, err
 	}

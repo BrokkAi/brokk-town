@@ -2,9 +2,9 @@
 
 ## Our Commitment
 
-Brokk Town is an open, AI-friendly project. We welcome people using AI tools to
-understand the codebase, develop changes, review code, write documentation, and
-report problems.
+SlopCop Squad is an open, AI-friendly project. We welcome people using AI tools
+to understand the codebase, develop changes, review code, write documentation,
+and report problems.
 
 Whether work is created by a person, an AI system, or a combination of both, we
 expect everyone participating in the project to be respectful, constructive,
@@ -12,7 +12,7 @@ and accountable for what they submit.
 
 ## AI-Assisted Collaboration
 
-Maintainers use AI throughout Brokk Town's development, including for
+Maintainers use AI throughout SlopCop Squad's development, including for
 implementation, static analysis, code review, testing, documentation, issue
 triage, and drafting issues and pull requests.
 
@@ -62,12 +62,12 @@ The following behavior is not acceptable:
 
 ## Security, Privacy, and Licensing
 
-We work to keep Brokk Town on the right side of security, privacy, licensing, and
-responsible disclosure. Good-faith reports that we have made a mistake are
+We work to keep SlopCop Squad on the right side of security, privacy, licensing,
+and responsible disclosure. Good-faith reports that we have made a mistake are
 welcome.
 
 Do not disclose suspected vulnerabilities publicly. Report them privately to
-[feedback@brokk.ai](mailto:feedback@brokk.ai).
+[feedback@slopcop.ai](mailto:feedback@slopcop.ai).
 
 Remove secrets, personal information, and private source code from public bug
 reports and reproductions. Contributors must have the right to submit their
@@ -76,8 +76,8 @@ work and must preserve required license notices and attribution.
 ## Scope
 
 This Code of Conduct applies to the repository, issue tracker, pull requests,
-reviews, project documentation, and official Brokk Town community spaces. It also
-applies when someone is representing the project in public.
+reviews, project documentation, and official SlopCop Squad community spaces. It
+also applies when someone is representing the project in public.
 
 ## Reporting and Enforcement
 
@@ -86,7 +86,7 @@ admins** action on the relevant content. For conduct in another official
 community space, use that space's reporting tools or contact its moderators.
 
 For security vulnerabilities, contact
-[feedback@brokk.ai](mailto:feedback@brokk.ai).
+[feedback@slopcop.ai](mailto:feedback@slopcop.ai).
 
 Maintainers will review reports in good faith and protect reporters' privacy as
 far as reasonably possible. Depending on the circumstances, maintainers may

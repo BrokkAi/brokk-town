@@ -118,7 +118,7 @@ func (b *BotWorkers) runAgent(ctx context.Context, t *Town, tree sessionTree, ro
 	if err != nil {
 		return "", err
 	}
-	return (runner.Runner{Config: runner.Config{Directory: tree.dir, StateDirectory: filepath.Dir(tree.repository), Agent: agent, AutoApprove: true, ClientInfo: acp.ClientInfo{Name: "brokk-town-" + role, Version: "dev"}}, Log: log}).Execute(ctx, prompt)
+	return (runner.Runner{Config: runner.Config{Directory: tree.dir, StateDirectory: filepath.Dir(tree.repository), Agent: agent, AutoApprove: true, ClientInfo: acp.ClientInfo{Name: "slopcop-squad-" + role, Version: "dev"}}, Log: log}).Execute(ctx, prompt)
 }
 func receipt(text, prefix string, out any) error {
 	lines := strings.Split(strings.TrimSpace(text), "\n")
@@ -362,7 +362,7 @@ func (b *BotWorkers) repair(ctx context.Context, t *Town, task *Task, observe fu
 		// finds blocking defects closes it, so a repair request here is stale.
 		return b.Store.Update(func(st *State) error {
 			town := st.Towns[t.ID]
-			markClosing(st, town, town.Tasks[task.ID], "The pull request already had its fix round; the town closes it and starts the issue over.", time.Now())
+			markClosing(st, town, town.Tasks[task.ID], "The pull request already had its fix round; the Squad closes it and starts the issue over.", time.Now())
 			return nil
 		})
 	}
@@ -594,7 +594,7 @@ func (b *BotWorkers) resumeRepair(ctx context.Context, t *Town, task *Task, p Pu
 	}
 	relative, err := filepath.Rel(base, dir)
 	if err != nil || relative == "." || strings.HasPrefix(relative, "..") {
-		return errors.New("saved repair directory is outside this town")
+		return errors.New("saved repair directory is outside this precinct")
 	}
 	head, err := git(ctx, dir, "rev-parse", "HEAD")
 	if err != nil || head != i.NewHead {
@@ -735,7 +735,7 @@ func (b *BotWorkers) confirmRepair(id, taskID string, i *Intent) error {
 		x.Attempts = 0
 		x.RetryAt = time.Time{}
 		x.Detail = i.Detail
-		st.Move(t, x, "queued", Review, "Confirmed fixes delivered for another review", time.Now())
+		st.Move(t, x, "queued", Review, "Confirmed fixes in; back to Forensics for another review", time.Now())
 		return nil
 	})
 }

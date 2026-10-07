@@ -37,7 +37,7 @@ type connection struct {
 }
 
 // executablePath resolves the real binary behind any launcher symlink, such as
-// the npm shim, so bt -d starts the binary itself.
+// the npm shim, so sct -d starts the binary itself.
 var executablePath = func() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -76,11 +76,11 @@ func serviceToken(dir string) (string, error) {
 // describeLock enriches the store's single-writer error with the running
 // service's identity so the operator knows what holds the state directory.
 func describeLock(dir string, err error) error {
-	if !strings.Contains(err.Error(), "another town service is running") {
+	if !strings.Contains(err.Error(), "another SlopCop Squad service is running") {
 		return err
 	}
 	if conn, e := readConnection(dir); e == nil && conn.PID > 0 {
-		return fmt.Errorf("%w (pid %d at %s; stop it with bt shutdown, or Ctrl+C if it runs in a terminal)", err, conn.PID, conn.URL)
+		return fmt.Errorf("%w (pid %d at %s; stop it with sct shutdown, or Ctrl+C if it runs in a terminal)", err, conn.PID, conn.URL)
 	}
 	return err
 }
@@ -94,7 +94,16 @@ func stateHome() string {
 		home, _ := os.UserHomeDir()
 		base = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(base, "brokk-town")
+	dir := filepath.Join(base, "slopcop-squad")
+	// Before the rename to SlopCop Squad the default was brokk-town. An install
+	// from then keeps its state there until the operator moves it.
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+		legacy := filepath.Join(base, "brokk-town")
+		if info, err := os.Stat(legacy); err == nil && info.IsDir() {
+			return legacy
+		}
+	}
+	return dir
 }
 func buildVersion() string {
 	v := version
@@ -119,12 +128,12 @@ func main() {
 	err := run(ctx, os.Args[1:])
 	cancel()
 	if err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintln(os.Stderr, "bt:", err)
+		fmt.Fprintln(os.Stderr, "sct:", err)
 		os.Exit(1)
 	}
 }
 func run(ctx context.Context, args []string) error {
-	// Bare bt, with only flags, runs Town; a first word names a process command.
+	// Bare sct, with only flags, runs Town; a first word names a process command.
 	command := ""
 	explicit := false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -132,7 +141,7 @@ func run(ctx context.Context, args []string) error {
 		args = args[1:]
 		explicit = true
 	}
-	fs := flag.NewFlagSet(strings.TrimSpace("bt "+command), flag.ContinueOnError)
+	fs := flag.NewFlagSet(strings.TrimSpace("sct "+command), flag.ContinueOnError)
 	fl := addCLIFlags(fs)
 	fs.Usage = func() {
 		if !explicit {
@@ -150,14 +159,14 @@ func run(ctx context.Context, args []string) error {
 			printCommandHelp(os.Stdout, fs, args[0])
 			return nil
 		}
-		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", args[0])
+		return fmt.Errorf("unknown command %q for \"sct\"\nRun 'sct --help' for usage", args[0])
 	}
 	cmd := &rootCommand
 	if explicit {
 		cmd = findCommand(command)
 	}
 	if cmd == nil {
-		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
+		return fmt.Errorf("unknown command %q for \"sct\"\nRun 'sct --help' for usage", command)
 	}
 	if wantsHelp(args) {
 		if !explicit {
@@ -199,12 +208,12 @@ func run(ctx context.Context, args []string) error {
 	case "shutdown":
 		conn, alive := serviceAlive(ctx, abs)
 		if !alive {
-			return errors.New("Town is not running")
+			return errors.New("SlopCop Squad is not running")
 		}
 		if err := stopProcess(ctx, conn); err != nil {
 			return err
 		}
-		fmt.Println("Town stopped")
+		fmt.Println("SlopCop Squad stopped")
 		return nil
 	case "web":
 		conn, err := requireService(ctx, abs)
@@ -214,21 +223,21 @@ func run(ctx context.Context, args []string) error {
 		fmt.Printf("%s/#token=%s\n", conn.URL, conn.Token)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q for \"bt\"\nRun 'bt --help' for usage", command)
+		return fmt.Errorf("unknown command %q for \"sct\"\nRun 'sct --help' for usage", command)
 	}
 }
 
 // browserLink returns the browser address with its access key only when
 // stdout is an interactive terminal. Redirected output, such as the background
-// service's log, gets a pointer to bt web so the key never lands in a file.
+// service's log, gets a pointer to sct web so the key never lands in a file.
 func browserLink(conn connection, demo bool) string {
 	if stdoutIsTerminal() {
 		return conn.URL + "/#token=" + conn.Token
 	}
 	if demo {
-		return "run bt web --demo for the link"
+		return "run sct web --demo for the link"
 	}
-	return "run bt web for the link"
+	return "run sct web for the link"
 }
 
 var stdoutIsTerminal = func() bool {
@@ -238,12 +247,12 @@ var stdoutIsTerminal = func() bool {
 
 // serveBanner is what the foreground service prints once it is listening.
 func serveBanner(conn connection, demo bool) string {
-	return fmt.Sprintf("Brokk Town %s\nBrowser: %s\n", buildVersion(), browserLink(conn, demo))
+	return fmt.Sprintf("SlopCop Squad %s\nBrowser: %s\n", buildVersion(), browserLink(conn, demo))
 }
 
-// backgroundBanner is what bt -d prints once the detached service is ready.
+// backgroundBanner is what sct -d prints once the detached service is ready.
 func backgroundBanner(conn connection, demo bool, logs string) string {
-	return fmt.Sprintf("Town running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo), logs)
+	return fmt.Sprintf("SlopCop Squad running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo), logs)
 }
 
 func readConnection(dir string) (connection, error) {
@@ -288,7 +297,7 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 			Error string `json:"error"`
 		}
 		_ = json.NewDecoder(resp.Body).Decode(&v)
-		return fmt.Errorf("town service: %s", v.Error)
+		return fmt.Errorf("SlopCop Squad service: %s", v.Error)
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
@@ -302,7 +311,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	}
 	defer store.Close()
 	if notice := store.Notice(); notice != "" {
-		fmt.Fprintf(os.Stderr, "bt: %s\n", notice)
+		fmt.Fprintf(os.Stderr, "sct: %s\n", notice)
 	}
 	if configFile != "" {
 		data, e := os.ReadFile(configFile)
@@ -350,7 +359,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 						cfg.Branch = t.Config.Branch
 					}
 					if t.Initialized && cfg.Branch != "" && cfg.Branch != t.Branch() {
-						return fmt.Errorf("cannot change town %s from branch %s to %s in place; use a separate state directory, or set branch to \"\" to follow the repository default", id, t.Branch(), cfg.Branch)
+						return fmt.Errorf("cannot change precinct %s from branch %s to %s in place; use a separate state directory, or set branch to \"\" to follow the repository default", id, t.Branch(), cfg.Branch)
 					}
 					if t.Deleted {
 						// A town listed in the config file is live: a deleted one is
@@ -358,7 +367,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 						if err := t.Restore(cfg); err != nil {
 							return err
 						}
-						s.Event(t.ID, "town", "operator", "repo", "", "Town restored from the config file; recovery records retained", time.Now())
+						s.Event(t.ID, "town", "operator", "repo", "", "Precinct restored from the config file; recovery records retained", time.Now())
 						restored = append(restored, t.ID)
 						continue
 					}
@@ -374,7 +383,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 			return e
 		}
 		for _, id := range restored {
-			fmt.Fprintf(os.Stderr, "bt: restored deleted town %s with the config file's settings\n", id)
+			fmt.Fprintf(os.Stderr, "sct: restored deleted precinct %s with the config file's settings\n", id)
 		}
 	}
 	listener, err := net.Listen("tcp", address)
@@ -390,9 +399,9 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	supervisor := town.NewSupervisor(store, gh, workers)
 	supervisor.Mjolnir = mjolnir.New(dir, demo, mjolnir.Environment())
 	workers.Mjolnir = supervisor.Mjolnir
-	if command := os.Getenv("BT_MJOLNIR_COMMAND"); command != "" {
+	if command := mjolnir.Setting("SLOPCOP_SQUAD_MJOLNIR_COMMAND"); command != "" {
 		if json.Unmarshal([]byte(command), &workers.MjolnirCommand) != nil || len(workers.MjolnirCommand) == 0 || workers.MjolnirCommand[0] == "" {
-			return errors.New("BT_MJOLNIR_COMMAND must be a JSON command array for mj")
+			return errors.New("SLOPCOP_SQUAD_MJOLNIR_COMMAND must be a JSON command array for mj")
 		}
 	}
 	token, err := serviceToken(dir)

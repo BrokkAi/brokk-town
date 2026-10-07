@@ -1,8 +1,8 @@
 # Licensing and third-party notices
 
-Brokk Town uses [Apache-2.0](../LICENSE). [NOTICE](../NOTICE) identifies the project
-and adapted code. [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) is generated,
-not hand-written.
+SlopCop Squad uses [Apache-2.0](../LICENSE). [NOTICE](../NOTICE) identifies the
+project and adapted code. [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) is
+generated, not hand-written.
 
 ```sh
 sh scripts/licenses.sh
@@ -22,5 +22,4 @@ module graph: the Go runtime and the Unicode tables are not modules, so there is
 no module directory to copy them from. They are appended to every generated
 notice file because the release archives ship compiled binaries.
 
-Original generated artwork is documented in [themes.md](../docs/themes.md).
 Separately installed coding agents and interpreters have their own terms.

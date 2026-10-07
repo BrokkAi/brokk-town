@@ -1,33 +1,33 @@
-# Brokk Simplifier Bot
+# Simplifier Bot
 
-The complexity and value reviewer of a Brokk Town.
+The complexity and value screener in SlopCop Squad.
 
 `simplifier-bot` is a Go package of the
-[BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town) module. Town runs it
-in process as the **simplifier clarifier** house, so there is no standalone
-binary, server or release tag to install. See
+[BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town) module. Simplifier Bot
+staffs the **Slop Squad** unit (role key `simplifier`), and the Squad runs it in
+process, so there is no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
 
 ## What it does
 
-Town runs it in two ways.
+The Squad runs it in two ways.
 
 **assessing one arrival** — every incoming issue and external pull request is
-assessed before normal issue or review work. The assessment is a bounded
-admission or decline recommendation attached to a Mayoral decision. The Mayor
-remains the decision maker in *suggest* mode.
+screened before normal issue or review work. The assessment is a bounded
+admission or dismissal recommendation attached to a ruling. The judge remains
+the decision maker in *suggest* mode.
 
 **scanning the repository** — the bot proposes removal or replacement of
 subsystems that add disproportionate complexity or deliver little value, and files
 those proposals as marked GitHub issues.
 
-The town's `simplifier_mode` chooses what happens to an assessment:
+The precinct's `simplifier_mode` chooses what happens to an assessment:
 
-- **suggest** — the arrival goes to Town Hall and the Mayor decides.
-- **auto** — Town admits routine work, declines low-value complex work, and closes
-  low-value complex issues without a separate Mayoral decision. An operator can
-  still admit an auto-decline before the closer claims it.
+- **suggest** — the arrival goes to the Courthouse and the judge rules.
+- **auto** — the Squad admits routine work, dismisses low-value complex work,
+  and closes low-value complex issues without a separate ruling. An operator can
+  still admit an auto-dismissal before the closer claims it.
 
 The implementation is deliberately conservative: it must not recommend removing
 security, privacy, correctness, accessibility, durability, observability, or
@@ -43,8 +43,8 @@ edit or a moved revision fails an assessment.
 
 ## Configuration
 
-Town fills this configuration from the town's agent profile and the simplifier
-house's policy in the browser. The package's own fields are:
+The Squad fills this configuration from the precinct's agent profile and the
+Slop Squad unit's policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |
@@ -58,7 +58,7 @@ house's policy in the browser. The package's own fields are:
 | `verify` | Operator command that must pass. |
 | `dry_run` | Save proposals without filing them. |
 
-Town's policy mapping is `labels`, `limit` → `max_proposals` and `verify`.
+The Squad's policy mapping is `labels`, `limit` → `max_proposals` and `verify`.
 Defaults: a scan every 30 minutes, a 2-hour attempt budget and at most 3
 proposals per scan.
 

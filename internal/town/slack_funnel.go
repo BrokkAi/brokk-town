@@ -28,7 +28,7 @@ const (
 	defaultSlackAPIURL    = "https://slack.com/api/"
 	defaultSlackPageSize  = 100
 	defaultSlackPageLimit = 1000
-	slackMarkerPrefix     = "<!-- brokk-town-slack:"
+	slackMarkerPrefix     = "<!-- slopcop-squad-slack:"
 	slackMarkerSuffix     = " -->"
 )
 
@@ -612,7 +612,7 @@ func slackMarker(operationID, fallback string) string {
 	if strings.TrimSpace(operationID) == "" {
 		operationID = fallback
 	}
-	if strings.HasPrefix(operationID, slackMarkerPrefix) && strings.HasSuffix(operationID, slackMarkerSuffix) {
+	if (strings.HasPrefix(operationID, slackMarkerPrefix) || strings.HasPrefix(operationID, legacyMarker(slackMarkerPrefix))) && strings.HasSuffix(operationID, slackMarkerSuffix) {
 		return operationID
 	}
 	return MarkerForOperation(operationID)
@@ -741,7 +741,7 @@ func (f *SlackFunnel) reconcileSlack(ctx context.Context, write SlackWrite) (Sla
 	history, err := f.ThreadReplies(ctx, write.Channel, write.MessageTS)
 	result := SlackReconciliation{Write: write, Complete: history.Complete}
 	for _, message := range history.Messages {
-		if strings.Contains(message.Text, write.Marker) {
+		if hasMarker(message.Text, write.Marker) {
 			result.Found, result.Detail = true, "Slack receipt found by stable client marker."
 			write.Status = SlackWriteConfirmed
 			result.Write = write

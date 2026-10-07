@@ -165,7 +165,7 @@ func BuildOutcomeReport(state State, townID string, from, to, now time.Time) (Ou
 		}
 	}
 	if townID != "" && len(ids) == 0 {
-		return OutcomeReport{}, fmt.Errorf("unknown town")
+		return OutcomeReport{}, fmt.Errorf("unknown precinct")
 	}
 	sort.Strings(ids)
 	report.Towns = ids

@@ -200,7 +200,7 @@ func (g GitHubClient) gh(ctx context.Context, args ...string) (string, error) {
 func (g GitHubClient) api(ctx context.Context, method, path string, body any, out any) error {
 	args := []string{"api", "--hostname", "github.com", "--method", method, path}
 	if body != nil {
-		f, err := os.CreateTemp("", "brokk-town-request-*.json")
+		f, err := os.CreateTemp("", "slopcop-squad-request-*.json")
 		if err != nil {
 			return err
 		}

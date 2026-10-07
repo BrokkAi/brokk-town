@@ -150,17 +150,22 @@ func TestAgentConfigRedirectsMuseOnly(t *testing.T) {
 	}
 }
 
-// The opt-out leaves the operator's configuration untouched.
+// The opt-out leaves the operator's configuration untouched, under its current
+// name or the one it had before the rename to SlopCop Squad.
 func TestAgentConfigMusePermissionsOptOut(t *testing.T) {
-	stubHarnessPATH(t, "npx")
-	t.Setenv(museKeepPermissions, "keep")
-	_, env := writeMuseConfig(t, `{"permissions":{"default_profile":":auto-review"}}`)
-	cfg := Config{Harness: "muse-acp", Agent: runner.AgentConfig{Environment: env}}
-	a, err := agentConfig(context.Background(), cfg, t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.Environment["XDG_CONFIG_HOME"] != env["XDG_CONFIG_HOME"] {
-		t.Fatalf("opt-out still redirected to %q", a.Environment["XDG_CONFIG_HOME"])
+	for _, name := range []string{"SLOPCOP_SQUAD_MUSE_PERMISSIONS", "BROKK_TOWN_MUSE_PERMISSIONS"} {
+		t.Run(name, func(t *testing.T) {
+			stubHarnessPATH(t, "npx")
+			t.Setenv(name, "keep")
+			_, env := writeMuseConfig(t, `{"permissions":{"default_profile":":auto-review"}}`)
+			cfg := Config{Harness: "muse-acp", Agent: runner.AgentConfig{Environment: env}}
+			a, err := agentConfig(context.Background(), cfg, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a.Environment["XDG_CONFIG_HOME"] != env["XDG_CONFIG_HOME"] {
+				t.Fatalf("opt-out still redirected to %q", a.Environment["XDG_CONFIG_HOME"])
+			}
+		})
 	}
 }

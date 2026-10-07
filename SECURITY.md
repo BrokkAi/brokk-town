@@ -1,7 +1,7 @@
 # Security Policy
 
 Report suspected vulnerabilities privately to
-[feedback@brokk.ai](mailto:feedback@brokk.ai). Include the affected version or
+[feedback@slopcop.ai](mailto:feedback@slopcop.ai). Include the affected version or
 commit, impact, and steps to reproduce. Remove credentials, personal data,
 and private repository contents from reports and logs.
 

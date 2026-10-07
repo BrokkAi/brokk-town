@@ -28,7 +28,7 @@ type Store struct {
 }
 
 // ErrServiceRunning means another process holds this state directory's lock.
-var ErrServiceRunning = errors.New("another town service is running")
+var ErrServiceRunning = errors.New("another SlopCop Squad service is running")
 
 func Open(dir string, demo bool) (*Store, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -65,7 +65,7 @@ func Open(dir string, demo bool) (*Store, error) {
 		// someone pointed at this directory, and that is never discarded.
 		if err != nil && explicitDemo {
 			if rejected, e := setAside(s.path); e == nil {
-				s.notice = fmt.Sprintf("demo state this Town cannot read was set aside as %s; starting a fresh demo", filepath.Base(rejected))
+				s.notice = fmt.Sprintf("demo state this build of SlopCop Squad cannot read was set aside as %s; starting a fresh demo", filepath.Base(rejected))
 				s.state = NewState(true)
 				err = nil
 			}
@@ -74,9 +74,9 @@ func Open(dir string, demo bool) (*Store, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		s.Close()
 		if demo {
-			return nil, fmt.Errorf("read town state: %w (the demo keeps its state in %s; move that file aside to start over)", err, dir)
+			return nil, fmt.Errorf("read SlopCop Squad state: %w (the demo keeps its state in %s; move that file aside to start over)", err, dir)
 		}
-		return nil, fmt.Errorf("read town state: %w", err)
+		return nil, fmt.Errorf("read SlopCop Squad state: %w", err)
 	}
 	if s.notice != "" {
 		// Leave the directory holding a state this Town can reopen, rather than
@@ -104,7 +104,7 @@ func Open(dir string, demo bool) (*Store, error) {
 				if turn.Status == "gathering" || turn.Status == "answering" {
 					t.Guide.Revision++
 					turn.Status = "interrupted"
-					turn.Detail = "Town restarted before the answer finished. Submit a new question to try again."
+					turn.Detail = "The Squad restarted before the answer finished. Submit a new question to try again."
 				}
 			}
 		}
@@ -206,7 +206,7 @@ func validateState(s State, demo bool) error {
 	}
 	for id, t := range s.Towns {
 		if t == nil || t.ID != id || id != strings.ToLower(t.Config.Repo) || t.Config.Validate() != nil || t.Tasks == nil || t.Workers == nil || t.Owned == nil || t.Intents == nil {
-			return errors.New("invalid town state")
+			return errors.New("invalid precinct state")
 		}
 		if t.ArchivedTasks < 0 || (t.HistoryCreated && s.Format != 2) || (t.ArchivedTasks > 0 && !t.HistoryCreated) {
 			return errors.New("invalid task history metadata")
@@ -215,11 +215,11 @@ func validateState(s State, demo bool) error {
 			return err
 		}
 		if len(t.Bulletins) > maxBulletins {
-			return errors.New("too many bulletins")
+			return errors.New("too many blotter entries")
 		}
 		for i, b := range t.Bulletins {
 			if !validBulletin(b) || (i > 0 && !t.Bulletins[i-1].Until.Equal(b.Since)) {
-				return errors.New("invalid bulletin feed")
+				return errors.New("invalid blotter")
 			}
 		}
 		if t.DefaultBranch != "" && !ValidBranch(t.DefaultBranch) {
@@ -238,7 +238,7 @@ func validateState(s State, demo bool) error {
 		}
 		for _, r := range Roles {
 			if t.Workers[r] == nil || t.Workers[r].Role != r {
-				return fmt.Errorf("town %s is missing its %s house", id, r)
+				return fmt.Errorf("precinct %s is missing its %s unit", id, r)
 			}
 			if err := t.Workers[r].Run.Validate(r); err != nil {
 				return err
@@ -254,18 +254,18 @@ func validateState(s State, demo bool) error {
 				return errors.New("invalid task identity or revision")
 			}
 			if task.MayoralDecision != "" && task.MayoralDecision != "pending" && task.MayoralDecision != "admitted" && task.MayoralDecision != "declined" {
-				return errors.New("invalid Mayoral decision")
+				return errors.New("invalid ruling")
 			}
 			if task.MayoralDecision == "pending" && (task.House != Hall || task.Stage != "awaiting_mayor") {
-				return errors.New("pending Mayoral decision left Town Hall")
+				return errors.New("pending ruling left the Courthouse")
 			}
 			// A declined pull request its author closed keeps the decline, as
 			// does Town's own declined pull request while Town closes it.
 			if task.MayoralDecision == "declined" && (task.House != Hall || (task.Stage != "declined" && (task.Kind != "pr" || (task.Stage != "closed" && (task.Stage != "closing" || task.External))))) {
-				return errors.New("declined Mayoral decision is not final")
+				return errors.New("dismissal ruling is not final")
 			}
 			if task.Stage == "simplifying" && (task.House != Simplifier || (task.Kind != "issue" && task.Kind != "pr")) {
-				return errors.New("pending simplifier intake left the clarifier")
+				return errors.New("case awaiting Slop Squad screening left the Slop Squad")
 			}
 			if validDeferReason(task.DeferReason) != nil || (task.DeferReason != "" && task.DeferredUntil.IsZero()) {
 				return errors.New("invalid task snooze")

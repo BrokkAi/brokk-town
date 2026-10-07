@@ -261,7 +261,7 @@ test("bot drafts keep independent harnesses, models, effort and pinned versions"
   edit("effort-input", "xhigh");
   select("issue");
   assert.equal(elements["harness-input"].value, "codex-acp");
-  assert.match(elements["agent-profile-status"].textContent, /Uses town defaults/);
+  assert.match(elements["agent-profile-status"].textContent, /Uses precinct defaults/);
   edit("model-input", "issue-model");
   edit("effort-input", "xhigh");
   select("review");
@@ -320,7 +320,7 @@ test("quiet hours follow the default, opt out, or save the town's own windows", 
 test("Repo Bot exposes and saves its repair agent profile", async () => {
   const app = fixture();
   await open("repo");
-  assert.match(elements["agent-profile-status"].textContent, /Uses town defaults/);
+  assert.match(elements["agent-profile-status"].textContent, /Uses precinct defaults/);
   assert.match(elements["agent-profile-note"].textContent, /repairing a failing branch/);
   edit("model-input", "repo-repair-model");
   edit("effort-input", "high");
@@ -340,7 +340,7 @@ test("restoring defaults waits for save and follows subsequent town default chan
   assert.match(elements["agent-profile-status"].textContent, /unsaved/);
   for (const id of ["harness-input", "model-input", "effort-input", "command-input", "update-harness", "load-choices"])
     assert.equal(elements[id].disabled, true, `${id} waits for reset to save`);
-  assert.match(elements["agent-profile-note"].textContent, /Save to use town defaults before customizing/);
+  assert.match(elements["agent-profile-note"].textContent, /Save to use precinct defaults before customizing/);
   select("issue");
   assert.equal(elements["model-input"].disabled, false);
   select("review");
@@ -354,7 +354,7 @@ test("restoring defaults waits for save and follows subsequent town default chan
   assert.equal(app.saves()[1].body.role, "");
   select("review");
   assert.equal(elements["model-input"].value, "new-default");
-  assert.match(elements["agent-profile-status"].textContent, /Uses town defaults/);
+  assert.match(elements["agent-profile-status"].textContent, /Uses precinct defaults/);
   await save();
   assert.deepEqual(app.saves()[2].body.agent, { inherit: true });
 });

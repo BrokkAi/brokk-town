@@ -31,7 +31,7 @@ type Job struct {
 	Status       string    `json:"status"`
 	URL          string    `json:"url,omitempty"`
 	Result       *Result   `json:"result,omitempty"`
-	// Superseded lists pull requests Brokk Town closed after review and asked
+	// Superseded lists pull requests SlopCop Squad closed after review and asked
 	// the bot to replace. They never count as this issue's existing PR again.
 	Superseded []int `json:"superseded,omitempty"`
 }
@@ -175,7 +175,7 @@ func Requeue(cfg Config, pr int) error {
 	}
 	if j.Claim != nil && j.Claim.Status != "released" {
 		j.Claim.Status = "released"
-		j.Claim.Detail = fmt.Sprintf("Brokk Town closed pull request #%d after review and requeued the issue for a fresh attempt.", pr)
+		j.Claim.Detail = fmt.Sprintf("SlopCop Squad closed pull request #%d after review and requeued the issue for a fresh attempt.", pr)
 		j.ClaimPending = true
 	}
 	return writeState(cfg, s)

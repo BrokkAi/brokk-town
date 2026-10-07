@@ -46,7 +46,7 @@ func TestSimplifierDeclinedOwnPullIsClosedAndItsIssueStartsOver(t *testing.T) {
 	store, town, gh, sup := ownPullTown(t, "auto")
 	declineOwnPull(t, store, town)
 	pr := task(store, town, "pr:5")
-	if pr.Stage != "declined" || pr.House != Hall || !strings.Contains(pr.Detail, "Town is closing it") {
+	if pr.Stage != "declined" || pr.House != Hall || !strings.Contains(pr.Detail, "The Squad is closing it") {
 		t.Fatalf("own PR decline: %+v", pr)
 	}
 	ctx := context.Background()
@@ -56,7 +56,7 @@ func TestSimplifierDeclinedOwnPullIsClosedAndItsIssueStartsOver(t *testing.T) {
 	if len(gh.closedPulls) != 1 || gh.closedPulls[0] != 5 || len(gh.deleted) != 1 || gh.deleted[0] != "issue-5" || len(gh.comments) != 2 {
 		t.Fatalf("GitHub side of the close: closed=%v deleted=%v comments=%v", gh.closedPulls, gh.deleted, gh.comments)
 	}
-	if !strings.Contains(gh.comments[0], "A registry for one caller.") || !strings.Contains(gh.comments[1], "closed after Simplifier declined it") {
+	if !strings.Contains(gh.comments[0], "A registry for one caller.") || !strings.Contains(gh.comments[1], "closed after the Slop Squad dismissed it") {
 		t.Fatalf("comments do not explain the decline: %v", gh.comments)
 	}
 	pr = task(store, town, "pr:5")
@@ -64,7 +64,7 @@ func TestSimplifierDeclinedOwnPullIsClosedAndItsIssueStartsOver(t *testing.T) {
 		t.Fatalf("closed PR lost its decline: %+v", pr)
 	}
 	issue := task(store, town, "issue:3")
-	if issue.Stage != "queued" || issue.House != Issue || issue.Requeue != 5 || !strings.Contains(issue.Detail, "Simplifier declined") {
+	if issue.Stage != "queued" || issue.House != Issue || issue.Requeue != 5 || !strings.Contains(issue.Detail, "Slop Squad dismissed") {
 		t.Fatalf("issue did not start over: %+v", issue)
 	}
 	// The next inventory sees the closure and repeats nothing.
@@ -240,7 +240,7 @@ func TestMayorDeclinedOwnPullIsClosedAndStaysDeclined(t *testing.T) {
 	if err := sup.Control(town.ID, Hall, "decline", "pr:5"); err != nil {
 		t.Fatal(err)
 	}
-	if pr := task(store, town, "pr:5"); !strings.Contains(pr.Detail, "Town is closing it") {
+	if pr := task(store, town, "pr:5"); !strings.Contains(pr.Detail, "The Squad is closing it") {
 		t.Fatalf("Mayoral decline of own PR: %+v", pr)
 	}
 	ctx := context.Background()

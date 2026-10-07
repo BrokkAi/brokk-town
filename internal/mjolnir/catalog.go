@@ -93,8 +93,20 @@ type Listing struct {
 }
 type Connection struct{ URL, TokenFile string }
 
+// Environment reads the Mjolnir connection from SLOPCOP_SQUAD_MJOLNIR_API_URL
+// and SLOPCOP_SQUAD_MJOLNIR_TOKEN_FILE.
 func Environment() Connection {
-	return Connection{os.Getenv("BT_MJOLNIR_API_URL"), os.Getenv("BT_MJOLNIR_TOKEN_FILE")}
+	return Connection{Setting("SLOPCOP_SQUAD_MJOLNIR_API_URL"), Setting("SLOPCOP_SQUAD_MJOLNIR_TOKEN_FILE")}
+}
+
+// Setting reads one SLOPCOP_SQUAD_MJOLNIR_* variable. Before the rename these
+// were BT_MJOLNIR_*, and an install that still sets only the old name keeps
+// working: the old spelling is read when the new one is unset.
+func Setting(name string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return os.Getenv(strings.Replace(name, "SLOPCOP_SQUAD_", "BT_", 1))
 }
 
 type Catalog struct {
@@ -125,9 +137,9 @@ func New(dir string, demo bool, connection Connection) *Catalog {
 	}
 	u, err := url.Parse(connection.URL)
 	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.TrimRight(u.Path, "/") != "/api/v1" || connection.TokenFile == "" {
-		c.setupError = "Set BT_MJOLNIR_API_URL to the API base URL and BT_MJOLNIR_TOKEN_FILE to its token file (see mj api-info)."
+		c.setupError = "Set SLOPCOP_SQUAD_MJOLNIR_API_URL to the API base URL and SLOPCOP_SQUAD_MJOLNIR_TOKEN_FILE to its token file (see mj api-info)."
 	} else if ip := net.ParseIP(u.Hostname()); u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		c.setupError = "Town's Mjolnir API connection must use a loopback address."
+		c.setupError = "The Squad's Mjolnir API connection must use a loopback address."
 	}
 	c.listing.Error = c.setupError
 	if c.setupError != "" {
@@ -215,7 +227,7 @@ func (c *Catalog) refreshNow(ctx context.Context) {
 		record := saved{Identity: c.identity, Fetched: time.Now().UTC(), Options: options}
 		data, _ := json.Marshal(record)
 		if e := writeCache(c.cache, data); e != nil {
-			err = errors.New("Mjolnir options could not be cached; check Town's state directory permissions.")
+			err = errors.New("Mjolnir options could not be cached; check the Squad's state directory permissions.")
 		}
 		c.mu.Lock()
 		c.listing.Options, c.listing.Fetched = record.Options, record.Fetched
@@ -309,15 +321,15 @@ func (c *Catalog) request(ctx context.Context, method, path string, body io.Read
 		return nil, fail(c.setupError)
 	}
 	if c.client == nil {
-		return nil, fail("Configure BT_MJOLNIR_API_URL and BT_MJOLNIR_TOKEN_FILE to read Mjolnir's API.")
+		return nil, fail("Configure SLOPCOP_SQUAD_MJOLNIR_API_URL and SLOPCOP_SQUAD_MJOLNIR_TOKEN_FILE to read Mjolnir's API.")
 	}
 	token, err := readBounded(c.connection.TokenFile, 4096)
 	if err != nil || len(strings.TrimSpace(string(token))) == 0 {
-		return nil, fail("Cannot read Mjolnir's API token; check BT_MJOLNIR_TOKEN_FILE and its permissions.")
+		return nil, fail("Cannot read Mjolnir's API token; check SLOPCOP_SQUAD_MJOLNIR_TOKEN_FILE and its permissions.")
 	}
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.connection.URL, "/")+path, body)
 	if err != nil {
-		return nil, fail("Invalid Mjolnir API URL; check BT_MJOLNIR_API_URL.")
+		return nil, fail("Invalid Mjolnir API URL; check SLOPCOP_SQUAD_MJOLNIR_API_URL.")
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
 	if body != nil {

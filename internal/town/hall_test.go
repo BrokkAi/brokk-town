@@ -148,12 +148,12 @@ func TestMayorBotResultsApplyThroughTheMayorsPath(t *testing.T) {
 	}
 	named := 0
 	for _, e := range state.Events {
-		if e.Kind == "decision" && strings.HasPrefix(e.Title, "Mayor Bot ") {
+		if e.Kind == "decision" && strings.HasPrefix(e.Title, "Judge Bot ") {
 			named++
 		}
 	}
 	if named != 2 || len(seen) != 2 {
-		t.Fatalf("expected two decisions attributed to Mayor Bot, got %d over %v", named, seen)
+		t.Fatalf("expected two decisions attributed to Judge Bot, got %d over %v", named, seen)
 	}
 	if w := town.Workers[Hall]; w.Status != "waiting" || w.Error != "" {
 		t.Fatalf("the house did not return to waiting: %+v", w)
@@ -191,7 +191,7 @@ func TestMayorBotFailuresBackOffThenLeaveTheArrivalForThePerson(t *testing.T) {
 		sup.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall)
 	}
 	issue = store.Snapshot().Towns[x.ID].Tasks["issue:1"]
-	if calls != mayorAttempts || issue.Attempts != mayorAttempts || !strings.Contains(issue.Detail, "left for the Mayor") {
+	if calls != mayorAttempts || issue.Attempts != mayorAttempts || !strings.Contains(issue.Detail, "awaits your ruling") {
 		t.Fatalf("expected %d attempts then a hand-off, got %d: %+v", mayorAttempts, calls, issue)
 	}
 	if err := sup.Control(x.ID, Hall, "admit", "issue:1"); err != nil {
@@ -252,7 +252,7 @@ func TestMayorBotBulletinsBuildAContiguousFeed(t *testing.T) {
 	broken.now = func() time.Time { return now.Add(2 * time.Hour) }
 	broken.execute(context.Background(), store.Snapshot().Towns[x.ID], Hall)
 	town = store.Snapshot().Towns[x.ID]
-	if len(town.Bulletins) != 1 || !strings.Contains(town.Workers[Hall].Error, "continue the feed") {
+	if len(town.Bulletins) != 1 || !strings.Contains(town.Workers[Hall].Error, "does not continue the blotter") {
 		t.Fatalf("a bulletin with a gap was accepted: %d bulletins, error %q", len(town.Bulletins), town.Workers[Hall].Error)
 	}
 }

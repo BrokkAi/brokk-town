@@ -178,7 +178,7 @@ func (s *Store) History(ctx context.Context, id, after string, limit int) (Histo
 	t := s.state.Towns[id]
 	if t == nil || t.Deleted {
 		s.mu.RUnlock()
-		return HistoryPage{}, errors.New("unknown town")
+		return HistoryPage{}, errors.New("unknown precinct")
 	}
 	entries := []historyEntry{}
 	total := 0

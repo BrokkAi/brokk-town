@@ -66,7 +66,7 @@ func (e engine) judge(ctx context.Context, request JudgeRequest) (Judgment, erro
 	if request.Issue < 0 || request.PR < 0 || (request.Issue > 0 && request.PR > 0) || (kind == "issue") != (request.Issue > 0) || (kind == "pr") != (request.PR > 0) {
 		return Judgment{}, errors.New("arrival kind does not match the issue or pull request number")
 	}
-	e.observe(Progress{Phase: "loading", Task: "Refreshing repository and arrival"})
+	e.observe(Progress{Phase: "loading", Task: "Refreshing the repository and the case"})
 	base := checkout{config: e.config}
 	if err = base.open(ctx); err != nil {
 		return Judgment{}, err
@@ -97,7 +97,7 @@ func (e engine) judge(ctx context.Context, request JudgeRequest) (Judgment, erro
 			return Judgment{}, err
 		}
 		if request.HeadSHA != "" && p.Head.SHA != request.HeadSHA {
-			return Judgment{}, fmt.Errorf("pull request head moved: town asked about %s, GitHub reports %s", request.HeadSHA, p.Head.SHA)
+			return Judgment{}, fmt.Errorf("pull request head moved: the Squad asked about %s, GitHub reports %s", request.HeadSHA, p.Head.SHA)
 		}
 		if revision, err = base.fetchItem(ctx, fmt.Sprintf("refs/pull/%d/head", request.PR), p.Head.SHA); err != nil {
 			return Judgment{}, err
@@ -121,7 +121,7 @@ func (e engine) judge(ctx context.Context, request JudgeRequest) (Judgment, erro
 	if err != nil {
 		return Judgment{}, err
 	}
-	e.observe(Progress{Phase: "judging", Task: "Weighing the arrival against the repository"})
+	e.observe(Progress{Phase: "judging", Task: "Weighing the case against the repository"})
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(e.config.Timeout))
 	defer cancel()
 	text, err := execute(ctx, e.agent(worktree.config), instructions+judgePrompt(kind, arrival, source), e.log, e.sleep)
@@ -131,7 +131,7 @@ func (e engine) judge(ctx context.Context, request JudgeRequest) (Judgment, erro
 	if err = worktree.verify(ctx, revision); err != nil {
 		return Judgment{}, err
 	}
-	e.observe(Progress{Phase: "reporting", Task: "Returning the decision"})
+	e.observe(Progress{Phase: "reporting", Task: "Returning the ruling"})
 	return parseJudgment(text, kind)
 }
 func prepareConfig(cfg *Config) error {

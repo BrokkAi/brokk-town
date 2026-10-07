@@ -60,7 +60,7 @@ func assess(ctx context.Context, cfg Config, verdict checkReader, agent Agent, h
 		return health, nil
 	}
 	if cfg.InventoryOnly() {
-		health.Detail = "No agent is configured for this house, so the failing branch is reported only."
+		health.Detail = "No agent is configured for this unit, so the failing branch is reported only."
 		return health, nil
 	}
 	attempts := 0

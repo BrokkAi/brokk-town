@@ -14,7 +14,7 @@ import (
 )
 
 // readyChildEnv selects a stand-in child's behavior in TestReadyChild.
-const readyChildEnv = "BT_READY_TEST_CHILD"
+const readyChildEnv = "SCT_READY_TEST_CHILD"
 
 // TestReadyChild is the stand-in child, run by startWithReadyPipe as this test
 // binary. It takes the notification pipe as Town does.
@@ -38,7 +38,7 @@ func TestReadyChild(t *testing.T) {
 }
 
 // startWithReadyPipe runs a stand-in child holding the notification pipe as
-// bt -d passes it, and closes the parent's write end as startBackground does.
+// sct -d passes it, and closes the parent's write end as startBackground does.
 func startWithReadyPipe(t *testing.T, mode string) (*exec.Cmd, *os.File) {
 	t.Helper()
 	ready, notify, err := os.Pipe()
@@ -146,7 +146,7 @@ func TestLogTailShowsOnlyThisStart(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(stderr), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(stderr, []byte("bt: an old failure\n"), 0600); err != nil {
+	if err := os.WriteFile(stderr, []byte("sct: an old failure\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	offset := logSize(dir)
@@ -157,7 +157,7 @@ func TestLogTailShowsOnlyThisStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.WriteString("bt: this failure\n")
+	f.WriteString("sct: this failure\n")
 	f.Close()
 	got := logTail(dir, offset)
 	if !strings.Contains(got, "this failure") || strings.Contains(got, "old failure") {

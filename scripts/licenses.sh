@@ -7,7 +7,7 @@ export LC_ALL=C
 out=${1:-licenses/THIRD_PARTY_NOTICES.txt}
 
 {
-    printf 'BROKK TOWN LICENSES\n\n%s\n\n' '=============================================================='
+    printf 'SLOPCOP SQUAD LICENSES\n\n%s\n\n' '=============================================================='
     printf 'Project license (LICENSE)\n\n'
     cat LICENSE
     printf '\n%s\n\n' '=============================================================='

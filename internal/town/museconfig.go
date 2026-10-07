@@ -19,8 +19,12 @@ import (
 // The derived directory rewrites `settings.json` without that one key and
 // symlinks every sibling back to the real directory, so credentials, trust
 // decisions and their refreshes stay shared and live. Set
-// BROKK_TOWN_MUSE_PERMISSIONS=keep to launch against the unmodified config.
-const museKeepPermissions = "BROKK_TOWN_MUSE_PERMISSIONS"
+// SLOPCOP_SQUAD_MUSE_PERMISSIONS=keep to launch against the unmodified config;
+// BROKK_TOWN_MUSE_PERMISSIONS, its name before the rename, is still honoured.
+const (
+	museKeepPermissions       = "SLOPCOP_SQUAD_MUSE_PERMISSIONS"
+	legacyMuseKeepPermissions = "BROKK_TOWN_MUSE_PERMISSIONS"
+)
 
 // museUserConfig reports the directory Muse reads its own config from.
 func museUserConfig(env map[string]string) string {
@@ -51,7 +55,7 @@ func museEnv(env map[string]string, key string) string {
 // Every failure returns "": the derivation is best-effort, and a child left on
 // the operator's own config reports the host's refusal itself.
 func museConfigHome(root string, env map[string]string) string {
-	if os.Getenv(museKeepPermissions) == "keep" {
+	if os.Getenv(museKeepPermissions) == "keep" || os.Getenv(legacyMuseKeepPermissions) == "keep" {
 		return ""
 	}
 	real := museUserConfig(env)

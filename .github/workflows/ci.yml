@@ -39,9 +39,9 @@ jobs:
         with:
           node-version: '24'
       - name: Check the module
-        # One module covers Town and every bot, so the whole package tree is
+        # One module covers the Squad and every bot, so the whole package tree is
         # checked in a single pass. The browser checks and the build run once
-        # for Town below.
+        # for the Squad below.
         run: |
           unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
           if [ -n "$unformatted" ]; then
@@ -55,7 +55,7 @@ jobs:
         run: |
           sh scripts/licenses.sh
           git diff --exit-code -- licenses/THIRD_PARTY_NOTICES.txt
-      - name: Build Town
+      - name: Build sct
         run: make js && make build
   windows:
     # Windows runs the whole module build, vet and tests under PowerShell. It

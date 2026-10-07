@@ -122,13 +122,13 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			// retired from this town's work instead.
 			if task := t.Tasks[id]; task != nil && task.Stage != "merged" && task.Stage != "closed" {
 				if !task.Offbranch {
-					s.Event(t.ID, "delivery", string(task.House), "hall", id, fmt.Sprintf("PR retargeted to %s; outside this town", p.Base.Ref), now)
+					s.Event(t.ID, "delivery", string(task.House), "hall", id, fmt.Sprintf("PR retargeted to %s; outside this precinct", p.Base.Ref), now)
 				}
 				task.Audit = nil
 				task.clearMergeWait()
 				task.Offbranch = true
 				task.Blocked = true
-				task.Detail = fmt.Sprintf("Targets %s, but this town covers %s. Town stops work on it until it targets %s again.", p.Base.Ref, remote.Branch, remote.Branch)
+				task.Detail = fmt.Sprintf("Targets %s, but this precinct covers %s. The Squad stops work on it until it targets %s again.", p.Base.Ref, remote.Branch, remote.Branch)
 				task.Updated = now
 			}
 			continue
@@ -190,10 +190,10 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 			task.RetryAt = time.Time{}
 			task.Audit = nil
 			if holdsIntake(task) {
-				s.Event(t.ID, "delivery", "outside", string(task.House), id, "PR targets this town's branch again: "+p.Title, now)
+				s.Event(t.ID, "delivery", "outside", string(task.House), id, "PR targets this precinct's branch again: "+p.Title, now)
 				wake(t, task)
 			} else {
-				s.Move(t, task, "queued", Review, "PR targets this town's branch again: back for review", now)
+				s.Move(t, task, "queued", Review, "PR targets this precinct's branch again: back for review", now)
 			}
 		}
 		wasExternal := task.External
@@ -235,7 +235,7 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				task.Cycles++
 				t.RecordOutcome(OutcomeRecord{ID: fmt.Sprintf("repair-round:%s:%s", id, intent.NewHead), At: now, Class: "outcome", Kind: "repair_round", Status: "confirmed", Role: Issue, TaskID: id, RelatedTaskID: fmt.Sprintf("issue:%d", owned.Issue), Revision: intent.NewHead, URL: p.URL, Detail: fmt.Sprintf("Repair round %d confirmed on GitHub", task.Cycles)})
 				task.Audit = nil
-				s.Move(t, task, "queued", Review, "Fixes delivered for another review", now)
+				s.Move(t, task, "queued", Review, "Fixes in; back to Forensics for another review", now)
 			}
 		}
 		if p.MergedAt != nil {
@@ -364,18 +364,18 @@ func Reconcile(s *State, t *Town, remote RepoSnapshot, now time.Time) {
 				blocked++
 			}
 		}
-		title := "Repository check-in"
+		title := "Patrol check-in"
 		if initial {
-			title = "Town inventory"
+			title = "Patrol inventory"
 		} else if len(changes) > 0 {
-			title = fmt.Sprintf("%d changes in town", len(changes))
+			title = fmt.Sprintf("%d changes on the beat", len(changes))
 		}
 		body := fmt.Sprintf("%d queued issues · %d open PRs · %d blocked tasks. Latest release: %s.", openIssues, openPRs, blocked, t.LastRelease)
 		if len(changes) > 0 {
 			body += "\n" + strings.Join(changes, "\n")
 		}
 		if len(changes) > 10 {
-			title = "Busy arrivals: " + title
+			title = "Busy shift: " + title
 		}
 		t.Report(title, body, now)
 		s.Event(t.ID, "report", "repo", "hall", "", title, now)
@@ -436,13 +436,13 @@ func resume(t *Town, task *Task) {
 		// Simplifier's assessment attached, and the closer leaves it alone.
 		task.Stage = "awaiting_mayor"
 		task.MayoralDecision = "pending"
-		task.Detail = "Reopened after Simplifier declined it and Town closed it. The Mayor decides whether Town takes it on."
+		task.Detail = "Reopened after the Slop Squad dismissed it and the Squad closed it. The judge rules on whether the Squad takes it on."
 	case task.Kind == "pr" && !task.External && task.House == Hall && task.MayoralDecision == "" && autoDeclined(task) && task.Stage == "closed":
 		// Town's own pull request, closed on Simplifier's decline, reopened:
 		// an appeal as for an issue. The issue has already started over.
 		task.Stage = "awaiting_mayor"
 		task.MayoralDecision = "pending"
-		task.Detail = "Reopened after Simplifier declined it and Town closed it. The Mayor decides whether Town reviews it; its issue has already started over."
+		task.Detail = "Reopened after the Slop Squad dismissed it and the Squad closed it. The judge rules on whether the Squad reviews it; its issue has already started over."
 	case task.MayoralDecision == "declined" || (task.House == Hall && autoDeclined(task)):
 		task.Stage = "declined"
 		return

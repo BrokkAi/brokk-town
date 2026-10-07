@@ -77,7 +77,7 @@ func (s *Supervisor) SelectExecutionRuntime(ctx context.Context, id string, role
 	}
 	t := snapshot.Towns[id]
 	if t == nil || t.Deleted {
-		return errors.New("unknown town")
+		return errors.New("unknown precinct")
 	}
 	selection := t.Config.ExecutionForRole(role)
 	pin, err := s.Mjolnir.DiscoverRuntime(ctx, selection, session)
@@ -122,7 +122,7 @@ func (s *Supervisor) SetExecution(id string, role Role, selection *mjolnir.Selec
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		if selection != nil && selection.Managed() && *selection != t.Config.ExecutionForRole(role) && !s.Mjolnir.Contains(*selection) {
 			return errors.New("select a target and profile from Mjolnir's cached launch options; refresh the catalog if they are missing")

@@ -48,8 +48,8 @@ func retirePull(st *State, t *Town, task *Task, reason string, now time.Time) {
 		task.Attempts = 0
 		task.RetryAt = time.Time{}
 		task.Updated = now
-		task.Detail = reason + " Decide whether Town should review this external PR again or decline it."
-		st.Event(t.ID, "decision", string(Review), "hall", task.ID, "External PR needs a Mayoral decision: "+task.Title, now)
+		task.Detail = reason + " Rule on whether the Squad should review this external PR again or dismiss it."
+		st.Event(t.ID, "decision", string(Review), "hall", task.ID, "External PR needs a ruling: "+task.Title, now)
 		return
 	}
 	markClosing(st, t, task, reason, now)
@@ -107,15 +107,15 @@ func claimDeclinedPulls(st *State, t *Town, now time.Time) {
 		task.Detail = declineCloseReason(task)
 		task.Closes++
 		task.BranchKept = false
-		st.Move(t, task, "closing", Hall, "Closing declined PR: "+task.Title, now)
+		st.Move(t, task, "closing", Hall, "Closing dismissed PR: "+task.Title, now)
 	}
 }
 
 func declineCloseReason(task *Task) string {
 	if task.MayoralDecision == "declined" {
-		return "The Mayor declined this pull request. Town is closing it and starting the issue over."
+		return "The judge dismissed this pull request. The Squad is closing it and starting the issue over."
 	}
-	reason := "Simplifier declined this pull request. Town is closing it and starting the issue over."
+	reason := "The Slop Squad dismissed this pull request. The Squad is closing it and starting the issue over."
 	if s := task.Simplification; s != nil {
 		if s.Summary != "" {
 			reason += "\n\n" + s.Summary
@@ -129,9 +129,9 @@ func declineCloseReason(task *Task) string {
 func closedCause(task *Task) string {
 	switch {
 	case task.MayoralDecision == "declined":
-		return "the Mayor declined it"
+		return "the judge dismissed it"
 	case autoDeclined(task):
-		return "Simplifier declined it"
+		return "the Slop Squad dismissed it"
 	}
 	return "its second review"
 }
@@ -159,10 +159,10 @@ func (s *Supervisor) settleReview(st *State, t *Town, task *Task) {
 		task.House = Hall
 		task.MayoralDecision = "pending"
 		task.Updated = now
-		task.Detail = "Review found changes are needed in this external PR. Decide whether Town should review it again or decline it."
-		st.Event(t.ID, "decision", "review", "hall", task.ID, "External PR needs a Mayoral decision: "+task.Title, now)
+		task.Detail = "Review found changes are needed in this external PR. Rule on whether the Squad should review it again or dismiss it."
+		st.Event(t.ID, "decision", "review", "hall", task.ID, "External PR needs a ruling: "+task.Title, now)
 	case task.Cycles == 0:
-		st.Move(t, task, "fixes", Issue, "Review feedback delivered to issue-bot", now)
+		st.Move(t, task, "fixes", Issue, "Review findings sent to the Task Force", now)
 	default:
 		threshold := t.Config.ReviewCloseSeverityOrDefault()
 		var blocking, deferred []Finding
@@ -198,7 +198,7 @@ func closeReason(task *Task, blocking []Finding, threshold string) string {
 		}
 		lines = append(lines, fmt.Sprintf("- [%s] %s", severity, firstLine(f.Detail)))
 	}
-	return fmt.Sprintf("The second review still found %d finding(s) at or above %s. Town is closing this pull request and starting the issue over.\n%s", len(blocking), threshold, strings.Join(lines, "\n"))
+	return fmt.Sprintf("The second review still found %d finding(s) at or above %s. The Squad is closing this pull request and starting the issue over.\n%s", len(blocking), threshold, strings.Join(lines, "\n"))
 }
 
 func firstLine(text string) string {
@@ -210,7 +210,7 @@ func firstLine(text string) string {
 }
 
 func closingComment(task *Task, requeued int) string {
-	body := "## Brokk Town\n\n" + task.Detail
+	body := "## SlopCop Squad\n\n" + task.Detail
 	if requeued > 0 {
 		body += fmt.Sprintf("\n\nTown starts issue #%d over from the current base branch.", requeued)
 	}
@@ -220,7 +220,7 @@ func closingComment(task *Task, requeued int) string {
 // closeMarker identifies one closing comment: the pull request and which of
 // Town's closes of it the comment explains, as requeueMarker does.
 func closeMarker(task *Task) string {
-	return fmt.Sprintf("<!-- brokk-town:closed-after-review pr=%d close=%d -->", task.Number, task.Closes)
+	return fmt.Sprintf("<!-- slopcop-squad:closed-after-review pr=%d close=%d -->", task.Number, task.Closes)
 }
 
 // requeueMarker identifies one requeue comment: the pull request and which of
@@ -228,11 +228,11 @@ func closeMarker(task *Task) string {
 // closed again legitimately requeues its issue a second time, and that second
 // comment must not be mistaken for the first.
 func requeueMarker(task *Task) string {
-	return fmt.Sprintf("<!-- brokk-town:requeued pr=%d close=%d -->", task.Number, task.Closes)
+	return fmt.Sprintf("<!-- slopcop-squad:requeued pr=%d close=%d -->", task.Number, task.Closes)
 }
 
 func requeueComment(task *Task) string {
-	return fmt.Sprintf("## Brokk Town\n\nPull request #%d was closed after %s. The next attempt starts over from the current base branch and should address the reason:\n\n%s\n\n%s", task.Number, closedCause(task), task.Detail, requeueMarker(task))
+	return fmt.Sprintf("## SlopCop Squad\n\nPull request #%d was closed after %s. The next attempt starts over from the current base branch and should address the reason:\n\n%s\n\n%s", task.Number, closedCause(task), task.Detail, requeueMarker(task))
 }
 
 // requeuedIssue returns the issue closing this pull request starts over, or
@@ -285,7 +285,7 @@ func (s *Supervisor) explainRequeue(ctx context.Context, repo string, issue int,
 		return err
 	}
 	for _, body := range comments {
-		if strings.Contains(body, requeueMarker(task)) {
+		if hasMarker(body, requeueMarker(task)) {
 			return nil
 		}
 	}
@@ -300,7 +300,7 @@ func (s *Supervisor) explainClose(ctx context.Context, repo string, task *Task, 
 		return err
 	}
 	for _, body := range comments {
-		if strings.Contains(body, closeMarker(task)) {
+		if hasMarker(body, closeMarker(task)) {
 			return nil
 		}
 	}
@@ -486,7 +486,7 @@ func releaseDeclinedPull(st *State, t *Town, n int, status int, now time.Time) {
 		return
 	}
 	task.Stage = "declined"
-	task.Detail = fmt.Sprintf("GitHub refused to close this pull request (HTTP %d). Simplifier's decline stands; the Mayor can admit it anyway.", status)
+	task.Detail = fmt.Sprintf("GitHub refused to close this pull request (HTTP %d). The Slop Squad's dismissal stands; the judge can admit it anyway.", status)
 	task.Updated = now
 	st.Event(t.ID, "error", string(Repo), "hall", task.ID, "GitHub refused to close: "+task.Title, now)
 }
@@ -508,7 +508,7 @@ func finalizeClosedPull(st *State, t *Town, n int, skipped []string, kept string
 		related = fmt.Sprintf("issue:%d", owned.Issue)
 	}
 	if len(skipped) > 0 {
-		task.Detail += "\n\nGitHub refused, so Town did not: " + strings.Join(skipped, "; ") + "."
+		task.Detail += "\n\nGitHub refused, so the Squad did not: " + strings.Join(skipped, "; ") + "."
 		st.Event(t.ID, "error", string(Repo), "hall", task.ID, "Closed with steps GitHub refused: "+task.Title, now)
 	}
 	task.Stage = "closed"
@@ -526,10 +526,10 @@ func finalizeClosedPull(st *State, t *Town, n int, skipped []string, kept string
 		return
 	}
 	task.BranchKept = true
-	task.Detail += "\n\n" + kept + " Town retries the delete at each inventory."
+	task.Detail += "\n\n" + kept + " The Squad retries the delete at each inventory."
 	st.Event(t.ID, "error", string(Repo), "hall", task.ID, "Branch kept after close: "+task.Title, now)
 	if issue := requeuedIssue(t, task); issue != nil {
-		issue.Detail = fmt.Sprintf("PR #%d was closed after %s, but %s Issue Bot pushes its next attempt to that branch name, so delete %s on GitHub by hand; Town then starts this issue over.", n, closedCause(task), kept, owned.Branch)
+		issue.Detail = fmt.Sprintf("PR #%d was closed after %s, but %s Issue Bot pushes its next attempt to that branch name, so delete %s on GitHub by hand; the Squad then starts this issue over.", n, closedCause(task), kept, owned.Branch)
 		issue.Updated = now
 	}
 }
@@ -634,5 +634,5 @@ func followUpBody(t *Town, task *Task, f Finding) string {
 	if severity == "" {
 		severity = "unrated"
 	}
-	return fmt.Sprintf("## Review follow-up\n\nDeferred from PR #%d (`%s`) after its second review: severity %s, below the town's close threshold %s, so the pull request merged.\n\n%s\n\n<!-- review-bot:follow-up pr=%d id=%s -->", task.Number, task.Head, severity, t.Config.ReviewCloseSeverityOrDefault(), f.Detail, task.Number, f.ID)
+	return fmt.Sprintf("## Review follow-up\n\nDeferred from PR #%d (`%s`) after its second review: severity %s, below the precinct's close threshold %s, so the pull request merged.\n\n%s\n\n<!-- review-bot:follow-up pr=%d id=%s -->", task.Number, task.Head, severity, t.Config.ReviewCloseSeverityOrDefault(), f.Detail, task.Number, f.ID)
 }

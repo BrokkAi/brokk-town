@@ -86,7 +86,7 @@ func spawnDetached(base string, demo bool, listen, config string, notify *os.Fil
 		return nil, err
 	}
 	if temporaryBinary(exe) {
-		return nil, fmt.Errorf("%s is a temporary build that cannot run the town in the background; build bt or run it in this terminal", exe)
+		return nil, fmt.Errorf("%s is a temporary build that cannot run SlopCop Squad in the background; build sct or run it in this terminal", exe)
 	}
 	dir := runtimeDir(base, demo)
 	out, errFile, err := openLogs(dir)
@@ -95,7 +95,7 @@ func spawnDetached(base string, demo bool, listen, config string, notify *os.Fil
 	}
 	defer out.Close()
 	defer errFile.Close()
-	// Bare bt runs Town. The state directory is absolute so the child never
+	// Bare sct runs Town. The state directory is absolute so the child never
 	// depends on this process's working directory.
 	args := []string{"--state-dir", base, "--listen", listen}
 	if demo {
@@ -157,7 +157,7 @@ func stopProcess(ctx context.Context, conn connection) error {
 	deadline := time.Now().Add(stopTimeout)
 	for osrun.Alive(conn.PID) {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("town service pid %d did not stop within %s", conn.PID, stopTimeout)
+			return fmt.Errorf("SlopCop Squad service pid %d did not stop within %s", conn.PID, stopTimeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -172,16 +172,16 @@ func stopProcess(ctx context.Context, conn connection) error {
 func requireService(ctx context.Context, dir string) (connection, error) {
 	conn, alive := serviceAlive(ctx, dir)
 	if !alive {
-		return conn, errors.New("Town is not running; start bt or bt -d")
+		return conn, errors.New("SlopCop Squad is not running; start sct or sct -d")
 	}
 	return conn, nil
 }
 
-// readyEnv names the descriptor on which a Town started by bt -d reports that
+// readyEnv names the descriptor on which a Town started by sct -d reports that
 // it is serving, in the manner of systemd's sd_notify or s6's notification-fd.
 // The parent blocks on the other end: a ready line means Town is up, and end
 // of file without one means it exited, so a failed start is reported at once.
-const readyEnv = "BT_READY_FD"
+const readyEnv = "SCT_READY_FD"
 
 // readyPipe is the notification descriptor this process was given, if any.
 var readyPipe *os.File
@@ -198,7 +198,7 @@ func takeReadyPipe() *os.File {
 	return inheritedReady(value)
 }
 
-// signalReady tells a waiting bt -d that Town is serving.
+// signalReady tells a waiting sct -d that Town is serving.
 func signalReady() {
 	if readyPipe == nil {
 		return
@@ -221,7 +221,7 @@ func awaitReady(ctx context.Context, cmd *exec.Cmd, ready *os.File) error {
 		if ok {
 			return nil
 		}
-		return fmt.Errorf("Town exited during startup: %v", cmd.Wait())
+		return fmt.Errorf("SlopCop Squad exited during startup: %v", cmd.Wait())
 	case <-ctx.Done():
 		interruptStarting(cmd)
 		_ = cmd.Wait()
@@ -232,7 +232,7 @@ func awaitReady(ctx context.Context, cmd *exec.Cmd, ready *os.File) error {
 func startBackground(ctx context.Context, base string, demo bool, listen, config string) error {
 	dir := runtimeDir(base, demo)
 	if conn, alive := serviceAlive(ctx, dir); alive {
-		return fmt.Errorf("Town is already running (pid %d at %s)", conn.PID, conn.URL)
+		return fmt.Errorf("SlopCop Squad is already running (pid %d at %s)", conn.PID, conn.URL)
 	}
 	if config != "" {
 		var err error

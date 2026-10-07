@@ -923,7 +923,7 @@ func TestDemoIsIsolatedAndCompletesTheLoop(t *testing.T) {
 	for _, e := range st.Events {
 		routes[e.From+">"+e.To] = true
 	}
-	for _, r := range []string{"bug>issue", "feature>hall", "issue>review", "review>issue", "review>release", "release>outside"} {
+	for _, r := range []string{"bug>issue", "feature>hall", "issue>review", "review>issue", "review>release", "release>outside", "simplifier>hall"} {
 		if !routes[r] {
 			t.Fatal("missing route", r)
 		}
@@ -1107,8 +1107,8 @@ func TestRetryLeavesAPausedHousePaused(t *testing.T) {
 	if town.Intents[1].Status != "retry" {
 		t.Fatalf("retry lost the uncertain write intent: %+v", town.Intents[1])
 	}
-	if !strings.Contains(task.Detail, "paused") {
-		t.Fatalf("operator is not told the house is paused: %q", task.Detail)
+	if !strings.Contains(task.Detail, "stood down") {
+		t.Fatalf("operator is not told the unit is stood down: %q", task.Detail)
 	}
 	events := s.Snapshot().Events
 	if len(events) != before+1 {
@@ -1445,4 +1445,23 @@ func (w *issueRetryWorker) Observe(context.Context, *Town, InventoryRequest, fun
 // house does.
 func (s *Supervisor) reconcileNow(ctx context.Context, t *Town) error {
 	return s.reconcile(ctx, t, true, func(Progress) {}, slog.Default())
+}
+
+// Every role reads as its unit in operator-facing prose, and the Courthouse's
+// bot is Judge Bot; none falls back to its bare role key.
+func TestEveryRoleHasAUnitName(t *testing.T) {
+	seen := map[string]Role{}
+	for _, role := range Roles {
+		name := unitName(role)
+		if name == "" || name == string(role) {
+			t.Fatalf("%s has no unit name: %q", role, name)
+		}
+		if other, dup := seen[name]; dup {
+			t.Fatalf("%s and %s share the unit name %q", other, role, name)
+		}
+		seen[name] = role
+	}
+	if houseName(Hall)+" Bot" != "Judge Bot" || houseName(Review)+" Bot" != "Review Bot" {
+		t.Fatalf("bot names: %q, %q", houseName(Hall), houseName(Review))
+	}
 }

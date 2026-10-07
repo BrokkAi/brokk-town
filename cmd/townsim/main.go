@@ -1,4 +1,4 @@
-// Command townsim models Brokk Town's default scheduler with stochastic bot
+// Command townsim models SlopCop Squad's default scheduler with stochastic bot
 // outcomes so scheduling defaults can be checked for unbounded backlog growth
 // before they ship. It reproduces the supervisor's rules: one worker per house,
 // a shared MaxWorkers capacity, the sixty second poll cadence, thirty minute

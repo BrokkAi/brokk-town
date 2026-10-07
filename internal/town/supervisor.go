@@ -137,7 +137,7 @@ func (s *Supervisor) Run(ctx context.Context) (runErr error) {
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-s.fatal:
-			return fmt.Errorf("town state persistence failed: %w", err)
+			return fmt.Errorf("SlopCop Squad state persistence failed: %w", err)
 		case <-ticker.C:
 		case <-s.wake:
 		}
@@ -456,7 +456,7 @@ func (s *Supervisor) execute(ctx context.Context, t *Town, r Role) {
 			w.Error = err.Error()
 			w.Task = workPausedPrefix + err.Error()
 			w.Next = s.now().Add(houseFailureBackoff)
-			st.Event(t.ID, "error", string(r), "hall", "", string(r)+" needs attention", s.now())
+			st.Event(t.ID, "error", string(r), "hall", "", unitName(r)+" is stuck", s.now())
 			if r == Repo {
 				current.Error = err.Error()
 			}
@@ -714,7 +714,7 @@ func outcomeAttemptTask(t *Town, role Role, result RunResult, now time.Time) (st
 func applySimplification(st *State, t *Town, task *Task, assessment *Simplification, runErr error, now time.Time) {
 	if task.House != Simplifier || task.Stage != "simplifying" {
 		if runErr == nil && assessment != nil {
-			st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Simplifier result discarded; "+task.Title+" left intake while it ran", now)
+			st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Slop Squad result discarded; "+task.Title+" left screening while it ran", now)
 		}
 		return
 	}
@@ -730,7 +730,7 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 		task.Blocked = task.Attempts >= 3
 		task.Detail = runErr.Error()
 		if task.Blocked {
-			st.Event(t.ID, "error", string(Simplifier), "hall", task.ID, "Simplifier blocked: "+task.Title, now)
+			st.Event(t.ID, "error", string(Simplifier), "hall", task.ID, "Slop Squad blocked: "+task.Title, now)
 		}
 		return
 	}
@@ -751,7 +751,7 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 		task.Stage = "awaiting_mayor"
 		task.House = Hall
 		task.MayoralDecision = "pending"
-		st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Simplifier advises the Mayor on: "+task.Title, now)
+		st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Slop Squad advises the judge on: "+task.Title, now)
 		return
 	}
 	task.MayoralDecision = ""
@@ -759,9 +759,9 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 		task.Stage = "declined"
 		task.House = Hall
 		if task.Kind == "issue" {
-			task.Detail = "Simplifier declined this work. Town is closing the issue."
+			task.Detail = "The Slop Squad dismissed this case. The Squad is closing the issue."
 			t.Workers[Repo].Next = time.Time{}
-			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Simplifier declined: "+task.Title, now)
+			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Slop Squad dismissed: "+task.Title, now)
 			return
 		}
 		if !task.External {
@@ -770,20 +770,20 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 			// nothing working on it. Town closes it and starts the issue over,
 			// as after a failed review. The closer claims it at the next
 			// inventory outside quiet hours, so the Mayor can admit it first.
-			task.Detail = "Simplifier declined Town's own pull request. Town is closing it and starting the issue over."
+			task.Detail = "The Slop Squad dismissed the Squad's own pull request. The Squad is closing it and starting the issue over."
 			t.Workers[Repo].Next = time.Time{}
-			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Simplifier declined: "+task.Title, now)
+			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Slop Squad dismissed: "+task.Title, now)
 			return
 		}
-		task.Detail = "Simplifier declined this pull request. Town will not review it."
-		st.Event(t.ID, "decision", string(Simplifier), "outside", task.ID, "Simplifier declined: "+task.Title, now)
+		task.Detail = "The Slop Squad dismissed this pull request. The Squad will not review it."
+		st.Event(t.ID, "decision", string(Simplifier), "outside", task.ID, "Slop Squad dismissed: "+task.Title, now)
 		return
 	}
 	target := Review
 	if task.Kind == "issue" {
 		target = Issue
 	}
-	st.Move(t, task, "queued", target, "Simplifier admitted: "+task.Title, now)
+	st.Move(t, task, "queued", target, "Slop Squad admitted: "+task.Title, now)
 	t.Workers[target].Next = time.Time{}
 }
 
@@ -1113,7 +1113,7 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 					}
 					if task := current.Tasks[id]; task != nil && task.Stage == "closing" && task.MayoralDecision == "" {
 						task.Stage = "declined"
-						task.Detail = fmt.Sprintf("GitHub refused to close this issue (HTTP %d). Simplifier's decline stands; the Mayor can admit it anyway.", rejected.Status)
+						task.Detail = fmt.Sprintf("GitHub refused to close this issue (HTTP %d). The Slop Squad's dismissal stands; the judge can admit it anyway.", rejected.Status)
 						task.Updated = s.now()
 						st.Event(t.ID, "error", string(Repo), "hall", id, "GitHub refused to close: "+task.Title, s.now())
 					}
@@ -1140,11 +1140,11 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 				task.Updated = s.now()
 			}
 			if task.MayoralDecision == "declined" {
-				task.Detail = "The Mayor declined this proposal. Town closed the issue."
-				st.Event(t.ID, "decision", "hall", string(Repo), id, "Declined proposal closed: "+task.Title, s.now())
+				task.Detail = "The judge dismissed this proposal. The Squad closed the issue."
+				st.Event(t.ID, "decision", "hall", string(Repo), id, "Dismissed proposal closed: "+task.Title, s.now())
 			} else {
-				task.Detail = "Simplifier declined this low-value complex issue. Town closed it."
-				st.Event(t.ID, "decision", string(Simplifier), string(Repo), id, "Simplifier closed: "+task.Title, s.now())
+				task.Detail = "The Slop Squad dismissed this low-value complex issue. The Squad closed it."
+				st.Event(t.ID, "decision", string(Simplifier), string(Repo), id, "Slop Squad closed: "+task.Title, s.now())
 			}
 			return nil
 		}); err != nil {
@@ -1172,7 +1172,7 @@ func (s *Supervisor) Control(id string, role Role, action, taskID string) error 
 func (s *Supervisor) control(id string, role Role, action, taskID string, guard func(*Town) error) error {
 	if action == "delete" {
 		if role != "all" {
-			return errors.New("delete applies to the entire town")
+			return errors.New("delete applies to the entire precinct")
 		}
 		return s.Delete(id)
 	}
@@ -1196,7 +1196,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 		state := s.Store.Snapshot()
 		t := state.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		task := t.Tasks[taskID]
 		if task == nil {
@@ -1211,7 +1211,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		if guard != nil {
 			if err := guard(t); err != nil {
@@ -1219,7 +1219,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 			}
 		}
 		if decision {
-			return st.decideTask(t, t.Tasks[taskID], action, "Mayor", s.now())
+			return st.decideTask(t, t.Tasks[taskID], action, "The judge", s.now())
 		}
 		if action == "retry" {
 			task := t.Tasks[taskID]
@@ -1299,14 +1299,14 @@ func (s *Supervisor) retryRelease(id string) error {
 	return s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		if t.Config.MergePolicy == "manual" {
 			return manualReleaseError()
 		}
 		w := t.Workers[Release]
 		if w == nil {
-			return errors.New("town has no release house")
+			return errors.New("precinct has no Release unit")
 		}
 		w.RetryRequested = true
 		w.Enabled = true
@@ -1361,16 +1361,41 @@ func resetTaskForRetry(t *Town, task *Task) {
 	}
 	w.Next = time.Time{}
 	if !w.Enabled {
-		task.Detail = fmt.Sprintf("Ready to retry. %s Bot is paused; start it to run this task.", houseName(task.House))
+		task.Detail = fmt.Sprintf("Ready to retry. %s Bot is stood down; deploy it to run this case.", houseName(task.House))
 	}
 }
 
-// houseName is the operator-facing name of a house.
+// houseName is the operator-facing prefix of a unit's bot name, as in
+// "Review Bot". The Courthouse's bot is Judge Bot.
 func houseName(role Role) string {
 	if role == Hall {
-		return "Town Hall"
+		return "Judge"
 	}
 	return strings.ToUpper(string(role)[:1]) + string(role)[1:]
+}
+
+// unitName is the operator-facing name of a unit in prose. The role key stays
+// the identifier everywhere else.
+func unitName(role Role) string {
+	switch role {
+	case Repo:
+		return "Patrol"
+	case Bug:
+		return "Detectives"
+	case Feature:
+		return "Intel"
+	case Simplifier:
+		return "Slop Squad"
+	case Hall:
+		return "Courthouse"
+	case Issue:
+		return "Task Force"
+	case Review:
+		return "Forensics"
+	case Release:
+		return "Release"
+	}
+	return string(role)
 }
 
 func (s *Supervisor) retryIssueTask(id, taskID string) error {
@@ -1406,7 +1431,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 	t := state.Towns[id]
 	if t == nil || t.Deleted {
 		s.mu.Unlock()
-		return errors.New("unknown town")
+		return errors.New("unknown precinct")
 	}
 	task := t.Tasks[taskID]
 	if task == nil || task.Kind != "issue" {
@@ -1422,7 +1447,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 		err = s.Store.Update(func(st *State) error {
 			current := st.Towns[id]
 			if current == nil || current.Deleted {
-				return errors.New("unknown town")
+				return errors.New("unknown precinct")
 			}
 			currentTask := current.Tasks[taskID]
 			if currentTask == nil || currentTask.Kind != "issue" || currentTask.Number != task.Number {
@@ -1465,7 +1490,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 	state = s.Store.Snapshot()
 	t = state.Towns[id]
 	if t == nil || t.Deleted {
-		return errors.New("unknown town")
+		return errors.New("unknown precinct")
 	}
 	task = t.Tasks[taskID]
 	if task == nil || task.Kind != "issue" {
@@ -1477,7 +1502,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 	return s.Store.Update(func(st *State) error {
 		current := st.Towns[id]
 		if current == nil || current.Deleted {
-			return errors.New("unknown town")
+			return errors.New("unknown precinct")
 		}
 		currentTask := current.Tasks[taskID]
 		if currentTask == nil || currentTask.Kind != "issue" || currentTask.Number != task.Number {

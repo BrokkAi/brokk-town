@@ -32,7 +32,7 @@ export function attentionSettings({ api, getState, refresh }) {
       void refresh().catch(() => {});
     } catch (error) {
       if (version === generation) $("attention-hook-error").textContent = signal.aborted
-        ? "Town did not confirm the update. Check its saved state before trying again."
+        ? "The Squad did not confirm the update. Check its saved state before trying again."
         : error.message;
     } finally {
       if (version === generation) {

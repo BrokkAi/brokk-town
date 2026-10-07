@@ -28,7 +28,7 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
       : "Runs directly on this machine.";
     $("execution-note").textContent = managed || (mode === "inherit" && selected.target_id)
       ? "Mjolnir supports PR reviews and repairs from verified review feedback. Select a known runtime before dispatch. Other agent duties stay on hold when assigned to Mjolnir; Repo Bot continues inventory reads. Availability is checked again at launch."
-      : "Direct local execution uses the agent settings below and Town’s worker limit.";
+      : "Direct local execution uses the agent settings below and the Squad’s on-duty limit.";
     $("save-execution").disabled = saving || (managed && (!$("execution-target").value || !$("execution-profile").value));
     const savedSelection = effective();
     $("execution-runtime-field").hidden = !savedSelection.target_id;
@@ -46,7 +46,7 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
     $("execution-settings").hidden = !(meaningful || saved || config.execution || listing?.error);
     const oldMode = $("execution-mode").value;
     $("execution-mode").replaceChildren(
-      ...(role ? [new Option("Use town default", "inherit")] : []),
+      ...(role ? [new Option("Use precinct default", "inherit")] : []),
       new Option("Direct local execution", "local"), new Option("Mjolnir", "mjolnir"),
     );
     $("execution-mode").value = reset ? (role && !saved ? "inherit" : resolved.target_id ? "mjolnir" : "local") : oldMode;
@@ -119,7 +119,7 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
         onSaved();
       })()]);
       if (result === expired && generation === version)
-        $("execution-result").textContent = "Town did not answer within 30 seconds. The request may still have been applied; check its state before trying again.";
+        $("execution-result").textContent = "The Squad did not answer within 30 seconds. The request may still have been applied; check its state before trying again.";
     } catch (error) {
       if (generation === version) $("execution-result").textContent = error.message;
     } finally {

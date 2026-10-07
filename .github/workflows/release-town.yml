@@ -1,4 +1,4 @@
-name: Release town
+name: Release
 on:
   push:
     tags: ['v*']

@@ -522,7 +522,7 @@ func runMayorBot(ctx context.Context, request workerRequest, observe func(Progre
 		}
 		return workerResult{Bulletin: &Bulletin{Since: report.Since, Until: report.Until, Title: report.Title, Summary: report.Summary, Items: items, Pulls: report.Pulls}}, nil
 	default:
-		return workerResult{}, fmt.Errorf("mayor worker requires mode judge or bulletin, got %q", request.Mode)
+		return workerResult{}, fmt.Errorf("judge worker requires mode judge or bulletin, got %q", request.Mode)
 	}
 }
 

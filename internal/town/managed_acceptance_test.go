@@ -24,7 +24,7 @@ import (
 )
 
 func TestMjolnirReadOnlyAcceptance(t *testing.T) {
-	path := os.Getenv("BT_MJOLNIR_ACCEPTANCE")
+	path := os.Getenv("SLOPCOP_SQUAD_MJOLNIR_ACCEPTANCE")
 	if path == "" {
 		t.Skip("requires an explicit private acceptance configuration")
 	}

@@ -235,8 +235,8 @@ func TestSnoozeRejectsInvalidRequests(t *testing.T) {
 			t.Fatalf("%s: got %v, want an error containing %q", name, err, tc.want)
 		}
 	}
-	if err := sup.Defer("acme/missing", "issue:1", now.Add(time.Hour), ""); err == nil || err.Error() != "unknown town" {
-		t.Fatalf("unknown town: %v", err)
+	if err := sup.Defer("acme/missing", "issue:1", now.Add(time.Hour), ""); err == nil || err.Error() != "unknown precinct" {
+		t.Fatalf("unknown precinct: %v", err)
 	}
 	if err := sup.Control(x.ID, Issue, "defer", "issue:1"); err == nil || !strings.Contains(err.Error(), "resume time") {
 		t.Fatalf("a snooze without a resume time was accepted: %v", err)

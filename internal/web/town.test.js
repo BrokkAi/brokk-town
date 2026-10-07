@@ -1,13 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  positions,
-  houseNames,
+  botNames,
   houseAuthority,
   branchHealthNote,
-  houseShortcuts,
-  roadSegments,
-  routePosition,
   visibleEvents,
   outcomeReport,
   queueFor,
@@ -89,65 +85,12 @@ test("outcome report separates submitted artifacts from confirmed outcomes and j
   assert.equal(report.records.length, 6);
   assert.equal(outcomeReport(records).records.length, 7);
 });
-test("all delivery routes have finite continuous endpoints", () => {
-  for (const [from, to] of [
-    ["bug", "issue"],
-    ["feature", "issue"],
-    ["feature", "hall"],
-    ["outside", "feature"],
-    ["issue", "review"],
-    ["review", "issue"],
-    ["review", "release"],
-    ["release", "outside"],
-    ["outside", "issue"],
-    ["outside", "review"],
-  ]) {
-    const a = routePosition(from, to, 0),
-      b = routePosition(from, to, 1);
-    assert.equal(a.x, positions[from][0]);
-    assert.equal(b.x, to === "outside" ? 1170 : positions[to][0]);
-    let prev = a;
-    for (let i = 1; i <= 100; i++) {
-      const p = routePosition(from, to, i / 100);
-      assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
-      assert.ok(Math.hypot(p.x - prev.x, p.y - prev.y) < 40);
-      prev = p;
-    }
-    assert.deepEqual(routePosition(from, to, -1), a);
-    assert.deepEqual(routePosition(from, to, 2), b);
-  }
-});
-test("all eight houses fit and feature deliveries follow the painted roads", () => {
-  assert.equal(Object.keys(houseNames).length, 8);
-  assert.equal(houseNames.feature, "FEATURE BOT");
-  assert.equal(houseShortcuts[5], "hall");
-  assert.equal(houseShortcuts[6], "feature");
-  assert.equal(houseShortcuts[7], "simplifier");
-  const houses = Object.keys(houseNames);
-  for (const role of houses) {
-    const [x, y] = positions[role];
-    assert.ok(x >= 118 && x <= 1002 && y >= 118 && y <= 562);
-    for (const other of houses.filter((other) => other !== role)) {
-      const [ox, oy] = positions[other];
-      assert.ok(Math.abs(x - ox) >= 236 || Math.abs(y - oy) >= 236);
-    }
-  }
-  for (const from of [...houses, "outside"]) {
-    for (const to of [...houses, "outside"]) {
-      for (let i = 0; i <= 100; i++) {
-        const { x, y } = routePosition(from, to, i / 100);
-        assert.ok(
-          roadSegments.some(([a, b]) =>
-            x >= Math.min(a[0], b[0]) - 1e-6 &&
-            x <= Math.max(a[0], b[0]) + 1e-6 &&
-            y >= Math.min(a[1], b[1]) - 1e-6 &&
-            y <= Math.max(a[1], b[1]) + 1e-6,
-          ),
-          `${from} → ${to} left the road at ${x}, ${y}`,
-        );
-      }
-    }
-  }
+test("every unit is staffed by a named bot, and Judge Bot sits in the Courthouse", () => {
+  assert.deepEqual(Object.keys(botNames).sort(), ["bug", "feature", "hall", "issue", "release", "repo", "review", "simplifier"]);
+  assert.equal(botNames.hall, "Judge Bot");
+  assert.equal(botNames.feature, "Feature Bot");
+  assert.match(houseAuthority("hall"), /Rules on every arrival at the Courthouse and keeps the blotter/);
+  assert.match(houseAuthority("hall"), /never edits the repository or GitHub/);
 });
 test("queue and overview report blocked and waiting work", () => {
   const t = {
@@ -204,9 +147,9 @@ test("inbox gathers decisions and stuck work from every town, longest wait first
   assert.deepEqual(
     needs.decisions.map((item) => [item.town, item.task, item.reason, item.reviewAgain]),
     [
-      ["acme/earlier", "issue:7", "proposed inside Town", false],
-      ["acme/earlier", "pr:8", "Town review asked for changes", true],
-      ["acme/later", "pr:9", "outside arrival", false],
+      ["acme/earlier", "issue:7", "filed by a unit", false],
+      ["acme/earlier", "pr:8", "Forensics asked for changes", true],
+      ["acme/later", "pr:9", "civilian report", false],
     ],
     "decisions come from every town, oldest first, and skip admitted or declined work",
   );
@@ -217,7 +160,7 @@ test("inbox gathers decisions and stuck work from every town, longest wait first
       ["acme/later", "release", "pr:4", "uncertain_write"],
       ["acme/later", "review", "", "failed"],
     ],
-    "stuck tasks and failed workers each point at the house to inspect",
+    "stuck cases and failed units each point at the unit to inspect",
   );
   assert.equal(needs.attention[1].detail, "Merge response was lost");
   assert.equal(needs.attention[2].detail, "gh exploded");
@@ -228,11 +171,11 @@ test("inbox gathers decisions and stuck work from every town, longest wait first
   assert.equal(needs.total, 6);
   assert.deepEqual(inbox(null), { decisions: [], attention: [], towns: {}, total: 0 });
   const offBranch = inbox({ towns: { "acme/x": { id: "acme/x", config: { repo: "acme/x" }, tasks: { "pr:5": { id: "pr:5", kind: "pr", number: 5, house: "hall", stage: "awaiting_mayor", mayoral_decision: "pending", blocked: true } } } } });
-  assert.equal(offBranch.towns["acme/x"].decisions, 0, "a blocked decision is not one to decide, as Mayor Bot skips it");
+  assert.equal(offBranch.towns["acme/x"].decisions, 0, "a blocked ruling is not one to make, as Judge Bot skips it");
   const closingTown = { tasks: { "issue:7": { id: "issue:7", kind: "issue", number: 7, house: "hall", stage: "closing" }, "pr:8": { id: "pr:8", kind: "pr", number: 8, house: "hall", stage: "closing" } }, workers: {} };
   assert.deepEqual(queueFor(closingTown, "hall").map((t) => t.id), ["pr:8"], "an issue Town is closing is not open work; a pull request it is closing still is");
   assert.equal(townSummary(closingTown).queued, 1);
-  assert.equal(decisionReason({ external: true, audit: { verdict: "changes_needed" } }), "Town review asked for changes");
+  assert.equal(decisionReason({ external: true, audit: { verdict: "changes_needed" } }), "Forensics asked for changes");
   const now = Date.parse("2026-09-15T12:00:00Z");
   assert.equal(ago("2026-09-15T11:59:40Z", now), "just now");
   assert.equal(ago("2026-09-15T11:35:00Z", now), "25m ago");
@@ -380,7 +323,7 @@ test("view and focus projections tolerate reconnect redraws", () => {
   assert.equal(focusMatches({ dataset: { boardTown: "acme/other", boardTask: "pr:1" } }, identity), false);
 });
 test("schedule labels distinguish disabled, active, due, and future workers", () => {
-  assert.equal(scheduleLabel({ enabled: false, next: "0001-01-01T00:00:00Z" }), "Paused");
+  assert.equal(scheduleLabel({ enabled: false, next: "0001-01-01T00:00:00Z" }), "Stood down");
   assert.equal(scheduleLabel({ enabled: true, agent: { model: "m" } }), "After current run");
   assert.equal(scheduleLabel({ enabled: true, next: "0001-01-01T00:00:00Z" }), "Due now");
   assert.match(scheduleLabel({ enabled: true, next: "2999-01-01T00:00:00Z" }), /^Next/);
@@ -395,11 +338,11 @@ test("worker controls only offer actions that change the worker's state", () => 
   assert.deepEqual(workerControls(undefined), { start: true, pause: false, stop: false });
   assert.deepEqual(workerControls({ enabled: false, status: "paused" }, true), { start: false, pause: false, stop: false });
   assert.match(houseAuthority("review", "bot"), /merge eligible pull requests when merge policy permits/);
-  assert.match(houseAuthority("release", "manual"), /release-preparation pull requests.*Paused/);
+  assert.match(houseAuthority("release", "manual"), /release-preparation pull requests.*Stood down while every merge is manual/);
   assert.match(houseAuthority("repo"), /repairs the branch it covers/);
 });
 
-test("the watchtower reports what it found on the branch", () => {
+test("Patrol reports what it found on the branch", () => {
   assert.equal(branchHealthNote(undefined), "");
   assert.equal(branchHealthNote({ state: "green" }), "Branch checks are passing.");
   assert.match(branchHealthNote({ state: "red", failing: ["build", "vet"] }), /failing: build, vet/);
@@ -460,30 +403,31 @@ test("optional tools validate input and use the visible navigation", async () =>
   );
 });
 
-test("townControls reports the town's wake state and offers the matching action", () => {
+test("townControls reports the town's duty state and offers the matching action", () => {
   const agents = (enabled) => Object.fromEntries(
     ["bug", "feature", "issue", "review", "release", "simplifier"].map((role, i) => [role, { role, enabled: enabled[i] }]),
   );
   const paused = townControls({ workers: { ...agents([false, false, false, false, false]), repo: { role: "repo", enabled: true } } });
-  assert.equal(paused.status, "Paused", "repo-bot being enabled does not count as awake");
-  assert.deepEqual(paused.primary, { action: "start", label: "▶ Wake the town (6)" });
-  assert.match(paused.detail, /Bug Bot.*Feature Bot.*Issue Bot.*Review Bot.*Simplifier Bot.*Release Bot/);
+  assert.equal(paused.status, "Off duty", "Patrol being deployed does not put the town on patrol");
+  assert.deepEqual(paused.primary, { action: "start", label: "▶ Start patrol (6)" });
+  assert.match(paused.detail, /Detectives.*Intel.*Slop Squad.*Courthouse.*Task Force.*Forensics.*Release/);
+  assert.match(paused.detail, /Patrol already walks the beat/);
   assert.equal(paused.secondary, null);
   const awake = townControls({ workers: agents([true, true, true, true, true, true]) });
-  assert.equal(awake.status, "Awake · 6 agents");
-  assert.deepEqual(awake.primary, { action: "pause", label: "Ⅱ Pause the town" });
+  assert.equal(awake.status, "On patrol · 6 units");
+  assert.deepEqual(awake.primary, { action: "pause", label: "Ⅱ Stand down" });
   assert.equal(awake.secondary, null);
   const partial = townControls({ workers: agents([true, false, true, false, false]) });
-  assert.equal(partial.status, "Partly awake · 2 of 6");
-  assert.deepEqual(partial.primary, { action: "start", label: "▶ Wake the rest" });
-  assert.deepEqual(partial.secondary, { action: "pause", label: "Ⅱ Pause all" });
+  assert.equal(partial.status, "Partly deployed · 2 of 6");
+  assert.deepEqual(partial.primary, { action: "start", label: "▶ Deploy the rest" });
+  assert.deepEqual(partial.secondary, { action: "pause", label: "Ⅱ Stand down" });
   const manual = townControls({
     config: { merge_policy: "manual" },
     workers: { ...agents([false, false, false, false, false]), repo: { role: "repo", enabled: true } },
   });
-  assert.deepEqual(manual.primary, { action: "start", label: "▶ Wake the town (5)" });
-  assert.match(manual.detail, /Release Bot stays paused while every merge is manual/);
-  assert.equal(townControls(null).status, "Paused");
+  assert.deepEqual(manual.primary, { action: "start", label: "▶ Start patrol (5)" });
+  assert.match(manual.detail, /Release stays stood down while every merge is manual/);
+  assert.equal(townControls(null).status, "Off duty");
 });
 
 test("profile labels stay short, keep unfamiliar efforts distinguishable, and say where a profile came from", () => {
@@ -521,14 +465,14 @@ test("profile labels stay short, keep unfamiliar efforts distinguishable, and sa
   assert.equal(own.inherited, false);
   assert.equal(own.live, true);
   assert.match(own.title, /Running now: claude-acp 1\.2\.0/);
-  assert.match(own.title, /Set for this house only/);
+  assert.match(own.title, /Set for this unit only/);
 
   const inherited = profileSummary({});
   assert.equal(inherited.text, "codex · default · default");
   assert.equal(inherited.live, false);
   assert.match(inherited.title, /Next run: codex-acp/);
   assert.match(inherited.title, /Model: harness default/);
-  assert.match(inherited.title, /Inherited from this town's defaults/);
+  assert.match(inherited.title, /Inherited from this precinct's defaults/);
 });
 
 test("a town reports whether its houses run one profile or several", () => {
@@ -555,7 +499,7 @@ test("Simplifier intake has an explicit queue while blocked intake stays visible
   for (const kind of ["issue", "pr"]) {
     const task = { id: `${kind}:70`, kind, house: "simplifier", stage: "simplifying" };
     const queued = projectTask(town, task);
-    assert.equal(queued.statusLabel, "Awaiting Simplifier");
+    assert.equal(queued.statusLabel, "In screening");
     assert.equal(boardColumn(queued), "simplifier");
     const blocked = projectTask(town, { ...task, blocked: true });
     assert.equal(blocked.statusLabel, "Blocked");
@@ -707,14 +651,14 @@ test("quiet hours read as a scheduled pause, apart from paused, working and fail
   const controls = townControls(town);
   assert.match(controls.status, /^Quiet hours · until /);
   assert.equal(controls.statusClass, "quiet");
-  assert.deepEqual(controls.primary, { action: "pause", label: "Ⅱ Pause the town" });
+  assert.deepEqual(controls.primary, { action: "pause", label: "Ⅱ Stand down" });
   assert.match(controls.detail, /service default.*running work finishes/);
   assert.equal(scheduleLabel({ enabled: true, status: "quiet" }), "Quiet hours");
-  assert.equal(scheduleLabel({ enabled: false, status: "paused" }), "Paused", "an operator's pause is not a quiet hour");
-  assert.equal(workerControls({ enabled: true, status: "quiet" }).start, false, "a quiet house is already awake");
-  // A paused town stays paused whatever the clock says.
+  assert.equal(scheduleLabel({ enabled: false, status: "paused" }), "Stood down", "an operator's stand-down is not a quiet hour");
+  assert.equal(workerControls({ enabled: true, status: "quiet" }).start, false, "a quiet unit is already deployed");
+  // A town that stood down stays off duty whatever the clock says.
   const paused = { ...town, workers: Object.fromEntries(Object.entries(agents).map(([r, w]) => [r, { ...w, enabled: false, status: "paused" }])) };
-  assert.equal(townControls(paused).status, "Paused");
+  assert.equal(townControls(paused).status, "Off duty");
   assert.match(quietNote({ quiet_hours: { source: "town", active: false, next: "2026-09-21T18:00:00Z" } }), /^Quiet hours next begin /);
   assert.equal(quietNote({ quiet_hours: { source: "", active: false } }), "");
   assert.match(quietNote({ quiet_hours: { source: "town", active: true } }), /all week/);

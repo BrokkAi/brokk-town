@@ -55,7 +55,7 @@ func (c *Catalog) ResolvePlacement(ctx context.Context, repo, workspace, bundle 
 		}
 	}
 	if len(matches) != 1 {
-		return Placement{}, errors.New("select one configured Mjolnir bundle whose sole primary repository matches this Town repository; ambiguous or sibling repositories cannot be dispatched")
+		return Placement{}, errors.New("select one configured Mjolnir bundle whose sole primary repository matches this precinct's repository; ambiguous or sibling repositories cannot be dispatched")
 	}
 	var listing struct {
 		Workspaces []Workspace `json:"workspaces"`

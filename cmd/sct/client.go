@@ -37,9 +37,9 @@ func checkFlags(fs *flag.FlagSet, cmd *commandInfo, explicit bool) error {
 	if len(stray) == 0 {
 		return nil
 	}
-	where, help := "bt "+cmd.name, "bt "+cmd.name+" --help"
+	where, help := "sct "+cmd.name, "sct "+cmd.name+" --help"
 	if !explicit {
-		where, help = "bt", "bt --help"
+		where, help = "sct", "sct --help"
 	}
 	return fmt.Errorf("%s: not a flag of %s\nRun '%s' for usage", strings.Join(stray, ", "), where, help)
 }
@@ -66,7 +66,7 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 	conn, alive := serviceAlive(ctx, dir)
 	if asJSON {
 		if !alive {
-			return errors.New("Town is not running; start bt or bt -d")
+			return errors.New("SlopCop Squad is not running; start sct or sct -d")
 		}
 		var state any
 		if err := request(ctx, conn, "GET", "/api/state", nil, &state); err != nil {
@@ -77,14 +77,14 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 		return nil
 	}
 	if !alive {
-		fmt.Println("Town is stopped")
+		fmt.Println("SlopCop Squad is stopped")
 		return nil
 	}
 	var state statusView
 	if err := request(ctx, conn, "GET", "/api/state", nil, &state); err != nil {
 		return err
 	}
-	fmt.Printf("Town %s running (pid %d at %s)\n", conn.Version, conn.PID, conn.URL)
+	fmt.Printf("SlopCop Squad %s running (pid %d at %s)\n", conn.Version, conn.PID, conn.URL)
 	if state.Demo {
 		fmt.Println("Demo: simulated events only")
 	}
@@ -99,7 +99,7 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 	}
 	sort.Strings(ids)
 	if len(ids) == 0 {
-		fmt.Println("No towns; add one in the browser")
+		fmt.Println("No precincts; add one in the browser")
 	}
 	for _, id := range ids {
 		t := state.Towns[id]
@@ -109,7 +109,7 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 				on++
 			}
 		}
-		line := fmt.Sprintf("  %s  %d/%d houses on", id, on, len(t.Workers))
+		line := fmt.Sprintf("  %s  %d/%d units deployed", id, on, len(t.Workers))
 		repo := t.Workers["repo"]
 		if repo.Recovery != nil {
 			line += "  recovery: " + repo.Recovery.Detail

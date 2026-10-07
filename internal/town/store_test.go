@@ -235,7 +235,7 @@ func TestResetDemoStateSeedsTheVillageAgain(t *testing.T) {
 		}
 		for _, role := range Roles {
 			if towns[id].Workers[role] == nil {
-				t.Fatalf("town %s is missing its %s house", id, role)
+				t.Fatalf("town %s is missing its %s unit", id, role)
 			}
 		}
 	}

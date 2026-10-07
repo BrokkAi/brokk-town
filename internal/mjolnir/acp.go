@@ -17,7 +17,7 @@ import (
 )
 
 // Executor speaks ACP to mj, never to a local coding harness. Command is the
-// mj executable/prefix: BT_MJOLNIR_COMMAND when set (for example
+// mj executable/prefix: SLOPCOP_SQUAD_MJOLNIR_COMMAND when set (for example
 // mj --instance work), otherwise the npm release through npx.
 type Executor struct {
 	Runs    *Runs
@@ -51,7 +51,7 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 	}
 	wanted := e.Runs.Catalog.connection
 	if probeErr != nil || json.Unmarshal([]byte(info), &connection) != nil || strings.TrimRight(connection.URL, "/") != strings.TrimRight(wanted.URL, "/") || filepath.Clean(connection.Token) != filepath.Clean(wanted.TokenFile) {
-		return answer, errors.New("mj acp and Town's artifact API do not identify the same daemon; check the Mjolnir command and connection settings")
+		return answer, errors.New("mj acp and the Squad's artifact API do not identify the same daemon; check the Mjolnir command and connection settings")
 	}
 	args := append(append([]string{}, e.Command...), "acp", "--workspace", plan.Placement.Workspace.Name, "--profile", plan.Selection.Profile, "--target", plan.Selection.Target, "--bundle", plan.Placement.Bundle, "--checkout-repository", plan.Checkout.Repository, "--checkout-commit", plan.Checkout.Commit, "--checkout-branch", plan.Checkout.Branch, "--expected-runtime-identity", plan.Runtime.Runtime.ID, "--on-exit", "keep")
 	process, kill := context.WithCancel(context.Background())
@@ -78,7 +78,7 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 	var text strings.Builder
 	prompting := false
 	conn := acp.Connect(out, in, func(context.Context, string, json.RawMessage) (any, error) {
-		return nil, &acp.RPCError{Code: -32601, Message: "Mjolnir owns target tools; Town exposes none"}
+		return nil, &acp.RPCError{Code: -32601, Message: "Mjolnir owns target tools; the Squad exposes none"}
 	}, acp.SessionUpdates(func(update acp.Update) error {
 		chunk := update.Update.AgentMessageChunk
 		if chunk == nil || chunk.Content.Text == nil {
@@ -114,7 +114,7 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 		_ = conn.Close()
 	}()
 	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	_, initErr := conn.InitializeWithInfo(initCtx, acp.Capabilities{}, acp.ClientInfo{Name: "brokk-town", Version: "1"})
+	_, initErr := conn.InitializeWithInfo(initCtx, acp.Capabilities{}, acp.ClientInfo{Name: "slopcop-squad", Version: "1"})
 	cancel()
 	if initErr != nil {
 		return answer, errors.Join(errors.New("Mjolnir ACP initialization failed"), ctx.Err())

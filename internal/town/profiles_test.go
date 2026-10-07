@@ -222,7 +222,7 @@ func TestRoleChoicesUsePrivateProfileAndCanPreviewInheritance(t *testing.T) {
 		t.Fatal(err)
 	}
 	update(t, store, func(st *State) {
-		st.Towns[x.ID].Config.Agent = runner.AgentConfig{Command: []string{exe, "-test.run=TestChoiceAgentHelper"}, Environment: map[string]string{"BROKK_CHOICE_HELPER": "1"}, Model: "quick"}
+		st.Towns[x.ID].Config.Agent = runner.AgentConfig{Command: []string{exe, "-test.run=TestChoiceAgentHelper"}, Environment: map[string]string{"SLOPCOP_CHOICE_HELPER": "1"}, Model: "quick"}
 	})
 	sup := NewSupervisor(store, nil, nil)
 	if err := sup.SettingsForRole(x.ID, Review, AgentSettings{Model: ptr("careful")}); err != nil {

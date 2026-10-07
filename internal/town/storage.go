@@ -75,7 +75,7 @@ func (s *Store) storageHeld(id string) bool {
 func storageHold(t *Town) string {
 	for _, r := range t.Requests {
 		if r.Status == "queued" || r.Status == "uncertain" {
-			return "Pending or uncertain issue submissions retain this town’s artifacts."
+			return "Pending or uncertain issue submissions retain this precinct’s artifacts."
 		}
 	}
 	for _, w := range t.Workers {
@@ -83,17 +83,17 @@ func storageHold(t *Town) string {
 			return "Resolve interrupted worker outcomes before cleanup."
 		}
 		if w.Enabled || w.Run != nil || w.Agent != nil || w.Status == "working" || w.Status == "pausing" {
-			return "Pause all town workers and wait for active work to finish before cleanup."
+			return "Stand down every unit in this precinct and wait for active work to finish before cleanup."
 		}
 	}
 	for _, i := range t.Intents {
 		if i != nil && i.Status != "confirmed" {
-			return "Pending or uncertain write intents retain this town's artifacts."
+			return "Pending or uncertain write intents retain this precinct's artifacts."
 		}
 	}
 	for _, i := range t.FunnelIntents {
 		if i != nil && i.Status != "confirmed" && i.Status != "rejected" {
-			return "Unresolved source write intents retain this town's artifacts."
+			return "Unresolved source write intents retain this precinct's artifacts."
 		}
 	}
 	return ""
@@ -143,7 +143,7 @@ func (s *Supervisor) Storage(ctx context.Context, id string, ageHours int) (Stor
 	}
 	t := s.Store.Snapshot().Towns[id]
 	if t == nil {
-		return StorageInventory{}, errors.New("unknown town")
+		return StorageInventory{}, errors.New("unknown precinct")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -358,19 +358,19 @@ func (s *Supervisor) beginStorage(id string) (func(), error) {
 	defer s.mu.Unlock()
 	for key := range s.running {
 		if strings.HasPrefix(key, id+":") {
-			return nil, errors.New("town still has active work")
+			return nil, errors.New("precinct still has active work")
 		}
 	}
 	for key, busy := range s.retrying {
 		if busy && strings.HasPrefix(key, id+":") {
-			return nil, errors.New("town still has an active retry")
+			return nil, errors.New("precinct still has an active retry")
 		}
 	}
 	s.Store.mu.Lock()
 	defer s.Store.mu.Unlock()
 	t := s.Store.state.Towns[id]
 	if t == nil {
-		return nil, errors.New("unknown town")
+		return nil, errors.New("unknown precinct")
 	}
 	if s.Store.storageBusy[id] {
 		return nil, errors.New("storage cleanup is already running")

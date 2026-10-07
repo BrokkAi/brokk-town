@@ -13,7 +13,7 @@ func TestHistoryReportsRecordedBulletins(t *testing.T) {
 			Entries: []BulletinItem{{Kind: "feature", Title: "Startup is faster", Detail: "Cold start halves.", Pulls: []int{4}, Issues: []int{9}}, {Kind: "fix", Title: "Logs are quieter", Pulls: []int{5}}}},
 		{Since: since.Add(24 * time.Hour), Until: since.Add(48 * time.Hour), At: since.Add(48 * time.Hour), Title: "Older record", Items: 1, Pulls: []int{6}},
 	}}
-	p := history(s, Progress{Phase: "waiting", Task: "Next bulletin"})
+	p := history(s, Progress{Phase: "waiting", Task: "Next blotter entry"})
 	if p.Phase != "waiting" || len(p.Items) != 2 || p.Counts != (BulletinCounts{Bulletins: 2, Items: 3, Pulls: 3}) {
 		t.Fatalf("progress %+v", p)
 	}
