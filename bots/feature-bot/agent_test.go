@@ -155,6 +155,27 @@ func runACPWireFixture(t *testing.T, scenario string) {
 		}
 	}
 	reply := func(m message, result any) { send(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": result}) }
+	// expectNoRequest waits a moment for a request that must not arrive, then
+	// returns. The fixture must not wait for EOF: the runner closes its stdout
+	// pipe before it stops the process, which can block while this process is
+	// silent but alive.
+	expectNoRequest := func(what string) {
+		done := make(chan message, 1)
+		go func() {
+			var m message
+			if decoder.Decode(&m) == nil {
+				done <- m
+			}
+			close(done)
+		}()
+		select {
+		case m, ok := <-done:
+			if ok {
+				t.Fatalf("unexpected request after %s: %+v", what, m)
+			}
+		case <-time.After(2 * time.Second):
+		}
+	}
 	require := func(raw json.RawMessage, want string) {
 		var got string
 		if err := json.Unmarshal(raw, &got); err != nil || got != want {
@@ -182,12 +203,18 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolvedCWD != cwd {
-		t.Fatalf("cwd=%q, want %q", resolvedCWD, cwd)
+	// Windows expands an 8.3 process path to its long form, so resolve the
+	// process side too before comparing.
+	resolvedProcessCWD, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolvedCWD != resolvedProcessCWD {
+		t.Fatalf("cwd=%q, want %q", resolvedCWD, resolvedProcessCWD)
 	}
 	if scenario == "setup-error" {
 		send(map[string]any{"jsonrpc": "2.0", "id": session.ID, "error": map[string]any{"code": -32603, "message": "fixture setup failure"}})
-		_, _ = io.Copy(io.Discard, os.Stdin)
+		expectNoRequest("fixture setup failure")
 		return
 	}
 	option := func(id, category, value string) map[string]any {
@@ -209,10 +236,7 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	reply(mode, map[string]any{})
 	if scenario == "model-unavailable" {
 		// The unoffered model is rejected locally; no selection or prompt follows.
-		var unexpected message
-		if err := decoder.Decode(&unexpected); err != io.EOF {
-			t.Fatalf("unexpected request after invalid model: %+v, err=%v", unexpected, err)
-		}
+		expectNoRequest("invalid model")
 		return
 	}
 	selection := receive("session/set_config_option")
@@ -236,10 +260,7 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	reply(selection, map[string]any{"configOptions": options})
 	if scenario == "effort-unavailable" || scenario == "effort-wrong-category" {
 		// No selection or prompt may be sent after local validation fails.
-		var unexpected message
-		if err := decoder.Decode(&unexpected); err != io.EOF {
-			t.Fatalf("unexpected request after invalid effort: %+v, err=%v", unexpected, err)
-		}
+		expectNoRequest("invalid effort")
 		return
 	}
 	selection = receive("session/set_config_option")
@@ -250,10 +271,7 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	}
 	reply(selection, map[string]any{"configOptions": options})
 	if scenario == "effort-unconfirmed" {
-		var unexpected message
-		if err := decoder.Decode(&unexpected); err != io.EOF {
-			t.Fatalf("unexpected request after unconfirmed effort: %+v, err=%v", unexpected, err)
-		}
+		expectNoRequest("unconfirmed effort")
 		return
 	}
 	prompt := receive("session/prompt")
@@ -265,8 +283,12 @@ func runACPWireFixture(t *testing.T, scenario string) {
 		if err := os.WriteFile("prompt-started", nil, 0600); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = io.Copy(io.Discard, os.Stdin)
-		return
+		for {
+			var m message
+			if decoder.Decode(&m) != nil || m.Method == "$/cancel_request" {
+				return
+			}
+		}
 	}
 	send(map[string]any{"jsonrpc": "2.0", "id": "permission", "method": "session/request_permission", "params": map[string]any{"sessionId": "fixture-session", "toolCall": map[string]any{"toolCallId": "read", "title": "Read source"}, "options": []any{map[string]any{"optionId": "deny", "name": "Deny", "kind": "reject_once"}, map[string]any{"optionId": "allow", "name": "Allow", "kind": "allow_once"}}}})
 	permission := receive("")
@@ -283,7 +305,8 @@ func runACPWireFixture(t *testing.T, scenario string) {
 		send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fixture-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": chunk}}}})
 	}
 	reply(prompt, map[string]any{"stopReason": "end_turn"})
-	_, _ = io.Copy(io.Discard, os.Stdin)
+	// Exit now so the runner's transport teardown never waits on a live,
+	// silent process.
 }
 
 // An unoffered review selection is an actionable setup failure naming the

@@ -57,10 +57,12 @@ func TestACPAgentHelper(t *testing.T) {
 	reply(init, map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{}})
 	session := request("session/new")
 	cwd, _ := os.Getwd()
-	// macOS temporary paths may resolve through /var's symlink.
-	gotCwd, _ := filepath.EvalSymlinks(session["params"].(map[string]any)["cwd"].(string))
-	if gotCwd != cwd {
-		t.Fatalf("session cwd = %q, process cwd = %q", gotCwd, cwd)
+	// Resolve both sides: macOS temporary paths go through /var's symlink, and
+	// Windows expands an 8.3 process path to its long form.
+	gotCwd, gotErr := filepath.EvalSymlinks(session["params"].(map[string]any)["cwd"].(string))
+	wantCwd, wantErr := filepath.EvalSymlinks(cwd)
+	if gotErr != nil || wantErr != nil || gotCwd != wantCwd {
+		t.Fatalf("session cwd = %q, process cwd = %q", gotCwd, wantCwd)
 	}
 	options := []map[string]any{
 		{"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": "small", "options": []map[string]string{{"value": "small", "name": "Small"}, {"value": "large", "name": "Large"}}},
@@ -92,9 +94,17 @@ func TestACPAgentHelper(t *testing.T) {
 		}
 		if scenario == "reject" {
 			send(map[string]any{"id": selection["id"], "error": map[string]any{"code": -32602, "message": "model unavailable"}})
-			// Any prompt after a rejected setting is a test failure.
-			request("never prompt after failed setup")
-			os.Exit(2)
+			// Any prompt after a rejected setting is a test failure. Give it a
+			// moment to arrive, then exit so the runner never has to close its
+			// transport around a live, silent process.
+			requests := make(chan map[string]any, 1)
+			go func() { requests <- read() }()
+			select {
+			case message := <-requests:
+				t.Fatalf("request after rejected setup: %v", message)
+			case <-time.After(2 * time.Second):
+			}
+			os.Exit(0)
 		}
 		options[i]["currentValue"] = value
 		reply(selection, map[string]any{"configOptions": options})
@@ -113,9 +123,12 @@ func TestACPAgentHelper(t *testing.T) {
 		if err := os.WriteFile("prompt-started", []byte("ready"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		// Stay alive until the runner cancels and terminates the process.
+		// Stay alive until the runner cancels, then exit so teardown does not
+		// wait on a silent process.
 		for {
-			read()
+			if read()["method"] == "$/cancel_request" {
+				os.Exit(0)
+			}
 		}
 	}
 	if scenario == "disconnect-terminal" {
@@ -147,9 +160,9 @@ func TestACPAgentHelper(t *testing.T) {
 		send(map[string]any{"method": "session/update", "params": map[string]any{"sessionId": "test-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": chunk}}}})
 	}
 	reply(prompt, map[string]any{"stopReason": "end_turn"})
-	for {
-		read()
-	}
+	// Exit now: the runner closes the transport before it stops the process,
+	// and a live, silent agent can wedge that close on Windows.
+	os.Exit(0)
 }
 
 func testACPProcess(t *testing.T, scenario string) agentProcess {

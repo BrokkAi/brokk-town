@@ -84,7 +84,7 @@ func TestSetupPreparesWorktreeForAgents(t *testing.T) {
 	localGit(t, source, "commit", "-m", "ignore dependencies")
 	localGit(t, source, "push", "origin", "main")
 	runs := setupCounter(t, &e, `test "$(git rev-parse HEAD)" = "$BUG_COMMIT" &&
-test "$(git rev-parse --show-toplevel)" = "$(pwd -P)" &&
+test -z "$(git rev-parse --show-prefix)" &&
 test -z "$(git symbolic-ref -q HEAD)" &&
 mkdir -p deps && echo installed > deps/tool && echo "$BUG_COMMIT" > .prepared`)
 	var stages []string
