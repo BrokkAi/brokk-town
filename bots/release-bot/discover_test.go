@@ -26,6 +26,7 @@ func discoveryRepo(t *testing.T) (string, string) {
 	localGit(t, source, "switch", "-c", "work-in-progress")
 	return source, remote
 }
+
 // A Windows drive path is a local repository, not a URL with a one-letter
 // scheme.
 func TestDiscoveryTreatsDrivePathsAsLocalRepositories(t *testing.T) {
