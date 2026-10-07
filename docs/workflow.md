@@ -14,8 +14,8 @@ other.
 1. **Observe.** Repo Bot reads the branch, its head, every issue, pull request and
    release, and the commits gained since the last look. The Squad applies that
    inventory to its own case state; it also makes a few bounded GitHub writes of
-   its own — a merge, closing dismissed work, filing follow-ups, submitting a
-   request — each gated on a fresh read of the exact object.
+   its own — a merge, closing work sent to the Slop Tank, filing follow-ups,
+   submitting a request — each gated on a fresh read of the exact object.
 2. **Reconcile.** The Squad turns the inventory into cases, marks closed and
    locked items, records new arrivals as events on the Radio, and resets the
    audit when a revision changes. Absence in an incremental scan never means
@@ -33,23 +33,28 @@ See [recovery.md](recovery.md).
 
 ## Units
 
-Units are listed in roster order, which is also the order of the browser's case
-flow and of keys 1–8.
+Units are listed in roster order, which follows a case through the precinct and
+is also the order of keys 1–8.
 
 | Unit | Callsign | Role key | Bot | Owns |
 | --- | --- | --- | --- | --- |
 | Patrol | PTL | `repo` | Repo Bot | Inventorying the repository and repairing the covered branch. |
-| Detectives | DET | `bug` | Bug Bot | Filing new bug issues from repository investigation. |
-| Intel | INT | `feature` | Feature Bot | Filing new feature proposals. |
-| Slop Squad | SLP | `simplifier` | Simplifier Bot | Screening whether an arrival is worth doing. |
-| Courthouse | CRT | `hall` | Judge Bot | Rulings and the precinct's blotter. Never edits the repository. |
-| Task Force | TSK | `issue` | Issue Bot | Implementing issues and repairing the branches of PRs the Squad owns. |
+| Bug Detective | BUG | `bug` | Bug Bot | Finding new slop: filing new bug issues from repository investigation. |
+| Feature Detective | FTR | `feature` | Feature Bot | Finding new slop: filing new feature proposals. |
+| Magistrate | MAG | `simplifier` | Simplifier Bot | Arraigning every arrival: is it worth doing? |
+| Probation Judge | JDG | `hall` | Judge Bot | Rulings and the precinct's blotter. Never edits the repository. |
+| Caseworker | CWK | `issue` | Issue Bot | Rehabilitating slop on probation: implementing issues and repairing the branches of PRs the Squad owns. |
 | Forensics | LAB | `review` | Review Bot | Reviewing and certifying exact revisions, and merging when policy allows. |
 | Release | REL | `release` | Release Bot | Batching unreleased commits and publishing a verified release. |
 
-The case flow runs left to right: leads (Patrol, Detectives, Intel and civilian
-reports from outside) → screening (Slop Squad) → court (Courthouse) → Task Force
-→ Forensics → Release.
+Patrol books what comes in, the Bug Detective and the Feature Detective find
+new slop, and civilian reports (CIV) arrive from outside. Every arrival is
+first arraigned before the Magistrate, then the Probation Judge rules on it:
+probation sends an issue to the Caseworker and a pull request to Forensics, and
+anything thrown out is locked in the Slop Tank. The Caseworker rehabilitates
+slop on probation, Forensics examines the evidence and clears it or sends it
+back, and Release ships the reformed. The browser's Board view shows this case
+flow as columns.
 
 Patrol starts deployed (enabled). Every other unit starts stood down (paused) and
 does nothing until you deploy it.
@@ -60,14 +65,14 @@ does nothing until you deploy it.
 arrival → simplifying → awaiting_mayor → queued → (issue works) → fixes → ready → merged
 ```
 
-- A new issue from outside is `simplifying`: the Slop Squad screens it. In
-  `suggest` mode it attaches advice and the issue goes to `awaiting_mayor`
-  (awaiting a ruling); in `auto` mode the Squad can dismiss low-value work
-  outright.
-- A ruling (`mayoral_decision`) is `pending` until you `admit` or `decline`
-  (dismiss) it, or Judge Bot rules. A dismissal is final; the Squad closes the
-  issue.
-- `queued` means the Task Force can take it. The bot claims the issue, works
+- A new issue from outside is `simplifying`: it is at arraignment before the
+  Magistrate. In `suggest` mode the Magistrate attaches advice and the issue
+  goes to `awaiting_mayor` (awaiting the Probation Judge's ruling); in `auto`
+  mode the Magistrate can send low-value work to the Slop Tank outright.
+- A ruling (`mayoral_decision`) is `pending` until you grant probation
+  (`admit`) or send it to the tank (`decline`), or Judge Bot rules. The tank is
+  final; the Squad closes the issue.
+- `queued` means the Caseworker can take it. The bot claims the issue, works
   from the precinct's base branch, and opens a pull request it owns.
 - Review feedback on a pull request the Squad owns becomes `fixes`: issue-bot
   gets one repair round on the same branch. After the repair is confirmed on
@@ -75,7 +80,7 @@ arrival → simplifying → awaiting_mayor → queued → (issue works) → fixe
 - If the second review still finds blocking work, the Squad closes its own pull
   request and starts the issue over from the current base branch. A
   contributor's pull request is never closed by the Squad; it goes to the
-  Courthouse for a ruling instead.
+  Probation Judge for a ruling instead.
 
 ## Pull request lifecycle
 
@@ -83,7 +88,7 @@ arrival → simplifying → awaiting_mayor → queued → (issue works) → fixe
 arrival → simplifying → awaiting_mayor → queued → ready → merged
 ```
 
-- The first review sends every certified finding back to the Task Force for one
+- The first review sends every certified finding back to the Caseworker for one
   fix round.
 - The second review either finds only work below the close threshold — which
   becomes follow-up issues and the pull request merges — or still finds blocking
@@ -120,33 +125,36 @@ being repeated blindly.
 | `all` | The Squad also merges external pull requests it certified. |
 | `manual` | The Squad never merges, and Release stays stood down (paused). |
 
-## Slop Squad
+## Magistrate
 
-Two modes (`simplifier_mode`), set in Precinct settings in the browser:
+Every arrival is arraigned before the Magistrate (`simplifier`), staffed by
+Simplifier Bot. Two modes (`simplifier_mode`), set in Precinct settings in the
+browser:
 
 - **suggest** — Simplifier Bot attaches a bounded recommendation to a ruling;
-  the judge rules.
-- **auto** — The Squad admits routine work and dismisses low-value complex work
-  without a separate ruling. You can still admit an auto-dismissal before the
-  closer claims it.
+  the Probation Judge rules.
+- **auto** — The Magistrate sets routine work free and sends low-value complex
+  work to the Slop Tank without a separate ruling. You can still grant
+  probation anyway before the closer claims it.
 
-## Courthouse
+## Probation Judge
 
-The Courthouse (`hall`), staffed by Judge Bot (`bots/mayor-bot`), has two
-one-shot duties:
+The Probation Judge (`hall`), staffed by Judge Bot (`bots/mayor-bot`), sits in
+Probation Court and has two one-shot duties:
 
 - **judge** — rule on an arrival: an issue, a pull request, or a bot proposal.
-  The Squad gives Judge Bot the arrival, any Slop Squad advice, the GitHub
-  discussion and the repository, and records a ruling with a reason.
+  The Squad gives Judge Bot the arrival, any advice from the Magistrate, the
+  GitHub discussion and the repository, and records a ruling with a reason.
 - **bulletin** — write the blotter, the work-completed feed. Blotter entries
   (`bulletins`) are written at most once per `bulletin_seconds`, and only when
   something merged since the last one.
 
-In the browser a pending ruling offers **Admit the case** (`admit`) and
-**Dismiss** (`decline`); after a review that asked for changes, admitting reads
-**Review again**. A case the Slop Squad dismissed in `auto` mode offers
-**Admit anyway**. Rulings waiting on you also appear under **Awaiting your
-ruling** in Needs you.
+In the browser a pending ruling offers **Grant probation** (`admit`) and
+**Send to the tank** (`decline`); after a review that asked for changes,
+granting probation reads **Review again**. Probation sends an issue to the
+Caseworker and a pull request to Forensics. A case the Magistrate sent to the
+tank in `auto` mode offers **Grant probation anyway**. Rulings waiting on you
+also appear under **Awaiting your ruling** in Needs you.
 
 ## Release cadence
 
@@ -205,18 +213,21 @@ script against the API or read state.
 
 | In the browser | Identifier in configuration, the API and state |
 | --- | --- |
-| the Squad, SlopCop Squad | the service (`sct`) |
+| the Squad, SlopCop Squad | the service (`scs`) |
 | precinct | `town` (one repository); `towns` in config and state, `/api/towns` |
 | unit | `house` on a case, `role` on a worker; role keys in [Units](#units) |
 | case | `task` |
 | officer | `worker` |
 | transfer | event kind `delivery` |
 | Radio | `events`, `GET /api/events` |
-| Courthouse | `hall` |
+| Magistrate | `simplifier` |
+| at arraignment, Arraignment | stage `simplifying` |
+| Probation Judge | `hall` |
 | Judge Bot | `bots/mayor-bot` |
+| Caseworker | `issue` |
 | ruling | `mayoral_decision`; a case awaiting one has stage `awaiting_mayor` |
-| admit, admitted | action `admit`; `mayoral_decision` `admitted` |
-| dismiss, dismissed | action `decline`; stage and `mayoral_decision` `declined` |
+| grant probation | action `admit`; `mayoral_decision` `admitted` |
+| send to the tank, Slop Tank, dismissed | action `decline`; stage and `mayoral_decision` `declined` |
 | continued | status `delayed`; Judge Bot answers `delay` for a bot update |
 | the blotter | `bulletins`, `bulletin_seconds` |
 | civilian report (CIV) | `outside` |
@@ -232,4 +243,4 @@ script against the API or read state.
 | Deploy, Start patrol, Deploy the rest | control action `start` |
 | Stand down | control action `pause` |
 | Stop now | control action `stop` |
-| training exercise | demo mode: `sct --demo`, `demo` in state |
+| training exercise | demo mode: `scs --demo`, `demo` in state |

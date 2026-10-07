@@ -13,11 +13,11 @@ const esc = (v) =>
 const profileNames = {
   "": "Precinct defaults",
   repo: "Patrol · Repo Bot",
-  bug: "Detectives · Bug Bot",
-  feature: "Intel · Feature Bot",
-  simplifier: "Slop Squad · Simplifier Bot",
-  hall: "Courthouse · Judge Bot",
-  issue: "Task Force · Issue Bot",
+  bug: "Bug Detective · Bug Bot",
+  feature: "Feature Detective · Feature Bot",
+  simplifier: "Magistrate · Simplifier Bot",
+  hall: "Probation Judge · Judge Bot",
+  issue: "Caseworker · Issue Bot",
   review: "Forensics · Review Bot",
   release: "Release · Release Bot",
 };
@@ -544,8 +544,8 @@ export function management({ api, getTown, getState, refresh }) {
       ? "Create demo issue"
       : "Create GitHub issue";
     $("#request-note").textContent = demo
-      ? "Training exercise: this files a simulated case with the Task Force. Nothing is sent to GitHub."
-      : "This posts an issue to this repository and adds it to the Task Force caseload. If Issue Bot is stood down, deploy the Task Force when you’re ready for implementation.";
+      ? "Training exercise: this files a simulated case with the Caseworker. Nothing is sent to GitHub."
+      : "This posts an issue to this repository and adds it to the Caseworker's caseload. If Issue Bot is stood down, deploy the Caseworker when you’re ready for implementation.";
     requestPlaceholder();
     renderRequests();
     $("#request-dialog").showModal();
@@ -584,7 +584,7 @@ export function management({ api, getTown, getState, refresh }) {
       requestPlaceholder();
       $("#request-success").textContent =
         result.status === "confirmed"
-          ? "Case filed with the Task Force."
+          ? "Case filed with the Caseworker."
           : "Submission saved. GitHub confirmation will appear below.";
       await refresh();
       renderRequests();

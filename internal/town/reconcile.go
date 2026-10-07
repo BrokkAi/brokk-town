@@ -436,13 +436,13 @@ func resume(t *Town, task *Task) {
 		// Simplifier's assessment attached, and the closer leaves it alone.
 		task.Stage = "awaiting_mayor"
 		task.MayoralDecision = "pending"
-		task.Detail = "Reopened after the Slop Squad dismissed it and the Squad closed it. The judge rules on whether the Squad takes it on."
+		task.Detail = "Reopened after the Magistrate sent it to the Slop Tank and the Squad closed it. The Probation Judge rules on whether the Squad takes it on."
 	case task.Kind == "pr" && !task.External && task.House == Hall && task.MayoralDecision == "" && autoDeclined(task) && task.Stage == "closed":
 		// Town's own pull request, closed on Simplifier's decline, reopened:
 		// an appeal as for an issue. The issue has already started over.
 		task.Stage = "awaiting_mayor"
 		task.MayoralDecision = "pending"
-		task.Detail = "Reopened after the Slop Squad dismissed it and the Squad closed it. The judge rules on whether the Squad reviews it; its issue has already started over."
+		task.Detail = "Reopened after the Magistrate sent it to the Slop Tank and the Squad closed it. The Probation Judge rules on whether the Squad reviews it; its issue has already started over."
 	case task.MayoralDecision == "declined" || (task.House == Hall && autoDeclined(task)):
 		task.Stage = "declined"
 		return

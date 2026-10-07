@@ -88,7 +88,7 @@ func TestLocalAPIAuthenticationOriginAndStrictInput(t *testing.T) {
 	if w.Code != 403 {
 		t.Fatal("DNS rebinding host accepted")
 	}
-	for _, path := range []string{"/", "/app.js", "/town.js", "/tools.js", "/manage.js", "/precinct.js", "/animation.js", "/style.css", "/badge.svg"} {
+	for _, path := range []string{"/", "/app.js", "/town.js", "/tools.js", "/manage.js", "/precinct.js", "/animation.js", "/scene.js", "/style.css", "/badge.svg"} {
 		r := call(t, h.URL, "GET", path, "", "", "")
 		if r.StatusCode != 200 {
 			t.Fatal("missing embedded asset", path)

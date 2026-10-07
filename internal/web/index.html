@@ -90,7 +90,7 @@
         <section id="compact" class="operations-compact" aria-label="Compact operations view" hidden></section>
         <section class="precinct" aria-label="Precinct">
           <div class="precinct-bar">
-            <h2 class="section-label">Roster</h2>
+            <h2 class="section-label">Precinct</h2>
             <div class="legend">
               <span><i class="dot active"></i><span>On a case</span></span
               ><span><i class="dot waiting"></i><span>Standing by</span></span
@@ -98,21 +98,21 @@
               ><span><i class="dot quiet"></i><span id="legend-quiet">Quiet hours</span></span>
             </div>
           </div>
-          <div id="roster" class="roster"></div>
-          <div class="precinct-bar">
-            <h2 class="section-label">Case flow</h2>
-            <span class="flow-hint">Leads in, verdicts out. Click a case to open its file.</span>
+          <div class="scene-scroll">
+            <div id="scene" class="scene">
+              <div id="scene-art" class="scene-art"></div>
+              <div id="caseflow" class="scene-cast" aria-label="Open cases in the precinct"></div>
+              <div id="scene-bars" class="scene-bars" aria-hidden="true"></div>
+              <div id="roster" class="scene-tags" aria-label="Units on duty"></div>
+              <div id="transfers" class="scene-fx" aria-hidden="true"></div>
+            </div>
           </div>
-          <div class="flow-frame">
-            <div id="caseflow" class="caseflow"></div>
-            <div class="street" aria-hidden="true"></div>
-            <div id="transfers" class="transfers" aria-hidden="true"></div>
-          </div>
-          <div class="precinct-bar">
-            <h2 class="section-label">Slop tank</h2>
-            <span id="tank-count" class="flow-hint"></span>
-          </div>
-          <div id="tank" class="tank" aria-label="Slop in custody"></div>
+          <p class="flow-hint">
+            Detectives and civilians bring slop in. The Magistrate and the Probation
+            Judge send it to the Slop Tank or give it a chance; the Caseworker
+            rehabilitates it, Forensics checks the work, and the reformed leave on the
+            release bus. Click any suspect, or any officer's tag.
+          </p>
           <div id="empty" hidden>
             <h2>No precinct open.</h2>
             <p>
@@ -157,7 +157,7 @@
         <p class="muted">
           SlopCop Squad runs every unit itself; no companion bot CLIs are needed.
           Patrol takes the first inventory and repairs the branch when its checks fail.
-          Detectives, Intel, Slop Squad, the Courthouse, Task Force, Forensics and Release start stood down.
+          The detectives, the Magistrate, the Probation Judge, the Caseworker, Forensics and Release start stood down.
           Deployed units resume after SlopCop Squad restarts.
         </p>
         <label for="merge-policy">When a reviewed PR is ready</label
@@ -181,7 +181,7 @@
       <div class="eyebrow">RADIO CHECK</div>
       <h2 id="connect-heading">Connect to SlopCop Squad</h2>
       <p>
-        Run <code>sct web</code> and open the URL it prints. That link carries the
+        Run <code>scs web</code> and open the URL it prints. That link carries the
         local access key for this browser.
       </p>
     </dialog>
@@ -296,12 +296,12 @@
             Release can create and merge its own release-preparation PRs, so
             the manual policy stands it down and keeps it from deploying.
           </p>
-          <label for="settings-simplifier-mode">Slop Squad rulings</label>
+          <label for="settings-simplifier-mode">Magistrate at arraignment</label>
           <select id="settings-simplifier-mode">
-            <option value="suggest">Suggest: advise the judge</option>
-            <option value="auto">Auto: admit or dismiss routine arrivals</option>
+            <option value="suggest">Suggest: advise the Probation Judge</option>
+            <option value="auto">Auto: set routine arrivals free or send slop to the tank</option>
           </select>
-          <p class="muted">Every incoming issue and pull request goes through the Slop Squad first. In suggest mode its assessment is attached to the case the judge rules on; in auto mode routine admissions and dismissals of low-value complex issues take effect without a ruling.</p>
+          <p class="muted">Every incoming issue and pull request is arraigned before the Magistrate first. In suggest mode its assessment is attached to the case the Probation Judge rules on; in auto mode routine admissions and dismissals of low-value complex issues take effect without a ruling.</p>
           <label for="settings-review-close-severity">Second review closes on</label>
           <select id="settings-review-close-severity">
             <option value="P1">P1 only: P2 and P3 become follow-up issues</option>
@@ -323,11 +323,11 @@
           <select id="agent-role">
             <option value="">Precinct defaults</option>
             <option value="repo">Patrol · Repo Bot</option>
-            <option value="bug">Detectives · Bug Bot</option>
-            <option value="feature">Intel · Feature Bot</option>
-            <option value="simplifier">Slop Squad · Simplifier Bot</option>
-            <option value="hall">Courthouse · Judge Bot</option>
-            <option value="issue">Task Force · Issue Bot</option>
+            <option value="bug">Bug Detective · Bug Bot</option>
+            <option value="feature">Feature Detective · Feature Bot</option>
+            <option value="simplifier">Magistrate · Simplifier Bot</option>
+            <option value="hall">Probation Judge · Judge Bot</option>
+            <option value="issue">Caseworker · Issue Bot</option>
             <option value="review">Forensics · Review Bot</option>
             <option value="release">Release · Release Bot</option>
           </select>
@@ -544,12 +544,12 @@
       <dl class="codes">
         <dt><kbd>0</kbd></dt><dd>All precincts</dd>
         <dt><kbd>I</kbd></dt><dd>What needs you, across every precinct</dd>
-        <dt><kbd>1</kbd>–<kbd>8</kbd></dt><dd>Open a unit, in roster order: Patrol, Detectives, Intel, Slop Squad, Courthouse, Task Force, Forensics, Release</dd>
+        <dt><kbd>1</kbd>–<kbd>8</kbd></dt><dd>Open a unit, in roster order: Patrol, Bug Detective, Feature Detective, Magistrate, Probation Judge, Caseworker, Forensics, Release</dd>
         <dt><kbd>P</kbd> <kbd>B</kbd> <kbd>C</kbd></dt><dd>Precinct, Board, Compact</dd>
         <dt><kbd>Esc</kbd></dt><dd>Close a panel</dd>
       </dl>
       <p class="muted">
-        Click a case or a radio line to open its file. Stand down lets the
+        Click a suspect or a radio line to open its case file. Stand down lets the
         current case finish; Stop now cancels it.
       </p>
       <div class="dialog-actions"><button id="close-help">Back to the precinct</button></div>

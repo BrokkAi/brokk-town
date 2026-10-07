@@ -257,7 +257,7 @@ func validateState(s State, demo bool) error {
 				return errors.New("invalid ruling")
 			}
 			if task.MayoralDecision == "pending" && (task.House != Hall || task.Stage != "awaiting_mayor") {
-				return errors.New("pending ruling left the Courthouse")
+				return errors.New("pending ruling left Probation Court")
 			}
 			// A declined pull request its author closed keeps the decline, as
 			// does Town's own declined pull request while Town closes it.
@@ -265,7 +265,7 @@ func validateState(s State, demo bool) error {
 				return errors.New("dismissal ruling is not final")
 			}
 			if task.Stage == "simplifying" && (task.House != Simplifier || (task.Kind != "issue" && task.Kind != "pr")) {
-				return errors.New("case awaiting Slop Squad screening left the Slop Squad")
+				return errors.New("case awaiting arraignment left the Magistrate")
 			}
 			if validDeferReason(task.DeferReason) != nil || (task.DeferReason != "" && task.DeferredUntil.IsZero()) {
 				return errors.New("invalid task snooze")

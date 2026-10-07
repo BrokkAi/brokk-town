@@ -25,7 +25,7 @@ connection entirely.
 ```sh
 export SLOPCOP_SQUAD_MJOLNIR_API_URL=http://127.0.0.1:PORT/api/v1
 export SLOPCOP_SQUAD_MJOLNIR_TOKEN_FILE=$HOME/.local/state/mjolnir/token
-sct -d
+scs -d
 ```
 
 ## Catalog

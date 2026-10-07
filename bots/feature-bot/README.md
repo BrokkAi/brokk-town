@@ -5,8 +5,8 @@ proposals for them.
 
 `feature-bot` is a Go package of the
 [SlopCop Squad](https://github.com/BrokkAi/brokk-town) module. Feature Bot staffs
-the **Intel** unit (role key `feature`), and the Squad runs it in process, so
-there is no standalone binary, server or release tag to install. See
+the **Feature Detective** unit (role key `feature`), and the Squad runs it in
+process, so there is no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md).
 
 ## What it does
@@ -47,7 +47,8 @@ creating proposal issues. A changed HEAD or tracked-file edit fails the scan.
 ## Configuration
 
 The Squad fills this configuration from the precinct's agent profile and the
-Intel unit's work policy in the browser. The package's own fields are:
+Feature Detective unit's work policy in the browser. The package's own fields
+are:
 
 | Field | Meaning |
 | --- | --- |

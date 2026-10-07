@@ -1,27 +1,27 @@
 # Operations
 
-`sct` is both the service and its client. This page is the operator reference:
+`scs` is both the service and its client. This page is the operator reference:
 running the service, the commands, the browser and the local API.
 
 ## Running the service
 
 ```sh
-sct                      # foreground, prints the browser URL
-sct -d                   # background service
-sct shutdown             # stop it
-sct status               # running? which precincts? --json for the full snapshot
-sct web                  # print the browser URL with its access key
-sct --demo               # training exercise: a simulated precinct, no GitHub or agents
+scs                      # foreground, prints the browser URL
+scs -d                   # background service
+scs shutdown             # stop it
+scs status               # running? which precincts? --json for the full snapshot
+scs web                  # print the browser URL with its access key
+scs --demo               # training exercise: a simulated precinct, no GitHub or agents
 ```
 
 The service is single-writer per state directory. Starting a second one on the
 same directory fails with the identity of the process that holds it. Ctrl+C,
 SIGTERM and SIGHUP stop a foreground service; a background service is stopped by
-`sct shutdown`, which uses the authenticated local API on Windows where there is
+`scs shutdown`, which uses the authenticated local API on Windows where there is
 no portable signal.
 
-`sct status` and `sct version` work while the service is stopped. `sct web` and
-`sct shutdown` require a running service. Day-to-day operation happens in the
+`scs status` and `scs version` work while the service is stopped. `scs web` and
+`scs shutdown` require a running service. Day-to-day operation happens in the
 browser.
 
 ### State directory
@@ -50,7 +50,7 @@ hand; the service validates it on open and repairs or reports what it can.
 SlopCop Squad was called Brokk Town up to v0.10.0. An install from then keeps
 working after the upgrade:
 
-- `sct` replaces `bt`, with the same commands and flags. `sct shutdown` stops a
+- `scs` replaces `bt`, with the same commands and flags. `scs shutdown` stops a
   service that `bt -d` started, so the upgrade needs no particular order.
 - When the default `slopcop-squad` directory does not exist but `brokk-town` does
   in the same place, the Squad keeps using `brokk-town`. To move it, stop the
@@ -67,26 +67,26 @@ working after the upgrade:
 - Each town you added is now shown as a precinct. The API, configuration and
   state still call it a `town`.
 - The browser forgets its remembered view, selection and unsent drafts once, and
-  an open tab needs the link from `sct web` again.
+  an open tab needs the link from `scs web` again.
 
 ## Commands
 
-Run `sct COMMAND --help` for the exact flags. Global flags are `--state-dir` and
+Run `scs COMMAND --help` for the exact flags. Global flags are `--state-dir` and
 `--demo`; `--listen` and `--config` apply to the service.
 
 | Command | Description |
 | --- | --- |
-| `sct` / `sct -d` | Run the service in the foreground or background. |
-| `sct status [--json]` | Running state, served precincts, and full snapshot with `--json`. |
-| `sct web` | Print the browser address. |
-| `sct shutdown` | Stop the service and its work. |
-| `sct version` | Print the version. |
+| `scs` / `scs -d` | Run the service in the foreground or background. |
+| `scs status [--json]` | Running state, served precincts, and full snapshot with `--json`. |
+| `scs web` | Print the browser address. |
+| `scs shutdown` | Stop the service and its work. |
+| `scs version` | Print the version. |
 
 The browser and local API own everything else: adding and deleting precincts,
-deploying and standing down units, retrying or snoozing cases, admitting or
-dismissing rulings, settings, diagnostics, the Case archive, the Evidence
-locker, the Desk Sergeant, requests, harnesses, execution placement and the
-attention hook.
+deploying and standing down units, retrying or snoozing cases, rulings
+(granting probation or sending a case to the Slop Tank), settings,
+diagnostics, the Case archive, the Evidence locker, the Desk Sergeant,
+requests, harnesses, execution placement and the attention hook.
 
 ### Diagnostics
 
@@ -116,22 +116,24 @@ content or error text.
 
 ## Browser
 
-`sct web` prints a loopback URL containing the access key. The browser reads the
+`scs web` prints a loopback URL containing the access key. The browser reads the
 same committed snapshot and writes only through the authenticated API. It is
 plain HTML, CSS and JavaScript modules: there are no themes, no canvas drawing
-and no image assets; the cartoon layer is inline SVG and CSS.
+and no image assets; the precinct scene is inline SVG and CSS.
 
 ### Views
 
-- **Precinct** — the default single-precinct view. The roster lists every unit
-  in roster order with its state, current case and caseload; selecting a unit
-  shows its progress, logs and setup diagnostics. The case flow lays the
-  precinct's open cases into lanes from leads through screening, court, Task
-  Force and Forensics to release, with the Slop Tank below it. The **Radio** is
-  the precinct's live event log: a transfer names both ends by callsign, with
-  CIV for a civilian report and CPT, the captain, for you.
-- **Board** — units and cases in columns by stage, for one precinct or all of
-  them.
+- **Precinct** — the default single-precinct view: an animated cutaway of the
+  precinct house with the courthouse attached (see
+  [The precinct scene](#the-precinct-scene)). Every unit's robot officer
+  stands at its post with a tag; clicking the tag opens the unit file with its
+  progress, logs and setup diagnostics. Every open case stands in the room of
+  the unit holding it; clicking it opens the case file. The **Radio** is the
+  precinct's live event log: a transfer names both ends by callsign, such as
+  `CIV → JDG`, with CIV for a civilian report and CPT, the captain, for you.
+- **Board** — the case flow: units and cases in columns by stage (Open,
+  Arraignment, Queued, In progress, Blocked, Forensics, Ready, Shipped,
+  Completed), for one precinct or all of them.
 - **Compact** — units and cases as a dense list, for one precinct or all of
   them.
 
@@ -154,8 +156,8 @@ and no image assets; the cartoon layer is inline SVG and CSS.
 - **Squad settings** — service-wide capacity (`max_workers`), default quiet
   hours and the attention hook.
 - **Needs you** — every precinct's work that is waiting on you, longest wait
-  first: **Awaiting your ruling** and **Stuck**. **Open in Courthouse**
-  goes to the case.
+  first: **Awaiting your ruling** and **Stuck**. **Open in court** goes to
+  the case; **Grant probation** and **Send to the tank** rule on it in place.
 - **＋ New precinct** — put a repository under watch as a new precinct.
 - **Ask the Desk Sergeant** — a read-only conversation about the precinct; see
   [Desk Sergeant](#desk-sergeant).
@@ -176,36 +178,58 @@ operator judgments. See [Outcomes](#outcomes).
 | --- | --- |
 | `0` | All precincts. |
 | `I` | Needs you, across every precinct. |
-| `1`–`8` | Units in roster order: Patrol, Detectives, Intel, Slop Squad, Courthouse, Task Force, Forensics, Release. |
+| `1`–`8` | Units in roster order: Patrol, Bug Detective, Feature Detective, Magistrate, Probation Judge, Caseworker, Forensics, Release. |
 | `P`, `B`, `C` | Precinct, Board and Compact views. |
 | `Esc` | Close a panel. |
 | `?` | Radio codes: the shortcut help. |
 
-### Cartoon layer
+### The precinct scene
 
-The Precinct view adds a small cartoon layer. It only decorates committed state
-and never sends a command; clicking a squad car or a slop blob only opens that
-case.
+The Precinct view is one cutaway drawing of the precinct house with the
+courthouse attached. It only decorates committed state: it never invents a case
+and never sends a command, and a click only opens a unit or a case.
 
-- **Robot cops.** Each unit card shows a robot cop doing its unit's job. It
-  dozes through quiet hours and waves under a red light when its unit is stuck.
-  Units the Desk Sergeant is asking about show **ON THE LINE**.
-- **Squad cars.** Every transfer is driven along the street under the case-flow
-  lanes by a squad car, lights flashing ("WEE-OO"); click the car to open the
-  case. The arriving lane gets a stamp: **BOOKED**, **ON THE DOCKET**,
-  **ADMITTED**, **ASSIGNED**, **EVIDENCE IN**, **SENT BACK**, **CLEARED** or
-  **RELEASED**. When Forensics sends findings back, the slop gets a **CITED**
-  ticket. A unit that reports an error gets **STUCK** on its lane.
-- **Slop Tank.** Below the case flow, the tank holds every case the precinct
-  dismissed as a cuffed slop blob with its case number (the newest twelve are
-  drawn, with a count of all); click one to open the case. When a case is newly
-  dismissed, a slop blob is cuffed (**BUSTED!**) and a paddy wagon hauls it to
-  the tank.
+- **The precinct house.** Three floors joined by an elevator. The top floor
+  holds the **Squad Room** (Bug Detective, Feature Detective) and the **Evidence
+  Lab** (Forensics); the middle floor holds **Rehab** (Caseworker) and the
+  **Break Room**; the ground floor holds **Booking** (Patrol), the **Slop Tank**
+  and **Release**.
+- **The Courthouse.** Next door, joined by a skybridge: **Probation Court**
+  upstairs, where the Probation Judge sits in robe and wig with a gavel, and
+  **Arraignment** downstairs, where the Magistrate sits in robe and wig with
+  scales. Each bench has an **IN SESSION** lamp that lights while its judge is
+  on a case.
+- **Officers.** Every unit's robot officer stands at its post with a tag
+  showing its callsign, name, status light and caseload. Hovering over or
+  focusing the tag shows the bot, its status, the dispatch profile and the
+  workload; clicking it opens the unit. An officer on a case works its prop,
+  one standing by waits, a stuck one shows a red **!**, and in quiet hours the
+  officer naps on the Break Room couch. A unit the Desk Sergeant is asking
+  about shows **ON THE LINE**.
+- **Suspects.** Every open case is a green slop blob with googly eyes, standing
+  in the room of the unit holding it and labelled with its case number. A stuck
+  case shows a red **!**. Click a suspect to open its case file. A full room
+  shows a **+N** counter for the rest.
+- **The Slop Tank.** Slop that is thrown out is cuffed and held behind bars in
+  the tank, newest first, with an **N in custody** count.
+- **Moves.** When a committed snapshot moves a case, its blob walks there along
+  the floors, the elevator, the skybridge or the court stairs, and the
+  receiving room gets a rubber stamp: **BOOKED**, **ARRAIGNED**, **ON THE
+  DOCKET**, **PROBATION**, **SET FREE**, **ASSIGNED**, **EVIDENCE IN**, **SENT
+  BACK** or **LOCKED UP**. Slop sent to the tank is cuffed on the spot
+  (**BUSTED!**) and marched there by an escort officer. A civilian report
+  arrives in a squad car at the front door, siren going (**WEE-OO**).
+- **Reformed.** When Forensics' work merges, the slop walks down to Release and
+  comes out reformed, a tidy blue citizen in a tie (**REHABILITATED**). When
+  Release ships, the release bus pulls up, and the reformed board it and leave
+  the precinct for good (**SHIPPED**). A case closed after completion leaves
+  reformed through the exit (**CASE CLOSED**). Once rehabilitated or shipped, a
+  case is no longer slop.
 
 **Motion on/off** in the header, or the operating system's reduced-motion
 setting, turns all of this animation off without changing anything underneath:
-the robot cops stand still and no cars, stamps or arrests play. The Slop Tank
-still lists its cases.
+every loop stops, and no walks, vehicles or stamps play. The officers, the
+suspects and the Slop Tank still show where everything stands.
 
 ## Desk Sergeant
 

@@ -220,36 +220,36 @@ func (s *State) decideTask(t *Town, task *Task, action, by string, now time.Time
 		// pick up again. Outside work is only ignored; Town does not
 		// close other people's issues and pull requests.
 		if task.Kind == "issue" && !task.External {
-			task.Detail = subject + " dismissed this proposal. The Squad is closing the issue."
+			task.Detail = subject + " sent this proposal to the Slop Tank. The Squad is closing the issue."
 			t.Workers[Repo].Next = time.Time{}
-			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" dismissed: "+task.Title, now)
+			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" sent to the tank: "+task.Title, now)
 			return nil
 		}
 		if task.Kind == "pr" && !task.External {
 			// Town's own pull request is closed and its issue started over,
 			// as after a failed review. Left open, it kept the issue
 			// implemented with nothing working on it.
-			task.Detail = subject + " dismissed the Squad's own pull request. The Squad is closing it and starting the issue over."
+			task.Detail = subject + " sent the Squad's own pull request to the Slop Tank. The Squad is closing it and starting the issue over."
 			t.Workers[Repo].Next = time.Time{}
-			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" dismissed: "+task.Title, now)
+			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" sent to the tank: "+task.Title, now)
 			return nil
 		}
-		task.Detail = subject + " dismissed this civilian report. The Squad will not act on it."
-		s.Event(t.ID, "decision", "hall", "outside", task.ID, by+" dismissed: "+task.Title, now)
+		task.Detail = subject + " sent this civilian report to the Slop Tank. The Squad will not act on it."
+		s.Event(t.ID, "decision", "hall", "outside", task.ID, by+" sent to the tank: "+task.Title, now)
 		return nil
 	case "admit":
 		task.MayoralDecision = "admitted"
 		task.Stage = "queued"
 		task.Retired = false
 		task.Updated = now
-		task.Detail = subject + " admitted this case."
-		title := by + " admitted: " + task.Title
+		task.Detail = subject + " granted this case probation."
+		title := by + " granted probation: " + task.Title
 		if overrule {
 			// The decline no longer governs the task: resume and the
 			// declined-issue closer both read it.
 			task.Simplification = nil
-			task.Detail = subject + " admitted this case over the Slop Squad's dismissal."
-			title = by + " admitted over the Slop Squad's dismissal: " + task.Title
+			task.Detail = subject + " granted this case probation over the Magistrate's ruling."
+			title = by + " granted probation over the Magistrate's ruling: " + task.Title
 		}
 		target := Review
 		if task.Kind == "issue" {

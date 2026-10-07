@@ -37,7 +37,7 @@ type connection struct {
 }
 
 // executablePath resolves the real binary behind any launcher symlink, such as
-// the npm shim, so sct -d starts the binary itself.
+// the npm shim, so scs -d starts the binary itself.
 var executablePath = func() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -80,7 +80,7 @@ func describeLock(dir string, err error) error {
 		return err
 	}
 	if conn, e := readConnection(dir); e == nil && conn.PID > 0 {
-		return fmt.Errorf("%w (pid %d at %s; stop it with sct shutdown, or Ctrl+C if it runs in a terminal)", err, conn.PID, conn.URL)
+		return fmt.Errorf("%w (pid %d at %s; stop it with scs shutdown, or Ctrl+C if it runs in a terminal)", err, conn.PID, conn.URL)
 	}
 	return err
 }
@@ -128,12 +128,12 @@ func main() {
 	err := run(ctx, os.Args[1:])
 	cancel()
 	if err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintln(os.Stderr, "sct:", err)
+		fmt.Fprintln(os.Stderr, "scs:", err)
 		os.Exit(1)
 	}
 }
 func run(ctx context.Context, args []string) error {
-	// Bare sct, with only flags, runs Town; a first word names a process command.
+	// Bare scs, with only flags, runs Town; a first word names a process command.
 	command := ""
 	explicit := false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -141,7 +141,7 @@ func run(ctx context.Context, args []string) error {
 		args = args[1:]
 		explicit = true
 	}
-	fs := flag.NewFlagSet(strings.TrimSpace("sct "+command), flag.ContinueOnError)
+	fs := flag.NewFlagSet(strings.TrimSpace("scs "+command), flag.ContinueOnError)
 	fl := addCLIFlags(fs)
 	fs.Usage = func() {
 		if !explicit {
@@ -159,14 +159,14 @@ func run(ctx context.Context, args []string) error {
 			printCommandHelp(os.Stdout, fs, args[0])
 			return nil
 		}
-		return fmt.Errorf("unknown command %q for \"sct\"\nRun 'sct --help' for usage", args[0])
+		return fmt.Errorf("unknown command %q for \"scs\"\nRun 'scs --help' for usage", args[0])
 	}
 	cmd := &rootCommand
 	if explicit {
 		cmd = findCommand(command)
 	}
 	if cmd == nil {
-		return fmt.Errorf("unknown command %q for \"sct\"\nRun 'sct --help' for usage", command)
+		return fmt.Errorf("unknown command %q for \"scs\"\nRun 'scs --help' for usage", command)
 	}
 	if wantsHelp(args) {
 		if !explicit {
@@ -223,21 +223,21 @@ func run(ctx context.Context, args []string) error {
 		fmt.Printf("%s/#token=%s\n", conn.URL, conn.Token)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q for \"sct\"\nRun 'sct --help' for usage", command)
+		return fmt.Errorf("unknown command %q for \"scs\"\nRun 'scs --help' for usage", command)
 	}
 }
 
 // browserLink returns the browser address with its access key only when
 // stdout is an interactive terminal. Redirected output, such as the background
-// service's log, gets a pointer to sct web so the key never lands in a file.
+// service's log, gets a pointer to scs web so the key never lands in a file.
 func browserLink(conn connection, demo bool) string {
 	if stdoutIsTerminal() {
 		return conn.URL + "/#token=" + conn.Token
 	}
 	if demo {
-		return "run sct web --demo for the link"
+		return "run scs web --demo for the link"
 	}
-	return "run sct web for the link"
+	return "run scs web for the link"
 }
 
 var stdoutIsTerminal = func() bool {
@@ -250,7 +250,7 @@ func serveBanner(conn connection, demo bool) string {
 	return fmt.Sprintf("SlopCop Squad %s\nBrowser: %s\n", buildVersion(), browserLink(conn, demo))
 }
 
-// backgroundBanner is what sct -d prints once the detached service is ready.
+// backgroundBanner is what scs -d prints once the detached service is ready.
 func backgroundBanner(conn connection, demo bool, logs string) string {
 	return fmt.Sprintf("SlopCop Squad running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo), logs)
 }
@@ -311,7 +311,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	}
 	defer store.Close()
 	if notice := store.Notice(); notice != "" {
-		fmt.Fprintf(os.Stderr, "sct: %s\n", notice)
+		fmt.Fprintf(os.Stderr, "scs: %s\n", notice)
 	}
 	if configFile != "" {
 		data, e := os.ReadFile(configFile)
@@ -383,7 +383,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 			return e
 		}
 		for _, id := range restored {
-			fmt.Fprintf(os.Stderr, "sct: restored deleted precinct %s with the config file's settings\n", id)
+			fmt.Fprintf(os.Stderr, "scs: restored deleted precinct %s with the config file's settings\n", id)
 		}
 	}
 	listener, err := net.Listen("tcp", address)

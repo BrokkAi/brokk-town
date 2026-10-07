@@ -30,7 +30,7 @@ export function registerTownTools(context, getState, selectTown, chooseHouse) {
     {
       name: "visit_town_house",
       description:
-        "Navigate to a repository's precinct and open one of its units. town is the precinct id (its repository). house is the unit's role key: repo (Patrol), bug (Detectives), feature (Intel), simplifier (Slop Squad), hall (Courthouse), issue (Task Force), review (Forensics) or release (Release). Does not deploy or stand down any unit.",
+        "Navigate to a repository's precinct and open one of its units. town is the precinct id (its repository). house is the unit's role key: repo (Patrol), bug (Bug Detective), feature (Feature Detective), simplifier (Magistrate), hall (Probation Judge), issue (Caseworker), review (Forensics) or release (Release). Does not deploy or stand down any unit.",
       inputSchema: {
         type: "object",
         properties: {

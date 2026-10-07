@@ -55,7 +55,7 @@ jobs:
         run: |
           sh scripts/licenses.sh
           git diff --exit-code -- licenses/THIRD_PARTY_NOTICES.txt
-      - name: Build sct
+      - name: Build scs
         run: make js && make build
   windows:
     # Windows runs the whole module build, vet and tests under PowerShell. It

@@ -5,7 +5,7 @@ pull requests for review.
 
 `issue-bot` is a Go package of the
 [SlopCop Squad](https://github.com/BrokkAi/brokk-town) module. Issue Bot staffs
-the **Task Force** unit (role key `issue`), and the Squad runs it in process, so
+the **Caseworker** unit (role key `issue`), and the Squad runs it in process, so
 there is no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
@@ -48,7 +48,7 @@ an inspect-branch failure instead of being retried blindly.
 ## Configuration
 
 The Squad fills this configuration from the precinct's agent profile and the
-Task Force unit's work policy in the browser. The package's own fields are:
+Caseworker unit's work policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

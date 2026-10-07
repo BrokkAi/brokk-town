@@ -115,7 +115,7 @@ func declineCloseReason(task *Task) string {
 	if task.MayoralDecision == "declined" {
 		return "The judge dismissed this pull request. The Squad is closing it and starting the issue over."
 	}
-	reason := "The Slop Squad dismissed this pull request. The Squad is closing it and starting the issue over."
+	reason := "The Magistrate sent this pull request to the Slop Tank. The Squad is closing it and starting the issue over."
 	if s := task.Simplification; s != nil {
 		if s.Summary != "" {
 			reason += "\n\n" + s.Summary
@@ -129,9 +129,9 @@ func declineCloseReason(task *Task) string {
 func closedCause(task *Task) string {
 	switch {
 	case task.MayoralDecision == "declined":
-		return "the judge dismissed it"
+		return "the Probation Judge sent it to the Slop Tank"
 	case autoDeclined(task):
-		return "the Slop Squad dismissed it"
+		return "the Magistrate sent it to the Slop Tank"
 	}
 	return "its second review"
 }
@@ -162,7 +162,7 @@ func (s *Supervisor) settleReview(st *State, t *Town, task *Task) {
 		task.Detail = "Review found changes are needed in this external PR. Rule on whether the Squad should review it again or dismiss it."
 		st.Event(t.ID, "decision", "review", "hall", task.ID, "External PR needs a ruling: "+task.Title, now)
 	case task.Cycles == 0:
-		st.Move(t, task, "fixes", Issue, "Review findings sent to the Task Force", now)
+		st.Move(t, task, "fixes", Issue, "Review findings sent back to the Caseworker", now)
 	default:
 		threshold := t.Config.ReviewCloseSeverityOrDefault()
 		var blocking, deferred []Finding
@@ -486,7 +486,7 @@ func releaseDeclinedPull(st *State, t *Town, n int, status int, now time.Time) {
 		return
 	}
 	task.Stage = "declined"
-	task.Detail = fmt.Sprintf("GitHub refused to close this pull request (HTTP %d). The Slop Squad's dismissal stands; the judge can admit it anyway.", status)
+	task.Detail = fmt.Sprintf("GitHub refused to close this pull request (HTTP %d). The Magistrate's ruling stands; the Probation Judge can grant probation anyway.", status)
 	task.Updated = now
 	st.Event(t.ID, "error", string(Repo), "hall", task.ID, "GitHub refused to close: "+task.Title, now)
 }

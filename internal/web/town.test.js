@@ -85,11 +85,11 @@ test("outcome report separates submitted artifacts from confirmed outcomes and j
   assert.equal(report.records.length, 6);
   assert.equal(outcomeReport(records).records.length, 7);
 });
-test("every unit is staffed by a named bot, and Judge Bot sits in the Courthouse", () => {
+test("every unit is staffed by a named bot, and Judge Bot sits in Probation Court", () => {
   assert.deepEqual(Object.keys(botNames).sort(), ["bug", "feature", "hall", "issue", "release", "repo", "review", "simplifier"]);
   assert.equal(botNames.hall, "Judge Bot");
   assert.equal(botNames.feature, "Feature Bot");
-  assert.match(houseAuthority("hall"), /Rules on every arrival at the Courthouse and keeps the blotter/);
+  assert.match(houseAuthority("hall"), /Rules on every arrival, probation or the Slop Tank, and keeps the blotter/);
   assert.match(houseAuthority("hall"), /never edits the repository or GitHub/);
 });
 test("queue and overview report blocked and waiting work", () => {
@@ -410,7 +410,7 @@ test("townControls reports the town's duty state and offers the matching action"
   const paused = townControls({ workers: { ...agents([false, false, false, false, false]), repo: { role: "repo", enabled: true } } });
   assert.equal(paused.status, "Off duty", "Patrol being deployed does not put the town on patrol");
   assert.deepEqual(paused.primary, { action: "start", label: "▶ Start patrol (6)" });
-  assert.match(paused.detail, /Detectives.*Intel.*Slop Squad.*Courthouse.*Task Force.*Forensics.*Release/);
+  assert.match(paused.detail, /detectives.*Magistrate.*Probation Judge.*Caseworker.*Forensics.*Release/);
   assert.match(paused.detail, /Patrol already walks the beat/);
   assert.equal(paused.secondary, null);
   const awake = townControls({ workers: agents([true, true, true, true, true, true]) });
@@ -499,7 +499,7 @@ test("Simplifier intake has an explicit queue while blocked intake stays visible
   for (const kind of ["issue", "pr"]) {
     const task = { id: `${kind}:70`, kind, house: "simplifier", stage: "simplifying" };
     const queued = projectTask(town, task);
-    assert.equal(queued.statusLabel, "In screening");
+    assert.equal(queued.statusLabel, "At arraignment");
     assert.equal(boardColumn(queued), "simplifier");
     const blocked = projectTask(town, { ...task, blocked: true });
     assert.equal(blocked.statusLabel, "Blocked");

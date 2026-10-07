@@ -261,7 +261,7 @@ func demoGuide(ctx context.Context, t *Town, turnID string, emit func(string) er
 			queued++
 		}
 	}
-	answer := fmt.Sprintf("Desk Sergeant, training exercise: %s has %d cases queued or in screening and %d blocked cases. ", t.ID, queued, blocked)
+	answer := fmt.Sprintf("Desk Sergeant, training exercise: %s has %d cases queued or at arraignment and %d blocked cases. ", t.ID, queued, blocked)
 	answer += "The unit inspector shows each unit's status and recent failures. Precinct settings show the model, effort, work filters and quiet hours. These are simulated observations. Uncertain writes remain unresolved, and zero new review comments does not prove a clean review."
 	question := strings.ToLower(t.Guide.turn(turnID).Question)
 	for _, role := range Roles {

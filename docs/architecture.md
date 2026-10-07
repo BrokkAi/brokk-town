@@ -10,7 +10,7 @@ the browser, Mjolnir — is either a package it calls or a service it talks to.
    browser  <---->   |  internal/web HTTP server |
                      +------------+-------------+
                                   |
-   sct CLI  <---->   +------------v-------------+     +------------------+
+   scs CLI  <---->   +------------v-------------+     +------------------+
                      |  internal/town supervisor |---->|  ACP harness     |
                      |  store, scheduler, state  |     |  (local agent)   |
                      +------------+-------------+     +------------------+
@@ -22,9 +22,9 @@ the browser, Mjolnir — is either a package it calls or a service it talks to.
                      +--------------------------+     +------------------+
 ```
 
-`cmd/sct` opens the state store, starts the supervisor, the web server, the
+`cmd/scs` opens the state store, starts the supervisor, the web server, the
 harness catalog, the Mjolnir catalog and the attention watcher, then waits for a
-signal or `sct shutdown`. The small CLI (`sct status`, `sct web`, …) is the same
+signal or `scs shutdown`. The small CLI (`scs status`, `scs web`, …) is the same
 binary talking to the running service over a loopback HTTP API using a token from
 the state directory; the browser uses the same API.
 
@@ -32,7 +32,7 @@ the state directory; the browser uses the same API.
 
 | Package | Responsibility |
 | --- | --- |
-| `cmd/sct` | Service entry point, process-control CLI, background start, demo seeding. |
+| `cmd/scs` | Service entry point, process-control CLI, background start, demo seeding. |
 | `internal/town` | The domain: state model, store, supervisor, scheduling, reconciliation, policies, funnels, recovery, history, storage, outcomes. |
 | `internal/web` | HTTP routes and the embedded browser UI: plain HTML, CSS and ES modules. |
 | `internal/harness` | ACP harness registry, catalog cache, archive download and launch. |
@@ -73,10 +73,10 @@ limit (`service_config.max_workers`, default 4, maximum 64). Repo Bot observes
 without holding an agent slot; it takes one only while repairing the branch.
 
 Each unit has a cadence: a precinct-wide `poll_seconds` for intake and repair
-work, thirty minutes between Detectives and Intel discovery scans, five minutes
-for Forensics and Release. The scheduler wakes work when the caseload changes, not
-only on a timer. Release additionally follows its own cadence and burst rules;
-see [workflow.md](workflow.md).
+work, thirty minutes between the Bug Detective's and the Feature Detective's
+discovery scans, five minutes for Forensics and Release. The scheduler wakes
+work when the caseload changes, not only on a timer. Release additionally
+follows its own cadence and burst rules; see [workflow.md](workflow.md).
 
 ## Dispatch
 
@@ -101,9 +101,9 @@ private state directory. The Squad adapts the precinct's configuration and work
 policy into that package's config, runs it, and converts its typed observation
 back into the `internal/town` model. The repo bot's inventory is the pipeline's
 observation step; the Squad itself additionally performs a few bounded,
-idempotent GitHub writes (the merge, closing dismissed work, filing follow-ups,
-submitting a request), each gated on a fresh read of exactly what it is about to
-change.
+idempotent GitHub writes (the merge, closing work sent to the Slop Tank, filing
+follow-ups, submitting a request), each gated on a fresh read of exactly what it
+is about to change.
 
 See [bots.md](bots.md) for each bot's duties.
 
@@ -126,10 +126,16 @@ security policy. See [operations.md](operations.md) for the route list.
 The embedded UI is plain HTML, CSS and ES modules with no build step, no canvas
 drawing and no image assets. It renders the committed snapshot and sends every
 command through the same API. `internal/web/precinct.js` owns the precinct
-vocabulary — unit names, callsigns, roster order and case-flow lanes — keyed by
-the unchanged role keys. `internal/web/animation.js` draws the cartoon layer —
-robot cops, squad cars, stamps and the slop in the Slop Tank — as inline SVG and
-CSS; it only decorates committed state and never sends a command.
+vocabulary — unit names, callsigns and roster order — keyed by the unchanged
+role keys. The Precinct view is a cutaway drawing of the precinct house with
+the courthouse attached: `internal/web/scene.js` lays out the rooms, stands each
+unit's officer at its post and each open case in the room of the unit holding
+it, compares consecutive committed snapshots to see which cases moved, arrived
+or left, and choreographs the walks, vehicles and stamps.
+`internal/web/animation.js` draws the cast as inline SVG — the robot officers,
+the slop (loose and cuffed), the reformed citizens and the vehicles.
+Neither invents a case or sends a command, and both stop animating when motion
+is off. The Board view's case-flow columns come from `internal/web/town.js`.
 
 ## Harnesses and Mjolnir
 
@@ -153,13 +159,13 @@ current state. See [operations.md](operations.md).
 
 ## Demo and townsim
 
-`sct --demo` runs a closed simulation in a separate state directory: it seeds two
+`scs --demo` runs a closed simulation in a separate state directory: it seeds two
 precincts and never receives a GitHub client, an Mjolnir connection or a worker
 runner. It is safe to run anywhere.
 
 `cmd/townsim` is a stochastic model of the scheduler. It reproduces the
 supervisor's rules — one worker per unit, shared capacity, poll cadence,
-discovery gaps, Slop Squad ahead of the Courthouse, one repair round per pull
-request, a closed pull request restarting its issue — and reports whether a set
-of defaults can grow an unbounded backlog. It is a design tool, not part of the
-service.
+discovery gaps, the Magistrate ahead of the Probation Judge, one repair round
+per pull request, a closed pull request restarting its issue — and reports
+whether a set of defaults can grow an unbounded backlog. It is a design tool,
+not part of the service.

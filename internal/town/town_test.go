@@ -1447,7 +1447,7 @@ func (s *Supervisor) reconcileNow(ctx context.Context, t *Town) error {
 	return s.reconcile(ctx, t, true, func(Progress) {}, slog.Default())
 }
 
-// Every role reads as its unit in operator-facing prose, and the Courthouse's
+// Every role reads as its unit in operator-facing prose, and the Probation Judge's
 // bot is Judge Bot; none falls back to its bare role key.
 func TestEveryRoleHasAUnitName(t *testing.T) {
 	seen := map[string]Role{}

@@ -1,38 +1,28 @@
-import { botNames, houseWorkload, projectTask, projectWorker, queueFor } from "./town.js";
+import { botNames, houseWorkload, projectWorker, queueFor } from "./town.js";
 
 // SlopCop Squad presents each repository as a precinct and its bots as the
-// units that work it. This module owns that vocabulary and the shape of
-// the Precinct view: who is on the roster, which lane a case sits in, and how
-// the radio spells a transfer. It reads the committed snapshot only; every
-// command still goes through app.js to the service.
+// units that work it. This module owns that vocabulary: who is on the roster,
+// what each unit is called and how the radio spells a transfer. It reads the
+// committed snapshot only; every command still goes through app.js.
 
 // The role keys are the API's and never change. A unit is what the operator
-// sees: its name, its radio callsign and one line on what it does.
+// sees: its name, its radio callsign and one line on what it does. Detectives
+// find new slop; the Magistrate and the Probation Judge decide whether it goes
+// to the Slop Tank or gets a chance; the Caseworker rehabilitates it and
+// Forensics checks the work; Release ships the reformed out.
 export const units = {
-  repo: { callsign: "PTL", name: "Patrol", tagline: "Walks the beat", lane: "leads", duty: "Inventories the repository on every pass and repairs the branch it covers when its checks fail." },
-  bug: { callsign: "DET", name: "Detectives", tagline: "Investigations", lane: "leads", duty: "Investigates the code and files new, non-duplicate bug reports." },
-  feature: { callsign: "INT", name: "Intel", tagline: "Leads & proposals", lane: "leads", duty: "Researches valuable new capabilities and files concrete proposals." },
-  simplifier: { callsign: "SLP", name: "Slop Squad", tagline: "Screens for slop", lane: "screening", duty: "Screens every arrival for slop: disproportionate complexity and low value." },
-  hall: { callsign: "CRT", name: "Courthouse", tagline: "Rulings & the blotter", lane: "court", duty: "Rules on every arrival and keeps the blotter of features gained and bugs fixed." },
-  issue: { callsign: "TSK", name: "Task Force", tagline: "Works the case", lane: "taskforce", duty: "Takes admitted cases, implements them, and opens or repairs pull requests." },
-  review: { callsign: "LAB", name: "Forensics", tagline: "Examines the evidence", lane: "forensics", duty: "Examines each exact revision, certifies findings, and merges when policy allows." },
-  release: { callsign: "REL", name: "Release", tagline: "Processing & release", lane: "release", duty: "Batches what merged and ships a verified release." },
+  repo: { callsign: "PTL", name: "Patrol", tagline: "Walks the beat", duty: "Inventories the repository on every pass, books what comes in, and repairs the branch it covers when its checks fail." },
+  bug: { callsign: "BUG", name: "Bug Detective", tagline: "Finds new slop", duty: "Investigates the code and files new, non-duplicate bug reports." },
+  feature: { callsign: "FTR", name: "Feature Detective", tagline: "Finds new slop", duty: "Researches new capabilities and files concrete proposals, which are slop until a judge says otherwise." },
+  simplifier: { callsign: "MAG", name: "Magistrate", tagline: "Arraignment", duty: "Arraigns every arrival: disproportionate complexity and low value go to the Slop Tank, the rest go free to the next hearing." },
+  hall: { callsign: "JDG", name: "Probation Judge", tagline: "Probation or the tank", duty: "Rules on every arrival, probation with the Caseworker or the Slop Tank, and keeps the blotter of features gained and bugs fixed." },
+  issue: { callsign: "CWK", name: "Caseworker", tagline: "Rehabilitates slop", duty: "Works each case on probation: implements it and opens or repairs the pull request." },
+  review: { callsign: "LAB", name: "Forensics", tagline: "Examines the evidence", duty: "Examines each exact revision, certifies findings, and clears the case or sends it back; merges when policy allows." },
+  release: { callsign: "REL", name: "Release", tagline: "Ships the reformed", duty: "Batches what merged and ships a verified release." },
 };
 
 // Roster order follows a case through the precinct, and keys 1–8 follow it.
 export const unitOrder = ["repo", "bug", "feature", "simplifier", "hall", "issue", "review", "release"];
-
-// A case moves left to right: leads come in, the Slop Squad screens them, the
-// court rules, the Task Force works them, Forensics examines the evidence and
-// Release ships what merged.
-export const lanes = [
-  { id: "leads", label: "Leads", roles: ["repo", "bug", "feature"] },
-  { id: "screening", label: "Screening", roles: ["simplifier"] },
-  { id: "court", label: "Court", roles: ["hall"] },
-  { id: "taskforce", label: "Task Force", roles: ["issue"] },
-  { id: "forensics", label: "Forensics", roles: ["review"] },
-  { id: "release", label: "Release", roles: ["release"] },
-];
 
 // Parties on the radio that are not units: a civilian report from outside the
 // precinct, and the captain, which is you.
@@ -50,9 +40,6 @@ export function unitName(role) {
 // The bot staffing a unit, for the settings and failures that name it.
 export function unitBot(role) {
   return botNames[role] || "";
-}
-export function laneOf(role) {
-  return units[role]?.lane || "leads";
 }
 
 function normalized(value) {
@@ -109,36 +96,8 @@ export function radioRoute(event) {
   return String(event?.kind || "radio").replaceAll("_", " ").toUpperCase();
 }
 
-const laneUrgency = { blocked: 0, uncertain_write: 0, inconclusive: 0, failed: 0, working: 1 };
-
-// caseFlow lays the town's open cases into the lanes. Each lane keeps the
-// cases that need someone first, then those being worked, then the rest by
-// number, and shows at most limit of them.
-export function caseFlow(town, limit = 6) {
-  return lanes.map((lane) => {
-    const cases = lane.roles
-      .flatMap((role) => queueFor(town || {}, role))
-      .map((task) => projectTask(town, task))
-      .sort((a, b) =>
-        (laneUrgency[a.status] ?? 2) - (laneUrgency[b.status] ?? 2) ||
-        (a.number ?? 0) - (b.number ?? 0) ||
-        String(a.id).localeCompare(String(b.id)),
-      );
-    return {
-      ...lane,
-      total: cases.length,
-      urgent: cases.filter((task) => laneUrgency[task.status] === 0).length,
-      cases: cases.slice(0, limit),
-      more: Math.max(0, cases.length - limit),
-      // Past the limit, the rest of the lane is read in the unit holding the
-      // first case that did not fit.
-      moreHouse: cases[limit]?.house || lane.roles[0],
-    };
-  });
-}
-
 // roster is every unit in order with what it is doing now and its caseload.
-// The Courthouse is measured in rulings: what waits on it is a decision.
+// The Probation Judge is measured in rulings: what waits on it is a decision.
 export function roster(town) {
   return unitOrder.map((role) => {
     const worker = projectWorker(town, role, town?.workers?.[role]);

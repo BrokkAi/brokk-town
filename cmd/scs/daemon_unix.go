@@ -22,7 +22,7 @@ func passReady(cmd *exec.Cmd, notify *os.File) string {
 	return "3"
 }
 
-// inheritedReady opens the descriptor a parent sct -d passed as value.
+// inheritedReady opens the descriptor a parent scs -d passed as value.
 func inheritedReady(value string) *os.File {
 	fd, err := strconv.Atoi(value)
 	if err != nil || fd < 3 {

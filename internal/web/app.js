@@ -13,7 +13,6 @@ import {
   snoozeRequest,
   defaultSnoozeUntil,
   localInputValue,
-  visibleEvents,
   outcomeReport,
   safeURL,
   townSummary,
@@ -56,10 +55,9 @@ import {
   dutyLight,
   caseNumber,
   radioRoute,
-  caseFlow,
   roster,
 } from "./precinct.js";
-import { robotCop, slopBlob, custody, newArrests, canStage, patrolRun, arrest, alarm } from "./animation.js";
+import { rooms as sceneRooms, placeCases, sceneArt, suspectArt, posts, tagSpot, overflowSpot, at, barsBox, changes as sceneChanges, play } from "./scene.js";
 const $ = (s) => document.querySelector(s),
   esc = (value) =>
     String(value ?? "").replace(
@@ -108,8 +106,6 @@ let state = null,
   selectedHouse = "hall",
   selectedTask = "",
   sequence = null,
-  transfers = [],
-  arrests = [],
   motion = !matchMedia("(prefers-reduced-motion: reduce)").matches,
   streamAbort = null,
   servedVersion = "";
@@ -282,19 +278,10 @@ async function connect() {
 }
 function receive(next) {
   if (sequence !== null && next.seq >= sequence) {
-    for (const event of visibleEvents(next.events, sequence, selectedTown)) {
-      if ((event.kind === "delivery" || event.kind === "error") && viewMode === "town" && !overview && motion && !document.hidden)
-        transfers.push(event);
-    }
-    // A case that entered custody since the last snapshot gets its arrest.
-    if (viewMode === "town" && !overview && motion && !document.hidden)
-      arrests.push(...newArrests(state?.towns?.[selectedTown], next.towns?.[selectedTown]));
+    // The scene walks what changed between this snapshot and the last.
   } else {
-    transfers = [];
-    arrests = [];
+    lastCast = null;
   }
-  transfers = transfers.slice(-6);
-  arrests = arrests.slice(-3);
   sequence = next.seq;
   state = next;
   // The page's assets belong to the binary that served them. When a restart
@@ -398,7 +385,7 @@ function budgetBlock(t) {
 function selectView(mode) {
   mode = normalizeView(mode);
   viewMode = mode;
-  transfers = [];
+  lastCast = null;
   try {
     localStorage.setItem("slopcop-squad-view", mode);
   } catch {
@@ -677,7 +664,6 @@ function render() {
   renderManagement();
   renderInbox(needs);
   restoreFocus(focus);
-  stageScenes();
 }
 function restoreFocus(focus) {
   if (!focus) return;
@@ -697,7 +683,7 @@ function selectTown(id) {
   }
   selectedTask = "";
   clearLiveDetail();
-  transfers = [];
+  lastCast = null;
   overview = false;
   saveScope();
   render();
@@ -734,7 +720,7 @@ function renderOverview() {
 $("#all-towns").onclick = () => {
   overview = true;
   saveScope();
-  transfers = [];
+  lastCast = null;
   if (state) render();
 };
 
@@ -807,48 +793,96 @@ $("#capacity-form").onsubmit = async (event) => {
     submit.disabled = false;
   }
 };
-// simplifierDeclined marks work the Slop Squad dismissed in auto mode. The
+// simplifierDeclined marks work the Magistrate sent to the tank in auto mode. The
 // dismissal is final unless the court admits it anyway.
 function simplifierDeclined(task) {
   return task.house === "hall" && task.stage === "declined" && !task.mayoral_decision && task.simplification?.mode === "auto" && task.simplification?.decision === "decline";
 }
 // The Precinct view draws only when its markup changed: the snapshot stream
-// redraws on every event, and rewriting identical markup would drop hover and
-// restart every officer's animation mid-gesture.
-let rosterMarkup = "",
-  flowMarkup = "",
-  tankMarkup = "";
-// A perp just booked into the tank drops in once; the mark expires so a later
-// redraw shows it settled.
-const freshPerps = new Map();
+// redraws on every event, and rewriting identical markup would restart every
+// officer's loop and every suspect's wobble mid-step.
+let artMarkup = "",
+  tagMarkup = "",
+  castMarkup = "";
+// The last placements the scene showed, so the next snapshot can walk each
+// suspect from where it stood. They only carry over while the scene stays in
+// view on the same precinct; anything else starts the scene still.
+let lastCast = null,
+  lastCastTown = "";
 const busyGuide = (turn) => ["queued", "gathering", "answering"].includes(turn?.status);
 function renderPrecinct() {
   const t = town();
-  // The Desk Sergeant's open question radios the units it asks about.
-  const asked = new Set(t?.guide?.turns?.find(busyGuide)?.houses || []);
-  const markup = t
-    ? roster(t)
-        .map((unit) => {
-          const profile = unit.role === "hall" ? null : profileSummary(unit.worker.profile);
-          const load = unit.role === "hall"
-            ? `<span class="rulings">${unit.rulings} awaiting ruling</span>${workloadChips(unit.counts)}`
-            : `${profileChips(unit.worker.profile, unit.role)}${workloadChips(unit.counts)}`;
-          const summary = `${unit.name}, ${unit.status}, ${unit.role === "hall" ? `${unit.rulings} awaiting ruling, ` : ""}${workloadText(unit.counts)}${profile ? `, ${profile.text}` : ""}`;
-          return `<button class="unit light-${unit.light}${selectedHouse === unit.role ? " selected" : ""}${asked.has(unit.role) ? " radioed" : ""}" data-house="${unit.role}" aria-label="Open ${esc(summary)}" title="${esc(`${unit.callsign} · ${unit.name} · ${unit.bot}\n${unit.duty}`)}${profile ? `\n${esc(profile.title)}` : ""}" aria-keyshortcuts="${unitOrder.indexOf(unit.role) + 1}"><span class="unit-sign">${robotCop(unit.role, unit.light)}</span><span class="unit-name"><span class="unit-callsign">${unit.callsign}</span><strong>${esc(unit.name)}</strong><small>${esc(unit.bot)}</small></span><span class="unit-duty"><i class="dot ${unit.light}"></i>${esc(unit.status)}</span><span class="unit-load">${load}</span></button>`;
-        })
-        .join("")
-    : "";
-  const list = $("#roster");
-  if (markup !== rosterMarkup || !list.children?.length) {
-    rosterMarkup = markup;
-    list.innerHTML = markup;
-    list.querySelectorAll("button").forEach((b) => (b.onclick = () => chooseHouse(b.dataset.house)));
+  const showing = !!t && !overview && viewMode === "town" && !document.hidden;
+  const units = t ? roster(t) : [];
+  const lights = Object.fromEntries(units.map((unit) => [unit.role, unit.light]));
+  const art = t ? sceneArt({ repo: t.config.repo, lights }) : "";
+  if (art !== artMarkup) {
+    artMarkup = art;
+    $("#scene-art").innerHTML = art;
   }
-  renderCaseFlow(t);
-  renderTank(t);
+  const { placed, overflow, counts } = t ? placeCases(t) : { placed: [], overflow: {}, counts: {} };
+  // Every officer wears a tag: callsign, name, light and caseload, opening to
+  // the bot, its status and its dispatch profile on hover or focus.
+  const where = posts(lights);
+  const asked = new Set(t?.guide?.turns?.find(busyGuide)?.houses || []);
+  const tags = units
+    .map((unit) => {
+      const [x, y] = tagSpot(unit.role, where[unit.role]);
+      const open = unit.counts.active + unit.counts.waiting + unit.counts.blocked;
+      const load = unit.role === "hall" ? unit.rulings : open;
+      const profile = unit.role === "hall" ? null : profileSummary(unit.worker.profile);
+      const summary = `${unit.name}, ${unit.status}, ${unit.role === "hall" ? `${unit.rulings} awaiting ruling, ` : ""}${workloadText(unit.counts)}${profile ? `, ${profile.text}` : ""}`;
+      return `<button class="unit-tag light-${unit.light}${selectedHouse === unit.role ? " selected" : ""}${asked.has(unit.role) ? " radioed" : ""}" data-house="${unit.role}" style="${at(x, y)}" aria-label="Open ${esc(summary)}" aria-keyshortcuts="${unitOrder.indexOf(unit.role) + 1}" title="${esc(`${unit.callsign} · ${unit.name} · ${unit.bot}\n${unit.duty}`)}${profile ? `\n${esc(profile.title)}` : ""}"><span class="tag-line"><span class="tag-sign">${unit.callsign}</span><strong>${esc(unit.name)}</strong><i class="dot ${unit.light}"></i>${load ? `<b class="tag-count">${load}</b>` : ""}</span><span class="tag-more"><small>${esc(unit.bot)} · ${esc(unit.status)}${unit.role === "hall" ? ` · ${unit.rulings} awaiting ruling` : ""}</small>${profile ? profileChips(unit.worker.profile, unit.role) : ""}${workloadChips(unit.counts)}</span></button>`;
+    })
+    .join("");
+  const extra = Object.entries(overflow)
+    .map(([room, n]) => {
+      const [x, y] = overflowSpot(room);
+      return `<button class="overflow" data-house="${room === "holding" ? "hall" : sceneRooms[room].roles[0]}" style="${at(x, y)}" title="${n} more">+${n}</button>`;
+    })
+    .join("");
+  const tank = t ? `<span class="tank-tag" style="${at(330, 532)}">${counts.holding || 0} in custody</span>` : "";
+  const tagsHtml = tags + extra + tank;
+  const tagList = $("#roster");
+  if (tagsHtml !== tagMarkup || !tagList.children?.length) {
+    tagMarkup = tagsHtml;
+    tagList.innerHTML = tagsHtml;
+    tagList.querySelectorAll("button").forEach((b) => (b.onclick = () => chooseHouse(b.dataset.house)));
+  }
+  // Every open case is a suspect in its room.
+  const cast = placed
+    .map((p) => {
+      const what = `${caseNumber(p.task)} · ${p.task.title || p.id}`;
+      const where = p.look === "cuffed" ? "In the Slop Tank" : p.look === "reformed" ? "Reformed, waiting for the release bus" : `${unitName(p.task.house)} · ${p.task.statusLabel}`;
+      return `<button class="suspect look-${p.look}" data-task="${esc(p.id)}" data-room="${p.room}" style="${at(p.x, p.y)}" aria-label="${esc(`${what}. ${where}`)}" title="${esc(`${what}\n${where}`)}">${suspectArt(p.look)}<span class="case-tag">${esc(caseNumber(p.task))}</span></button>`;
+    })
+    .join("");
+  const castList = $("#caseflow");
+  if (cast !== castMarkup || !castList.children?.length) {
+    castMarkup = cast;
+    castList.innerHTML = cast;
+    castList.querySelectorAll("[data-task]").forEach((b) => (b.onclick = () => openCase(b.dataset.task)));
+  }
+  $("#scene").hidden = !t;
+  // Walk every suspect the snapshot moved, from where it stood.
+  const now = new Map(placed.map((p) => [p.id, { room: p.room, x: p.x, y: p.y, look: p.look }]));
+  if (showing && motion && lastCast && lastCastTown === selectedTown) {
+    const diff = sceneChanges(lastCast, now, t);
+    if (diff.moved.length || diff.arrived.length || diff.gone.length)
+      play(
+        {
+          fx: $("#transfers"),
+          find: (id) => [...castList.querySelectorAll("[data-task]")].find((b) => b.dataset.task === id),
+        },
+        diff,
+        (state?.events || []).filter((e) => e.town === selectedTown),
+      );
+  }
+  lastCast = showing ? now : null;
+  lastCastTown = selectedTown;
 }
-// openCase opens a case file from anywhere a case shows up: a lane, the tank,
-// a squad car on the street.
+// openCase opens a case file from anywhere a case shows up: a suspect in the
+// scene, a radio line, the inbox.
 function openCase(id, house = "") {
   const task = town()?.tasks[id];
   if (!task) return;
@@ -857,77 +891,6 @@ function openCase(id, house = "") {
   clearLiveDetail();
   $("#inspector").classList.add("open");
   render();
-}
-function renderCaseFlow(t) {
-  const markup = t
-    ? caseFlow(t)
-        .map((lane) => {
-          const cases = lane.cases
-            .map((task) => `<button class="case status-${esc(task.statusClass)}" data-task="${esc(task.id)}" title="${esc(`${caseNumber(task)} · ${task.title || task.id}\n${unitName(task.house)} · ${task.statusLabel}`)}"><span class="case-number">${esc(caseNumber(task))}</span><span class="case-stamp">${esc(task.statusLabel)}</span><span class="case-title">${esc(task.title || task.id)}</span></button>`)
-            .join("");
-          const more = lane.more
-            ? `<button class="case-more" data-house="${esc(lane.moreHouse)}">+${lane.more} more in ${esc(unitName(lane.moreHouse))}</button>`
-            : "";
-          return `<section class="lane${lane.urgent ? " urgent" : ""}" data-lane="${lane.id}" aria-label="${esc(`${lane.label}: ${lane.total} open case${lane.total === 1 ? "" : "s"}`)}"><div class="lane-head"><strong>${esc(lane.label)}<span class="lane-count${lane.total ? "" : " zero"}">${lane.total}</span></strong><small>${lane.roles.map(callsign).join(" · ")}</small></div><div class="lane-cases">${cases || '<p class="lane-empty">No open cases.</p>'}${more}</div></section>`;
-        })
-        .join("")
-    : "";
-  const flow = $("#caseflow");
-  if (markup !== flowMarkup || !flow.children?.length) {
-    flowMarkup = markup;
-    flow.innerHTML = markup;
-    flow.querySelectorAll("[data-task]").forEach((b) => (b.onclick = () => openCase(b.dataset.task)));
-    flow.querySelectorAll(".case-more").forEach((b) => (b.onclick = () => chooseHouse(b.dataset.house)));
-  }
-  flow.hidden = !t;
-}
-// The Slop Tank holds every case the squad threw out, each one a cuffed blob
-// with its case number on the placard.
-function renderTank(t) {
-  const tank = $("#tank"),
-    count = $("#tank-count");
-  if (!tank) return;
-  const now = Date.now();
-  const held = custody(t);
-  const markup = held.perps
-    .map((task) => `<button class="perp${(freshPerps.get(task.id) || 0) > now ? " fresh" : ""}" data-task="${esc(task.id)}" title="${esc(`${caseNumber(task)} · ${task.title || task.id}\nDismissed${task.simplification?.mode === "auto" ? " by the Slop Squad" : " by the court"}`)}">${slopBlob({ cuffed: true })}<span class="placard">${esc(caseNumber(task))}</span></button>`)
-    .join("") || '<p class="tank-empty">Cell\'s empty. Nobody has been booked yet.</p>';
-  if (markup !== tankMarkup || !tank.children?.length) {
-    tankMarkup = markup;
-    tank.innerHTML = markup;
-    tank.querySelectorAll("[data-task]").forEach((b) => (b.onclick = () => openCase(b.dataset.task, "hall")));
-  }
-  if (count) count.textContent = held.total ? `${held.total} in custody${held.total > held.perps.length ? ` · newest ${held.perps.length} shown` : ""}` : "";
-  tank.hidden = !t;
-}
-// stageScenes plays what the last snapshot committed: a squad car for each
-// transfer, and an arrest for each case newly thrown out. It only decorates;
-// with Motion off, a reduced-motion preference, or no layout, it does nothing.
-function stageScenes() {
-  const runs = transfers,
-    busts = arrests;
-  transfers = [];
-  arrests = [];
-  if ((!runs.length && !busts.length) || !motion || overview || viewMode !== "town" || document.hidden) return;
-  const ctx = {
-    frame: $(".flow-frame"),
-    flow: $("#caseflow"),
-    street: $(".street"),
-    layer: $("#transfers"),
-    tank: $("#tank"),
-    open: (id, house) => openCase(id, house),
-    booked: (id) => {
-      freshPerps.set(id, Date.now() + 1500);
-      tankMarkup = "";
-      renderTank(town());
-    },
-  };
-  if (!canStage(ctx)) return;
-  runs.filter((event) => event.town === selectedTown).forEach((event, i) => setTimeout(() => (event.kind === "error" ? alarm(ctx, event) : patrolRun(ctx, event)), i * 450));
-  busts.forEach((id, i) => {
-    const task = town()?.tasks[id];
-    if (task) setTimeout(() => arrest(ctx, task), 600 + i * 1800);
-  });
 }
 // The snapshot stream re-renders the inspector on every event. Rewriting
 // identical markup tears the panel down mid-read and drops the reader back at
@@ -1013,15 +976,15 @@ function renderInspection() {
       sourceSummary = source ? `<p><strong>${esc(source.identity.provider)}</strong> via ${esc(source.identity.funnel)} · ${source.eligible ? "eligible" : "not eligible"} · priority ${esc(source.priority.policy)}${provenance?.external_state ? ` · source state ${esc(provenance.external_state)}` : ""}</p><p>Last observed ${provenance?.observed_at ? esc(new Date(provenance.observed_at).toLocaleString()) : "unknown"}${provenance?.revision ? ` · revision <code>${esc(String(provenance.revision).slice(0, 12))}</code>` : ""}</p>${source.last_outcome?.kind && source.last_outcome.kind !== "complete" ? `<p class="uncertainty-note">${esc(source.last_outcome.kind.replaceAll("_", " "))}: ${esc(source.last_outcome.detail || "Source coverage is incomplete")}</p>` : ""}` : "";
     const taskBusy = (action, role) => busy(commandKey(selectedTown, role, action, selectedTask));
     const mayorActions = simplifierDeclined(task)
-      ? `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>Admit anyway</button></div><p class="muted">The Slop Squad dismissed this. Admitting overrules it and sends it to ${task.kind === "issue" ? "the Task Force" : "Forensics"}.</p>`
+      ? `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>Grant probation anyway</button></div><p class="muted">The Magistrate sent this to the Slop Tank. Probation overrules that and sends it to ${task.kind === "issue" ? "the Caseworker" : "Forensics"}.</p>`
       : task.mayoral_decision !== "pending"
       ? ""
-        : `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>${task.audit?.verdict === "changes_needed" ? "Review again" : "Admit the case"}</button><button id="decline-task" class="danger"${taskBusy("decline", "hall")}>Dismiss</button></div><p class="muted">Nothing acts on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until it is ruled on.</p>`;
+        : `<div class="inspector-actions"><button id="admit-task" class="primary"${taskBusy("admit", "hall")}>${task.audit?.verdict === "changes_needed" ? "Review again" : "Grant probation"}</button><button id="decline-task" class="danger"${taskBusy("decline", "hall")}>Send to the tank</button></div><p class="muted">Nothing acts on this ${task.audit?.verdict === "changes_needed" ? "review outcome" : "arrival"} until it is ruled on.</p>`;
     const isMayor = task.mayoral_decision === "pending";
     const liveCapable = isMayor && (task.kind === "issue" || task.kind === "pr") && task.number > 0;
     const kindLabel = task.kind === "pr" ? "PR" : task.kind === "issue" ? "Issue" : task.kind;
     const mayorMeta = liveCapable
-      ? `<p><strong>${esc(kindLabel)} #${task.number}</strong> · ${esc(decisionReason(task))}${task.updated ? ` · updated ${esc(new Date(task.updated).toLocaleString())}` : ""}</p><p class="muted">Admitting sends this to ${task.kind === "issue" ? "the Task Force" : "Forensics"}.</p>`
+      ? `<p><strong>${esc(kindLabel)} #${task.number}</strong> · ${esc(decisionReason(task))}${task.updated ? ` · updated ${esc(new Date(task.updated).toLocaleString())}` : ""}</p><p class="muted">Probation sends this to ${task.kind === "issue" ? "the Caseworker" : "Forensics"}.</p>`
       : "";
     let liveBlock = "";
     if (liveCapable) {
@@ -1045,7 +1008,7 @@ function renderInspection() {
       }
     }
     const simplifier = task.simplification
-      ? `<section class="advisor-note"><strong>Slop Squad · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision === "decline" ? "dismiss" : task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
+      ? `<section class="advisor-note"><strong>Magistrate · ${esc(task.simplification.mode)} mode · ${esc(task.simplification.decision === "decline" ? "to the tank" : task.simplification.decision === "admit" ? "set free" : task.simplification.decision)}</strong>${task.simplification.summary ? `<p>${esc(task.simplification.summary)}</p>` : ""}<p>${esc(task.simplification.detail)}</p></section>`
       : "";
     const detailText = task.merge_wait && task.stage === "ready" && (task.detail || "").trim() === diagnosticSummary(task.merge_wait) ? "" : task.detail || (liveCapable ? "" : "Following the case.");
     const snooze = projected.snooze;
@@ -1073,7 +1036,7 @@ function renderInspection() {
       decline = decisionButtons.find((button) => button.id === "decline-task");
     if (admit)
       admit.onclick = () => {
-        if (simplifierDeclined(task) && !globalThis.confirm(`Admit ${task.kind === "pr" ? "PR" : "issue"} #${task.number} over the Slop Squad's dismissal? The Squad will act on it, and the dismissal cannot be restored.`)) return;
+        if (simplifierDeclined(task) && !globalThis.confirm(`Grant ${task.kind === "pr" ? "PR" : "issue"} #${task.number} probation over the Magistrate's ruling? The Squad will act on it, and the ruling cannot be restored.`)) return;
         return command("admit", "hall", selectedTask);
       };
     if (decline) decline.onclick = () => command("decline", "hall", selectedTask);
@@ -1081,10 +1044,10 @@ function renderInspection() {
   }
   if (selectedHouse === "hall") {
     const decisions = queueFor(t, "hall").filter((task) => task.mayoral_decision === "pending");
-    // Newest first and capped, like the other Courthouse feeds.
+    // Newest first and capped, like the other court feeds.
     const overrulable = Object.values(t.tasks || {}).filter(simplifierDeclined).sort((a, b) => (b.number ?? 0) - (a.number ?? 0));
     const overrulableBlock = overrulable.length
-      ? `<h3>Dismissed by the Slop Squad</h3>${overrulable.slice(0, 20).map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · you can admit it anyway</small></button>`).join("")}${overrulable.length > 20 ? `<p class="muted">${overrulable.length - 20} older dismissals are not shown.</p>` : ""}`
+      ? `<h3>Sent to the tank by the Magistrate</h3>${overrulable.slice(0, 20).map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · you can grant probation anyway</small></button>`).join("")}${overrulable.length > 20 ? `<p class="muted">${overrulable.length - 20} older dismissals are not shown.</p>` : ""}`
       : "";
     const outcomes = outcomeReport(t.outcomes || [], outcomeDays > 0 ? new Date(Date.now() - outcomeDays * 86400000) : new Date(0));
     const metric = (value, label) => `<span><strong>${value}</strong>${label}</span>`;
@@ -1101,7 +1064,7 @@ function renderInspection() {
     const mayor = t.workers?.hall,
       projectedMayor = projectWorker(t, "hall", mayor),
       mayorControls = workerControls(mayor);
-    const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : dutyLight(projectedMayor.status)}"></i>Judge Bot ${esc(dutyStatus(projectedMayor.status))}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div>${workerButtons(mayorControls, "hall")}<p class="muted">${mayor?.enabled ? "Judge Bot rules on each arrival below as it comes in, with its reason kept on the case, and writes the blotter when work merges." : "Deploy Judge Bot to have it rule on arrivals and keep the blotter. Until then, rulings wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
+    const mayorBlock = `<div class="status-line"><i class="dot ${projectedMayor.active ? "active" : dutyLight(projectedMayor.status)}"></i>Judge Bot ${esc(dutyStatus(projectedMayor.status))}${mayor?.next && Date.parse(mayor.next) > Date.now() ? ` · next check ${new Date(mayor.next).toLocaleTimeString()}` : ""}</div>${workerButtons(mayorControls, "hall")}<p class="muted">${mayor?.enabled ? "Judge Bot rules on each arrival below as it comes in, probation or the Slop Tank, with its reason kept on the case, and writes the blotter when work merges." : "Deploy Judge Bot to have it rule on arrivals and keep the blotter. Until then, rulings wait here for you."}</p>${mayor?.task && mayor.task !== "Ready when you are" ? `<p class="muted">${esc(mayor.task)}</p>` : ""}${mayor?.error ? `<p class="muted">${esc(mayor.error)}</p>` : ""}`;
     const bulletinRows = (t.bulletins || []).slice().reverse().slice(0, 20).map((b) => `<article class="bulletin"><h4>${esc(b.title)}</h4><p class="muted">${esc(new Date(b.since).toLocaleString())} – ${esc(new Date(b.until).toLocaleString())} · ${(b.pulls || []).length} merged</p><p>${esc(b.summary)}</p>${(b.items || []).map((item) => `<div class="bulletin-item"><span class="status-chip status-${esc(item.kind)}">${esc(item.kind)}</span> <strong>${esc(item.title)}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${(item.pulls || []).map((n) => `PR #${n}`).join(", ")}${(item.issues || []).length ? ` · ${item.issues.map((n) => `issue #${n}`).join(", ")}` : ""}</small></div>`).join("")}</article>`).join("");
     if (!writeInspection(out, `<p class="worker-type">${esc(`${unit.callsign} · ${unit.tagline}`)}</p><h2>${esc(unit.name)}</h2><p class="unit-bot">Judge Bot presiding</p>${mayorBlock}<p class="muted">${mayor?.enabled ? "Judge Bot rules on civilian reports and unit proposals as they arrive; anything it cannot rule on waits here for you." : "Civilian reports and unit proposals wait for your ruling."}</p>${decisions.map((task) => `<button class="task-card" data-task="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>${esc(task.kind)}${task.number > 0 ? ` #${task.number}` : ""} · awaiting ${mayor?.enabled ? "a ruling" : "your ruling"}</small></button>`).join("") || '<p class="muted">Nothing awaits a ruling.</p>'}${overrulableBlock}<h2>The blotter</h2><p class="muted">Judge Bot's public record for the people who use this software: features gained and bugs fixed, from the pull requests that merged.</p>${bulletinRows || '<p class="muted">The blotter is empty. Judge Bot writes an entry after work merges, at most every few hours.</p>'}${quietBlock(t)}${budgetBlock(t)}${setupBlock(t, "hall")}<h2>Clearance stats</h2><div class="outcome-period"><span>Period</span>${[1, 7, 30, 0].map((days) => `<button data-outcome-days="${days}"${days === outcomeDays ? ' class="primary"' : ""}>${days === 0 ? "All" : `${days}d`}</button>`).join("")}<button data-export-outcomes="${outcomeDays}">Export CSV</button></div><div class="outcome-metrics">${metric(outcomes.summary.attempts, "attempts")}${metric(outcomes.summary.findings, "findings")}${metric(outcomes.summary.submitted, "PRs submitted")}${metric(outcomes.summary.merged, "merges")}${metric(outcomes.summary.repairs, "repairs")}${metric(outcomes.summary.blocked, "blocked / abandoned")}${metric(outcomes.summary.releases, "releases")}</div><p class="muted">Finding verdicts: ${outcomes.summary.useful} useful · ${outcomes.summary.falsePositives} false positive · ${outcomes.summary.unjudged} unjudged. Submitted PRs count as artifacts; only repository-confirmed merges count as accepted fixes.</p>${outcomeRows || '<p class="muted">No outcome records in this period.</p>'}<h2>Patrol reports</h2>${
       t.reports
@@ -1347,7 +1310,7 @@ function renderInbox(needs = inbox(state)) {
   // One decision per task at a time, whichever of its two buttons was pressed.
   const deciding = (item) => busy(commandKey(item.town, "hall", "admit", item.task));
   const decisionCard = (item) =>
-    `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · admitting sends it to ${item.kind === "issue" ? "the Task Force" : "Forensics"}</small></div><div class="inbox-actions">${openButton(item, "Open in Courthouse", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit"${deciding(item)}>${item.reviewAgain ? "Review again" : "Admit"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline"${deciding(item)}>Dismiss</button></div></article>`;
+    `<article class="inbox-item decide"><div><strong>${esc(item.title)}</strong><small>${esc([...inboxLabel(item), item.reason].join(" · "))} · probation sends it to ${item.kind === "issue" ? "the Caseworker" : "Forensics"}</small></div><div class="inbox-actions">${openButton(item, "Open in court", true)}<button data-inbox-key="admit:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="admit"${deciding(item)}>${item.reviewAgain ? "Review again" : "Grant probation"}</button><button class="danger" data-inbox-key="decline:${esc(item.task)}" data-inbox-town="${esc(item.town)}" data-inbox-task="${esc(item.task)}" data-inbox-decide="decline"${deciding(item)}>Send to the tank</button></div></article>`;
   const expanded = new Set([...$("#inbox-list").querySelectorAll("[data-inbox-detail]")]
     .filter((detail) => detail.open).map((detail) => detail.dataset.inboxDetail));
   const attentionCard = (item) => {
@@ -1469,19 +1432,16 @@ function motionUI() {
 }
 $("#motion").onclick = () => {
   motion = !motion;
-  if (!motion) {
-    transfers = [];
-    arrests = [];
-  }
+  if (!motion) lastCast = null;
   motionUI();
 };
 motionUI();
+$("#scene-bars")?.setAttribute("style", barsBox());
 matchMedia("(prefers-reduced-motion: reduce)").addEventListener(
   "change",
   (e) => {
     motion = !e.matches;
-    transfers = [];
-    arrests = [];
+    lastCast = null;
     motionUI();
   },
 );

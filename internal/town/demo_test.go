@@ -86,7 +86,7 @@ func TestDemoReportsDescribeTheirOwnTown(t *testing.T) {
 	}
 }
 
-// The exercise's civilian intake includes slop that the Slop Squad dismisses
+// The exercise's civilian intake includes slop that the Magistrate sends to the tank
 // in auto mode, recorded exactly as the live service records that dismissal,
 // so the browser arrests it and books it into the Slop Tank. Case numbers
 // cycle, and a store can outlive a run: a dismissal already holding the
@@ -125,14 +125,14 @@ func TestDemoSlopSquadDismissesASloppyCivilianReport(t *testing.T) {
 	town := state.Towns["brokkai/orchard"]
 	slop := town.Tasks[id]
 	if slop == nil || slop.Kind != "issue" || slop.Number != 742 || slop.Title != demoSlopTitle || !slop.External || slop.House != Hall || slop.Stage != "declined" || slop.MayoralDecision != "" || !autoDeclined(slop) || !closableDecline(slop) {
-		t.Fatalf("the slop is not an auto-mode Slop Squad dismissal: %+v", slop)
+		t.Fatalf("the slop is not an auto-mode Magistrate ruling: %+v", slop)
 	}
-	if s := slop.Simplification; s.Summary == "" || s.Detail == "" || slop.Detail != "The Slop Squad dismissed this case. The Squad is closing the issue." {
+	if s := slop.Simplification; s.Summary == "" || s.Detail == "" || slop.Detail != "The Magistrate sent this case to the Slop Tank. The Squad is closing the issue." {
 		t.Fatalf("the dismissal does not explain itself: %+v %+v", slop, s)
 	}
 	dismissed := false
 	for _, e := range state.Events {
-		if e.Kind == "decision" && e.From == string(Simplifier) && e.To == "hall" && e.Cargo == id && e.Title == "Slop Squad dismissed a sloppy civilian report: "+demoSlopTitle {
+		if e.Kind == "decision" && e.From == string(Simplifier) && e.To == "hall" && e.Cargo == id && e.Title == "Magistrate sent a sloppy civilian report to the tank: "+demoSlopTitle {
 			dismissed = true
 		}
 	}

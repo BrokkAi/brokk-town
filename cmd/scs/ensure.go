@@ -86,7 +86,7 @@ func spawnDetached(base string, demo bool, listen, config string, notify *os.Fil
 		return nil, err
 	}
 	if temporaryBinary(exe) {
-		return nil, fmt.Errorf("%s is a temporary build that cannot run SlopCop Squad in the background; build sct or run it in this terminal", exe)
+		return nil, fmt.Errorf("%s is a temporary build that cannot run SlopCop Squad in the background; build scs or run it in this terminal", exe)
 	}
 	dir := runtimeDir(base, demo)
 	out, errFile, err := openLogs(dir)
@@ -95,7 +95,7 @@ func spawnDetached(base string, demo bool, listen, config string, notify *os.Fil
 	}
 	defer out.Close()
 	defer errFile.Close()
-	// Bare sct runs Town. The state directory is absolute so the child never
+	// Bare scs runs Town. The state directory is absolute so the child never
 	// depends on this process's working directory.
 	args := []string{"--state-dir", base, "--listen", listen}
 	if demo {
@@ -172,16 +172,16 @@ func stopProcess(ctx context.Context, conn connection) error {
 func requireService(ctx context.Context, dir string) (connection, error) {
 	conn, alive := serviceAlive(ctx, dir)
 	if !alive {
-		return conn, errors.New("SlopCop Squad is not running; start sct or sct -d")
+		return conn, errors.New("SlopCop Squad is not running; start scs or scs -d")
 	}
 	return conn, nil
 }
 
-// readyEnv names the descriptor on which a Town started by sct -d reports that
+// readyEnv names the descriptor on which a Town started by scs -d reports that
 // it is serving, in the manner of systemd's sd_notify or s6's notification-fd.
 // The parent blocks on the other end: a ready line means Town is up, and end
 // of file without one means it exited, so a failed start is reported at once.
-const readyEnv = "SCT_READY_FD"
+const readyEnv = "SCS_READY_FD"
 
 // readyPipe is the notification descriptor this process was given, if any.
 var readyPipe *os.File
@@ -198,7 +198,7 @@ func takeReadyPipe() *os.File {
 	return inheritedReady(value)
 }
 
-// signalReady tells a waiting sct -d that Town is serving.
+// signalReady tells a waiting scs -d that Town is serving.
 func signalReady() {
 	if readyPipe == nil {
 		return

@@ -4,8 +4,8 @@ Find new bugs in a repository and file useful GitHub issues for them.
 
 `bug-bot` is a Go package of the
 [SlopCop Squad](https://github.com/BrokkAi/brokk-town) module. Bug Bot staffs the
-**Detectives** unit (role key `bug`), and the Squad runs it in process, so there
-is no standalone binary, server or release tag to install. See
+**Bug Detective** unit (role key `bug`), and the Squad runs it in process, so
+there is no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md) for the whole set and
 [../../docs/workflow.md](../../docs/workflow.md) for how its findings move
 through a precinct.
@@ -44,8 +44,8 @@ creating bug issues. A changed HEAD or a tracked-file edit fails the scan.
 ## Configuration
 
 The Squad fills this configuration from the precinct's agent profile and the
-Detectives unit's work policy, so you normally set it in the browser rather than
-by hand. The package's own fields are:
+Bug Detective unit's work policy, so you normally set it in the browser rather
+than by hand. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

@@ -714,7 +714,7 @@ func outcomeAttemptTask(t *Town, role Role, result RunResult, now time.Time) (st
 func applySimplification(st *State, t *Town, task *Task, assessment *Simplification, runErr error, now time.Time) {
 	if task.House != Simplifier || task.Stage != "simplifying" {
 		if runErr == nil && assessment != nil {
-			st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Slop Squad result discarded; "+task.Title+" left screening while it ran", now)
+			st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Magistrate's ruling discarded; "+task.Title+" left arraignment while it ran", now)
 		}
 		return
 	}
@@ -730,7 +730,7 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 		task.Blocked = task.Attempts >= 3
 		task.Detail = runErr.Error()
 		if task.Blocked {
-			st.Event(t.ID, "error", string(Simplifier), "hall", task.ID, "Slop Squad blocked: "+task.Title, now)
+			st.Event(t.ID, "error", string(Simplifier), "hall", task.ID, "Magistrate stuck: "+task.Title, now)
 		}
 		return
 	}
@@ -751,7 +751,7 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 		task.Stage = "awaiting_mayor"
 		task.House = Hall
 		task.MayoralDecision = "pending"
-		st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Slop Squad advises the judge on: "+task.Title, now)
+		st.Event(t.ID, "decision", string(Simplifier), "hall", task.ID, "Magistrate advises the Probation Judge on: "+task.Title, now)
 		return
 	}
 	task.MayoralDecision = ""
@@ -759,9 +759,9 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 		task.Stage = "declined"
 		task.House = Hall
 		if task.Kind == "issue" {
-			task.Detail = "The Slop Squad dismissed this case. The Squad is closing the issue."
+			task.Detail = "The Magistrate sent this case to the Slop Tank. The Squad is closing the issue."
 			t.Workers[Repo].Next = time.Time{}
-			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Slop Squad dismissed: "+task.Title, now)
+			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Magistrate sent to the tank: "+task.Title, now)
 			return
 		}
 		if !task.External {
@@ -770,20 +770,20 @@ func applySimplification(st *State, t *Town, task *Task, assessment *Simplificat
 			// nothing working on it. Town closes it and starts the issue over,
 			// as after a failed review. The closer claims it at the next
 			// inventory outside quiet hours, so the Mayor can admit it first.
-			task.Detail = "The Slop Squad dismissed the Squad's own pull request. The Squad is closing it and starting the issue over."
+			task.Detail = "The Magistrate sent the Squad's own pull request to the Slop Tank. The Squad is closing it and starting the issue over."
 			t.Workers[Repo].Next = time.Time{}
-			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Slop Squad dismissed: "+task.Title, now)
+			st.Event(t.ID, "decision", string(Simplifier), string(Repo), task.ID, "Magistrate sent to the tank: "+task.Title, now)
 			return
 		}
-		task.Detail = "The Slop Squad dismissed this pull request. The Squad will not review it."
-		st.Event(t.ID, "decision", string(Simplifier), "outside", task.ID, "Slop Squad dismissed: "+task.Title, now)
+		task.Detail = "The Magistrate sent this pull request to the Slop Tank. The Squad will not review it."
+		st.Event(t.ID, "decision", string(Simplifier), "outside", task.ID, "Magistrate sent to the tank: "+task.Title, now)
 		return
 	}
 	target := Review
 	if task.Kind == "issue" {
 		target = Issue
 	}
-	st.Move(t, task, "queued", target, "Slop Squad admitted: "+task.Title, now)
+	st.Move(t, task, "queued", target, "Magistrate set free: "+task.Title, now)
 	t.Workers[target].Next = time.Time{}
 }
 
@@ -1113,7 +1113,7 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 					}
 					if task := current.Tasks[id]; task != nil && task.Stage == "closing" && task.MayoralDecision == "" {
 						task.Stage = "declined"
-						task.Detail = fmt.Sprintf("GitHub refused to close this issue (HTTP %d). The Slop Squad's dismissal stands; the judge can admit it anyway.", rejected.Status)
+						task.Detail = fmt.Sprintf("GitHub refused to close this issue (HTTP %d). The Magistrate's ruling stands; the Probation Judge can grant probation anyway.", rejected.Status)
 						task.Updated = s.now()
 						st.Event(t.ID, "error", string(Repo), "hall", id, "GitHub refused to close: "+task.Title, s.now())
 					}
@@ -1143,8 +1143,8 @@ func (s *Supervisor) closeDeclinedProposals(ctx context.Context, t *Town, remote
 				task.Detail = "The judge dismissed this proposal. The Squad closed the issue."
 				st.Event(t.ID, "decision", "hall", string(Repo), id, "Dismissed proposal closed: "+task.Title, s.now())
 			} else {
-				task.Detail = "The Slop Squad dismissed this low-value complex issue. The Squad closed it."
-				st.Event(t.ID, "decision", string(Simplifier), string(Repo), id, "Slop Squad closed: "+task.Title, s.now())
+				task.Detail = "The Magistrate sent this low-value complex issue to the Slop Tank. The Squad closed it."
+				st.Event(t.ID, "decision", string(Simplifier), string(Repo), id, "Magistrate closed: "+task.Title, s.now())
 			}
 			return nil
 		}); err != nil {
@@ -1366,7 +1366,7 @@ func resetTaskForRetry(t *Town, task *Task) {
 }
 
 // houseName is the operator-facing prefix of a unit's bot name, as in
-// "Review Bot". The Courthouse's bot is Judge Bot.
+// "Review Bot". The Probation Judge's bot is Judge Bot.
 func houseName(role Role) string {
 	if role == Hall {
 		return "Judge"
@@ -1381,15 +1381,15 @@ func unitName(role Role) string {
 	case Repo:
 		return "Patrol"
 	case Bug:
-		return "Detectives"
+		return "Bug Detective"
 	case Feature:
-		return "Intel"
+		return "Feature Detective"
 	case Simplifier:
-		return "Slop Squad"
+		return "Magistrate"
 	case Hall:
-		return "Courthouse"
+		return "Probation Judge"
 	case Issue:
-		return "Task Force"
+		return "Caseworker"
 	case Review:
 		return "Forensics"
 	case Release:

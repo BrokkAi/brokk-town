@@ -123,7 +123,7 @@ func (m *managedDispatch) finish(ctx context.Context) error {
 // startRemoteAgent exposes only a single frozen review revision on a private
 // socket. It cannot run arbitrary commands, switch targets, publish, or merge.
 func startRemoteAgent(ctx context.Context, m *managedDispatch, head string) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "sct-agent-")
+	dir, err := os.MkdirTemp("", "scs-agent-")
 	if err != nil {
 		return "", nil, err
 	}

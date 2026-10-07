@@ -1,12 +1,12 @@
 # Judge Bot
 
-The judge in SlopCop Squad: it rules on arrivals and keeps each precinct's
-blotter.
+The Probation Judge in SlopCop Squad: it rules on arrivals, probation or the
+Slop Tank, and keeps each precinct's blotter.
 
 Judge Bot is the `mayor-bot` package (`bots/mayor-bot`), a Go package of the
 [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town) module. The package
 name, the `hall` role key and the `mayoral_decision` field keep their original
-names. Judge Bot staffs the **Courthouse** unit, and the Squad runs it in
+names. Judge Bot staffs the **Probation Judge** unit, and the Squad runs it in
 process, so there is no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
@@ -15,13 +15,14 @@ process, so there is no standalone binary, server or release tag to install. See
 
 The Squad asks Judge Bot for one of two one-shot duties.
 
-**judge** — rule on one arrival waiting at the Courthouse: an issue, an external
-pull request, or a bot proposal. Judge Bot reads the Squad's description of the
-arrival (including any Slop Squad advice or the Squad's own review), the live
-GitHub discussion, and the repository at the exact revision in a detached
-worktree. It answers *admit* or *decline* (dismiss) — *delay* (continue) for a
-bot update — with a reason a person can audit. The Squad applies the ruling
-through the same path your own click would use.
+**judge** — rule on one arrival waiting in Probation Court: an issue, an
+external pull request, or a bot proposal. Judge Bot reads the Squad's
+description of the arrival (including any advice from the Magistrate or the
+Squad's own review), the live GitHub discussion, and the repository at the
+exact revision in a detached worktree. It answers *admit* (grant probation) or
+*decline* (send to the Slop Tank) — *delay* (continue) for a bot update — with a
+reason a person can audit. The Squad applies the ruling through the same path
+your own click would use.
 
 **bulletin** — summarise the pull requests merged into the covered branch in one
 window, for the people who use the software: features gained and bugs fixed, in
@@ -39,7 +40,7 @@ requests from its own window.
 ## Configuration
 
 The Squad fills this configuration from the precinct's agent profile and the
-Courthouse unit's policy. The package's own fields are:
+Probation Judge unit's policy. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

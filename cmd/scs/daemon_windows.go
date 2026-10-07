@@ -33,7 +33,7 @@ func passReady(cmd *exec.Cmd, notify *os.File) string {
 	return strconv.FormatUint(uint64(handle), 10)
 }
 
-// inheritedReady opens the handle a parent sct -d passed as value.
+// inheritedReady opens the handle a parent scs -d passed as value.
 func inheritedReady(value string) *os.File {
 	n, err := strconv.ParseUint(value, 10, 64)
 	if err != nil || n == 0 {

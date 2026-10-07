@@ -37,9 +37,9 @@ func checkFlags(fs *flag.FlagSet, cmd *commandInfo, explicit bool) error {
 	if len(stray) == 0 {
 		return nil
 	}
-	where, help := "sct "+cmd.name, "sct "+cmd.name+" --help"
+	where, help := "scs "+cmd.name, "scs "+cmd.name+" --help"
 	if !explicit {
-		where, help = "sct", "sct --help"
+		where, help = "scs", "scs --help"
 	}
 	return fmt.Errorf("%s: not a flag of %s\nRun '%s' for usage", strings.Join(stray, ", "), where, help)
 }
@@ -66,7 +66,7 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 	conn, alive := serviceAlive(ctx, dir)
 	if asJSON {
 		if !alive {
-			return errors.New("SlopCop Squad is not running; start sct or sct -d")
+			return errors.New("SlopCop Squad is not running; start scs or scs -d")
 		}
 		var state any
 		if err := request(ctx, conn, "GET", "/api/state", nil, &state); err != nil {

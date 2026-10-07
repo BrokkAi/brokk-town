@@ -12,13 +12,13 @@ export const botNames = {
 };
 export const houseAuthorities = {
   bug: "May inspect repository content and file GitHub bug issues.",
-  simplifier: "May inspect repository content, file simplification issues, and in auto mode recommend that the Squad dismiss or close low-value complex issues.",
+  simplifier: "May inspect repository content, file simplification issues, and in auto mode send low-value complex issues to the Slop Tank, which closes them.",
   feature: "May inspect repository content and propose or file GitHub feature issues.",
   issue: "May claim issues, create pull requests, and push repairs to branches the Squad owns.",
   review: "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches.",
   release: "May create and merge release-preparation pull requests and publish releases and packages.",
   repo: "Inventories repository state, and repairs the branch it covers when its checks fail.",
-  hall: "Rules on every arrival at the Courthouse and keeps the blotter of features gained and bugs fixed; it never edits the repository or GitHub.",
+  hall: "Rules on every arrival, probation or the Slop Tank, and keeps the blotter of features gained and bugs fixed; it never edits the repository or GitHub.",
 };
 
 export function houseAuthority(role, mergePolicy = "bot") {
@@ -266,7 +266,7 @@ export const taskStatuses = {
   draft: { label: "Draft", className: "draft" },
   working: { label: "Working", className: "working" },
   queued: { label: "Queued", className: "queued" },
-  simplifying: { label: "In screening", className: "queued" },
+  simplifying: { label: "At arraignment", className: "queued" },
   awaiting_mayor: { label: "Awaiting ruling", className: "waiting-github" },
   declined: { label: "Dismissed", className: "closed" },
   delayed: { label: "Continued", className: "waiting-github" },
@@ -287,7 +287,7 @@ export const taskStatuses = {
 };
 export const boardColumns = [
   { id: "open", label: "Open" },
-  { id: "simplifier", label: "Screening" },
+  { id: "simplifier", label: "Arraignment" },
   { id: "queued", label: "Queued" },
   { id: "in_progress", label: "In progress" },
   { id: "blocked", label: "Blocked" },
@@ -377,8 +377,8 @@ export function townControls(town) {
   );
   const awake = agents.filter((w) => w.enabled).length;
   const names = manual
-    ? "Detectives, Intel, Slop Squad, the Courthouse, Task Force and Forensics; Release stays stood down while every merge is manual"
-    : "Detectives, Intel, Slop Squad, the Courthouse, Task Force, Forensics and Release";
+    ? "the detectives, the Magistrate, the Probation Judge, the Caseworker and Forensics; Release stays stood down while every merge is manual"
+    : "the detectives, the Magistrate, the Probation Judge, the Caseworker, Forensics and Release";
   if (!awake)
     return { status: "Off duty", statusClass: "paused", primary: { action: "start", label: `▶ Start patrol (${agents.length})` }, secondary: null, detail: `Deploys ${names}. Patrol already walks the beat.` };
   // Quiet hours are a scheduled pause: the units stay deployed and resume on

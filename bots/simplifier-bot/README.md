@@ -1,10 +1,11 @@
 # Simplifier Bot
 
-The complexity and value screener in SlopCop Squad.
+The Magistrate in SlopCop Squad: it arraigns every arrival, weighing its
+complexity against its value.
 
 `simplifier-bot` is a Go package of the
 [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town) module. Simplifier Bot
-staffs the **Slop Squad** unit (role key `simplifier`), and the Squad runs it in
+staffs the **Magistrate** unit (role key `simplifier`), and the Squad runs it in
 process, so there is no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
@@ -14,9 +15,9 @@ process, so there is no standalone binary, server or release tag to install. See
 The Squad runs it in two ways.
 
 **assessing one arrival** — every incoming issue and external pull request is
-screened before normal issue or review work. The assessment is a bounded
-admission or dismissal recommendation attached to a ruling. The judge remains
-the decision maker in *suggest* mode.
+arraigned before normal issue or review work. The assessment is a bounded
+recommendation, probation or the Slop Tank, attached to a ruling. The Probation
+Judge remains the decision maker in *suggest* mode.
 
 **scanning the repository** — the bot proposes removal or replacement of
 subsystems that add disproportionate complexity or deliver little value, and files
@@ -24,14 +25,15 @@ those proposals as marked GitHub issues.
 
 The precinct's `simplifier_mode` chooses what happens to an assessment:
 
-- **suggest** — the arrival goes to the Courthouse and the judge rules.
-- **auto** — the Squad admits routine work, dismisses low-value complex work,
-  and closes low-value complex issues without a separate ruling. An operator can
-  still admit an auto-dismissal before the closer claims it.
+- **suggest** — the arrival goes to the Probation Judge, who rules.
+- **auto** — the Magistrate sets routine work free, sends low-value complex
+  work to the Slop Tank, and closes low-value complex issues without a separate
+  ruling. An operator can still grant probation anyway before the closer claims
+  it.
 
 The implementation is deliberately conservative: it must not recommend removing
 security, privacy, correctness, accessibility, durability, observability, or
-legally required behaviour, and uncertain cases are admitted for human review.
+legally required behaviour, and uncertain cases are let through for human review.
 Issues it files carry a hidden `<!-- simplifier-bot:… -->` marker and are not
 routed back through it.
 
@@ -44,7 +46,7 @@ edit or a moved revision fails an assessment.
 ## Configuration
 
 The Squad fills this configuration from the precinct's agent profile and the
-Slop Squad unit's policy in the browser. The package's own fields are:
+Magistrate unit's policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

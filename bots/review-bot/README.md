@@ -32,7 +32,7 @@ there is no standalone binary, server or release tag to install. See
 
 The result is a certified audit the Squad uses to decide the next step: a clean
 review advances the pull request, a first round of findings goes back to the
-Task Force for one repair, and a second round decides between merge with
+Caseworker for one repair, and a second round decides between merge with
 follow-ups and closing.
 
 ## What it never does
@@ -71,7 +71,8 @@ most 10 findings.
 
 A revision gets at most two attempts at any step. The first incomplete attempt
 earns one more after a short delay; the second retires the pull request for that
-revision, which the Squad then closes or hands to the Courthouse for a ruling.
+revision, which the Squad then closes or hands to the Probation Judge for a
+ruling.
 
 ## Development
 

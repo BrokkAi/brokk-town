@@ -62,11 +62,11 @@ func TestBannersKeepAccessKeyOffRedirectedOutput(t *testing.T) {
 		stubTerminal(t, false)
 		for _, demo := range []bool{false, true} {
 			got := banner(demo)
-			if strings.Contains(got, "secret-key") || !strings.Contains(got, "run sct web") {
+			if strings.Contains(got, "secret-key") || !strings.Contains(got, "run scs web") {
 				t.Fatalf("%s redirected: %q", name, got)
 			}
 		}
-		if got := banner(true); !strings.Contains(got, "sct web --demo") {
+		if got := banner(true); !strings.Contains(got, "scs web --demo") {
 			t.Fatalf("%s redirected demo: %q", name, got)
 		}
 	}

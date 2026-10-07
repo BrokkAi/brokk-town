@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// This file gives sct a cobra-style help surface without the cobra
+// This file gives scs a cobra-style help surface without the cobra
 // dependency: Usage / Available Commands / Flags sections, per-command
 // help, and a help command. Flag parsing stays on the standard library.
 
@@ -46,17 +46,17 @@ type commandInfo struct {
 // select which service a client talks to.
 var globalFlagNames = []string{"demo", "state-dir"}
 
-// runFlagNames start Town: bare sct in the foreground, or sct -d.
+// runFlagNames start Town: bare scs in the foreground, or scs -d.
 var runFlagNames = []string{"config", "d", "listen"}
 
-// rootCommand is bare sct, which runs Town rather than a client command.
+// rootCommand is bare scs, which runs Town rather than a client command.
 var rootCommand = commandInfo{flags: runFlagNames}
 
 var cliCommands = []commandInfo{
 	{name: "status", short: "Show whether the Squad is running and its precincts", long: "Show whether the Squad is running, where, and which precincts it serves. Use --json for the full Squad state.", args: "[flags]", flags: []string{"json"}},
 	{name: "web", short: "Print the browser address for the Squad", long: "Print the browser address, with its access key, for the running Squad.", args: "[flags]", flags: nil},
-	{name: "shutdown", short: "Stop the Squad and its bots", long: "Stop the running SlopCop Squad service and all its bot processes. Use it for a Squad started with sct -d; Ctrl+C stops one in the foreground.", args: "[flags]", flags: nil},
-	{name: "version", short: "Print the version", long: "Print the sct version.", args: "", flags: nil},
+	{name: "shutdown", short: "Stop the Squad and its bots", long: "Stop the running SlopCop Squad service and all its bot processes. Use it for a Squad started with scs -d; Ctrl+C stops one in the foreground.", args: "[flags]", flags: nil},
+	{name: "version", short: "Print the version", long: "Print the scs version.", args: "", flags: nil},
 }
 
 func findCommand(name string) *commandInfo {
@@ -171,20 +171,20 @@ func writeCommands(out io.Writer, cmds []commandInfo) {
 // flags, and the --help pointer.
 func printRootHelp(out io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintln(out, "SlopCop Squad — a local service with a browser.")
-	fmt.Fprintln(out, "Run sct in the foreground, or sct -d in the background. Ctrl+C or sct shutdown stops the Squad and its bots.")
-	fmt.Fprintln(out, "Use sct web for the browser address. Manage precincts, units, cases and settings in the browser.")
+	fmt.Fprintln(out, "Run scs in the foreground, or scs -d in the background. Ctrl+C or scs shutdown stops the Squad and its bots.")
+	fmt.Fprintln(out, "Use scs web for the browser address. Manage precincts, units, cases and settings in the browser.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
-	fmt.Fprintln(out, "  sct [command] [flags]")
-	fmt.Fprintln(out, "  sct [flags]")
+	fmt.Fprintln(out, "  scs [command] [flags]")
+	fmt.Fprintln(out, "  scs [flags]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Available Commands:")
 	withHelp := append(append([]commandInfo(nil), cliCommands...), commandInfo{name: "help", short: "Show help for a command"})
 	writeCommands(out, withHelp)
 	fmt.Fprintln(out)
-	writeFlagSection(out, fs, append(append([]string(nil), runFlagNames...), globalFlagNames...), "Flags", "sct")
+	writeFlagSection(out, fs, append(append([]string(nil), runFlagNames...), globalFlagNames...), "Flags", "scs")
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, `Use "sct [command] --help" for more information about a command.`)
+	fmt.Fprintln(out, `Use "scs [command] --help" for more information about a command.`)
 }
 
 // printCommandHelp renders help for one command with its own flags plus the
@@ -198,7 +198,7 @@ func printCommandHelp(out io.Writer, fs *flag.FlagSet, name string) {
 	fmt.Fprintln(out, c.long)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
-	usage := "  sct " + c.name
+	usage := "  scs " + c.name
 	if c.args != "" {
 		usage += " " + c.args
 	}
@@ -208,8 +208,8 @@ func printCommandHelp(out io.Writer, fs *flag.FlagSet, name string) {
 	}
 	if len(c.flags) > 0 {
 		fmt.Fprintln(out)
-		writeFlagSectionWithHelp(out, fs, c.flags, "Flags", "sct "+c.name, false)
+		writeFlagSectionWithHelp(out, fs, c.flags, "Flags", "scs "+c.name, false)
 	}
 	fmt.Fprintln(out)
-	writeFlagSection(out, fs, globalFlagNames, "Global Flags", "sct "+c.name)
+	writeFlagSection(out, fs, globalFlagNames, "Global Flags", "scs "+c.name)
 }

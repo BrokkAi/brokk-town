@@ -17,45 +17,48 @@ state use the role key.
 | Bot | Package | Role key | Unit |
 | --- | --- | --- | --- |
 | Repo Bot | `bots/repo-bot` | `repo` | Patrol |
-| Bug Bot | `bots/bug-bot` | `bug` | Detectives |
-| Feature Bot | `bots/feature-bot` | `feature` | Intel |
-| Simplifier Bot | `bots/simplifier-bot` | `simplifier` | Slop Squad |
-| Judge Bot | `bots/mayor-bot` | `hall` | Courthouse |
-| Issue Bot | `bots/issue-bot` | `issue` | Task Force |
+| Bug Bot | `bots/bug-bot` | `bug` | Bug Detective |
+| Feature Bot | `bots/feature-bot` | `feature` | Feature Detective |
+| Simplifier Bot | `bots/simplifier-bot` | `simplifier` | Magistrate |
+| Judge Bot | `bots/mayor-bot` | `hall` | Probation Judge |
+| Issue Bot | `bots/issue-bot` | `issue` | Caseworker |
 | Review Bot | `bots/review-bot` | `review` | Forensics |
 | Release Bot | `bots/release-bot` | `release` | Release |
 
 ## bug-bot (`role: bug`)
 
-Package `bots/bug-bot`, staffing the Detectives. Investigates the repository and
-files useful GitHub bug issues. The agent decides whether a finding duplicates
-an existing open or closed issue by comparing root cause, inputs, behaviour and
-discussion — there is no title-similarity heuristic. Findings are verified
-before they are filed, and each issue carries a `<!-- bug-bot:... -->` marker so
-a rescan does not refile it.
+Package `bots/bug-bot`, staffing the Bug Detective. Investigates the repository
+and files useful GitHub bug issues. The agent decides whether a finding
+duplicates an existing open or closed issue by comparing root cause, inputs,
+behaviour and discussion — there is no title-similarity heuristic. Findings are
+verified before they are filed, and each issue carries a `<!-- bug-bot:... -->`
+marker so a rescan does not refile it.
 
 - Policy: `labels`, `focus`, `limit` (issues filed per run), `attempts`, `verify`.
 - Discovery scans are spaced thirty minutes apart by the supervisor.
 
 ## feature-bot (`role: feature`)
 
-Package `bots/feature-bot`, staffing Intel. Researches capabilities the project
-does not have yet, compares them against existing requests, and files concrete
-proposals. It shares bug-bot's discovery shape with a feature-specific prompt
-and proposal schema, and marks its issues `<!-- feature-bot:... -->`.
+Package `bots/feature-bot`, staffing the Feature Detective. Researches
+capabilities the project does not have yet, compares them against existing
+requests, and files concrete proposals. It shares bug-bot's discovery shape with
+a feature-specific prompt and proposal schema, and marks its issues
+`<!-- feature-bot:... -->`.
 
 - Policy: `labels`, `focus`, `limit` (proposals filed per run), `attempts`, `verify`.
 - Discovery scans are spaced thirty minutes apart.
 
 ## simplifier-bot (`role: simplifier`)
 
-Package `bots/simplifier-bot`, staffing the Slop Squad. The complexity and value
-screener. It has two modes, selected per precinct (`simplifier_mode`):
+Package `bots/simplifier-bot`, staffing the Magistrate. It arraigns every
+arrival, weighing its complexity against its value. It has two modes, selected
+per precinct (`simplifier_mode`):
 
-- **suggest** — attach a bounded admission/dismissal recommendation to a ruling.
-  The judge stays the decision maker.
-- **auto** — let the Squad admit routine work, dismiss low-value complex work,
-  and close low-value complex issues without a separate ruling.
+- **suggest** — attach a bounded recommendation, probation or the Slop Tank, to
+  a ruling. The Probation Judge stays the decision maker.
+- **auto** — let the Magistrate set routine work free, send low-value complex
+  work to the Slop Tank, and close low-value complex issues without a separate
+  ruling.
 
 It also reads whole-batch arrivals to propose simplification work. Its issues
 carry a `<!-- simplifier-bot:... -->` marker.
@@ -64,11 +67,11 @@ carry a `<!-- simplifier-bot:... -->` marker.
 
 ## mayor-bot (`role: hall`)
 
-Package `bots/mayor-bot`, shown as **Judge Bot**, staffing the Courthouse. It
-has two duties, both one-shot:
+Package `bots/mayor-bot`, shown as **Judge Bot**, staffing the Probation Judge.
+It has two duties, both one-shot:
 
 - **judge** — rule on one arrival: an issue, a pull request, or a bot update.
-  Judge Bot reads the Squad's description of the arrival, any Slop Squad advice,
+  Judge Bot reads the Squad's description of the arrival, any Magistrate advice,
   the live GitHub discussion and the repository itself, and returns a ruling
   with a reason.
 - **bulletin** — write the precinct's blotter, the work-completed feed. A
@@ -79,7 +82,7 @@ has two duties, both one-shot:
 
 ## issue-bot (`role: issue`)
 
-Package `bots/issue-bot`, staffing the Task Force. Claims eligible issues, gives
+Package `bots/issue-bot`, staffing the Caseworker. Claims eligible issues, gives
 a coding agent one focused attempt at each, and opens pull requests it owns. It
 keeps durable per-issue job records — status, failure, claim state, retry
 eligibility, URL and branch — that the Squad imports into the case's

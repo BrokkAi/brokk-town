@@ -18,7 +18,7 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-//go:embed index.html style.css badge.svg app.js town.js precinct.js animation.js tools.js manage.js execution.js attention.js storage.js history.js guide.js
+//go:embed index.html style.css badge.svg app.js town.js precinct.js animation.js scene.js tools.js manage.js execution.js attention.js storage.js history.js guide.js
 var files embed.FS
 
 type Server struct {
@@ -32,7 +32,7 @@ type Server struct {
 	// interface. A nil handle means live details are unavailable.
 	TaskGitHub taskGitHub
 	// Shutdown, when set, stops the service after the request is answered. It
-	// is how sct shutdown reaches a service it cannot signal, as on Windows.
+	// is how scs shutdown reaches a service it cannot signal, as on Windows.
 	Shutdown func()
 }
 

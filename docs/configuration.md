@@ -44,7 +44,7 @@ hours and never in demo mode. Command output is discarded. See
 | `poll_seconds` | config file | 60 | Base cadence for intake and repair work. Minimum 10. |
 | `report_seconds` | config file | 1800 | Cadence for periodic patrol reports. Minimum 60. |
 | `max_cycles` | config file | 5 | Attempts allowed per case before it is held. 1–20. |
-| `simplifier_mode` | config file | `suggest` | `suggest` routes arrivals through the Courthouse for a ruling; `auto` lets the Squad dismiss low-value work. |
+| `simplifier_mode` | config file | `suggest` | `suggest` routes arrivals through the Probation Judge for a ruling; `auto` lets the Magistrate send low-value work to the Slop Tank. |
 | `bulletin_seconds` | config file | 86400 | Minimum interval between blotter entries from Judge Bot. At least 600. |
 | `review_close_severity` | Settings | `P2` | Least severe finding that closes a PR after the second review. |
 | `budget` | Settings | none | Agent attempt/minute cap per accounting period. |
@@ -82,13 +82,13 @@ accepted.
 
 | Unit (role key) | Supported policy fields |
 | --- | --- |
-| Detectives (`bug`), Intel (`feature`) | `labels`, `focus`, `limit`, `attempts`, `verify` |
-| Task Force (`issue`) | `labels`, `exclude-labels`, `only`, `attempts`, `verify` |
+| Bug Detective (`bug`), Feature Detective (`feature`) | `labels`, `focus`, `limit`, `attempts`, `verify` |
+| Caseworker (`issue`) | `labels`, `exclude-labels`, `only`, `attempts`, `verify` |
 | Forensics (`review`) | `labels`, `exclude-labels`, `only`, `focus`, `limit`, `attempts`, `verify` |
 | Release (`release`) | `attempts`, `verify`, plus every release flag below |
-| Slop Squad (`simplifier`) | `labels`, `limit`, `verify` |
+| Magistrate (`simplifier`) | `labels`, `limit`, `verify` |
 | Patrol (`repo`) | `limit`, `verify` |
-| Courthouse (`hall`) | `limit`, `verify` |
+| Probation Judge (`hall`) | `limit`, `verify` |
 
 - `labels` is the set of labels work must carry to be eligible.
 - `exclude-labels` removes work carrying any of them.
@@ -178,7 +178,7 @@ explicit hold until you select direct local execution. See
 
 ## Config file
 
-`sct --config FILE` seeds settings at startup. Two shapes are accepted.
+`scs --config FILE` seeds settings at startup. Two shapes are accepted.
 
 **Array** — a list of precinct configurations:
 

@@ -246,7 +246,7 @@ func (s *Supervisor) publishRequest(ctx context.Context, id, requestID string) {
 }
 
 func confirmRequest(st *State, t *Town, r *IssueRequest, issue RemoteIssue, now time.Time) {
-	r.Status, r.Number, r.URL, r.Detail = "confirmed", issue.Number, issue.URL, "Issue created and sent to the Slop Squad for screening."
+	r.Status, r.Number, r.URL, r.Detail = "confirmed", issue.Number, issue.URL, "Issue created and sent to the Magistrate for arraignment."
 	r.Next = time.Time{}
 	id := fmt.Sprintf("issue:%d", issue.Number)
 	if t.Tasks[id] == nil {

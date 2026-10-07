@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-- Rename Brokk Town to SlopCop Squad. The binary is now `sct` (`cmd/sct`),
-  release archives are `slopcop-squad_*`, the default state directory is
-  `slopcop-squad`, and the environment prefix is `SLOPCOP_SQUAD_`. An existing
-  `brokk-town` state directory keeps being used until it is moved,
+- Rename Brokk Town to SlopCop Squad. The binary is now `scs` (`cmd/scs`,
+  formerly `bt`), release archives are `slopcop-squad_*`, the default state
+  directory is `slopcop-squad`, and the environment prefix is `SLOPCOP_SQUAD_`.
+  An existing `brokk-town` state directory keeps being used until it is moved,
   `BROKK_TOWN_MUSE_PERMISSIONS` is still honoured, the Mjolnir settings are
   now `SLOPCOP_SQUAD_MJOLNIR_*` with `BT_MJOLNIR_*` still read, and the Squad still
   recognises the `<!-- brokk-town… -->` markers on issues, comments and Slack
@@ -13,29 +13,41 @@
   Contact is now feedback@slopcop.ai. The Go module path and repository are
   unchanged.
 - Rebuild the browser from scratch around a law-enforcement identity. Each
-  repository is now a precinct. The default **Precinct** view shows a precinct's
-  roster of units, its open cases in case-flow lanes from leads to release, and
-  the **Radio**, a live log of the precinct's events by callsign. The **Board**
-  and **Compact** views remain. The browser is plain HTML, CSS and ES modules.
+  repository is now a precinct. The default **Precinct** view is an animated
+  cutaway of the precinct house and its courthouse, next to the **Radio**, a
+  live log of the precinct's events by callsign. The **Board** view keeps the
+  case-flow columns, and the **Compact** view remains. The browser is plain
+  HTML, CSS and ES modules.
 - Remove the Town and Frontline themes, the Frontline factions, every pixel-art
   asset and the theme toggle. The browser no longer draws a canvas or ships
   images, and the Feature Bot artwork and `docs/themes.md` are gone.
 - Speak cops and law in the browser and the docs: towns are precincts, houses
-  are units (Patrol, Detectives, Intel, Slop Squad, Courthouse, Task Force,
-  Forensics, Release), tasks are cases, Town Hall is the Courthouse, Mayoral
-  decisions are rulings that admit, dismiss or continue an arrival, the bulletin
-  is the blotter, Town Guide is the Desk Sergeant, History is the Case archive,
+  are units, tasks are cases, Mayoral decisions are rulings that grant an
+  arrival probation, send it to the Slop Tank or continue it, the bulletin is
+  the blotter, Town Guide is the Desk Sergeant, History is the Case archive,
   Storage is the Evidence locker, and service-wide settings are Squad settings.
   Your own actions appear on the Radio as CPT, the captain.
+- Name the units Patrol, the Bug Detective, the Feature Detective, the
+  Magistrate, the Probation Judge, the Caseworker, Forensics and Release. The
+  two detectives find new slop. Every arrival is arraigned before the
+  Magistrate (Simplifier Bot), and the Probation Judge (formerly Town Hall,
+  staffed by Judge Bot) grants it probation with the Caseworker or Forensics,
+  or sends it to the Slop Tank. The Caseworker (Issue Bot) rehabilitates it, Forensics
+  examines the evidence and Release ships the reformed. Ruling buttons read
+  **Grant probation** and **Send to the tank**.
 - Show the Mayor as Judge Bot. The package is still `bots/mayor-bot`.
-- Add a small cartoon layer to the Precinct view: a robot cop on each unit card
-  that dozes through quiet hours and waves under a red light when its unit is stuck, a
-  squad car that drives every transfer between lanes and stamps the arrival,
-  and the **Slop Tank** below the case flow, which holds the precinct's
-  dismissed cases as cuffed slop blobs and receives each new dismissal by paddy
-  wagon. It only decorates committed state and sends no commands; **Motion
-  off** or the operating system's reduced-motion setting stops its animation.
-  The art is inline SVG and CSS.
+- Draw the Precinct view as an animated cutaway of the precinct house with the
+  courthouse attached: the Squad Room, Evidence Lab, Rehab, Break Room,
+  Booking, Slop Tank and Release on three floors joined by an elevator, and
+  Probation Court and Arraignment over the skybridge. Each unit's robot officer
+  stands at its post with a tag and naps in the Break Room through quiet hours.
+  Every open case is a slop blob in the room of the unit holding it; when a
+  case moves, its blob walks there and the room stamps it. Slop that is thrown
+  out is cuffed and locked in the Slop Tank, and slop whose work merges comes
+  out reformed and leaves on the release bus. The case-flow columns are now
+  only in the **Board** view. The scene only decorates committed state and
+  sends no commands; **Motion off** or the operating system's reduced-motion
+  setting stops its animation. The art is inline SVG and CSS.
 - Keys 1–8 now select units in roster order, from Patrol to Release, and P
   selects the Precinct view in place of T.
 - The local API, config keys, role keys, event kinds and `state.json` are
