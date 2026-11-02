@@ -156,7 +156,7 @@ func (b *BotWorkers) recordTranscripts(id string, role Role, before map[string]b
 	if err := b.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil {
-			return errors.New("precinct missing")
+			return errors.New("repository missing")
 		}
 		if t.Artifacts == nil {
 			t.Artifacts = map[string]ArtifactRecord{}

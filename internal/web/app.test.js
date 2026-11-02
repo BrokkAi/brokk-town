@@ -221,7 +221,7 @@ function installFixture() {
       if (existing) return existing;
       return Object.values(elements).map((element) => element.querySelector(selector)).find(Boolean) || null;
     }
-    if (selector === ".precinct") return (elements.precinct ||= new Element("section", "precinct"));
+    if (selector === ".pipeline-section") return (elements["pipeline-section"] ||= new Element("section", "pipeline-section"));
     if (selector === ".activity") return elements.journal?.parent || elements.activity || (elements.journal && (elements.journal.parent = new Element("section", "activity")));
     if (selector === ".town-controls") return elements["town-toggle"]?.parent || elements["town-toggle"];
     return Object.values(elements).find((element) => element.matches(selector)) || Object.values(elements).map((element) => element.querySelector(selector)).find(Boolean) || null;
@@ -326,14 +326,14 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   };
   await import(`./app.js?dom-test=${Date.now()}`);
   for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(elements["capacity-summary"].textContent, "1/4 on duty");
+  assert.equal(elements["capacity-summary"].textContent, "1/4 workers");
   assert.equal(elements["town-version"].textContent, "v0.1.2");
-  assert.equal(elements["help-version"].textContent, "SlopCop Squad v0.1.2");
+  assert.equal(elements["help-version"].textContent, "Brokk Town v0.1.2");
 
   const views = document.querySelectorAll("#view-switcher [data-view]");
   views.find((button) => button.dataset.view === "board").onclick();
   assert.equal(elements.board.hidden, false);
-  assert.equal(elements.precinct.hidden, true);
+  assert.equal(elements["pipeline-section"].hidden, true);
   assert.equal(elements.compact.hidden, true);
   const boardLists = elements.board.querySelectorAll("[data-board-list]");
   assert.equal(boardLists.length, 6, "board exposes each populated column as its own list");
@@ -370,42 +370,42 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   views.find((button) => button.dataset.view === "compact").onclick();
   assert.equal(elements.compact.hidden, false);
   assert.equal(elements.board.hidden, true);
-  document.dispatchEvent({ type: "keydown", key: "p", target: new Element("div") });
-  assert.equal(elements.precinct.hidden, true, "Precinct view preserves all-town overview until a town is selected");
+  document.dispatchEvent({ type: "keydown", key: "o", target: new Element("div") });
+  assert.equal(elements["pipeline-section"].hidden, true, "Overview preserves the all-repository view until a town is selected");
   document.dispatchEvent({ type: "keydown", key: "b", target: new Element("div") });
   assert.equal(elements.board.hidden, false, "keyboard shortcut opens Board");
   document.dispatchEvent({ type: "keydown", key: "c", target: new Element("div") });
   assert.equal(elements.compact.hidden, false, "keyboard shortcut opens Compact");
 
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  assert.equal(elements["town-state"].hidden, false, "header shows the town's duty state");
-  assert.equal(elements["town-state"].textContent, "On patrol · 4 units");
-  assert.equal(elements["town-toggle"].textContent, "Ⅱ Stand down", "toggle offers the action that changes state");
+  assert.equal(elements["town-state"].hidden, false, "header shows the town's run state");
+  assert.equal(elements["town-state"].textContent, "Running · 4 bots");
+  assert.equal(elements["town-toggle"].textContent, "Pause all", "toggle offers the action that changes state");
   assert.equal(elements["town-toggle"].classList.contains("primary"), false);
-  assert.equal(elements["pause-all"].hidden, true, "no separate stand-down when every unit is deployed");
-  const unitCard = (role) =>
-    elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === role).textContent;
-  assert.match(unitCard("review"), /claude/, "the roster names each unit's harness");
-  assert.match(unitCard("review"), /claude-opus-5/, "the roster names each unit's model");
-  assert.match(unitCard("review"), /high/, "the roster names each unit's effort");
-  assert.match(unitCard("issue"), /codex/, "a unit inheriting town defaults still shows them");
-  assert.match(unitCard("issue"), /medium/, "a unit inheriting town defaults still shows its effort");
-  assert.match(unitCard("repo"), /repo-repair-model/, "Patrol names its repair profile");
-  assert.match(unitCard("simplifier"), /MAG.*Magistrate.*Simplifier Bot/s, "a unit reads as callsign, name and the bot staffing it");
-  assert.match(unitCard("simplifier"), /codex/, "the Magistrate names the harness it inherits");
+  assert.equal(elements["pause-all"].hidden, true, "no separate pause when every bot is running");
+  const botCard = (role) =>
+    elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === role).textContent;
+  assert.match(botCard("review"), /claude/, "the pipeline names each bot's harness");
+  assert.match(botCard("review"), /claude-opus-5/, "the pipeline names each bot's model");
+  assert.match(botCard("review"), /high/, "the pipeline names each bot's effort");
+  assert.match(botCard("issue"), /codex/, "a bot inheriting town defaults still shows them");
+  assert.match(botCard("issue"), /medium/, "a bot inheriting town defaults still shows its effort");
+  assert.match(botCard("repo"), /repo-repair-model/, "Repo Bot names its repair profile");
+  assert.match(botCard("simplifier"), /4.*Simplification.*Simplifier Bot.*Idle/s, "a stage reads as step, label, the bot staffing it and its status");
+  assert.match(botCard("simplifier"), /codex/, "Simplifier Bot names the harness it inherits");
   assert.ok(
-    elements.roster.innerHTML.includes('class="profile own"'),
-    "a unit with its own profile is distinguished from an inheriting one",
+    elements.pipeline.innerHTML.includes('class="profile own"'),
+    "a bot with its own profile is distinguished from an inheriting one",
   );
-  assert.ok(elements.roster.innerHTML.includes('class="profile inherited'), "inherited profiles are marked as inherited");
+  assert.ok(elements.pipeline.innerHTML.includes('class="profile inherited'), "inherited profiles are marked as inherited");
   document.dispatchEvent({ type: "keydown", key: "7", target: new Element("div") });
-  assert.match(elements.inspection.textContent, /LAB · Examines the evidence/, "the seventh shortcut opens Forensics, seventh on the roster");
+  assert.match(elements.inspection.textContent, /Review Bot.*Review.*certifies findings/s, "the seventh shortcut opens Review, seventh in the pipeline");
   document.dispatchEvent({ type: "keydown", key: "4", target: new Element("div") });
-  assert.match(elements.inspection.textContent, /MAG · Arraignment/, "the fourth shortcut opens the Magistrate");
-  document.dispatchEvent({ type: "keydown", key: "p", target: new Element("div") });
-  assert.match(unitCard("simplifier"), /0 active.*1 waiting.*1 blocked/s, "each unit shows its caseload");
-  assert.match(unitCard("hall"), /1 awaiting ruling/, "the Probation Judge counts what waits on a ruling");
-  assert.match(elements.board.textContent, /MAG Magistrate · standing by.*0 active.*1 waiting.*1 blocked/s);
+  assert.match(elements.inspection.textContent, /Simplifier Bot.*Simplification/s, "the fourth shortcut opens Simplification");
+  document.dispatchEvent({ type: "keydown", key: "o", target: new Element("div") });
+  assert.match(botCard("simplifier"), /0 active.*1 waiting.*1 blocked/s, "each bot shows its workload");
+  assert.match(botCard("hall"), /1 awaiting decision/, "Triage counts what waits on a decision");
+  assert.match(elements.board.textContent, /Simplifier Bot · Idle.*0 active.*1 waiting.*1 blocked/s);
   assert.match(elements.inspection.textContent, /1 issue · 1 pull request · 1 blocked/);
   const intakeScroll = elements.inspection.querySelector(".house-task-queue");
   intakeScroll.scrollTop = 127;
@@ -418,20 +418,20 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.ok(elements.inspection.querySelectorAll("[data-task]").some((button) => button.dataset.task === "issue:144"), "backlog beyond forty items remains accessible");
 
   assert.ok(elements.inspection.innerHTML.indexOf('data-task="issue:70"') < elements.inspection.innerHTML.indexOf('class="agent-card"'), "intake is visible before agent configuration");
-  assert.match(elements.board.textContent, /Arraignment/);
-  assert.match(elements.board.textContent, /At arraignment/);
+  assert.match(elements.board.textContent, /Simplification/);
+  assert.match(elements.board.textContent, /Simplification review/);
 
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
-  assert.match(elements.inspection.textContent, /Jurisdiction:.*create pull requests/, "unit controls explain their write authority");
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  assert.match(elements.inspection.textContent, /Permissions:.*create pull requests/, "bot controls explain their write authority");
   assert.match(elements.inspection.textContent, /Harness.*codex-acp/s, "the inspector spells the harness out in full");
   assert.match(elements.inspection.textContent, /Effort.*medium/s, "the inspector spells the effort out in full");
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "repo").onclick();
-  assert.match(elements.inspection.textContent, /Configure agent/, "Patrol exposes its repair profile");
-  assert.match(elements.inspection.textContent, /Inventory runs without an agent/, "Patrol explains when its profile is used");
-  // Arriving from another unit, so the Magistrate's own tag is what opens it.
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "simplifier").onclick();
-  assert.match(elements.inspection.textContent, /Jurisdiction:.*file simplification issues/, "the Magistrate's tag opens the Magistrate");
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "repo").onclick();
+  assert.match(elements.inspection.textContent, /Configure agent/, "Repo Bot exposes its repair profile");
+  assert.match(elements.inspection.textContent, /Inventory runs without an agent/, "Repo Bot explains when its profile is used");
+  // Arriving from another bot, so Simplification's own card is what opens it.
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "simplifier").onclick();
+  assert.match(elements.inspection.textContent, /Permissions:.*file simplification issues/, "the Simplification card opens Simplifier Bot");
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-outcome-days]").find((button) => button.dataset.outcomeDays === "0").onclick();
   await elements.inspection.querySelectorAll("[data-export-outcomes]")[0].onclick();
   const outcomeExport = requests.find((request) => request.url.startsWith("/api/outcomes"));
@@ -439,42 +439,42 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.equal(createdLinks.at(-1).download, "acme-project-outcomes-all.csv");
   await elements["town-toggle"].onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"all"')), true);
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   const decision = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3");
-  assert.ok(decision, "the Probation Judge shows cases awaiting a ruling");
+  assert.ok(decision, "Triage shows tasks awaiting a decision");
   decision.onclick();
-  assert.match(decision.textContent, /issue #3/, "the Probation Judge's card carries the source number");
+  assert.match(decision.textContent, /issue #3/, "the triage card carries the source number");
   assert.match(elements.inspection.textContent, /Issue #3/);
-  assert.match(elements.inspection.textContent, /Caseworker/, "the ruling names where the case goes");
-  assert.match(elements.inspection.textContent, /Magistrate · suggest mode · to the tank/);
+  assert.match(elements.inspection.textContent, /Issue Bot/, "the decision names where the task goes");
+  assert.match(elements.inspection.textContent, /Simplifier Bot · suggest mode · decline/);
   assert.match(elements.inspection.textContent, /second registry for one caller/);
-  assert.match(elements.inspection.textContent, /Training exercise/, "the training exercise explains why no live body follows");
+  assert.match(elements.inspection.textContent, /Demo: simulated arrival/, "the demo explains why no live body follows");
   assert.equal(requests.some((request) => request.url === "/api/task-detail"), false, "demo never fetches live details");
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"')), true);
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   const declined = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "pr:4");
-  assert.ok(declined, "the Probation Judge lists cases the Magistrate sent to the tank");
+  assert.ok(declined, "Triage lists tasks Simplifier Bot declined");
   declined.onclick();
-  assert.match(elements.inspection.textContent, /The Magistrate sent this to the Slop Tank/, "the overrule explains itself");
+  assert.match(elements.inspection.textContent, /Simplifier Bot declined this/, "the override explains itself");
   globalThis.confirm = () => false;
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"task":"pr:4"')), false, "refusing the confirmation sends nothing");
-  globalThis.confirm = (message) => { assert.match(message, /probation over the Magistrate's ruling/); return true; };
+  globalThis.confirm = (message) => { assert.match(message, /over Simplifier Bot's decline/); return true; };
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   globalThis.confirm = () => true;
-  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"') && request.options.body.includes('"task":"pr:4"')), true, "probation anyway uses the ruling command");
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
-  assert.match(elements.inspection.textContent, /Judge Bot standing by/, "the Probation Judge shows Judge Bot's status");
-  assert.match(elements.inspection.textContent, /The blotter/, "the Probation Judge keeps the blotter");
-  assert.match(elements.inspection.textContent, /Exports you can trust/, "the latest blotter entry is shown");
-  assert.match(elements.inspection.textContent, /Download reports as CSV/, "blotter items are listed");
-  assert.match(elements.inspection.textContent, /PR #14/, "blotter items cite their pull requests");
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"') && request.options.body.includes('"task":"pr:4"')), true, "accepting anyway uses the decision command");
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  assert.match(elements.inspection.textContent, /Mayor Bot · Idle/, "Triage shows Mayor Bot's status");
+  assert.match(elements.inspection.textContent, /Status report/, "Triage shows the status report");
+  assert.match(elements.inspection.textContent, /Exports you can trust/, "the latest status report entry is shown");
+  assert.match(elements.inspection.textContent, /Download reports as CSV/, "status report items are listed");
+  assert.match(elements.inspection.textContent, /PR #14/, "status report items cite their pull requests");
   const pauseMayor = elements.inspection.querySelectorAll("button").find((button) => button.dataset.action === "pause");
-  assert.ok(pauseMayor, "the Probation Judge offers to stand Judge Bot down");
+  assert.ok(pauseMayor, "Triage offers to pause Mayor Bot");
   await pauseMayor.onclick();
-  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"hall"')), true, "standing Judge Bot down is a unit control");
+  assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"pause"') && request.options.body.includes('"role":"hall"')), true, "pausing Mayor Bot is a bot control");
 
   elements["capacity-settings"].onclick();
   assert.equal(elements["capacity-dialog"].open, true);
@@ -510,7 +510,7 @@ async function openMayoralDecision(taskDetail) {
   await import(`./app.js?live-detail=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   return { elements, requests };
@@ -532,7 +532,7 @@ test("mayoral inspection loads live GitHub details on open", async () => {
   assert.match(elements.inspection.textContent, /octo/);
   assert.match(elements.inspection.textContent, /4 comments/);
   assert.match(elements.inspection.textContent, /Issue #3/);
-  assert.match(elements.inspection.textContent, /Caseworker/);
+  assert.match(elements.inspection.textContent, /Issue Bot/);
 });
 
 test("mayoral inspection stays decidable when live details fail", async () => {
@@ -542,7 +542,7 @@ test("mayoral inspection stays decidable when live details fail", async () => {
   assert.ok(requests.some((request) => request.url === "/api/task-detail"));
   assert.match(elements.inspection.textContent, /Live details unavailable/);
   assert.match(elements.inspection.textContent, /gh exploded/);
-  assert.match(elements.inspection.textContent, /Grant probation/, "the ruling stays available");
+  assert.match(elements.inspection.textContent, /Accept/, "the decision stays available");
 });
 
 test("an open decision keeps its markup across snapshots and puts the decision above the body", async () => {
@@ -577,7 +577,7 @@ test("an open decision keeps its markup across snapshots and puts the decision a
   await import(`./app.js?inspection-stability=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
 
@@ -598,7 +598,7 @@ test("an open decision keeps its markup across snapshots and puts the decision a
   assert.match(elements.inspection.textContent, /A long body the Mayor reads/);
 });
 
-test("the inbox lists every precinct's rulings, opens the right court, and rules in place", async () => {
+test("the inbox lists every repository's decisions, opens the right bot, and decides in place", async () => {
   const elements = installFixture();
   const requests = [];
   const other = {
@@ -627,14 +627,14 @@ test("the inbox lists every precinct's rulings, opens the right court, and rules
   await import(`./app.js?inbox-test=${Date.now()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(elements["inbox-count"].textContent, "3", "header badge counts decisions and stuck work across towns");
+  assert.equal(elements["inbox-count"].textContent, "3", "header badge counts decisions and blocked work across towns");
   assert.equal(elements["inbox-count"].hidden, false);
-  assert.ok(elements["inbox-count"].classList.contains("decisions"), "badge highlights pending rulings");
-  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /2 awaiting your ruling · 1 stuck/);
+  assert.ok(elements["inbox-count"].classList.contains("decisions"), "badge highlights pending decisions");
+  assert.match(elements["inbox-toggle"].getAttribute("aria-label"), /2 awaiting your decision · 1 blocked/);
   const betaLink = elements.towns.querySelectorAll("[data-town]").find((button) => button.dataset.town === "beta/tools");
-  assert.match(betaLink.textContent, /1 to rule on/, "sidebar shows each town's pending rulings");
-  assert.match(betaLink.textContent, /1 stuck/, "sidebar shows each town's stuck cases");
-  assert.match(elements.overview.textContent, /awaiting ruling/, "overview cards show rulings waiting");
+  assert.match(betaLink.textContent, /1 to decide/, "sidebar shows each town's pending decisions");
+  assert.match(betaLink.textContent, /1 blocked/, "sidebar shows each town's blocked tasks");
+  assert.match(elements.overview.textContent, /awaiting decision/, "overview cards show decisions waiting");
 
   document.dispatchEvent({ type: "keydown", key: "i", target: new Element("div") });
   assert.equal(elements["inbox-dialog"].open, true, "keyboard shortcut opens the inbox");
@@ -642,12 +642,12 @@ test("the inbox lists every precinct's rulings, opens the right court, and rules
   assert.deepEqual(
     opens.map((button) => [button.dataset.inboxTown, button.dataset.inboxHouse, button.dataset.inboxTask]),
     [["acme/project", "hall", "issue:3"], ["beta/tools", "hall", "pr:12"], ["beta/tools", "review", ""]],
-    "rulings from every town lead (an unknown age counts as the longest wait), then stuck work names the unit to inspect",
+    "decisions from every town lead (an unknown age counts as the longest wait), then blocked work names the bot to inspect",
   );
-  assert.match(elements["inbox-list"].textContent, /civilian report/);
-  assert.match(elements["inbox-list"].textContent, /Forensics/);
-  assert.match(elements["inbox-list"].textContent, /Open in court/);
-  assert.match(elements["inbox-list"].textContent, /Send to the tank/);
+  assert.match(elements["inbox-list"].textContent, /external submission/);
+  assert.match(elements["inbox-list"].textContent, /Review Bot/);
+  assert.match(elements["inbox-list"].textContent, /Open/);
+  assert.match(elements["inbox-list"].textContent, /Decline/);
   assert.match(elements["inbox-list"].textContent, /gh exploded/, "failed workers carry their error");
 
   opens[1].onclick();
@@ -657,14 +657,14 @@ test("the inbox lists every precinct's rulings, opens the right court, and rules
   assert.equal(elements["inspector-town"].textContent, "beta/tools", "the inspector switches to the item's town");
   assert.match(elements.inspection.textContent, /Contributor PR for beta/);
   assert.match(elements.inspection.textContent, /PR #12/);
-  assert.ok(elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task"), "the ruling is right there");
+  assert.ok(elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task"), "the decision is right there");
 
   elements["inbox-toggle"].onclick();
   const decline = elements["inbox-list"].querySelectorAll("[data-inbox-decide]").find((button) => button.dataset.inboxTask === "issue:3" && button.dataset.inboxDecide === "decline");
-  assert.ok(decline, "rulings can be made from the inbox");
+  assert.ok(decline, "decisions can be made from the inbox");
   await decline.onclick();
   const control = requests.find((request) => request.url === "/api/control" && request.options.body.includes('"action":"decline"'));
-  assert.ok(control, "dismissing from the inbox sends the decline control command");
+  assert.ok(control, "declining from the inbox sends the decline control command");
   assert.deepEqual(JSON.parse(control.options.body), { town: "acme/project", role: "hall", action: "decline", task: "issue:3" }, "the command targets the item's own town, not the selected one");
   assert.equal(elements["inbox-error"].textContent, "");
 
@@ -678,7 +678,7 @@ test("the inbox lists every precinct's rulings, opens the right court, and rules
   const configure = elements["inbox-list"].querySelectorAll("[data-inbox-configure]")[0];
   configure.onclick();
   assert.equal(elements["settings-dialog"].open, true);
-  assert.equal(elements["agent-role"].value, "feature", "opens the failed unit's agent settings");
+  assert.equal(elements["agent-role"].value, "feature", "opens the failed bot's agent settings");
   assert.equal(elements["inspector-town"].textContent, "beta/tools");
   elements["settings-dialog"].close();
   elements["inbox-toggle"].onclick();
@@ -715,7 +715,7 @@ test("reopening a Mayoral card refreshes live details and retries failures", asy
     }) };
   });
   assert.match(elements.inspection.textContent, /Live details unavailable/);
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.filter((request) => request.url === "/api/task-detail").length, 2);
@@ -733,10 +733,10 @@ test("responsive and reduced-motion contracts remain shipped in the stylesheet",
   // Effort is an ordinal, so each level has to be distinguishable at a glance.
   for (const rank of ["default", "low", "medium", "high", "max", "custom"])
     assert.match(css, new RegExp(`\\.profile-chip\\.rank-${rank}\\s*\\{`), `effort rank ${rank} has no shade`);
-  assert.match(css, /\.profile\.own\s+\.profile-chip/, "a profile set for one unit is marked apart from an inherited one");
+  assert.match(css, /\.profile\.own\s+\.profile-chip/, "a profile set for one bot is marked apart from an inherited one");
 });
 
-// openTownHall renders one snapshot and opens the Courthouse file. The
+// openTownHall renders one snapshot and opens the Triage details. The
 // client keeps its own copy of a delivered snapshot, so a test that needs
 // different town state installs a fresh fixture rather than mutating this one.
 async function openTownHall(budget, adjust) {
@@ -761,7 +761,7 @@ async function openTownHallPanel(budget, adjust = () => {}) {
   await import(`./app.js?budget=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
   return elements.inspection;
 }
 
@@ -775,7 +775,7 @@ test("an exhausted agent budget explains itself and never renders absent telemet
     advice: "Town cannot cap token or dollar spend: no bundled agent harness reports usage back to Town.",
     usage: null, cost_usd: null,
   });
-  assert.match(text, /Agent budget/, "the Courthouse shows the budget");
+  assert.match(text, /Agent budget/, "Triage shows the budget");
   assert.match(text, /12 of 12 agent attempts/, "the ceiling is shown against the spend");
   assert.match(text, /5 agent minutes/, "measured agent time is shown in minutes");
   assert.match(text, /2 attempts reported no elapsed time/, "unmeasured attempts are called out");
@@ -793,27 +793,27 @@ test("a town with no budget still reports the agent spend it measured", async ()
     advice: "Town cannot cap token or dollar spend.", usage: null, cost_usd: null,
   });
   assert.match(text, /3 agent attempts/, "spend is reported without a budget");
-  assert.match(text, /No budget set for this precinct/, "an absent budget is stated plainly");
+  assert.match(text, /No budget set for this repository/, "an absent budget is stated plainly");
   assert.doesNotMatch(text, /New agent work resumes/, "an unlimited town is not described as held");
 });
 
-test("the Courthouse shows quiet hours as a scheduled pause, with Judge Bot's quiet dot", async () => {
+test("Triage shows quiet hours as a scheduled pause, with Mayor Bot's quiet dot", async () => {
   const panel = await openTownHallPanel(null, (town) => {
     town.quiet_hours = { source: "service", active: true, until: "2026-09-22T08:00:00Z", windows: [], reason: "" };
     town.workers.hall = { ...(town.workers.hall || {}), role: "hall", enabled: true, status: "quiet" };
   });
-  assert.match(panel.innerHTML, /<h2>Quiet hours<\/h2><p class="quiet-held">/, "the Courthouse explains the hold");
+  assert.match(panel.innerHTML, /<h2>Quiet hours<\/h2><p class="quiet-held">/, "Triage explains the hold");
   assert.match(panel.textContent, /Quiet hours until .*service default.*running work finishes/);
-  assert.match(panel.innerHTML, /dot quiet"><\/i>Judge Bot quiet hours/, "Judge Bot's dot and status read as quiet");
+  assert.match(panel.innerHTML, /dot quiet"><\/i>Mayor Bot · Quiet hours/, "Mayor Bot's dot and status read as quiet");
 });
 
-test("the roster legend explains the quiet dot, and the quiet windows input is labelled", () => {
+test("the pipeline legend explains the quiet dot, and the quiet windows input is labelled", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
-  assert.match(html, /<i class="dot quiet"><\/i><span id="legend-quiet">Quiet hours<\/span>/);
+  assert.match(html, /<i class="dot quiet"><\/i>Quiet hours/);
   assert.match(html, /id="settings-quiet-hours"[^>]*aria-label="[^"]+"/, "the town's quiet windows input is labelled");
 });
 
-test("a unit shows its work policy and marks the inventory that policy holds back", async () => {
+test("a bot shows its work policy and marks the inventory that policy holds back", async () => {
   const elements = installFixture();
   const live = structuredClone(state);
   live.seq = 1;
@@ -836,32 +836,31 @@ test("a unit shows its work policy and marks the inventory that policy holds bac
   await import(`./app.js?policy=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   const text = elements.inspection.textContent;
-  assert.match(text, /WORK POLICY/, "the unit states its policy");
+  assert.match(text, /Work policy/, "the bot states its policy");
   assert.match(text, /Takes work labelled agent-ready/, "the policy is spelled out");
   assert.match(text, /1 inventory item is held back/, "the held-back count is reported");
   const held = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:2");
   assert.ok(held, "filtered work stays listed rather than vanishing");
-  assert.match(held.textContent, /held by this unit/, "filtered work says why it is not eligible");
+  assert.match(held.textContent, /held by this bot/, "filtered work says why it is not eligible");
   assert.equal(held.className.includes("filtered"), true, "filtered work is marked apart");
   const eligible = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5");
   assert.ok(eligible, "eligible work is still queued");
-  assert.doesNotMatch(eligible.textContent, /held by this unit/, "eligible work is not marked as filtered");
+  assert.doesNotMatch(eligible.textContent, /held by this bot/, "eligible work is not marked as filtered");
 });
 
-// The Precinct view stands one precinct's open cases in the rooms of the
-// building, puts the thrown-out ones behind bars, and reads every transfer on
-// the radio by callsign. A suspect opens its file; an officer's tag opens the
-// unit.
-test("the precinct stands open cases in their rooms, opens case files, and reads transfers by callsign", async () => {
+// The Overview shows one repository's pipeline of bots in order, the summary
+// metrics, the open tasks most urgent first, and the activity feed. A task row
+// opens its details; a pipeline card opens the bot.
+test("the overview lists the pipeline in order, open tasks by urgency, metrics, and activity routes", async () => {
   const elements = installFixture();
   const live = structuredClone({ ...state, seq: 1, demo: false });
   live.towns["acme/project"].tasks["issue:9"] = { id: "issue:9", kind: "issue", number: 9, title: "Fresh lead", house: "simplifier", stage: "simplifying" };
-  live.towns["acme/project"].tasks["pr:10"] = { id: "pr:10", kind: "pr", number: 10, title: "Stuck exam", house: "review", stage: "queued", blocked: true };
+  live.towns["acme/project"].tasks["pr:10"] = { id: "pr:10", kind: "pr", number: 10, title: "Blocked review", house: "review", stage: "queued", blocked: true };
   live.events = [
-    { seq: 1, town: "acme/project", kind: "delivery", from: "outside", to: "hall", cargo: "issue:3", title: "An external issue arrived for a ruling", at: "2026-09-21T12:00:00Z" },
-    { seq: 1, town: "acme/project", kind: "decision", from: "simplifier", to: "hall", cargo: "issue:3", title: "The Magistrate advises the court", at: "2026-09-21T12:00:01Z" },
+    { seq: 1, town: "acme/project", kind: "delivery", from: "outside", to: "hall", cargo: "issue:3", title: "An external issue arrived for a decision", at: "2026-09-21T12:00:00Z" },
+    { seq: 1, town: "acme/project", kind: "decision", from: "simplifier", to: "hall", cargo: "issue:3", title: "Simplifier Bot advises triage", at: "2026-09-21T12:00:01Z" },
   ];
   const message = `data: ${JSON.stringify(live)}\n\n`;
   let served = false;
@@ -872,44 +871,43 @@ test("the precinct stands open cases in their rooms, opens case files, and reads
     if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
     return { ok: true, json: async () => ({}) };
   };
-  await import(`./app.js?precinct=${Date.now()}-${Math.random()}`);
+  await import(`./app.js?overview=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
+  assert.equal(elements["pipeline-section"].hidden, false, "a selected repository shows its overview");
 
-  const cast = elements.caseflow.innerHTML;
-  const roomOf = (task) => cast.match(new RegExp(`data-task="${task.replace(":", "\\:")}" data-room="([^"]+)"`))?.[1];
-  assert.equal(roomOf("issue:9"), "magistrate", "an arrival is arraigned before the Magistrate");
-  assert.equal(roomOf("issue:3"), "judge", "a case awaiting a ruling waits in Probation Court");
-  assert.equal(roomOf("issue:2"), "rehab", "work on probation sits with the Caseworker");
-  assert.equal(roomOf("pr:10"), "forensics", "a pull request sits in the evidence lab");
-  assert.equal(roomOf("pr:4"), "holding", "a dismissed case is locked in the Slop Tank");
-  assert.match(cast, /class="suspect look-stuck" data-task="pr:10"/, "a stuck case is marked");
-  assert.match(cast, /class="suspect look-cuffed" data-task="pr:4"/, "and slop in the tank wears cuffs");
-  assert.ok(cast.indexOf('data-task="pr:10"') < cast.indexOf('data-task="pr:1"'), "a stuck case stands at the front of its room");
-  assert.match(cast, /<span class="case-tag">PR 10<\/span>/, "a suspect reads by its case number");
-  assert.match(elements.roster.innerHTML, /class="tank-tag"[^>]*>1 in custody</, "the tank counts who it holds");
-  assert.equal((elements["scene-art"].innerHTML.match(/class="cop cop-/g) || []).length, 8, "every unit has its officer in the building");
-  assert.match(elements["scene-art"].innerHTML, /PROBATION COURT/, "the courthouse is next door");
+  const stages = elements.pipeline.querySelectorAll("[data-house]");
+  assert.deepEqual(stages.map((stage) => stage.dataset.house), ["repo", "bug", "feature", "simplifier", "hall", "issue", "review", "release"], "the pipeline follows a task through Town");
+  assert.ok(stages.every((stage) => stage.className.includes("stage")), "every pipeline entry is a stage card");
+  const stage = (role) => stages.find((button) => button.dataset.house === role).textContent;
+  assert.match(stage("hall"), /5.*Triage.*Mayor Bot.*Idle.*1 awaiting decision/s, "Triage counts the decisions waiting");
+  assert.match(stage("issue"), /6.*Implementation.*Issue Bot.*Working.*1 open/s, "a working bot shows its status and open work");
+  assert.match(stage("review"), /Review Bot.*2 open.*1 blocked.*claude-opus-5/s, "a stage shows its workload and dispatch profile");
+  assert.match(elements.pipeline.innerHTML, /class="stage light-active[^"]*" data-house="issue"/, "a working bot lights up");
 
-  const suspect = elements.caseflow.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:2");
-  suspect.onclick();
-  assert.equal(elements.inspector.classList.contains("open"), true, "a suspect opens its file");
-  assert.match(elements.inspection.textContent, /← Caseworker/, "the case file belongs to the unit holding it");
+  const rows = elements["open-tasks"].querySelectorAll("[data-task]");
+  assert.deepEqual(rows.map((row) => row.dataset.task), ["pr:10", "issue:3", "issue:9", "issue:2", "pr:1"], "blocked tasks lead, then decisions, then the rest by number");
+  assert.ok(rows.every((row) => row.className.includes("link")), "open tasks are links to their details");
+  assert.doesNotMatch(elements["open-tasks"].innerHTML, /data-task="pr:4"|data-task="source:done"/, "settled work is not open");
+  assert.match(elements["open-tasks"].textContent, /PR 10.*Blocked review.*Review.*Blocked/s, "a row names the task, its stage and status");
+  assert.equal(elements["open-count"].textContent, "5");
+  assert.match(elements.metrics.textContent, /Bots working\s*1.*Open tasks\s*5.*Awaiting decision\s*1.*Blocked\s*1/s, "the metrics summarise the repository");
+  assert.equal(elements.metrics.hidden, false);
+
+  rows.find((row) => row.dataset.task === "issue:2").onclick();
+  assert.equal(elements.inspector.classList.contains("open"), true, "a task row opens its details");
+  assert.match(elements.inspection.textContent, /← Implementation/, "the task belongs to the bot holding it");
   assert.match(elements.inspection.textContent, /Queue this change/);
 
-  assert.match(elements.journal.innerHTML, /<span class="event-route">CIV → JDG<\/span>/, "a transfer reads by callsign");
-  assert.match(elements.journal.innerHTML, /<span class="event-route">DECISION<\/span>/, "other traffic reads by kind");
+  assert.match(elements.journal.innerHTML, /<span class="event-route">External → Triage<\/span>/, "a transfer names both ends");
+  assert.match(elements.journal.innerHTML, /<span class="event-route">Decision<\/span>/, "other events read by kind");
   const line = elements.journal.querySelectorAll("button").find((button) => button.dataset.cargo === "issue:3");
   line.onclick();
-  assert.match(elements.inspection.textContent, /Outside request/, "a radio line opens its case");
+  assert.match(elements.inspection.textContent, /Outside request/, "an activity line opens its task");
 
-  elements.caseflow.querySelectorAll("[data-task]").find((button) => button.dataset.task === "pr:4").onclick();
-  assert.match(elements.inspection.textContent, /Speculative matrix/, "slop in the tank opens its case file");
-
-  const hall = elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall");
-  assert.match(hall.textContent, /JDG.*Probation Judge.*Judge Bot/s, "the Probation Judge is staffed by Judge Bot");
+  const hall = elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall");
   hall.onclick();
-  assert.match(elements.inspection.innerHTML, /JDG · Probation or the tank/, "the Probation Judge's file opens from its tag");
+  assert.match(elements.inspection.innerHTML, /<p class="worker-type">Mayor Bot<\/p><h2>Triage<\/h2>/, "the Triage card opens Mayor Bot's details");
 });
 
 test("the task inspector snoozes a task and resumes a snoozed one", async () => {
@@ -931,7 +929,7 @@ test("the task inspector snoozes a task and resumes a snoozed one", async () => 
   await import(`./app.js?snooze=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   assert.match(elements.inspection.textContent, /1 snoozed/, "the house queue counts snoozed work");
   const snoozedCard = elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5");
   assert.match(snoozedCard.textContent, /Snoozed until/, "the queue card says when the task resumes");
@@ -962,7 +960,7 @@ test("the task inspector snoozes a task and resumes a snoozed one", async () => 
   assert.equal(body.until, new Date(local).toISOString().replace(/\.\d{3}Z$/, "Z"));
   assert.equal(elements["snooze-dialog"].open, false);
 
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
   elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:5").onclick();
   assert.match(elements.inspection.textContent, /Snoozed until/);
   assert.match(elements.inspection.textContent, /vendor API not released/);
@@ -973,7 +971,7 @@ test("the task inspector snoozes a task and resumes a snoozed one", async () => 
   assert.equal(cleared.task, "issue:5");
 });
 
-test("every dialog is named by its heading, and the motion toggle reports its real state", async () => {
+test("every dialog is named by its heading", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const dialogs = [...html.matchAll(/<dialog\b([^>]*)>/g)];
   assert.ok(dialogs.length >= 9);
@@ -983,16 +981,6 @@ test("every dialog is named by its heading, and the motion toggle reports its re
     assert.ok(label, `${id} has aria-labelledby`);
     assert.match(html, new RegExp(`<h2 id="${label}"`), `${id} is labelled by a heading that exists`);
   }
-  assert.match(html, /id="motion"[^>]*aria-pressed="true"[^>]*>Motion on/, "the shipped markup says pressed while motion is on");
-
-  const elements = installFixture();
-  globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({}) });
-  await import(`./app.js?motion=${Date.now()}-${Math.random()}`);
-  assert.equal(elements.motion.textContent, "Motion on");
-  assert.equal(elements.motion["aria-pressed"], "true");
-  elements.motion.onclick();
-  assert.equal(elements.motion.textContent, "Motion off");
-  assert.equal(elements.motion["aria-pressed"], "false");
 });
 
 test("the event stream backs off exponentially, waits while hidden, and retries when shown", async () => {
@@ -1097,7 +1085,7 @@ test("a write in flight stays disabled across snapshot redraws and focus returns
   await import(`./app.js?inflight=${Date.now()}-${Math.random()}`);
   await flush();
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "issue").onclick();
 
   const pause = elements.inspection.querySelectorAll("[data-action]").find((button) => button.dataset.action === "pause");
   pause.focus();
@@ -1182,7 +1170,7 @@ test("a write that never answers is released at its deadline, and paired control
     assert.match(elements.error.textContent, /may still have been applied/, "a lost answer is reported as uncertain, not failed");
 
     // The inspector's Admit and Decline are one decision.
-    elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
+    elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
     elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "issue:3").onclick();
     const find = (id) => elements.inspection.querySelectorAll("button").find((button) => button.id === id);
     const admitting = find("admit-task").onclick();
@@ -1231,7 +1219,7 @@ test("setup diagnostics run on request and render saved unknown facts for the se
   await import(`./app.js?diagnostics=${Date.now()}-${Math.random()}`);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   elements.towns.querySelectorAll("[data-town]")[0].onclick();
-  elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
+  elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
   assert.equal(requests.length, 0, "rendering must not start diagnostics");
   const button = elements.inspection.querySelector("#check-setup");
   const pending = button.onclick();
@@ -1265,7 +1253,7 @@ test("an older merge report does not hide the task's current explanation", async
     await import(`./app.js?merge-report=${Date.now()}-${Math.random()}`);
     for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
     elements.towns.querySelectorAll("[data-town]")[0].onclick();
-    elements.roster.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
+    elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "review").onclick();
     elements.inspection.querySelectorAll("[data-task]").find((button) => button.dataset.task === "pr:1").onclick();
     assert.match(elements.inspection.textContent, /Last merge check.*old-head.*old-base.*Checks failed/s);
     if (detail.startsWith("Ready to retry")) assert.ok(elements.inspection.textContent.includes(detail), "the latest pause/retry reason is visible alongside the historical check");

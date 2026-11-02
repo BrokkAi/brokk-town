@@ -4,7 +4,7 @@ Instructions for automated and human contributors working in this repository.
 
 ## What this repository is
 
-SlopCop Squad is one Go module. `cmd/scs` is the whole product: a local service
+Brokk Town is one Go module. `cmd/bt` is the whole product: a local service
 with an embedded browser UI and a small process-control CLI. The eight bots live
 under `bots/` as packages of this module and are called in process, not over a
 socket or a separate binary. There is no worker protocol, no per-bot module,
@@ -14,13 +14,13 @@ and no per-bot release. If you find code or docs that describe one, it is stale.
 
 | Path | Contents |
 | --- | --- |
-| `cmd/scs` | Service entry point, process-control CLI, background start. |
+| `cmd/bt` | Service entry point, process-control CLI, background start. |
 | `cmd/townsim` | A stochastic scheduler model used to sanity-check defaults. |
 | `internal/town` | State model, store, supervisor, scheduling, funnels, recovery, storage. |
 | `internal/web` | HTTP server, embedded assets and the browser UI. |
 | `internal/harness` | ACP harness catalog, download and launch. |
 | `internal/mjolnir` | Mjolnir catalog, profiles, runtime pins, remote runs and evidence. |
-| `internal/guide` | Desk Sergeant agent session. |
+| `internal/guide` | Assistant agent session. |
 | `internal/durable`, `internal/filelock`, `internal/osrun` | Durable writes, locking and process control. |
 | `bots/*` | One package per bot; each owns its prompt, config and durable state. |
 | `scripts/` | Generates the license file attached to a release. |
@@ -30,7 +30,7 @@ and no per-bot release. If you find code or docs that describe one, it is stale.
 ## Build and test
 
 ```sh
-make build     # go build -o bin/scs ./cmd/scs
+make build     # go build -o bin/bt ./cmd/bt
 make test      # go test -race ./... and the browser JavaScript tests
 make js        # node --check every browser source, then node --test
 make check     # full gate: race tests, browser tests and vet
@@ -59,7 +59,7 @@ on Windows for `master`, plus the browser and workflow-lint checks.
 - Do not commit generated artifacts (`bin/`, `dist/`, `var/`, `__pycache__/`).
 - Treat another checkout or worktree as read-only. Do not reset, clean, stash,
   force-push or delete work you did not create.
-- Never print, commit or log credentials. The Squad scrubs known token shapes
+- Never print, commit or log credentials. Town scrubs known token shapes
   from worker logs; do not rely on that and avoid putting secrets in test
   fixtures.
 
@@ -83,22 +83,19 @@ on Windows for `master`, plus the browser and workflow-lint checks.
   package to install or publish.
 - Render from committed state. The UI never invents state and never triggers a
   write that the service did not record.
-- Keep CSS in `internal/web/style.css`. The precinct vocabulary and unit
-  metadata — unit names, callsigns and roster order, keyed by the unchanged
-  role keys — live in `internal/web/precinct.js`.
-- The Precinct view is an animated cutaway of the precinct house with the
-  courthouse attached. `internal/web/scene.js` lays it out and choreographs it;
-  `internal/web/animation.js` draws the robot officers, the slop, the reformed
-  citizens and the vehicles as inline SVG. It only decorates committed state,
-  never sends a command, and stops when Motion is off or the OS asks for
-  reduced motion. The case-flow columns live only in the Board view.
-- There are no themes, no canvas drawing and no image assets. The UI is plain
-  HTML, CSS and ES modules.
-- User-facing text speaks the precinct vocabulary (the Squad, precinct, unit,
-  case, ruling, probation, the Slop Tank, blotter, CPT); API fields, config
+- Keep CSS in `internal/web/style.css`. Colors, spacing and type are design
+  tokens on `:root`; use them rather than literal values. Bot metadata — display
+  names, stage labels and pipeline order, keyed by the unchanged role keys —
+  lives in `internal/web/bots.js`.
+- The Overview view shows summary metrics, the pipeline of eight bot cards and
+  the Activity feed; the Board and Compact views show the same snapshot as
+  columns and as a dense list. There is no animation, no canvas drawing, no
+  themes and no image assets. The UI is plain HTML, CSS and ES modules.
+- User-facing text is plain and professional: repository, bot, task, decision,
+  accepted, declined, status report, Assistant, Activity. API fields, config
   keys, role keys and state values keep their original names (`town`, `house`,
-  `task`, `hall`, `operator`, …). The product is always "SlopCop Squad" or "the
-  Squad", never just "SlopCop". See the glossary in `docs/workflow.md`.
+  `task`, `hall`, `mayoral_decision`, `operator`, …). The product is "Brokk
+  Town" or, for short, "Town". See the glossary in `docs/workflow.md`.
 
 ## Documentation
 
@@ -107,7 +104,7 @@ affected page in the same change:
 
 - `docs/configuration.md` for settings, policies and config-file fields.
 - `docs/operations.md` for process commands, the browser and the local API.
-- `docs/workflow.md` for how work moves between units, and the glossary.
+- `docs/workflow.md` for how work moves between bots, and the glossary.
 - `docs/architecture.md` for the internal structure.
 - `docs/recovery.md`, `docs/storage.md` for interruption and retention.
 

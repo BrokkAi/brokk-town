@@ -1,6 +1,6 @@
 .PHONY: build test js check
 build:
-	go build -o bin/scs ./cmd/scs
+	go build -o bin/bt ./cmd/bt
 test:
 	go test -race ./...
 	$(MAKE) js

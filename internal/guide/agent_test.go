@@ -15,8 +15,7 @@ import (
 
 func TestGuideACPNoToolsPermissionsAndPrivateDiagnostics(t *testing.T) {
 	t.Setenv("GH_TOKEN", "private-gh-token")
-	t.Setenv("SLOPCOP_SQUAD_TOKEN", "private-town-token")
-	t.Setenv("BROKK_TOWN_TOKEN", "private-legacy-town-token")
+	t.Setenv("BROKK_TOWN_TOKEN", "private-town-token")
 	for _, script := range []string{"answer", "unsupported", "overflow", "hang"} {
 		t.Run(script, func(t *testing.T) {
 			exe, err := os.Executable()
@@ -35,7 +34,7 @@ func TestGuideACPNoToolsPermissionsAndPrivateDiagnostics(t *testing.T) {
 			answer := ""
 			err = Run(ctx, config, dir, "Explain only", func(chunk string) error { answer += chunk; return nil })
 			raw, _ := os.ReadFile(record)
-			if strings.Contains(string(raw), "private-gh-token") || strings.Contains(string(raw), "private-town-token") || strings.Contains(string(raw), "private-legacy-town-token") || strings.Contains(string(raw), "bypassPermissions") {
+			if strings.Contains(string(raw), "private-gh-token") || strings.Contains(string(raw), "private-town-token") || strings.Contains(string(raw), "bypassPermissions") {
 				t.Fatal("unsafe credentials/mode inherited", string(raw))
 			}
 			if script == "answer" {
@@ -74,7 +73,7 @@ func TestGuideAgentHelper(t *testing.T) {
 		os.Exit(2)
 	}
 	defer f.Close()
-	for _, key := range []string{"GH_TOKEN", "SLOPCOP_SQUAD_TOKEN", "BROKK_TOWN_TOKEN"} {
+	for _, key := range []string{"GH_TOKEN", "BROKK_TOWN_TOKEN"} {
 		if token := os.Getenv(key); token != "" {
 			f.WriteString(token)
 		}

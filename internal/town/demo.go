@@ -50,7 +50,7 @@ func runDemo(ctx context.Context, store *Store, interval time.Duration) error {
 	}
 }
 
-// seedDemo creates the two exercise precincts the first time a demo store
+// seedDemo creates the two demo repositories the first time a demo store
 // starts. A store that already holds them is left as it is.
 func seedDemo(s *State) error {
 	if len(s.Towns) > 0 {
@@ -75,10 +75,10 @@ func seedDemo(s *State) error {
 		for _, w := range t.Workers {
 			w.Enabled = true
 			w.Status = "waiting"
-			w.Task = "Standing by for the next call"
+			w.Task = "Ready for the next task"
 		}
 		if repo == "BrokkAi/orchard" {
-			t.Report("Shift briefing: orchard", "Training exercise. All units are on patrol. The Bug Detective and the Feature Detective have investigations open, and civilian reports are expected shortly. This is simulated activity.", time.Now())
+			t.Report("Status: orchard", "Demo. All bots are running. Bug Bot and Feature Bot have investigations open, and external submissions are expected shortly. This is simulated activity.", time.Now())
 			seedDemoBoard(s, t, time.Now())
 			now := time.Now()
 			id := WorkIdentity{Funnel: "demo-slack", Provider: "slack", Item: "1712345678.000100"}
@@ -90,23 +90,23 @@ func seedDemo(s *State) error {
 			doneGitHub := WorkItem{Identity: doneGitHubID, Title: "Retire the legacy import endpoint", Status: WorkClosed, Eligible: false, Eligibility: "issue is closed at source", Priority: Priority{Policy: "demo-explicit"}, Provenance: Provenance{Identity: doneGitHubID, URL: "https://github.com/BrokkAi/orchard/issues/706", Revision: "demo-r3", ObservedAt: now, ExternalState: "closed"}, Capabilities: CapabilitySet{{Action: ActionClaim, State: CapabilityReadOnly, Reason: "demo funnel is read-only"}}}
 			_ = ReconcileFunnelPage(s, t, DiscoveryPage{Funnel: "demo-github", Provider: "github", Items: []WorkItem{doneGitHub}, Complete: true, Outcome: Outcome{Kind: OutcomeComplete, Covered: true}, ObservedAt: now}, now)
 		} else {
-			t.Report("Paper-trail: Patrol is stuck", "Training exercise. The last inventory failed and waits for the captain to retry it. The other units hold their posts. This is simulated activity.", time.Now())
+			t.Report("Paper-trail: Repo Bot is blocked", "Demo. The last inventory failed and waits for you to retry it. The other bots are unaffected. This is simulated activity.", time.Now())
 			t.Workers[Repo].Status = "failed"
-			t.Workers[Repo].Error = "Exercise inventory failed and waits for the captain to retry it"
-			t.Workers[Repo].Task = "Inspect Patrol's last report"
+			t.Workers[Repo].Error = "Demo inventory failed and waits for you to retry it"
+			t.Workers[Repo].Task = "Inspect Repo Bot's last report"
 		}
 	}
 	return nil
 }
 
-// demoSlopTitle is the deliberately sloppy civilian report the Magistrate
-// dismisses on every lap of the exercise.
-const demoSlopTitle = "Rewrite the config loader as a plugin framework"
+// demoDeclinedTitle is the deliberately overreaching external submission
+// Simplifier Bot declines on every lap of the demo.
+const demoDeclinedTitle = "Rewrite the config loader as a plugin framework"
 
-// demoStep plays one beat of the exercise on the orchard precinct. It reports
-// false when the beat could not run (the precinct is gone, or the unit that
-// owns this beat or every unit is stood down), so the same beat runs on the
-// next tick. Case numbers cycle, so a long exercise reuses them.
+// demoStep plays one step of the demo on the orchard repository. It reports
+// false when the step could not run (the repository is gone, or the bot that
+// owns this step or every bot is paused), so the same step runs on the next
+// tick. Task numbers cycle, so a long demo reuses them.
 func demoStep(s *State, step int, now time.Time) bool {
 	t := s.Towns["brokkai/orchard"]
 	if t == nil || t.Deleted {
@@ -125,7 +125,7 @@ func demoStep(s *State, step int, now time.Time) bool {
 		if w.Enabled {
 			w.Status = "waiting"
 			w.Phase = "idle"
-			w.Task = "Standing by for the next call"
+			w.Task = "Ready for the next task"
 		}
 		w.Agent = nil
 	}
@@ -134,7 +134,7 @@ func demoStep(s *State, step int, now time.Time) bool {
 	}
 	issueID := fmt.Sprintf("issue:%d", number)
 	prID := fmt.Sprintf("pr:%d", number+100)
-	slopID := fmt.Sprintf("issue:%d", number+600)
+	declinedID := fmt.Sprintf("issue:%d", number+600)
 	switch step % 11 {
 	case 0:
 		w := t.Workers[Bug]
@@ -143,11 +143,11 @@ func demoStep(s *State, step int, now time.Time) bool {
 		w.Status = "working"
 		w.Task = "Investigating a dropped event during reconnect"
 		w.Phase = "investigating"
-		s.Event(t.ID, "activity", "bug", "bug", "", "The Bug Detective is checking a reconnect race", now)
+		s.Event(t.ID, "activity", "bug", "bug", "", "Bug Bot is checking a reconnect race", now)
 	case 1:
 		task := &Task{ID: issueID, Kind: "issue", Number: number, Title: "Recover events after a dropped connection", Stage: "queued", House: Issue, Updated: now, Detail: "The reproducer drops the connection between receiving an event and saving its cursor."}
 		t.Tasks[issueID] = task
-		s.Event(t.ID, "delivery", "bug", "issue", issueID, "The Bug Detective filed a verified issue; case transferred to the Caseworker", now)
+		s.Event(t.ID, "delivery", "bug", "issue", issueID, "Bug Bot filed a verified issue; handed to Issue Bot", now)
 		t.Workers[Issue].Status = "working"
 		p := t.Config.Public().BotAgents[Issue]
 		t.Workers[Issue].Agent = &p
@@ -155,7 +155,7 @@ func demoStep(s *State, step int, now time.Time) bool {
 	case 2:
 		t.Tasks[issueID].Stage = "implemented"
 		t.Tasks[prID] = &Task{ID: prID, Kind: "pr", Number: number + 100, Title: "Preserve the reconnect cursor", Stage: "queued", House: Review, Head: strings.Repeat("b", 40), Base: t.Head, Updated: now}
-		s.Event(t.ID, "delivery", "issue", "review", prID, "New PR transferred to Forensics", now)
+		s.Event(t.ID, "delivery", "issue", "review", prID, "New PR handed to Review Bot", now)
 		t.Workers[Review].Status = "working"
 		p := t.Config.Public().BotAgents[Review]
 		t.Workers[Review].Agent = &p
@@ -163,7 +163,7 @@ func demoStep(s *State, step int, now time.Time) bool {
 	case 3:
 		task := t.Tasks[prID]
 		task.Detail = "The reconnect path still skips one event when the queue is full."
-		s.Move(t, task, "fixes", Issue, "Forensics sent one finding back to the Caseworker", now)
+		s.Move(t, task, "fixes", Issue, "Review Bot sent one finding back to Issue Bot", now)
 		t.Workers[Issue].Status = "working"
 		p := t.Config.Public().BotAgents[Issue]
 		t.Workers[Issue].Agent = &p
@@ -172,7 +172,7 @@ func demoStep(s *State, step int, now time.Time) bool {
 		task := t.Tasks[prID]
 		task.Head = strings.Repeat("c", 40)
 		task.Cycles++
-		s.Move(t, task, "queued", Review, "Revised PR is back at Forensics", now)
+		s.Move(t, task, "queued", Review, "Revised PR is back with Review Bot", now)
 		t.Workers[Review].Status = "working"
 		p := t.Config.Public().BotAgents[Review]
 		t.Workers[Review].Agent = &p
@@ -197,17 +197,17 @@ func demoStep(s *State, step int, now time.Time) bool {
 			}
 		}
 		s.Event(t.ID, "delivery", "release", "outside", "release:"+t.LastRelease, "Release "+t.LastRelease+" is out", now)
-		t.Report("Case closed: the reconnect fix shipped", "The reconnect fix cleared Forensics and shipped. One case went from slop to reformed: investigation, rehab with the Caseworker, Forensics, merge and release.", now)
-		s.Event(t.ID, "report", "repo", "hall", "", "Patrol filed the latest report", now)
-		// The next beat files its slop under a number an earlier lap or an
-		// earlier run may already hold. Patrol closes that dismissed issue
-		// first, as the live closer does, so the reused case is arrested
-		// again instead of sitting in the tank unchanged.
-		if old := t.Tasks[slopID]; old != nil && old.Stage == "declined" {
+		t.Report("Shipped: the reconnect fix", "The reconnect fix passed review and shipped. One task went end to end: investigation, implementation, review, merge and release.", now)
+		s.Event(t.ID, "report", "repo", "hall", "", "Repo Bot filed the latest report", now)
+		// The next step files its declined submission under a number an
+		// earlier lap or an earlier run may already hold. Repo Bot closes that
+		// declined issue first, as the live closer does, so the reused task is
+		// declined again instead of sitting unchanged.
+		if old := t.Tasks[declinedID]; old != nil && old.Stage == "declined" {
 			old.Stage = "closed"
-			old.Detail = "The Magistrate sent this low-value complex issue to the Slop Tank. The Squad closed it."
+			old.Detail = "Simplifier Bot declined this low-value complex issue. Town closed it."
 			old.Updated = now
-			s.Event(t.ID, "decision", string(Simplifier), string(Repo), slopID, "Magistrate closed: "+old.Title, now)
+			s.Event(t.ID, "decision", string(Simplifier), string(Repo), declinedID, "Simplifier Bot closed: "+old.Title, now)
 		}
 	case 9:
 		w := t.Workers[Feature]
@@ -216,28 +216,27 @@ func demoStep(s *State, step int, now time.Time) bool {
 		w.Status = "working"
 		w.Phase = "investigating"
 		w.Task = "Working leads on saved report workflows and comparing feature ideas"
-		s.Event(t.ID, "activity", "feature", "feature", "", "The Feature Detective is working a lead on a useful new capability", now)
+		s.Event(t.ID, "activity", "feature", "feature", "", "Feature Bot is researching a useful new capability", now)
 	case 10:
 		id := fmt.Sprintf("issue:%d", number+900)
 		t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 900, Title: "Save reusable report views", House: Hall, Stage: "awaiting_mayor", MayoralDecision: "pending", Updated: now, Detail: "Let operators save filters as named views. Acceptance: create, select, rename and delete views; restore the selected view after restart."}
-		s.Event(t.ID, "delivery", "feature", "hall", id, "The Feature Detective filed a proposal with the Probation Judge", now)
+		s.Event(t.ID, "delivery", "feature", "hall", id, "Feature Bot filed a proposal for triage", now)
 		t.Workers[Feature].Task = "Proposal filed; standing by for the next lead"
 	case 8:
 		id := fmt.Sprintf("issue:%d", number+500)
 		t.Tasks[id] = &Task{ID: id, Kind: "issue", Number: number + 500, Title: "Support a custom report schedule", House: Hall, Stage: "awaiting_mayor", MayoralDecision: "pending", External: true, Updated: now}
-		s.Event(t.ID, "delivery", "outside", "hall", id, "Civilian report filed; awaiting a ruling", now)
+		s.Event(t.ID, "delivery", "outside", "hall", id, "External issue filed; awaiting a decision", now)
 		external := fmt.Sprintf("pr:%d", number+700)
 		t.Tasks[external] = &Task{ID: external, Kind: "pr", Number: number + 700, Title: "Clarify setup instructions", House: Hall, Stage: "awaiting_mayor", MayoralDecision: "pending", External: true, Updated: now}
-		s.Event(t.ID, "delivery", "outside", "hall", external, "Contributor PR filed; awaiting a ruling", now)
-		// A sloppy civilian report the Magistrate arraigns in auto mode and
-		// dismisses outright. It carries the state the live service records
-		// for that dismissal, so the browser arrests it and books it into the
-		// Slop Tank, and the court can still admit it anyway.
-		slop := &Task{ID: slopID, Kind: "issue", Number: number + 600, Title: demoSlopTitle, House: Hall, Stage: "declined", External: true, Detail: "The Magistrate sent this case to the Slop Tank. The Squad is closing the issue.", Updated: now}
-		slop.Simplification = &Simplification{Mode: "auto", Decision: "decline", Summary: "Disproportionate complexity for no reported problem.", Detail: "The report asks to replace a working config loader with a plugin framework, a plugin registry and a new extension API. It names no bug and no need the current loader fails, and the rewrite would touch every unit's startup path."}
-		t.Tasks[slopID] = slop
-		s.Event(t.ID, "delivery", "outside", "simplifier", slopID, "Civilian report booked for arraignment", now)
-		s.Event(t.ID, "decision", string(Simplifier), "hall", slopID, "Magistrate sent a sloppy civilian report to the tank: "+demoSlopTitle, now)
+		s.Event(t.ID, "delivery", "outside", "hall", external, "Contributor PR filed; awaiting a decision", now)
+		// An overreaching external issue Simplifier Bot reviews in auto mode
+		// and declines outright. It carries the state the live service
+		// records for that decline, and triage can still accept it anyway.
+		declined := &Task{ID: declinedID, Kind: "issue", Number: number + 600, Title: demoDeclinedTitle, House: Hall, Stage: "declined", External: true, Detail: "Simplifier Bot declined this issue. Town is closing it.", Updated: now}
+		declined.Simplification = &Simplification{Mode: "auto", Decision: "decline", Summary: "Disproportionate complexity for no reported problem.", Detail: "The report asks to replace a working config loader with a plugin framework, a plugin registry and a new extension API. It names no bug and no need the current loader fails, and the rewrite would touch every bot's startup path."}
+		t.Tasks[declinedID] = declined
+		s.Event(t.ID, "delivery", "outside", "simplifier", declinedID, "External issue sent to simplification review", now)
+		s.Event(t.ID, "decision", string(Simplifier), "hall", declinedID, "Simplifier Bot declined an external issue: "+demoDeclinedTitle, now)
 	}
 	for _, w := range t.Workers {
 		w.Updated = now
@@ -269,9 +268,9 @@ func seedDemoBoard(s *State, t *Town, now time.Time) {
 	t.Tasks["pr:702"] = &Task{ID: "pr:702", Kind: "pr", Number: 702, Title: "Clarify reconnect ownership", Stage: "inconclusive", House: Review, Head: sha("b"), Base: base, Audit: &Audit{Base: base, Head: sha("b"), Verdict: "inconclusive", Complete: false, Summary: "The review session could not establish complete coverage.", Checks: []string{"Review evidence is incomplete"}, Findings: []Finding{}}, Updated: now}
 	t.Tasks["pr:703"] = &Task{ID: "pr:703", Kind: "pr", Number: 703, Title: "Persist the reconnect cursor", Stage: "queued", House: Review, Head: sha("c"), Base: base, Updated: now}
 	t.Intents[703] = &Intent{Kind: "merge", PR: 703, Base: base, Head: sha("c"), Status: "uncertain", Detail: "Demo merge response was lost; reconcile before retrying.", At: now}
-	t.Tasks["issue:704"] = &Task{ID: "issue:704", Kind: "issue", Number: 704, Title: "Add saved report views", Stage: "queued", House: Issue, Detail: "A queued case waiting on the Caseworker.", Updated: now}
+	t.Tasks["issue:704"] = &Task{ID: "issue:704", Kind: "issue", Number: 704, Title: "Add saved report views", Stage: "queued", House: Issue, Detail: "A queued task waiting for Issue Bot.", Updated: now}
 	t.Tasks["pr:705"] = &Task{ID: "pr:705", Kind: "pr", Number: 705, Title: "Make reconnect tests deterministic", Stage: "ready", House: Review, Head: sha("d"), Base: base, Audit: &Audit{Base: base, Head: sha("d"), Verdict: "clean", Complete: true, Summary: "The full change passed the independent review.", Checks: []string{"Reconnect regression tests passed"}, Findings: []Finding{}}, Updated: now}
-	t.Tasks["issue:707"] = &Task{ID: "issue:707", Kind: "issue", Number: 707, Title: "Adopt the vendor's new import API", Stage: "queued", House: Issue, Detail: "Snoozed by the captain; the rest of the Caseworker's caseload keeps moving.", DeferredUntil: now.Add(6 * time.Hour).UTC(), DeferReason: "Waiting for the vendor's API release", Updated: now}
+	t.Tasks["issue:707"] = &Task{ID: "issue:707", Kind: "issue", Number: 707, Title: "Adopt the vendor's new import API", Stage: "queued", House: Issue, Detail: "Snoozed by the operator; the rest of Issue Bot's queue keeps moving.", DeferredUntil: now.Add(6 * time.Hour).UTC(), DeferReason: "Waiting for the vendor's API release", Updated: now}
 	t.Tasks["commit:"+sha("e")] = &Task{ID: "commit:" + sha("e"), Kind: "commit", Title: "Ship the cursor recovery", Stage: "shipped", House: Release, Head: sha("e"), Updated: now}
 
 	// Active profiles make dispatch provenance visible in the first frame. The
@@ -287,8 +286,8 @@ func seedDemoBoard(s *State, t *Town, now time.Time) {
 	t.Workers[Review].Enabled = true
 	t.Workers[Review].Status = "pausing"
 	t.Workers[Review].Phase = "waiting"
-	t.Workers[Review].Task = "Holding the Forensics slot for the captain to inspect"
-	s.Event(t.ID, "delivery", "outside", "issue", "issue:704", "Queued case waiting on the Caseworker", now)
+	t.Workers[Review].Task = "Holding the Review Bot slot for you to inspect"
+	s.Event(t.ID, "delivery", "outside", "issue", "issue:704", "Queued task waiting for Issue Bot", now)
 	s.Event(t.ID, "delivery", "review", "hall", "pr:702", "Inconclusive review is stuck", now)
 	s.Event(t.ID, "delivery", "merge", "hall", "pr:703", "Uncertain merge awaits reconciliation", now)
 	s.Event(t.ID, "delivery", "release", "outside", "release:v0.8.3", "Previous release v0.8.3 is out", now)

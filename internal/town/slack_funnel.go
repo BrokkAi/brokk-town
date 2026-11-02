@@ -28,7 +28,7 @@ const (
 	defaultSlackAPIURL    = "https://slack.com/api/"
 	defaultSlackPageSize  = 100
 	defaultSlackPageLimit = 1000
-	slackMarkerPrefix     = "<!-- slopcop-squad-slack:"
+	slackMarkerPrefix     = "<!-- brokk-town-slack:"
 	slackMarkerSuffix     = " -->"
 )
 
@@ -612,7 +612,7 @@ func slackMarker(operationID, fallback string) string {
 	if strings.TrimSpace(operationID) == "" {
 		operationID = fallback
 	}
-	if (strings.HasPrefix(operationID, slackMarkerPrefix) || strings.HasPrefix(operationID, legacyMarker(slackMarkerPrefix))) && strings.HasSuffix(operationID, slackMarkerSuffix) {
+	if (strings.HasPrefix(operationID, slackMarkerPrefix)) && strings.HasSuffix(operationID, slackMarkerSuffix) {
 		return operationID
 	}
 	return MarkerForOperation(operationID)

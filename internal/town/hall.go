@@ -152,20 +152,20 @@ func applyJudgment(st *State, t *Town, taskID string, verdict *Judgment, runErr 
 		return
 	}
 	if runErr == nil && verdict == nil {
-		runErr = errors.New("Judge Bot returned no ruling")
+		runErr = errors.New("Mayor Bot returned no decision")
 	}
 	if runErr != nil {
 		task.Attempts++
 		task.RetryAt = now.Add(mayorRetryDelay)
-		task.Detail = fmt.Sprintf("Judge Bot could not rule on this case (attempt %d of %d): %s", task.Attempts, mayorAttempts, runErr.Error())
+		task.Detail = fmt.Sprintf("Mayor Bot could not decide this task (attempt %d of %d): %s", task.Attempts, mayorAttempts, runErr.Error())
 		if task.Attempts >= mayorAttempts {
-			task.Detail += " It now awaits your ruling."
+			task.Detail += " It now awaits your decision."
 		}
 		task.Updated = now
-		st.Event(t.ID, "error", "hall", "hall", taskID, "Judge Bot could not rule: "+task.Title, now)
+		st.Event(t.ID, "error", "hall", "hall", taskID, "Mayor Bot could not decide: "+task.Title, now)
 		return
 	}
-	if err := st.decideTask(t, task, verdict.Decision, "Judge Bot", now); err != nil {
+	if err := st.decideTask(t, task, verdict.Decision, "Mayor Bot", now); err != nil {
 		return
 	}
 	task.Detail += " " + strings.TrimSpace(verdict.Reason)
@@ -177,17 +177,17 @@ func applyJudgment(st *State, t *Town, taskID string, verdict *Judgment, runErr 
 func applyBulletin(st *State, t *Town, b Bulletin, now time.Time) error {
 	b.At = now
 	if !validBulletin(b) {
-		return errors.New("Judge Bot returned an invalid blotter entry")
+		return errors.New("Mayor Bot returned an invalid status report entry")
 	}
 	if len(t.Bulletins) > 0 && !t.Bulletins[len(t.Bulletins)-1].Until.Equal(b.Since) {
-		return errors.New("blotter window does not continue the blotter")
+		return errors.New("status report window does not continue the status report")
 	}
 	t.Bulletins = append(t.Bulletins, b)
 	if len(t.Bulletins) > maxBulletins {
 		t.Bulletins = t.Bulletins[len(t.Bulletins)-maxBulletins:]
 	}
 	if len(b.Items) > 0 {
-		st.Event(t.ID, "bulletin", "hall", "outside", "", "Blotter: "+b.Title, now)
+		st.Event(t.ID, "bulletin", "hall", "outside", "", "Status report: "+b.Title, now)
 	}
 	return nil
 }
@@ -202,7 +202,7 @@ func applyBulletin(st *State, t *Town, b Bulletin, now time.Time) error {
 func (s *State) decideTask(t *Town, task *Task, action, by string, now time.Time) error {
 	overrule := action == "admit" && task != nil && task.House == Hall && task.Stage == "declined" && task.MayoralDecision == "" && autoDeclined(task)
 	if !overrule && (task == nil || task.MayoralDecision != "pending" || task.Stage != "awaiting_mayor" || task.House != Hall) {
-		return errors.New("case is not awaiting a ruling")
+		return errors.New("task is not awaiting a decision")
 	}
 	task.Attempts = 0
 	task.RetryAt = time.Time{}
@@ -220,36 +220,36 @@ func (s *State) decideTask(t *Town, task *Task, action, by string, now time.Time
 		// pick up again. Outside work is only ignored; Town does not
 		// close other people's issues and pull requests.
 		if task.Kind == "issue" && !task.External {
-			task.Detail = subject + " sent this proposal to the Slop Tank. The Squad is closing the issue."
+			task.Detail = subject + " declined this proposal. Town is closing the issue."
 			t.Workers[Repo].Next = time.Time{}
-			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" sent to the tank: "+task.Title, now)
+			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" declined: "+task.Title, now)
 			return nil
 		}
 		if task.Kind == "pr" && !task.External {
 			// Town's own pull request is closed and its issue started over,
 			// as after a failed review. Left open, it kept the issue
 			// implemented with nothing working on it.
-			task.Detail = subject + " sent the Squad's own pull request to the Slop Tank. The Squad is closing it and starting the issue over."
+			task.Detail = subject + " declined Town's own pull request. Town is closing it and starting the issue over."
 			t.Workers[Repo].Next = time.Time{}
-			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" sent to the tank: "+task.Title, now)
+			s.Event(t.ID, "decision", "hall", string(Repo), task.ID, by+" declined: "+task.Title, now)
 			return nil
 		}
-		task.Detail = subject + " sent this civilian report to the Slop Tank. The Squad will not act on it."
-		s.Event(t.ID, "decision", "hall", "outside", task.ID, by+" sent to the tank: "+task.Title, now)
+		task.Detail = subject + " declined this external submission. Town will not act on it."
+		s.Event(t.ID, "decision", "hall", "outside", task.ID, by+" declined: "+task.Title, now)
 		return nil
 	case "admit":
 		task.MayoralDecision = "admitted"
 		task.Stage = "queued"
 		task.Retired = false
 		task.Updated = now
-		task.Detail = subject + " granted this case probation."
-		title := by + " granted probation: " + task.Title
+		task.Detail = subject + " accepted this task."
+		title := by + " accepted: " + task.Title
 		if overrule {
 			// The decline no longer governs the task: resume and the
 			// declined-issue closer both read it.
 			task.Simplification = nil
-			task.Detail = subject + " granted this case probation over the Magistrate's ruling."
-			title = by + " granted probation over the Magistrate's ruling: " + task.Title
+			task.Detail = subject + " accepted this task over Simplifier Bot's decline."
+			title = by + " accepted over Simplifier Bot's decline: " + task.Title
 		}
 		target := Review
 		if task.Kind == "issue" {

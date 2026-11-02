@@ -1,15 +1,15 @@
 version: 2
 
-project_name: slopcop-squad
+project_name: brokk-town
 
 before:
   hooks:
     - sh scripts/licenses.sh
 
 builds:
-  - id: scs
-    main: ./cmd/scs
-    binary: scs
+  - id: bt
+    main: ./cmd/bt
+    binary: bt
     env:
       - CGO_ENABLED=0
     goos:
@@ -23,9 +23,9 @@ builds:
       - -s -w -X main.version={{.Tag}}
 
 archives:
-  - id: scs
+  - id: bt
     ids:
-      - scs
+      - bt
     formats:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"

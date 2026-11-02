@@ -261,7 +261,7 @@ func repoResult(worker workerResult, err error) (RunResult, error) {
 const manualReleaseTask = "Paused by manual merge policy; Release Bot may merge release-preparation pull requests"
 
 func manualReleaseError() error {
-	return errors.New("release-bot is paused by manual merge policy because it may create and merge release-preparation pull requests; choose a precinct merge policy that permits automatic merges before starting it")
+	return errors.New("release-bot is paused by manual merge policy because it may create and merge release-preparation pull requests; choose a repository merge policy that permits automatic merges before starting it")
 }
 
 // enforceManualReleasePolicy normalizes every persisted state mutation, including
@@ -335,16 +335,16 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 		switch d.mode {
 		case "judge":
 			if workerResult.Judgment == nil || workerResult.Bulletin != nil {
-				return result, errors.New("judge run returned no ruling")
+				return result, errors.New("judge run returned no decision")
 			}
 			result.Judgment = &Judgment{Decision: workerResult.Judgment.Decision, Reason: strings.TrimSpace(workerResult.Judgment.Reason)}
 		case "bulletin":
 			if workerResult.Bulletin == nil || workerResult.Judgment != nil {
-				return result, errors.New("blotter run returned no blotter entry")
+				return result, errors.New("status report run returned no entry")
 			}
 			b := *workerResult.Bulletin
 			if !b.Since.Equal(d.since) || !b.Until.Equal(d.until) {
-				return result, errors.New("blotter run covered a different window than requested")
+				return result, errors.New("status report run covered a different window than requested")
 			}
 			result.Bulletin = &b
 		default:
@@ -375,7 +375,7 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 		}
 		task := t.Tasks[fmt.Sprintf("pr:%d", d.pr)]
 		if task == nil {
-			return result, fmt.Errorf("PR #%d left the precinct while review-bot was working", d.pr)
+			return result, fmt.Errorf("PR #%d left this repository's branch while review-bot was working", d.pr)
 		}
 		review := workerResult.Review
 		if !review.Complete || review.ExactBase != d.base || review.ExactHead != d.head || task.Base != d.base || task.Head != d.head {
@@ -462,7 +462,7 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		if err := b.Store.Update(func(st *State) error {
 			town := st.Towns[t.ID]
 			if town == nil {
-				return errors.New("precinct disappeared before the worker started")
+				return errors.New("repository disappeared before the worker started")
 			}
 			town.Workers[role].Run = &run
 			return nil
@@ -520,14 +520,14 @@ func validateWorkerResult(result workerResult, role Role) error {
 		}
 		if j := result.Judgment; j != nil {
 			if (j.Decision != "admit" && j.Decision != "decline" && j.Decision != "delay") || strings.TrimSpace(j.Reason) == "" || len(j.Reason) > 2000 {
-				return errors.New("judge worker returned an invalid ruling")
+				return errors.New("judge worker returned an invalid decision")
 			}
 		}
 		if b := result.Bulletin; b != nil {
 			probe := *b
 			probe.At = time.Now()
 			if !validBulletin(probe) {
-				return errors.New("judge worker returned an invalid blotter entry")
+				return errors.New("judge worker returned an invalid status report entry")
 			}
 		}
 	default:
