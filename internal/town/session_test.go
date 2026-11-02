@@ -73,7 +73,7 @@ func fixtureWorkers(t *testing.T) (*BotWorkers, *Town, *Task, string) {
 		task.Audit = &Audit{Base: base, Head: head, Discussion: Digest([]Discussion{}), Description: description(p), Verdict: "changes_needed", Complete: true, Summary: "Found defect", Checks: []string{"reproduced"}, Findings: []Finding{{ID: "new:defect", State: "open", Detail: "code.txt needs repair"}}}
 	})
 	x = s.Snapshot().Towns[x.ID]
-	workers := &BotWorkers{Root: t.TempDir(), Store: s, GitHub: gitFixtureGH{gh, remote}, remoteURL: func(string) string { return remote }}
+	workers := withBots(&BotWorkers{Root: t.TempDir(), Store: s, GitHub: gitFixtureGH{gh, remote}, remoteURL: func(string) string { return remote }})
 	return workers, x, x.Tasks["pr:1"], remote
 }
 func TestRepairCommitsAndPushesOneExistingBranchThenHandsBack(t *testing.T) {

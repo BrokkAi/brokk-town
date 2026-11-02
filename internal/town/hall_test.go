@@ -263,7 +263,7 @@ func TestMayorDispatchCarriesTheArrivalAndDuty(t *testing.T) {
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	pendingAt(x, &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Complex request", Simplification: &Simplification{Mode: "suggest", Decision: "decline", Detail: "Adds a registry."}})
 	var request workerRequest
-	workers := &BotWorkers{Root: t.TempDir(), Store: store}
+	workers := withBots(&BotWorkers{Root: t.TempDir(), Store: store})
 	workers.botRun = botRunHook(&request, workerResult{Judgment: &Judgment{Decision: "admit", Reason: "A real defect with a bounded fix."}})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result, err := workers.Run(context.Background(), x, Hall, func(Progress) {}, logger)

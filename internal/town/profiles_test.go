@@ -262,13 +262,19 @@ func TestNestedCertificationAndRepairUseTheirBotProfiles(t *testing.T) {
 	stop := errors.New("fake agent stopped before writes")
 	seen := map[string]bool{}
 	b.executeAgent = func(_ context.Context, current *Town, _ sessionTree, role string, _ *slog.Logger, _ string) (string, error) {
-		want := clone(town.Config.BotAgents[Role(role)].Agent)
+		if !reflect.DeepEqual(current.Config.Agent, town.Config.BotAgents[Role(role)].Agent) {
+			t.Fatalf("%s session got the wrong profile: %+v", role, current.Config.Agent)
+		}
+		// Town resolves its own session's harness when it starts one, from
+		// that role's profile, never from a launch prepared for a bot.
 		if role == "issue" {
+			launch, err := agentConfig(context.Background(), current.Config, b.Root)
+			want := clone(town.Config.BotAgents[Issue].Agent)
 			want.Command = []string{npx, "--yes", "--", "unused-issue-agent@0.0.1"}
 			want.Environment["REGISTRY"] = "private-launch"
-		}
-		if !reflect.DeepEqual(current.Config.Agent, want) {
-			t.Fatalf("%s session got the wrong profile: %+v", role, current.Config.Agent)
+			if err != nil || !reflect.DeepEqual(launch, want) {
+				t.Fatalf("issue session resolves the wrong launch: %+v %v", launch, err)
+			}
 		}
 		seen[role] = true
 		return "", stop

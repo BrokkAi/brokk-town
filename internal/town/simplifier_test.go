@@ -259,7 +259,7 @@ func TestSimplifierDispatchCarriesModeAndTypedAssessment(t *testing.T) {
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Complex request", Stage: "simplifying", House: Simplifier, Updated: time.Now()}
 	var request workerRequest
-	workers := &BotWorkers{Root: t.TempDir(), Store: store}
+	workers := withBots(&BotWorkers{Root: t.TempDir(), Store: store})
 	workers.botRun = botRunHook(&request, workerResult{Simplification: &workerSimplification{Mode: "suggest", Decision: "decline", Summary: "Low value", Detail: "No callers."}})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result, err := workers.Run(context.Background(), x, Simplifier, func(Progress) {}, logger)

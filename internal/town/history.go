@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BrokkAi/brokk-town/internal/artifact"
 	"github.com/BrokkAi/brokk-town/internal/durable"
 )
 
@@ -63,10 +64,10 @@ func (e historyEntry) filename() string  { return Key(e.ID) + "-" + e.Digest + "
 func historyRoot(root, id string) string { return filepath.Join(root, "towns", Key(id), "history") }
 func historyHash(data []byte) string     { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func readHistoryFile(root, path string, limit int64) ([]byte, error) {
-	if !storagePathSafe(root, path) {
+	if !artifact.PathSafe(root, path) {
 		return nil, errors.New("unsafe or missing history path")
 	}
-	f, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
+	f, err := os.OpenFile(path, os.O_RDONLY|artifact.NoFollow, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func historyDirectory(root, id string) (string, error) {
 		if err != nil && !os.IsExist(err) {
 			return "", err
 		}
-		if !storagePathSafe(root, path) {
+		if !artifact.PathSafe(root, path) {
 			return "", errors.New("unsafe history directory")
 		}
 		if err == nil {

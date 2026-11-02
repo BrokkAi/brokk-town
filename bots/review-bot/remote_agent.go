@@ -9,6 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,6 +32,49 @@ func remoteSnapshotContext(snapshot Snapshot) (string, error) {
 	return "in the following inline data (paths are repository-relative; the diff field gives the command for the complete diff):\n" + string(data) + "\nEnd of snapshot data. Remove temporary reproductions before finishing.", nil
 }
 
+// remoteAgentEndpoint is where a remote review is requested: a request URL,
+// and the Unix socket that carries it when the parent serves one.
+type remoteAgentEndpoint struct {
+	url, socket string
+}
+
+// parseRemoteAgent accepts unix:///path, http(s)://host/path, or a bare
+// absolute path naming a socket, which is how the parent named it before it
+// could be reached over the network.
+func parseRemoteAgent(value string) (remoteAgentEndpoint, error) {
+	if filepath.IsAbs(value) {
+		return remoteAgentEndpoint{url: "http://town/v1/agent", socket: value}, nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return remoteAgentEndpoint{}, errors.New("remote_agent must be unix:///path, an http(s) URL or an absolute socket path")
+	}
+	switch parsed.Scheme {
+	case "unix":
+		socket := filepath.FromSlash(unixSocketPath(parsed.Path, runtime.GOOS == "windows"))
+		if parsed.Host != "" || !filepath.IsAbs(socket) {
+			return remoteAgentEndpoint{}, errors.New("remote_agent unix URL requires an absolute socket path")
+		}
+		return remoteAgentEndpoint{url: "http://town/v1/agent", socket: socket}, nil
+	case "http", "https":
+		if parsed.Host == "" {
+			return remoteAgentEndpoint{}, errors.New("remote_agent URL requires a host")
+		}
+		return remoteAgentEndpoint{url: parsed.String()}, nil
+	}
+	return remoteAgentEndpoint{}, errors.New("remote_agent must be unix:///path, an http(s) URL or an absolute socket path")
+}
+
+// unixSocketPath turns a unix URL's path into a socket path. On Windows the
+// URL form of C:\x.sock is unix:///C:/x.sock, whose path keeps a leading slash
+// before the drive letter.
+func unixSocketPath(path string, windows bool) string {
+	if windows && len(path) >= 3 && path[0] == '/' && path[2] == ':' && ('a' <= path[1]|0x20 && path[1]|0x20 <= 'z') {
+		return path[1:]
+	}
+	return path
+}
+
 // The parent owns target execution and artifact validation. Review Bot retains
 // investigation, independent finding verification and exact-revision publication.
 func executeRemote(ctx context.Context, c Config, prompt string) (string, error) {
@@ -43,12 +89,21 @@ func executeRemote(ctx context.Context, c Config, prompt string) (string, error)
 		Head     string `json:"head"`
 		Prompt   string `json:"prompt"`
 	}{1, c.RemoteHead, prompt})
-	transport := &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", c.RemoteAgent)
-	}, MaxResponseHeaderBytes: 8 << 10}
+	endpoint, err := parseRemoteAgent(c.RemoteAgent)
+	if err != nil {
+		return "", err
+	}
+	transport := &http.Transport{Proxy: nil, MaxResponseHeaderBytes: 8 << 10}
+	if endpoint.socket != "" {
+		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", endpoint.socket)
+		}
+	} else {
+		transport.DialContext = (&net.Dialer{Timeout: 5 * time.Second}).DialContext
+	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://town/v1/agent", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.url, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}

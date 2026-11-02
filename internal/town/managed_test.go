@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -91,7 +93,7 @@ func managedFixture(t *testing.T) (*BotWorkers, *Town, *atomic.Int32) {
 		t.Fatal(err)
 	}
 	x.Config.ExecutionRuntimes = map[string]mjolnir.RuntimePin{runtimeSelectionKey(*x.Config.Execution): pin}
-	return &BotWorkers{Root: t.TempDir(), Mjolnir: catalog}, x, calls
+	return withBots(&BotWorkers{Root: t.TempDir(), Mjolnir: catalog}), x, calls
 }
 
 func TestManagedDispatchFreezesSettingsAndHoldsRetainedRuns(t *testing.T) {
@@ -121,11 +123,16 @@ func TestManagedDispatchFreezesSettingsAndHoldsRetainedRuns(t *testing.T) {
 func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 	head := strings.Repeat("a", 40)
 	m := &managedDispatch{failed: true}
-	path, close, err := startRemoteAgent(t.Context(), m, head)
+	endpoint, close, err := startRemoteAgent(t.Context(), m, head)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer close()
+	path, ok := strings.CutPrefix(endpoint, "unix://")
+	if !ok {
+		t.Fatalf("callback endpoint %q is not a unix URL", endpoint)
+	}
+	path = filepath.FromSlash(path)
 	info, err := os.Stat(path)
 	if err != nil || !ownerOnly(info.Mode()) {
 		t.Fatal("callback socket is not private")
@@ -179,5 +186,23 @@ func TestManagedUnsupportedDutiesAndDemoRemainOffline(t *testing.T) {
 	b.Store = testStore(t, true)
 	if _, err := b.beginManaged(t.Context(), x, Review, nil); err == nil || calls.Load() != before {
 		t.Fatal("demo or unsupported work contacted Mjolnir")
+	}
+}
+
+// A Windows socket path must become a unix URL with an empty host; otherwise
+// the drive letter parses as the host and Review Bot refuses the endpoint.
+func TestUnixURLKeepsTheHostEmpty(t *testing.T) {
+	for path, want := range map[string]string{
+		"/tmp/scs-agent-1/agent.sock":       "unix:///tmp/scs-agent-1/agent.sock",
+		`C:\Users\a\scs-agent-1\agent.sock`: "unix:///C:/Users/a/scs-agent-1/agent.sock",
+	} {
+		if filepath.Separator != '\\' && strings.Contains(path, `\`) {
+			path = strings.ReplaceAll(path, `\`, "/")
+		}
+		got := unixURL(path)
+		parsed, err := url.Parse(got)
+		if err != nil || got != want || parsed.Host != "" {
+			t.Fatalf("unixURL(%q) = %q (host %q, %v), want %q", path, got, parsed.Host, err, want)
+		}
 	}
 }

@@ -4,11 +4,14 @@ Instructions for automated and human contributors working in this repository.
 
 ## What this repository is
 
-Brokk Town is one Go module. `cmd/bt` is the whole product: a local service
-with an embedded browser UI and a small process-control CLI. The eight bots live
-under `bots/` as packages of this module and are called in process, not over a
-socket or a separate binary. There is no worker protocol, no per-bot module,
-and no per-bot release. If you find code or docs that describe one, it is stale.
+Brokk Town is one Go module. `cmd/bt` is the service: an embedded browser UI
+and a small process-control CLI. The eight bots live under `bots/` as packages
+of this module, and the service reaches them only through the bot contract in
+`internal/botapi`: a JSON request naming the workspace (repository key and
+role, never a path), progress and log events, and a typed result. The bots are
+heading into their own binaries and container images, so the service must not
+depend on sharing a process, filesystem, `PATH` or `gh` login with them. Today
+`cmd/bt` still hosts them in process through the registry in `bots/inprocess.go`.
 
 ## Layout
 
@@ -17,12 +20,14 @@ and no per-bot release. If you find code or docs that describe one, it is stale.
 | `cmd/bt` | Service entry point, process-control CLI, background start. |
 | `cmd/townsim` | A stochastic scheduler model used to sanity-check defaults. |
 | `internal/town` | State model, store, supervisor, scheduling, funnels, recovery, storage. |
+| `internal/botapi` | The bot contract: request, events, result and storage operations, plus the bot-side worker every bot runs. |
+| `internal/artifact` | Path-safety, measuring and digest checks shared by the service and the bots. |
 | `internal/web` | HTTP server, embedded assets and the browser UI. |
 | `internal/harness` | ACP harness catalog, download and launch. |
 | `internal/mjolnir` | Mjolnir catalog, profiles, runtime pins, remote runs and evidence. |
 | `internal/guide` | Assistant agent session. |
 | `internal/durable`, `internal/filelock`, `internal/osrun` | Durable writes, locking and process control. |
-| `bots/*` | One package per bot; each owns its prompt, config and durable state. |
+| `bots/*` | One package per bot; each owns its prompt, config, durable state and its `worker.go` adapter onto the contract. `bots/inprocess.go` is the registry. |
 | `scripts/` | Generates the license file attached to a release. |
 | `docs/` | Operator and developer documentation. |
 | `licenses/` | Generated third-party notices and supplementary license texts. |
@@ -68,6 +73,12 @@ on Windows for `master`, plus the browser and workflow-lint checks.
 - Go 1.27.1, standard library first. `gofmt` is enforced by CI.
 - Wrap errors with context: `fmt.Errorf("...: %w", err)`. Return errors; do not
   panic outside `main`/startup.
+- Reach a bot only through `internal/botapi`. Outside tests, only
+  `bots/inprocess.go` and `cmd/bt/bots.go` may import a bot package (a test
+  enforces it); Town's integration tests host the real bots through
+  `inProcessBots`. The service
+  never reads a bot's files, sends it a host path, or resolves a command for it
+  to run: it sends a harness selection and the bot resolves it where it runs.
 - Keep state changes inside `Store.Update`. Durable writes go through
   `internal/durable`; never write `state.json` directly.
 - Validate anything that enters persisted state, and keep private data (tokens,

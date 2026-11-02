@@ -64,7 +64,7 @@ func TestBlockedIssueJobSurvivesInventoryAndRestartThenRetries(t *testing.T) {
 		RetryAt: time.Now().Add(10 * time.Minute),
 	}
 	writeIssueBotState(t, root, town, map[int]*issueJobSummary{7: job})
-	workers := &BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)}
+	workers := withBots(&BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)})
 	if err := workers.SyncIssues(town); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestSubmittedIssueJobImportsOwnershipWithoutDuplicateDelivery(t *testing.T)
 	town = store.Snapshot().Towns[town.ID]
 	job := &issueJobSummary{Branch: "issue-bot/8", Status: "submitted", Tries: 1, URL: "https://github.com/acme/orchard/pull/18", Result: &issueJobResult{Status: "solved", Detail: "Implemented."}}
 	writeIssueBotState(t, root, town, map[int]*issueJobSummary{8: job})
-	workers := &BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)}
+	workers := withBots(&BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)})
 	if err := workers.SyncIssues(town); err != nil {
 		t.Fatal(err)
 	}

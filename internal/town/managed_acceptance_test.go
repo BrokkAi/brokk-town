@@ -57,7 +57,7 @@ func TestMjolnirReadOnlyAcceptance(t *testing.T) {
 	x := &Town{ID: strings.ToLower(cfg.Repo), Config: DefaultConfig(cfg.Repo)}
 	x.Config.Execution, x.Config.Branch = &selection, pull.Base.Ref
 	x.Config.ExecutionRuntimes = map[string]mjolnir.RuntimePin{runtimeSelectionKey(selection): pin}
-	b := &BotWorkers{Root: cfg.Root, Mjolnir: catalog, MjolnirCommand: cfg.Command}
+	b := withBots(&BotWorkers{Root: cfg.Root, Mjolnir: catalog, MjolnirCommand: cfg.Command})
 	observe := func(p Progress) { t.Log("worker phase:", p.Phase) }
 	managed, err := b.beginManaged(ctx, x, Review, observe)
 	if err != nil {
@@ -68,7 +68,7 @@ func TestMjolnirReadOnlyAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer close()
-	dir, state := Workspace(cfg.Root, x.ID, Review)
+	dir, state := botWorkspace(cfg.Root, x.ID, Review)
 	request := workerRequest{Remote: "https://github.com/" + cfg.Repo + ".git", Branch: pull.Base.Ref,
 		Directory: dir, StateDirectory: state, Repo: cfg.Repo, Host: "github.com", PR: cfg.PR,
 		BaseSHA: pull.Base.SHA, HeadSHA: pull.Head.SHA, RemoteAgent: socket, DryRun: true}

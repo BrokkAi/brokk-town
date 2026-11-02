@@ -2,8 +2,6 @@ package town
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/artifact"
 )
 
 // ArtifactRecord links a transcript to a completed worker receipt. Older or
@@ -27,14 +27,14 @@ type ArtifactRecord struct {
 }
 
 func (a ArtifactRecord) valid() bool {
-	return ValidAgentRole(a.Role) && safeArtifactPath(a.Path) && len(a.Digest) == 64 && strings.Trim(a.Digest, "0123456789abcdef") == "" && a.Bytes >= 0 && !a.Finished.IsZero()
+	return ValidAgentRole(a.Role) && artifact.SafeRel(a.Path) && len(a.Digest) == 64 && strings.Trim(a.Digest, "0123456789abcdef") == "" && a.Bytes >= 0 && !a.Finished.IsZero()
 }
-func safeArtifactPath(path string) bool {
-	return path != "" && path != "." && !filepath.IsAbs(path) && filepath.Clean(path) == path && path != ".." && !strings.HasPrefix(path, ".."+string(filepath.Separator)) && !strings.ContainsAny(path, "\x00\r\n")
-}
+
+// transcriptRoots are the session directories Town itself writes for a role:
+// its repair and audit sessions. A bot's own transcripts live with the bot,
+// which reports them in its result.
 func transcriptRoots(root, id string, role Role) []string {
-	_, state := Workspace(root, id, role)
-	paths := []string{filepath.Join(state, "sessions")}
+	var paths []string
 	extension := ""
 	if role == Review {
 		extension = "audit"
@@ -55,7 +55,7 @@ func transcriptPaths(root, id string, role Role) map[string]bool {
 		if _, err := os.Lstat(dir); os.IsNotExist(err) {
 			continue
 		}
-		if !storagePathSafe(root, dir) {
+		if !artifact.PathSafe(root, dir) {
 			return nil
 		}
 		f, err := os.Open(dir)
@@ -76,49 +76,12 @@ func transcriptPaths(root, id string, role Role) map[string]bool {
 	return result
 }
 
-const maxTranscriptBytes = 128 << 20
-
-func artifactDigest(ctx context.Context, path string) (string, int64, error) {
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", 0, errors.New("artifact is not a regular file")
-	}
-	if info.Size() > maxTranscriptBytes {
-		return "", 0, errors.New("artifact exceeds the verification limit")
-	}
-	f, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
-	if err != nil {
-		return "", 0, err
-	}
-	defer f.Close()
-	hash := sha256.New()
-	var total int64
-	buffer := make([]byte, 64<<10)
-	for {
-		if err := ctx.Err(); err != nil {
-			return "", 0, err
-		}
-		n, err := f.Read(buffer)
-		total += int64(n)
-		if total > maxTranscriptBytes {
-			return "", 0, errors.New("artifact exceeds the verification limit")
-		}
-		_, _ = hash.Write(buffer[:n])
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", 0, err
-		}
-	}
-	after, err := f.Stat()
-	if err != nil || !os.SameFile(info, after) || after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
-		return "", 0, errors.New("artifact changed during inspection")
-	}
-	return hex.EncodeToString(hash.Sum(nil)), total, nil
-}
+// recordTranscripts keeps retention evidence for the transcripts one run
+// wrote: the ones the bot reported, and the ones Town's own sessions added. A
+// nil before means Town's own scan was incomplete, so only the bot's report is
+// trusted.
 func (b *BotWorkers) recordTranscripts(id string, role Role, before map[string]bool, result RunResult, complete bool, log *slog.Logger) {
-	if b.Store == nil || before == nil {
+	if b.Store == nil {
 		return
 	}
 	task := result.JudgedTask
@@ -132,19 +95,28 @@ func (b *BotWorkers) recordTranscripts(id string, role Role, before map[string]b
 	defer cancel()
 	records := map[string]ArtifactRecord{}
 	base := filepath.Join(b.Root, "towns", Key(id))
-	after := transcriptPaths(b.Root, id, role)
-	if after == nil {
-		return
+	var after map[string]bool
+	if before != nil {
+		after = transcriptPaths(b.Root, id, role)
+	}
+	for _, t := range result.transcripts {
+		// A bot names its transcripts relative to its workspace, which Town
+		// lays out as <role>/ in its own view of the repository's storage.
+		rel := filepath.Join(string(role), filepath.FromSlash(t.Path))
+		if !artifact.SafeRel(filepath.FromSlash(t.Path)) || filepath.Dir(rel) != filepath.Join(string(role), "state", "sessions") || !strings.HasSuffix(rel, ".jsonl") || len(t.Digest) != 64 || strings.Trim(t.Digest, "0123456789abcdef") != "" || t.Bytes < 0 {
+			continue
+		}
+		records[Key(rel)] = ArtifactRecord{Path: rel, Role: role, Task: task, Complete: complete, Digest: t.Digest, Bytes: t.Bytes, Finished: time.Now().UTC()}
 	}
 	for path := range after {
 		if before[path] {
 			continue
 		}
 		rel, err := filepath.Rel(base, path)
-		if err != nil || !safeArtifactPath(rel) {
+		if err != nil || !artifact.SafeRel(rel) {
 			continue
 		}
-		digest, size, err := artifactDigest(ctx, path)
+		digest, size, err := artifact.Digest(ctx, path)
 		if err != nil {
 			continue
 		}

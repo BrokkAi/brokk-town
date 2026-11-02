@@ -1,14 +1,16 @@
 # Bots
 
-Each bot is a Go package of this module under `bots/`. Town calls the
-package in process; the bot has no server, no socket and no separate version.
-Its prompt, configuration, GitHub access and durable state stay with its
-package, and its private files live in Town's state directory under
-`towns/<key>/<role>/{checkout,state}`, one directory per repository.
+Each bot is a Go package of this module under `bots/`. Town reaches it only
+through the bot contract in `internal/botapi`; today the bots are hosted in
+Town's process. Each bot's prompt, configuration, GitHub access and durable
+state stay with its package, and its private files live under its data root at
+`towns/<key>/<role>/{checkout,state}`, one directory per repository. While the
+bots run in process their data root is Town's state directory.
 
-Town adapts the repository's agent profile and work policy into the bot's own
-config, runs one duty, and converts the typed result back into the
-`internal/town` model. Every bot drives an ACP agent through the shared
+Town sends the repository's agent profile and work policy in a contract
+request; the bot's `worker.go` adapts it into the bot's own config, resolves the
+agent harness in its own environment, runs one duty, and returns a typed result
+that Town converts into the `internal/town` model. Every bot drives an ACP agent through the shared
 [acp-go](https://github.com/BrokkAi/acp-go) runner.
 
 The browser shows each bot by name and stage; configuration, the API and state

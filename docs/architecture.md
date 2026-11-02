@@ -1,7 +1,9 @@
 # Architecture
 
-Brokk Town is a single long-running process. Everything else — bots, agents,
-the browser, Mjolnir — is either a package it calls or a service it talks to.
+Brokk Town is a long-running service. Everything else — bots, agents, the
+browser, Mjolnir — is something it reaches through a defined boundary. The bots
+sit behind the bot contract (`internal/botapi`), which carries no path, command
+or type the service owns, so a bot can run in its own process or container.
 
 ## Process model
 
@@ -15,10 +17,10 @@ the browser, Mjolnir — is either a package it calls or a service it talks to.
                      |  store, scheduler, state  |     |  (local agent)   |
                      +------------+-------------+     +------------------+
                                   |                            |
-                                  |  in-process calls          |  remote runs
+                                  |  internal/botapi           |  remote runs
                                   v                            v
                      +--------------------------+     +------------------+
-                     |  bots/* Go packages      |     |  Mjolnir daemon  |
+                     |  bots/* (in process now) |     |  Mjolnir daemon  |
                      +--------------------------+     +------------------+
 ```
 
@@ -34,6 +36,8 @@ the state directory; the browser uses the same API.
 | --- | --- |
 | `cmd/bt` | Service entry point, process-control CLI, background start, demo seeding. |
 | `internal/town` | The domain: state model, store, supervisor, scheduling, reconciliation, policies, funnels, recovery, history, storage, outcomes. |
+| `internal/botapi` | The bot contract (request, progress and log events, result, storage) and the bot-side `Worker` that resolves workspaces and agents where the bot runs. |
+| `internal/artifact` | Path-safety, measuring and digest checks shared by the service and the bots. |
 | `internal/web` | HTTP routes and the embedded browser UI: plain HTML, CSS and ES modules. |
 | `internal/harness` | ACP harness registry, catalog cache, archive download and launch. |
 | `internal/mjolnir` | Mjolnir API client: catalog, profiles, placements, runtime pins, runs, artifacts, evidence and import. |
@@ -41,7 +45,7 @@ the state directory; the browser uses the same API.
 | `internal/durable` | fsync-based atomic file replacement. |
 | `internal/filelock` | Cross-platform advisory locks. |
 | `internal/osrun` | Cross-platform process control, signals and liveness. |
-| `bots/*` | One package per bot. Each owns its prompt, configuration, GitHub access and durable state. |
+| `bots/*` | One package per bot. Each owns its prompt, configuration, GitHub access, durable state and the adapter (`worker.go`) from the contract to its own config. `bots/inprocess.go` lists them for a process that hosts them. |
 
 ## State and persistence
 
@@ -55,8 +59,9 @@ All state lives in the state directory (default `$XDG_STATE_HOME/brokk-town`, or
 | `token` | The loopback API access key (0600). Delete it to rotate. |
 | `connection.json` | Advertises the running service URL, PID and version to clients. |
 | `logs/` | Background service stdout and stderr. |
-| `towns/<key>/<role>/checkout` | A repository's private git checkout for that bot. |
-| `towns/<key>/<role>/state` | That bot's durable state. |
+| `towns/<key>/<role>/checkout` | A repository's private git checkout for that bot, kept by the bot under its own data root (Town's directory while bots run in process). |
+| `towns/<key>/<role>/state` | That bot's durable state, likewise the bot's. |
+| `towns/<key>/extensions/` | Town's own repair, audit and Mjolnir sessions. |
 | `towns/<key>/history/` | Archived terminal tasks (History). |
 | `mjolnir-options.json` | Cached Mjolnir launch catalog. |
 
@@ -86,8 +91,10 @@ When a bot is due, the supervisor:
    execution placement at dispatch time, not from an older snapshot.
 2. Checks holds — quiet hours, budget, capacity, a selected remote runtime, a
    recovery hold — and stops before starting anything if one applies.
-3. Calls the bot package in process through `BotWorkers`, streaming bounded
-   progress and log lines into durable state.
+3. Sends the bot one `botapi.Request` through `BotWorkers`: the repository key
+   and role instead of directories, and the operator's agent selection (a
+   command or a harness entry) instead of a resolved launch. Progress and log
+   events come back bounded; the bot reports the transcripts it wrote.
 4. Commits the result: task moves, ownership, review audits, branch health,
    outcome records and budget charge.
 
@@ -97,9 +104,14 @@ restart never continues a process it did not start.
 ## Bots
 
 Each bot is a Go package with a `Config`, a `Run` (or a focused duty) and its own
-private state directory. Town adapts the repository's configuration and work
-policy into that package's config, runs it, and converts its typed observation
-back into the `internal/town` model. The repo bot's inventory is the pipeline's
+private state directory. Its `worker.go` adapts a contract request into that
+config; the shared `botapi.Worker` resolves the workspace under the bot's data
+root, installs and launches the selected harness there, and carries progress,
+logs and transcripts back. Town converts the typed result into the
+`internal/town` model and validates it before anything is persisted. The storage
+view asks each bot for its own inventory and sends transcript removals back to
+it; the bot holds its state lock while it removes them. Town never reads a
+bot's files directly. The repo bot's inventory is the pipeline's
 observation step; Town itself additionally performs a few bounded,
 idempotent GitHub writes (the merge, closing declined work, filing
 follow-ups, submitting a request), each gated on a fresh read of exactly what it

@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
@@ -47,6 +48,8 @@ type RunResult struct {
 	// Retried reports that the release worker accepted the requested attempt
 	// budget reset before this run, so the request is consumed.
 	Retried bool
+	// transcripts are the session transcripts the bot reported writing.
+	transcripts []botapi.Transcript
 }
 type Workers interface {
 	Run(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error)
@@ -1678,10 +1681,6 @@ func (l *workerLog) WithAttrs(a []slog.Attr) slog.Handler {
 	return &copy
 }
 func (l *workerLog) WithGroup(g string) slog.Handler { copy := *l; copy.group = g; return &copy }
-func Workspace(root, id string, r Role) (string, string) {
-	base := filepath.Join(root, "towns", Key(id), string(r))
-	return filepath.Join(base, "checkout"), filepath.Join(base, "state")
-}
 
 func (s *Supervisor) block(id, taskID, detail string) error {
 	return s.Store.Update(func(st *State) error {
