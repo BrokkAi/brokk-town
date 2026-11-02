@@ -11,14 +11,14 @@ const esc = (v) =>
       ],
   );
 const profileNames = {
-  "": "Precinct defaults",
-  repo: "Patrol · Repo Bot",
-  bug: "Bug Detective · Bug Bot",
-  feature: "Feature Detective · Feature Bot",
-  simplifier: "Magistrate · Simplifier Bot",
-  hall: "Probation Judge · Judge Bot",
-  issue: "Caseworker · Issue Bot",
-  review: "Forensics · Review Bot",
+  "": "Repository defaults",
+  repo: "Repo Bot · Repository",
+  bug: "Bug Bot · Bug discovery",
+  feature: "Feature Bot · Feature discovery",
+  simplifier: "Simplifier Bot · Simplification",
+  hall: "Mayor Bot · Triage",
+  issue: "Issue Bot · Implementation",
+  review: "Review Bot · Review",
   release: "Release · Release Bot",
 };
 
@@ -86,20 +86,20 @@ export function management({ api, getTown, getState, refresh }) {
     const draft = drafts[settingsRole];
     for (const option of $("#agent-role").options) {
       const other = drafts[option.value];
-      option.textContent = `${profileNames[option.value]}${option.value ? (other.inherited ? " · precinct defaults" : " · custom") : ""}${other.dirty ? " · unsaved" : ""}`;
+      option.textContent = `${profileNames[option.value]}${option.value ? (other.inherited ? " · repository defaults" : " · custom") : ""}${other.dirty ? " · unsaved" : ""}`;
     }
     $("#agent-profile-status").textContent =
-      `${settingsRole ? (draft.inherited ? "Uses precinct defaults" : "Custom agent profile") : "Default agent for units without an override"}${draft.dirty ? " · unsaved changes" : ""}.`;
+      `${settingsRole ? (draft.inherited ? "Uses repository defaults" : "Custom agent profile") : "Default agent for bots without an override"}${draft.dirty ? " · unsaved changes" : ""}.`;
     $("#inherit-agent").hidden = !settingsRole || draft.inherited;
     $("#save-agent").textContent =
-      `Save ${settingsRole ? `${profileNames[settingsRole]} profile` : "precinct defaults"}`;
+      `Save ${settingsRole ? `${profileNames[settingsRole]} profile` : "repository defaults"}`;
     $("#agent-profile-note").textContent = pendingReset()
-      ? "Save to use precinct defaults before customizing this unit."
+      ? "Save the repository defaults before customizing this bot."
       : settingsRole
         ? settingsRole === "repo"
           ? `${profileNames[settingsRole]} uses this profile only when repairing a failing branch. Editing an inherited profile creates a custom profile for this bot.`
           : `${profileNames[settingsRole]} uses this profile on its next run. Editing an inherited profile creates a custom profile for this bot.`
-        : "Precinct defaults apply on the next run to units that use them. Custom unit profiles keep their own settings. Patrol uses its profile only when repairing a failing branch.";
+        : "Repository defaults apply on the next run to bots that use them. Custom bot profiles keep their own settings. Repo Bot uses its profile only when repairing a failing branch.";
     syncProfileControls();
   }
   function rememberDraft() {
@@ -235,7 +235,7 @@ export function management({ api, getTown, getState, refresh }) {
       harnessDetail();
     }
   };
-  const draftKey = () => `slopcop-squad-request:${requestTown}`;
+  const draftKey = () => `brokk-town-request:${requestTown}`;
   const readAgent = () => {
     if (settingsRole && drafts[settingsRole].inherited)
       return { inherit: true };
@@ -345,9 +345,9 @@ export function management({ api, getTown, getState, refresh }) {
     const fallback = service.length ? `The service default is ${formatQuietHours(service)}.` : "The service sets no default.";
     $("#settings-quiet-note").textContent =
       mode === "own"
-        ? "Write each window as DAYS HH:MM-HH:MM and join windows with “;”, on the clock of the machine running SlopCop Squad. An end at or before the start runs past midnight. No new agent work or GitHub writes by the Squad start inside a window; running work finishes."
+        ? "Write each window as DAYS HH:MM-HH:MM and join windows with “;”, on the clock of the machine running Brokk Town. An end at or before the start runs past midnight. No new agent work or GitHub writes by Town start inside a window; running work finishes."
         : mode === "none"
-          ? `This precinct ignores the service default. ${fallback}`
+          ? `This repository ignores the service default. ${fallback}`
           : fallback;
   }
   $("#settings-quiet-mode").onchange = syncQuietControls;
@@ -544,8 +544,8 @@ export function management({ api, getTown, getState, refresh }) {
       ? "Create demo issue"
       : "Create GitHub issue";
     $("#request-note").textContent = demo
-      ? "Training exercise: this files a simulated case with the Caseworker. Nothing is sent to GitHub."
-      : "This posts an issue to this repository and adds it to the Caseworker's caseload. If Issue Bot is stood down, deploy the Caseworker when you’re ready for implementation.";
+      ? "Demo: this files a simulated task for Issue Bot. Nothing is sent to GitHub."
+      : "This posts an issue to this repository and queues it for Issue Bot. If Issue Bot is paused, start it when you’re ready for implementation.";
     requestPlaceholder();
     renderRequests();
     $("#request-dialog").showModal();
@@ -584,7 +584,7 @@ export function management({ api, getTown, getState, refresh }) {
       requestPlaceholder();
       $("#request-success").textContent =
         result.status === "confirmed"
-          ? "Case filed with the Caseworker."
+          ? "Issue filed and queued for Issue Bot."
           : "Submission saved. GitHub confirmation will appear below.";
       await refresh();
       renderRequests();

@@ -2,7 +2,7 @@
 
 ## Our Commitment
 
-SlopCop Squad is an open, AI-friendly project. We welcome people using AI tools
+Brokk Town is an open, AI-friendly project. We welcome people using AI tools
 to understand the codebase, develop changes, review code, write documentation,
 and report problems.
 
@@ -12,7 +12,7 @@ and accountable for what they submit.
 
 ## AI-Assisted Collaboration
 
-Maintainers use AI throughout SlopCop Squad's development, including for
+Maintainers use AI throughout Brokk Town's development, including for
 implementation, static analysis, code review, testing, documentation, issue
 triage, and drafting issues and pull requests.
 
@@ -62,7 +62,7 @@ The following behavior is not acceptable:
 
 ## Security, Privacy, and Licensing
 
-We work to keep SlopCop Squad on the right side of security, privacy, licensing,
+We work to keep Brokk Town on the right side of security, privacy, licensing,
 and responsible disclosure. Good-faith reports that we have made a mistake are
 welcome.
 
@@ -76,7 +76,7 @@ work and must preserve required license notices and attribution.
 ## Scope
 
 This Code of Conduct applies to the repository, issue tracker, pull requests,
-reviews, project documentation, and official SlopCop Squad community spaces. It
+reviews, project documentation, and official Brokk Town community spaces. It
 also applies when someone is representing the project in public.
 
 ## Reporting and Enforcement

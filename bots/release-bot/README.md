@@ -3,8 +3,8 @@
 Watch unreleased commits and publish a verified release.
 
 `release-bot` is a Go package of the
-[SlopCop Squad](https://github.com/BrokkAi/brokk-town) module. Release Bot staffs
-the **Release** unit (role key `release`), and the Squad runs it in process, so
+[Brokk Town](https://github.com/BrokkAi/brokk-town) module. Release Bot runs
+the **Release** stage (role key `release`), and Town runs it in process, so
 there is no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md) for the cadence in context.
@@ -46,8 +46,8 @@ the publication step.
 
 ## Configuration
 
-The Squad fills this configuration from the precinct's agent profile and the
-Release unit's policy in the browser. The package's own fields are:
+Town fills this configuration from the repository's agent profile and the
+Release bot's policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |
@@ -61,9 +61,9 @@ Release unit's policy in the browser. The package's own fields are:
 | `timeout`, `verification_timeout`, `retry_delay`, `attempts` | Attempt budgets. |
 | `preflight`, `verify` | Operator commands for publishability and verification. |
 | `release_trigger_ignore` | Repository-relative paths that do not by themselves start a release. |
-| `notify`, `notify_timeout` | Optional local command run on a verified release or an exhausted budget. The Squad does not pass this. |
+| `notify`, `notify_timeout` | Optional local command run on a verified release or an exhausted budget. Town does not pass this. |
 
-The Squad's policy mapping is `attempts`, `verify` and the release fields
+Town's policy mapping is `attempts`, `verify` and the release fields
 (`daily_seconds`, `minimum_gap_seconds`, `quiet_seconds`, `burst`,
 `burst_window_seconds`, `triage`, `preflight`, `verification_timeout_seconds`,
 `workflows`, `assets`). Defaults: poll every 5 minutes, daily 24h, minimum gap

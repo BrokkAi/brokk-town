@@ -3,148 +3,136 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
-      content="SlopCop Squad: a precinct for every repository, with units that catch slop, work the cases worth working, and ship what holds up."
+      content="Brokk Town: repository automation that finds, implements, reviews and ships work on your GitHub repositories."
     />
-    <title>SlopCop Squad</title>
+    <title>Brokk Town</title>
     <link rel="icon" href="/badge.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <div class="tape" aria-hidden="true"></div>
-    <header>
-      <a class="brand" href="/" aria-label="SlopCop Squad home"
-        ><svg class="badge" viewBox="0 0 32 36" aria-hidden="true" focusable="false">
-          <path d="M16 1.6 29 6.2v10.4c0 8.5-5.5 14.8-13 17.9C8.5 31.4 3 25.1 3 16.6V6.2Z" class="badge-shield" />
-          <path d="m16 9.4 2.1 4.4 4.8.7-3.5 3.4.8 4.8-4.2-2.3-4.2 2.3.8-4.8-3.5-3.4 4.8-.7Z" class="badge-star" /></svg
-        ><span class="wordmark">SLOPCOP<span class="brand-light">SQUAD</span></span></a
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Brokk Town home"
+        ><svg class="logo" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect x="1" y="1" width="30" height="30" rx="8" class="logo-tile" />
+          <path d="M9 22V10h4v12Zm5 0V14h4v8Zm5 0v-5h4v5Z" class="logo-mark" /></svg
+        ><span class="wordmark">Brokk Town</span></a
       >
-      <div class="connection">
-        <span id="connection-dot" class="dot"></span
-        ><span id="connection">Connecting</span>
-      </div>
-      <span id="mode" class="mode-chip" hidden>TRAINING</span>
-      <span id="town-version" class="town-version" role="status"></span>
       <div id="view-switcher" class="view-switcher" role="tablist" aria-label="View">
-        <button type="button" data-view="town" role="tab" aria-selected="true">Precinct</button>
+        <button type="button" data-view="town" role="tab" aria-selected="true">Overview</button>
         <button type="button" data-view="board" role="tab" aria-selected="false">Board</button>
         <button type="button" data-view="compact" role="tab" aria-selected="false">Compact</button>
       </div>
+      <div class="header-space"></div>
+      <span id="mode" class="mode-chip" hidden>Demo</span>
+      <div class="connection" title="Connection to the local service">
+        <span id="connection-dot" class="dot"></span
+        ><span id="connection">Connecting</span>
+      </div>
       <span id="capacity-summary" class="capacity-summary" role="status"></span>
-      <button id="capacity-settings" class="quiet" type="button">Squad settings</button>
       <button
         id="inbox-toggle"
         class="quiet inbox-toggle"
         type="button"
         aria-haspopup="dialog"
-        title="Rulings and stuck cases across every precinct"
+        title="Decisions and blocked tasks across every repository"
       >
-        Needs you<span id="inbox-count" class="inbox-count" hidden>0</span>
+        Needs attention<span id="inbox-count" class="inbox-count" hidden>0</span>
       </button>
-      <div class="header-space"></div>
-      <button id="motion" class="quiet" type="button" aria-pressed="true">Motion on</button
-      ><button id="new-town">＋ New precinct</button>
+      <button id="capacity-settings" class="quiet" type="button">Global settings</button>
+      <button id="new-town" class="primary">Add repository</button>
     </header>
     <div class="app">
       <aside class="sidebar">
-        <div class="eyebrow">PRECINCTS</div>
-        <button id="all-towns" class="town-link selected">All precincts</button>
+        <div class="eyebrow">Repositories</div>
+        <button id="all-towns" class="town-link selected">All repositories</button>
         <nav id="towns" aria-label="Repositories"></nav>
         <div class="sidebar-bottom">
-          <div class="eyebrow">SHIFT CLOCK</div>
-          <div id="clock" class="clock"></div>
-          <p>Every case leaves a trail. Pick a unit to follow it.</p>
-          <button id="help" class="quiet">Radio codes <kbd>?</kbd></button>
+          <button id="help" class="quiet">Keyboard shortcuts <kbd>?</kbd></button>
+          <span id="town-version" class="town-version" role="status"></span>
         </div>
       </aside>
       <main>
         <div class="town-heading">
           <div>
-            <div class="eyebrow" id="repo-owner">SLOPCOP SQUAD</div>
-            <h1 id="town-name">No precinct open</h1>
+            <div class="eyebrow" id="repo-owner">Brokk Town</div>
+            <h1 id="town-name">No repository selected</h1>
             <div id="town-meta" class="muted">
-              Put a repository under watch to open its precinct.
+              Add a GitHub repository to get started.
             </div>
           </div>
           <div class="town-controls">
-            <button id="ask-guide" class="primary" disabled>Ask the Desk Sergeant</button>
-            <button id="new-request" disabled>＋ File a report</button>
-            <button id="town-history" class="quiet" disabled>Case archive</button>
-            <button id="town-storage" class="quiet" disabled>Evidence locker</button>
-            <button id="town-settings" class="quiet" disabled>⚙ Settings</button>
             <span id="town-state" class="status-chip" hidden></span>
-            <button id="town-toggle" class="primary" disabled>▶ Start patrol</button>
             <small id="town-wake-detail" class="muted" hidden></small>
-            <button id="pause-all" class="quiet" disabled hidden>Ⅱ Stand down</button>
+            <button id="ask-guide" class="quiet" disabled>Ask the Assistant</button>
+            <button id="new-request" class="quiet" disabled>New request</button>
+            <button id="town-history" class="quiet" disabled>History</button>
+            <button id="town-storage" class="quiet" disabled>Storage</button>
+            <button id="town-settings" class="quiet" disabled>Settings</button>
+            <button id="pause-all" class="quiet" disabled hidden>Pause all</button>
+            <button id="town-toggle" class="primary" disabled>Start all</button>
           </div>
         </div>
         <div id="error" role="alert" hidden></div>
         <div id="demo-note" hidden>
-          <strong>TRAINING EXERCISE</strong
-          ><span>Simulated units and cases. No GitHub writes; no agents are running.</span>
+          <strong>Demo mode</strong
+          ><span>Simulated bots and tasks. No GitHub writes; no agents are running.</span>
         </div>
-        <section id="overview" aria-label="All precincts"></section>
-        <section id="board" class="operations-board" aria-label="Operations board" hidden></section>
-        <section id="compact" class="operations-compact" aria-label="Compact operations view" hidden></section>
-        <section class="precinct" aria-label="Precinct">
-          <div class="precinct-bar">
-            <h2 class="section-label">Precinct</h2>
-            <div class="legend">
-              <span><i class="dot active"></i><span>On a case</span></span
-              ><span><i class="dot waiting"></i><span>Standing by</span></span
-              ><span><i class="dot blocked"></i><span>Stuck</span></span
-              ><span><i class="dot quiet"></i><span id="legend-quiet">Quiet hours</span></span>
+        <section id="overview" aria-label="All repositories"></section>
+        <section id="board" class="operations-board" aria-label="Board" hidden></section>
+        <section id="compact" class="operations-compact" aria-label="Compact view" hidden></section>
+        <section class="pipeline-section" aria-label="Pipeline">
+          <div id="metrics" class="metrics" aria-label="Summary"></div>
+          <div class="panel">
+            <div class="section-heading">
+              <h2>Pipeline</h2>
+              <div class="legend">
+                <span><i class="dot active"></i>Working</span
+                ><span><i class="dot waiting"></i>Idle</span
+                ><span><i class="dot blocked"></i>Blocked</span
+                ><span><i class="dot quiet"></i>Quiet hours</span>
+              </div>
             </div>
+            <div id="pipeline" class="pipeline" aria-label="Bots"></div>
           </div>
-          <div class="scene-scroll">
-            <div id="scene" class="scene">
-              <div id="scene-art" class="scene-art"></div>
-              <div id="caseflow" class="scene-cast" aria-label="Open cases in the precinct"></div>
-              <div id="scene-bars" class="scene-bars" aria-hidden="true"></div>
-              <div id="roster" class="scene-tags" aria-label="Units on duty"></div>
-              <div id="transfers" class="scene-fx" aria-hidden="true"></div>
+          <div class="panel">
+            <div class="section-heading">
+              <h2>Open tasks <span id="open-count" class="count"></span></h2>
             </div>
+            <div id="open-tasks" class="open-tasks"></div>
           </div>
-          <p class="flow-hint">
-            Detectives and civilians bring slop in. The Magistrate and the Probation
-            Judge send it to the Slop Tank or give it a chance; the Caseworker
-            rehabilitates it, Forensics checks the work, and the reformed leave on the
-            release bus. Click any suspect, or any officer's tag.
-          </p>
           <div id="empty" hidden>
-            <h2>No precinct open.</h2>
+            <h2>No repository selected</h2>
             <p>
-              Add a GitHub repository to open its precinct. Patrol takes the first
-              look; you decide when the other units deploy.
+              Add a GitHub repository to start. Repo Bot scans it first; you
+              decide when the other bots start.
             </p>
-            <button id="empty-add" class="primary">＋ Open a precinct</button>
+            <button id="empty-add" class="primary">Add repository</button>
           </div>
         </section>
-        <section class="activity">
+        <section class="activity panel">
           <div class="section-heading">
-            <h2><span class="on-air" aria-hidden="true"></span>Radio <span id="activity-count"></span></h2>
-            <span class="eyebrow">LIVE DISPATCH</span>
+            <h2>Activity <span id="activity-count" class="count"></span></h2>
           </div>
           <ol id="journal" aria-live="polite"></ol>
         </section>
       </main>
-      <aside id="inspector" class="inspector" aria-label="Unit file">
+      <aside id="inspector" class="inspector" aria-label="Details">
         <div class="inspector-top">
-          <span class="eyebrow" id="inspector-town">UNIT FILE</span
-          ><button id="close-inspector" class="quiet" aria-label="Close file">×</button>
+          <span class="eyebrow" id="inspector-town">Details</span
+          ><button id="close-inspector" class="quiet icon" aria-label="Close details">×</button>
         </div>
         <div id="inspection">
-          <h2>Pick a unit</h2>
-          <p class="muted">Open a unit to see its caseload, its log and its controls.</p>
+          <h2>Select a bot</h2>
+          <p class="muted">Open a bot to see its workload, log and controls.</p>
         </div>
       </aside>
     </div>
     <dialog id="add-dialog" aria-labelledby="add-heading">
       <form id="add-form">
-        <div class="eyebrow">NEW PRECINCT</div>
-        <h2 id="add-heading">Open a precinct</h2>
+        <h2 id="add-heading">Add a repository</h2>
         <label for="repo-input">GitHub repository</label
         ><input
           id="repo-input"
@@ -155,17 +143,16 @@
           autocomplete="off"
         />
         <p class="muted">
-          SlopCop Squad runs every unit itself; no companion bot CLIs are needed.
-          Patrol takes the first inventory and repairs the branch when its checks fail.
-          The detectives, the Magistrate, the Probation Judge, the Caseworker, Forensics and Release start stood down.
-          Deployed units resume after SlopCop Squad restarts.
+          Brokk Town runs every bot itself; no companion CLIs are needed.
+          Repo Bot scans the repository first and repairs the branch when its checks fail.
+          Every other bot starts paused. Started bots resume after Brokk Town restarts.
         </p>
         <label for="merge-policy">When a reviewed PR is ready</label
         ><select id="merge-policy">
           <option value="bot">
-            Auto-merge PRs the Squad created, after required checks
+            Auto-merge PRs Brokk Town created, after required checks
           </option>
-          <option value="manual">Keep every merge manual (Release stays stood down)</option>
+          <option value="manual">Keep every merge manual (Release Bot stays paused)</option>
           <option value="all">
             Auto-merge all eligible PRs after required checks
           </option>
@@ -173,24 +160,23 @@
         <div id="add-error" role="alert"></div>
         <div class="dialog-actions">
           <button type="button" id="cancel-add" class="quiet">Cancel</button
-          ><button type="submit" class="primary">Open the precinct</button>
+          ><button type="submit" class="primary">Add repository</button>
         </div>
       </form>
     </dialog>
     <dialog id="connect-dialog" aria-labelledby="connect-heading">
-      <div class="eyebrow">RADIO CHECK</div>
-      <h2 id="connect-heading">Connect to SlopCop Squad</h2>
+      <h2 id="connect-heading">Connect to Brokk Town</h2>
       <p>
-        Run <code>scs web</code> and open the URL it prints. That link carries the
+        Run <code>bt web</code> and open the URL it prints. That link carries the
         local access key for this browser.
       </p>
     </dialog>
     <dialog id="capacity-dialog" aria-labelledby="capacity-heading">
       <form id="capacity-form">
-        <div class="eyebrow">SQUAD</div>
-        <h2 id="capacity-heading">Units on duty</h2>
-        <p class="muted">Set the maximum number of bot workers on duty at once, across all precincts. Lowering the limit lets current cases finish before more units deploy. Patrol inventories and report filing use separate capacity.</p>
-        <label for="capacity-input">Maximum on duty</label>
+        <h2 id="capacity-heading">Global settings</h2>
+        <h3>Worker capacity</h3>
+        <p class="muted">Set the maximum number of bot workers running at once, across all repositories. Lowering the limit lets current tasks finish before more bots start. Repository scans and issue filing use separate capacity.</p>
+        <label for="capacity-input">Maximum concurrent workers</label>
         <input id="capacity-input" name="max_workers" type="number" min="1" max="64" step="1" required />
         <p id="capacity-current" class="muted" role="status"></p>
         <div id="capacity-error" class="form-error" role="alert"></div>
@@ -200,8 +186,8 @@
         </div>
       </form>
       <form id="service-quiet-form">
-        <h2>Quiet hours</h2>
-        <p class="muted">Weekly windows, on the clock of the machine running SlopCop Squad, in which no new agent work starts and the Squad makes none of its own GitHub writes. Running work finishes, Patrol keeps watching the repository, and work resumes on its own when a window ends. Every precinct follows this default unless its settings choose otherwise.</p>
+        <h3>Quiet hours</h3>
+        <p class="muted">Weekly windows, on the clock of the machine running Brokk Town, in which no new agent work starts and Brokk Town makes none of its own GitHub writes. Running work finishes, Repo Bot keeps watching the repository, and work resumes on its own when a window ends. Every repository follows this default unless its settings choose otherwise.</p>
         <label for="service-quiet-input">Service default (empty for none)</label>
         <input id="service-quiet-input" class="quiet-hours-input" type="text" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" />
         <p class="muted">Write each window as DAYS HH:MM-HH:MM and join windows with “;”. Days are mon…sun, ranges such as mon-fri, or daily, weekdays, weekends. An end at or before the start runs past midnight; 24:00 ends at midnight.</p>
@@ -213,22 +199,21 @@
       </form>
       <form id="attention-hook-form">
         <h3>Local attention hook</h3>
-        <p class="muted">Run a local command when a case gets stuck. It receives public case identities and a reason code as JSON on stdin, with a ten-second limit. Hooks run independently of quiet hours. Training exercises never run them.</p>
+        <p class="muted">Run a local command when a task is blocked. It receives public task identities and a reason code as JSON on stdin, with a ten-second limit. Hooks run independently of quiet hours. Demo mode never runs them.</p>
         <p id="attention-hook-status" class="muted" role="status"></p>
         <label><input id="attention-hook-enabled" type="checkbox" /> Enable attention hook</label>
         <label for="attention-hook-command">Command and arguments (JSON array)</label>
         <textarea id="attention-hook-command" rows="2" spellcheck="false" autocomplete="off" placeholder='["/path/to/notify-town"]'></textarea>
-        <p class="muted">The saved command stays private. Leave blank to keep it. To remove it, disable the hook and enter []. Output stays with your command; the Squad discards it.</p>
+        <p class="muted">The saved command stays private. Leave blank to keep it. To remove it, disable the hook and enter []. Output stays with your command; Brokk Town discards it.</p>
         <div id="attention-hook-error" class="form-error" role="alert"></div>
         <div class="actions"><button id="save-attention-hook" type="submit" class="primary">Save attention hook</button></div>
       </form>
     </dialog>
     <dialog id="snooze-dialog" aria-labelledby="snooze-heading">
       <form id="snooze-form">
-        <div class="eyebrow">SET ONE CASE ASIDE</div>
-        <h2 id="snooze-heading">Snooze case</h2>
+        <h2 id="snooze-heading">Snooze task</h2>
         <p id="snooze-title" class="muted"></p>
-        <p class="muted">Its unit keeps working everything else. No agent starts and no merge happens for this case until the resume time, when it rejoins the caseload on its own.</p>
+        <p class="muted">Its bot keeps working everything else. No agent starts and no merge happens for this task until the resume time, when it rejoins the queue on its own.</p>
         <label for="snooze-until">Resume at (your local time)</label>
         <input id="snooze-until" name="until" type="datetime-local" required />
         <label for="snooze-reason">Reason <span class="muted">(optional, up to 200 characters)</span></label>
@@ -241,21 +226,19 @@
       </form>
     </dialog>
     <dialog id="history-dialog" class="wide-dialog" aria-labelledby="history-heading">
-      <div class="eyebrow">CLOSED CASES</div>
-      <h2 id="history-heading">Case archive</h2>
+      <h2 id="history-heading">History</h2>
       <p id="history-town" class="muted"></p>
       <p id="history-summary"></p>
       <div class="dialog-actions start"><button id="history-newest" type="button">Newest</button><button id="history-older" type="button" disabled>Older</button></div>
-      <div class="storage-table"><table><thead><tr><th>Case</th><th>Title</th><th>Outcome</th><th>Closed</th><th>Details</th></tr></thead><tbody id="history-items"></tbody></table></div>
+      <div class="storage-table"><table><thead><tr><th>Task</th><th>Title</th><th>Outcome</th><th>Closed</th><th>Details</th></tr></thead><tbody id="history-items"></tbody></table></div>
       <p id="history-status" role="status"></p><p id="history-error" class="form-error" role="alert"></p><pre id="history-detail"></pre>
       <div class="dialog-actions"><button id="history-close" type="button">Close</button></div>
     </dialog>
     <dialog id="guide-dialog" class="wide-dialog" aria-labelledby="guide-heading">
-      <div class="eyebrow">FRONT DESK</div>
-      <h2 id="guide-heading">Desk Sergeant</h2>
+      <h2 id="guide-heading">Assistant</h2>
       <p id="guide-town" class="muted"></p><p id="guide-profile" class="muted"></p>
-      <p>Ask about units, open cases, failures or settings. The sergeant can propose a stand-down; nothing happens until you confirm it.</p>
-      <div id="guide-turns" aria-label="Desk Sergeant conversation"></div>
+      <p>Ask about bots, open tasks, failures or settings. The Assistant can propose pausing a bot; nothing happens until you confirm it.</p>
+      <div id="guide-turns" aria-label="Assistant conversation"></div>
       <p id="guide-status" role="status"></p><p id="guide-error" class="form-error" role="alert"></p>
       <form id="guide-form">
         <label for="guide-question">Your question</label><textarea id="guide-question" rows="3" maxlength="4096" required></textarea>
@@ -264,84 +247,82 @@
       <div class="dialog-actions"><button id="guide-refresh" type="button">Refresh conversation</button><button id="guide-close" type="button">Close</button></div>
     </dialog>
     <dialog id="storage-dialog" class="wide-dialog" aria-labelledby="storage-heading">
-      <div class="eyebrow">LOCAL ARTIFACTS</div>
-      <h2 id="storage-heading">Evidence locker</h2>
+      <h2 id="storage-heading">Storage</h2>
       <p id="storage-town" class="muted"></p>
       <p id="storage-summary"></p>
       <label for="storage-age">Keep artifacts newer than this many hours</label>
       <input id="storage-age" type="number" min="0" max="87600" step="1" value="168" />
       <div class="dialog-actions start"><button id="storage-refresh" type="button">Refresh inventory</button></div>
       <p id="storage-hold"></p>
-      <div class="storage-table"><table><thead><tr><th>Select</th><th>Artifact</th><th>Case</th><th>Size</th><th>Age / last modified</th><th>Retention reason</th></tr></thead><tbody id="storage-items"></tbody></table></div>
+      <div class="storage-table"><table><thead><tr><th>Select</th><th>Artifact</th><th>Task</th><th>Size</th><th>Age / last modified</th><th>Retention reason</th></tr></thead><tbody id="storage-items"></tbody></table></div>
       <p id="storage-status" role="status"></p><p id="storage-error" class="form-error" role="alert"></p>
       <div class="dialog-actions"><button id="storage-close" type="button">Close</button><button id="storage-remove" type="button" disabled>Delete selected artifacts</button></div>
     </dialog>
     <dialog id="settings-dialog" class="wide-dialog" aria-labelledby="settings-heading">
       <form id="settings-form">
-        <div class="eyebrow">ROSTER</div>
-        <h2 id="settings-heading">Precinct settings</h2>
+        <h2 id="settings-heading">Repository settings</h2>
         <p id="settings-repo" class="muted"></p>
         <section class="settings-section" aria-labelledby="external-policy-heading">
-          <div class="eyebrow" id="external-policy-heading">RULES OF ENGAGEMENT</div>
+          <h3 id="external-policy-heading">Policies</h3>
           <label for="settings-merge-policy">When a reviewed pull request is ready</label>
           <select id="settings-merge-policy">
-            <option value="bot">Merge only PRs the Squad created</option>
-            <option value="manual">Keep every merge manual (Release stays stood down)</option>
-            <option value="all">Merge PRs the Squad created and external PRs</option>
+            <option value="bot">Merge only PRs Brokk Town created</option>
+            <option value="manual">Keep every merge manual (Release Bot stays paused)</option>
+            <option value="all">Merge PRs Brokk Town created and external PRs</option>
           </select>
           <p class="muted">
-            Forensics may examine external PRs, but the Squad never edits contributor branches.
+            Review Bot may review external PRs, but Brokk Town never edits contributor branches.
             Every automatic merge still requires a clean exact-revision review,
             GitHub mergeability, checks, and approvals.
-            Release can create and merge its own release-preparation PRs, so
-            the manual policy stands it down and keeps it from deploying.
+            Release Bot can create and merge its own release-preparation PRs, so
+            the manual policy pauses it and keeps it from starting.
           </p>
-          <label for="settings-simplifier-mode">Magistrate at arraignment</label>
+          <label for="settings-simplifier-mode">Simplification</label>
           <select id="settings-simplifier-mode">
-            <option value="suggest">Suggest: advise the Probation Judge</option>
-            <option value="auto">Auto: set routine arrivals free or send slop to the tank</option>
+            <option value="suggest">Suggest: advise triage</option>
+            <option value="auto">Auto: accept routine arrivals and decline low-value ones</option>
           </select>
-          <p class="muted">Every incoming issue and pull request is arraigned before the Magistrate first. In suggest mode its assessment is attached to the case the Probation Judge rules on; in auto mode routine admissions and dismissals of low-value complex issues take effect without a ruling.</p>
+          <p class="muted">Simplifier Bot reviews every incoming issue and pull request first. In suggest mode its assessment is attached to the task for the triage decision; in auto mode routine acceptances and declines of low-value complex issues take effect without a decision.</p>
           <label for="settings-review-close-severity">Second review closes on</label>
           <select id="settings-review-close-severity">
             <option value="P1">P1 only: P2 and P3 become follow-up issues</option>
             <option value="P2">P1 and P2: P3 becomes follow-up issues</option>
             <option value="P3">Any finding</option>
           </select>
-          <p class="muted">Every pull request gets one fix round. If the second examination still finds work at or above this severity, the Squad closes the pull request and reopens the case from the current branch. Anything below it is filed as a follow-up issue and the pull request merges.</p>
+          <p class="muted">Every pull request gets one fix round. If the second review still finds work at or above this severity, Brokk Town closes the pull request and reopens the task from the current branch. Anything below it is filed as a follow-up issue and the pull request merges.</p>
           <label for="settings-quiet-mode">Quiet hours</label>
           <select id="settings-quiet-mode">
             <option value="default">Follow the service default</option>
-            <option value="own">Use this precinct's own windows</option>
-            <option value="none">No quiet hours for this precinct</option>
+            <option value="own">Use this repository's own windows</option>
+            <option value="none">No quiet hours for this repository</option>
           </select>
-          <input id="settings-quiet-hours" class="quiet-hours-input" type="text" aria-label="This precinct's quiet windows" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" aria-describedby="settings-quiet-note" />
+          <input id="settings-quiet-hours" class="quiet-hours-input" type="text" aria-label="This repository's quiet windows" autocomplete="off" spellcheck="false" placeholder="mon-fri 18:00-08:00; weekends 00:00-24:00" aria-describedby="settings-quiet-note" />
           <p id="settings-quiet-note" class="muted"></p>
         </section>
         <div class="agent-profile">
           <label for="agent-role">Configure agent for</label>
           <select id="agent-role">
-            <option value="">Precinct defaults</option>
-            <option value="repo">Patrol · Repo Bot</option>
-            <option value="bug">Bug Detective · Bug Bot</option>
-            <option value="feature">Feature Detective · Feature Bot</option>
-            <option value="simplifier">Magistrate · Simplifier Bot</option>
-            <option value="hall">Probation Judge · Judge Bot</option>
-            <option value="issue">Caseworker · Issue Bot</option>
-            <option value="review">Forensics · Review Bot</option>
-            <option value="release">Release · Release Bot</option>
+            <option value="">Repository defaults</option>
+            <option value="repo">Repo Bot · Repository</option>
+            <option value="bug">Bug Bot · Bug discovery</option>
+            <option value="feature">Feature Bot · Feature discovery</option>
+            <option value="simplifier">Simplifier Bot · Simplification</option>
+            <option value="hall">Mayor Bot · Triage</option>
+            <option value="issue">Issue Bot · Implementation</option>
+            <option value="review">Review Bot · Review</option>
+            <option value="release">Release Bot · Release</option>
           </select>
           <div class="profile-actions">
             <p id="agent-profile-status" class="muted" role="status"></p>
             <button id="inherit-agent" type="button" class="quiet" hidden>
-              Use precinct defaults
+              Use repository defaults
             </button>
           </div>
         </div>
         <section id="execution-settings" hidden>
           <h3>Execution location</h3>
           <p id="execution-status" class="muted" role="status"></p>
-          <label for="execution-mode">Run this unit</label>
+          <label for="execution-mode">Run this bot</label>
           <select id="execution-mode"></select>
           <div id="execution-target-field">
             <label for="execution-target">Mjolnir target</label>
@@ -445,48 +426,46 @@
         <p id="agent-profile-note" class="muted"></p>
         <p class="muted profile-draft-note">
           Save each profile before closing. Unsaved edits stay here when you
-          switch units. Closing discards unsaved edits. Current cases finish with
+          switch bots. Closing discards unsaved edits. Current tasks finish with
           their current settings.
         </p>
         <div id="settings-success" role="status"></div>
         <div id="settings-error" class="form-error" role="alert"></div>
         <div class="dialog-actions">
           <button id="open-delete" type="button" class="danger quiet">
-            Delete precinct</button
+            Delete repository</button
           ><span class="spacer"></span
           ><button type="button" data-close="settings-dialog" class="quiet">
             Close</button
-          ><button id="save-agent" class="primary" type="submit">Save precinct defaults</button>
+          ><button id="save-agent" class="primary" type="submit">Save repository defaults</button>
         </div>
       </form>
     </dialog>
     <dialog id="delete-dialog" aria-labelledby="delete-heading">
       <form id="delete-form">
-        <div class="eyebrow">CLOSE THE PRECINCT</div>
-        <h2 id="delete-heading">Delete this precinct?</h2>
+        <h2 id="delete-heading">Delete this repository?</h2>
         <p id="delete-repo"></p>
         <p>
-          This stops its units and closes the precinct. Your GitHub
+          This stops its bots and removes it from Brokk Town. Your GitHub
           repository, issues, and pull requests remain intact.
         </p>
         <p class="muted">
           Local recovery records and worktrees are kept. Adding the same
-          repository again restores its history with every unit stood down.
+          repository again restores its history with every bot paused.
         </p>
         <div id="delete-error" class="form-error" role="alert"></div>
         <div class="dialog-actions">
           <button type="button" data-close="delete-dialog" class="quiet">
-            Keep precinct</button
-          ><button class="danger" type="submit">Delete precinct</button>
+            Keep repository</button
+          ><button class="danger" type="submit">Delete repository</button>
         </div>
       </form>
     </dialog>
     <dialog id="request-dialog" class="wide-dialog" aria-labelledby="request-heading">
       <form id="request-form">
-        <div class="eyebrow">FILE A REPORT</div>
-        <h2 id="request-heading">File a report</h2>
+        <h2 id="request-heading">New request</h2>
         <p id="request-repo" class="muted"></p>
-        <label for="request-kind">What are you reporting?</label>
+        <label for="request-kind">Request type</label>
         <select id="request-kind">
           <option value="feature">Feature request</option>
           <option value="bug">Bug report</option>
@@ -499,7 +478,7 @@
           autocomplete="off"
           placeholder="A short, specific title"
         />
-        <label for="request-body">Describe the case</label
+        <label for="request-body">Description</label
         ><textarea
           id="request-body"
           rows="6"
@@ -518,18 +497,17 @@
           </button>
         </div>
       </form>
-      <section class="submission-history" aria-label="Recent reports">
-        <h3>Recent reports</h3>
+      <section class="submission-history" aria-label="Recent requests">
+        <h3>Recent requests</h3>
         <div id="request-history" aria-live="polite"></div>
       </section>
     </dialog>
     <dialog id="inbox-dialog" class="wide-dialog" aria-labelledby="inbox-heading">
-      <div class="eyebrow">ACROSS YOUR PRECINCTS</div>
-      <h2 id="inbox-heading">What needs you</h2>
+      <h2 id="inbox-heading">Needs attention</h2>
       <p class="muted">
-        Rulings and stuck cases from every precinct, longest wait first.
-        Each item says what is held up and your next step.
-        Technical details and the full unit logs are there when you need them.
+        Decisions and blocked tasks from every repository, longest wait first.
+        Each item says what is held up and the next step.
+        Technical details and full bot logs are available when you need them.
       </p>
       <div id="inbox-error" class="form-error" role="alert"></div>
       <div id="inbox-list" aria-live="polite"></div>
@@ -538,21 +516,20 @@
       </div>
     </dialog>
     <dialog id="help-dialog" aria-labelledby="help-heading">
-      <div class="eyebrow">KEYBOARD</div>
-      <h2 id="help-heading">Radio codes</h2>
+      <h2 id="help-heading">Keyboard shortcuts</h2>
       <p class="muted" id="help-version"></p>
       <dl class="codes">
-        <dt><kbd>0</kbd></dt><dd>All precincts</dd>
-        <dt><kbd>I</kbd></dt><dd>What needs you, across every precinct</dd>
-        <dt><kbd>1</kbd>–<kbd>8</kbd></dt><dd>Open a unit, in roster order: Patrol, Bug Detective, Feature Detective, Magistrate, Probation Judge, Caseworker, Forensics, Release</dd>
-        <dt><kbd>P</kbd> <kbd>B</kbd> <kbd>C</kbd></dt><dd>Precinct, Board, Compact</dd>
+        <dt><kbd>0</kbd></dt><dd>All repositories</dd>
+        <dt><kbd>I</kbd></dt><dd>Needs attention, across every repository</dd>
+        <dt><kbd>1</kbd>–<kbd>8</kbd></dt><dd>Open a bot, in pipeline order: Repository, Bug discovery, Feature discovery, Simplification, Triage, Implementation, Review, Release</dd>
+        <dt><kbd>O</kbd> <kbd>B</kbd> <kbd>C</kbd></dt><dd>Overview, Board, Compact</dd>
         <dt><kbd>Esc</kbd></dt><dd>Close a panel</dd>
       </dl>
       <p class="muted">
-        Click a suspect or a radio line to open its case file. Stand down lets the
-        current case finish; Stop now cancels it.
+        Select a task or an activity line to open its details. Pause lets the
+        current task finish; Stop now cancels it.
       </p>
-      <div class="dialog-actions"><button id="close-help">Back to the precinct</button></div>
+      <div class="dialog-actions"><button id="close-help">Close</button></div>
     </dialog>
     <script type="module" src="/app.js"></script>
   </body>

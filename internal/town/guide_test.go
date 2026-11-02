@@ -252,7 +252,7 @@ func TestGuideRedactsContextAndSplitOutputAndDemoNeverInvokesAgent(t *testing.T)
 	q := askGuide(t, sup, x.ID, "demo-question", "Explain queued work")
 	sup.answerGuide(context.Background(), x.ID, q.ID)
 	answer := demo.Snapshot().Towns[x.ID].Guide.turn(q.ID)
-	if answer.Status != "complete" || !strings.Contains(answer.Answer, "Desk Sergeant, training exercise") {
+	if answer.Status != "complete" || !strings.Contains(answer.Answer, "Assistant, demo") {
 		t.Fatal(answer)
 	}
 }

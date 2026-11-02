@@ -1,10 +1,10 @@
 # Repo Bot
 
-Observe a repository, and keep the branch the precinct covers healthy.
+Observe a repository, and keep the branch it covers healthy.
 
 `repo-bot` is a Go package of the
-[SlopCop Squad](https://github.com/BrokkAi/brokk-town) module. Repo Bot staffs the
-**Patrol** unit (role key `repo`), and the Squad runs it in process, so there is
+[Brokk Town](https://github.com/BrokkAi/brokk-town) module. Repo Bot runs the
+**Repository** stage (role key `repo`), and Town runs it in process, so there is
 no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md).
 
@@ -13,13 +13,13 @@ no standalone binary, server or release tag to install. See
 One run has two duties.
 
 **inventory** — a complete observation of the repository: the branch this
-precinct covers, its exact head, every issue, pull request and release, the
-commits the branch gained since the Squad last looked, and proof of which
-commits a published release already contains. The Squad applies that inventory
-to its own task graph; this bot never interprets the Squad's state.
+repository covers, its exact head, every issue, pull request and release, the
+commits the branch gained since Town last looked, and proof of which
+commits a published release already contains. Town applies that inventory
+to its own task graph; this bot never interprets Town's state.
 
 A partial inventory is never reported as a whole one. A paginated read that
-cannot be completed is an error, because the Squad would otherwise treat what is
+cannot be completed is an error, because Town would otherwise treat what is
 missing as deleted.
 
 **branch health** — read the checks GitHub reports on the branch head and, when
@@ -45,13 +45,13 @@ weakened or deleted to reach green. Publishing is the bot's own step; the agent
 does not commit, push, or touch Git history.
 
 The bot pushes the repair directly to the branch it covers. Where that branch is
-protected, configure the branch's rules and the precinct's merge policy
+protected, configure the branch's rules and the repository's merge policy
 accordingly; this bot does not open a pull request instead.
 
 ## Configuration
 
-The Squad fills this configuration from the precinct's agent profile and the
-Patrol unit's policy. The package's own fields are:
+Town fills this configuration from the repository's agent profile and the
+Repo Bot's policy. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |
@@ -64,7 +64,7 @@ Patrol unit's policy. The package's own fields are:
 | `verify` | Operator command that must pass before a repair is published. |
 | `dry_run` | Commit a repair locally without publishing it. |
 
-The Squad's policy mapping is `limit` → `max_repairs` and `verify`. Defaults:
+Town's policy mapping is `limit` → `max_repairs` and `verify`. Defaults:
 a 1-hour attempt budget, observation every 15 minutes, and at most 3 repair
 attempts per revision. Repo Bot holds an agent slot only while repairing;
 inventory runs without one.

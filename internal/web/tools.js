@@ -6,7 +6,7 @@ export function registerTownTools(context, getState, selectTown, chooseHouse) {
     {
       name: "list_towns",
       description:
-        "Read every precinct: units on a case, open cases, rulings awaiting a decision, and stuck cases. A precinct's id is its repository.",
+        "Read every repository: working bots, open tasks, triage decisions waiting, and blocked tasks. A repository's id is its owner/name.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -17,7 +17,7 @@ export function registerTownTools(context, getState, selectTown, chooseHouse) {
         if (!input || Object.keys(input).length)
           throw new Error("Expected empty input");
         const state = getState();
-        if (!state) throw new Error("SlopCop Squad has not connected");
+        if (!state) throw new Error("Brokk Town has not connected");
         return {
           demo: state.demo,
           towns: Object.values(state.towns).map((t) => ({
@@ -30,7 +30,7 @@ export function registerTownTools(context, getState, selectTown, chooseHouse) {
     {
       name: "visit_town_house",
       description:
-        "Navigate to a repository's precinct and open one of its units. town is the precinct id (its repository). house is the unit's role key: repo (Patrol), bug (Bug Detective), feature (Feature Detective), simplifier (Magistrate), hall (Probation Judge), issue (Caseworker), review (Forensics) or release (Release). Does not deploy or stand down any unit.",
+        "Navigate to a repository and open one of its bots. town is the repository id. house is the bot's role key: repo (Repo Bot), bug (Bug Bot), feature (Feature Bot), simplifier (Simplifier Bot), hall (Mayor Bot, triage), issue (Issue Bot), review (Review Bot) or release (Release Bot). Does not start or pause any bot.",
       inputSchema: {
         type: "object",
         properties: {
@@ -48,7 +48,7 @@ export function registerTownTools(context, getState, selectTown, chooseHouse) {
           !getState()?.towns[input.town] ||
           !Object.hasOwn(botNames, input.house)
         )
-          throw new Error("Unknown precinct or unit");
+          throw new Error("Unknown repository or bot");
         selectTown(input.town);
         chooseHouse(input.house);
         return { town: input.town, house: input.house };

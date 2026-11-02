@@ -1,29 +1,29 @@
 // Every bot keeps the name it ships under. The role keys are the API's; the
-// units they staff and the order they appear in belong to precinct.js.
+// pipeline labels and order belong to bots.js.
 export const botNames = {
   repo: "Repo Bot",
   bug: "Bug Bot",
   feature: "Feature Bot",
   simplifier: "Simplifier Bot",
-  hall: "Judge Bot",
+  hall: "Mayor Bot",
   issue: "Issue Bot",
   review: "Review Bot",
   release: "Release Bot",
 };
 export const houseAuthorities = {
   bug: "May inspect repository content and file GitHub bug issues.",
-  simplifier: "May inspect repository content, file simplification issues, and in auto mode send low-value complex issues to the Slop Tank, which closes them.",
+  simplifier: "May inspect repository content, file simplification issues, and in auto mode decline low-value complex issues, which closes them.",
   feature: "May inspect repository content and propose or file GitHub feature issues.",
-  issue: "May claim issues, create pull requests, and push repairs to branches the Squad owns.",
+  issue: "May claim issues, create pull requests, and push repairs to branches Town owns.",
   review: "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches.",
   release: "May create and merge release-preparation pull requests and publish releases and packages.",
   repo: "Inventories repository state, and repairs the branch it covers when its checks fail.",
-  hall: "Rules on every arrival, probation or the Slop Tank, and keeps the blotter of features gained and bugs fixed; it never edits the repository or GitHub.",
+  hall: "Accepts or declines every arrival and writes the status report of features added and bugs fixed; it never edits the repository or GitHub.",
 };
 
 export function houseAuthority(role, mergePolicy = "bot") {
   if (role === "release" && mergePolicy === "manual")
-    return `${houseAuthorities.release} Stood down while every merge is manual.`;
+    return `${houseAuthorities.release} Paused while every merge is manual.`;
   return houseAuthorities[role] || "";
 }
 // settled marks a task with no work left. An issue Town is closing counts:
@@ -118,21 +118,21 @@ export function townSummary(town) {
   };
 }
 
-// Why a case waits in the Courthouse, in the court's words.  Shared by the
+// Why a task waits for a triage decision.  Shared by the
 // inspector and the cross-town inbox so both explain an arrival the same way.
 export function decisionReason(task) {
-  if (task?.audit?.verdict === "changes_needed") return "Forensics asked for changes";
-  if (task?.external) return "civilian report";
-  return "filed by a unit";
+  if (task?.audit?.verdict === "changes_needed") return "review requested changes";
+  if (task?.external) return "external submission";
+  return "filed by a bot";
 }
 
 // Task statuses that stop work until an operator looks.  The board's Blocked
 // column, the operations attention count, and the inbox all use this one list.
 export const attentionStatuses = ["blocked", "failed", "inconclusive", "uncertain_write"];
 
-// Everything across every town that waits on a person: pending rulings and
-// stuck work.  Oldest first, so the longest wait surfaces on top.
-// Each item names the town and unit to open so the caller can navigate
+// Everything across every town that waits on a person: pending decisions and
+// blocked work.  Oldest first, so the longest wait surfaces on top.
+// Each item names the town and bot to open so the caller can navigate
 // straight to the place where the decision or retry lives.
 // Recovery guidance offers only actions the UI can actually perform.
 export function attentionGuidance(item) {
@@ -141,8 +141,8 @@ export function attentionGuidance(item) {
   if (item.kind === "worker" && /not on the service PATH|needs .+ on the service PATH/i.test(detail)) {
     return {
       title: `${bot} cannot start its agent`,
-      summary: "The configured agent is not available to the Squad.",
-      next: "Choose an available agent in settings, or follow its setup instructions. Then return to the unit and deploy it.",
+      summary: "The configured agent is not available to Town.",
+      next: "Choose an available agent in settings, or follow its setup instructions. Then return to the bot and start it.",
       configure: true,
     };
   }
@@ -163,11 +163,11 @@ export function attentionGuidance(item) {
   return {
     title: item.title,
     summary: item.status === "uncertain_write"
-      ? "The Squad could not confirm whether the last action reached GitHub."
-      : item.kind === "worker" ? "This unit stopped after an error." : "This case needs you before work can continue.",
+      ? "Town could not confirm whether the last action reached GitHub."
+      : item.kind === "worker" ? "This bot stopped after an error." : "This task needs your attention before work can continue.",
     next: item.status === "uncertain_write"
-      ? "Check the case’s recorded outcome before deciding whether to retry."
-      : item.task ? "Open the case to review its context and available recovery actions." : "Open the unit’s log to review the failure and its controls.",
+      ? "Check the task’s recorded outcome before deciding whether to retry."
+      : item.task ? "Open the task to review its context and available recovery actions." : "Open the bot’s log to review the failure and its controls.",
   };
 }
 
@@ -193,7 +193,7 @@ export function inbox(state) {
     for (const task of Object.values(town.tasks || {})) {
       if (!task) continue;
       // A blocked decision (a pull request retargeted off the branch) is not
-      // one Judge Bot takes up either; it shows as blocked instead.
+      // one Mayor Bot takes up either; it shows as blocked instead.
       if (task.mayoral_decision === "pending" && !task.blocked) {
         counts.decisions++;
         decisions.push({
@@ -266,10 +266,10 @@ export const taskStatuses = {
   draft: { label: "Draft", className: "draft" },
   working: { label: "Working", className: "working" },
   queued: { label: "Queued", className: "queued" },
-  simplifying: { label: "At arraignment", className: "queued" },
-  awaiting_mayor: { label: "Awaiting ruling", className: "waiting-github" },
-  declined: { label: "Dismissed", className: "closed" },
-  delayed: { label: "Continued", className: "waiting-github" },
+  simplifying: { label: "Simplification review", className: "queued" },
+  awaiting_mayor: { label: "Awaiting decision", className: "waiting-github" },
+  declined: { label: "Declined", className: "closed" },
+  delayed: { label: "Delayed", className: "waiting-github" },
   waiting_github: { label: "Waiting on GitHub", className: "waiting-github" },
   ready: { label: "Ready", className: "ready" },
   blocked: { label: "Blocked", className: "blocked" },
@@ -287,11 +287,11 @@ export const taskStatuses = {
 };
 export const boardColumns = [
   { id: "open", label: "Open" },
-  { id: "simplifier", label: "Arraignment" },
+  { id: "simplifier", label: "Simplification" },
   { id: "queued", label: "Queued" },
   { id: "in_progress", label: "In progress" },
   { id: "blocked", label: "Blocked" },
-  { id: "review", label: "Forensics" },
+  { id: "review", label: "Review" },
   { id: "ready", label: "Ready" },
   { id: "shipped", label: "Shipped" },
   { id: "completed", label: "Completed" },
@@ -311,7 +311,7 @@ function focusKey(target) {
 }
 export function focusIdentity(target) {
   if (!target) return null;
-  const surface = target.closest?.("#towns, #roster, #caseflow, #journal, #board, #compact, #inbox-list, #inspection")?.id || "";
+  const surface = target.closest?.("#towns, #pipeline, #open-tasks, #journal, #board, #compact, #inbox-list, #inspection")?.id || "";
   const dataset = target.dataset || {};
   const key = focusKey(target);
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
@@ -364,11 +364,11 @@ export function repositoryStatus(town) {
     return [worker.error, worker.recovery.detail].filter(Boolean).join(" · ");
   }
   if (normalized(worker?.status) === "working") return "Reading repository…";
-  return town?.error || town?.reports?.at(-1)?.title || "Patrol is taking the first inventory";
+  return town?.error || town?.reports?.at(-1)?.title || "Repo Bot is scanning the repository";
 }
 
-// Town-wide duty state for the header controls. Patrol (Repo Bot) is excluded:
-// it is always deployed and never an agent, so it says nothing about whether
+// Town-wide run state for the header controls. Repo Bot is excluded:
+// it always runs and never an agent, so it says nothing about whether
 // the operator has authorized real work.
 export function townControls(town) {
   const manual = town?.config?.merge_policy === "manual";
@@ -377,35 +377,35 @@ export function townControls(town) {
   );
   const awake = agents.filter((w) => w.enabled).length;
   const names = manual
-    ? "the detectives, the Magistrate, the Probation Judge, the Caseworker and Forensics; Release stays stood down while every merge is manual"
-    : "the detectives, the Magistrate, the Probation Judge, the Caseworker, Forensics and Release";
+    ? "Bug, Feature, Simplifier, Mayor, Issue and Review Bot; Release Bot stays paused while every merge is manual"
+    : "Bug, Feature, Simplifier, Mayor, Issue, Review and Release Bot";
   if (!awake)
-    return { status: "Off duty", statusClass: "paused", primary: { action: "start", label: `▶ Start patrol (${agents.length})` }, secondary: null, detail: `Deploys ${names}. Patrol already walks the beat.` };
-  // Quiet hours are a scheduled pause: the units stay deployed and resume on
-  // their own, so the actions are those of a town on patrol.
+    return { status: "Paused", statusClass: "paused", primary: { action: "start", label: `Start all (${agents.length})` }, secondary: null, detail: `Starts ${names}. Repo Bot is already running.` };
+  // Quiet hours are a scheduled pause: the bots stay started and resume on
+  // their own, so the actions are those of a running town.
   if (town?.quiet_hours?.active) {
     const until = town.quiet_hours.until ? ` · until ${quietTime(town.quiet_hours.until)}` : "";
     const full = awake === agents.length;
     return {
       status: `Quiet hours${until}`,
       statusClass: "quiet",
-      primary: full ? { action: "pause", label: "Ⅱ Stand down" } : { action: "start", label: "▶ Deploy the rest" },
-      secondary: full ? null : { action: "pause", label: "Ⅱ Stand down" },
+      primary: full ? { action: "pause", label: "Pause all" } : { action: "start", label: "Start the rest" },
+      secondary: full ? null : { action: "pause", label: "Pause all" },
       detail: quietNote(town),
     };
   }
   if (awake === agents.length)
-    return { status: `On patrol · ${awake} unit${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Ⅱ Stand down" }, secondary: null, detail: "" };
+    return { status: `Running · ${awake} bot${awake === 1 ? "" : "s"}`, statusClass: "awake", primary: { action: "pause", label: "Pause all" }, secondary: null, detail: "" };
   return {
-    status: `Partly deployed · ${awake} of ${agents.length}`,
+    status: `Partly running · ${awake} of ${agents.length}`,
     statusClass: "partial",
-    primary: { action: "start", label: "▶ Deploy the rest" },
-    secondary: { action: "pause", label: "Ⅱ Stand down" },
-    detail: `Deploys the remaining units: ${names}. Patrol already walks the beat.`,
+    primary: { action: "start", label: "Start the rest" },
+    secondary: { action: "pause", label: "Pause all" },
+    detail: `Starts the remaining bots: ${names}. Repo Bot is already running.`,
   };
 }
 
-// branchHealthNote is what Patrol reports about the branch it covers.
+// branchHealthNote is what Repo Bot reports about the branch it covers.
 // A branch nothing is wrong with says so in one line; a failing one names the
 // checks, and a repair names the commit that was published.
 export function branchHealthNote(health) {
@@ -430,7 +430,7 @@ export function branchHealthNote(health) {
 
 export function scheduleLabel(worker, now = Date.now()) {
   if (worker?.recovery) return "Recovery required";
-  if (!worker?.enabled) return "Stood down";
+  if (!worker?.enabled) return "Paused";
   if (worker?.agent) return "After current run";
   if (worker?.status === "quiet") return "Quiet hours";
   const next = Date.parse(worker?.next || "");
@@ -537,7 +537,7 @@ export function effortRank(effort) {
   return effortRanks[id] || "custom";
 }
 
-// One description of a dispatch profile for every surface: the roster,
+// One description of a dispatch profile for every surface: the pipeline,
 // the operations views, the inspector and the tooltip all say the same thing.
 export function profileSummary(profile) {
   const harness = harnessLabel(profile?.harness);
@@ -560,8 +560,8 @@ export function profileSummary(profile) {
       `Model: ${profile?.model || "harness default"}`,
       `Effort: ${profile?.effort || "harness default"}`,
       inherited
-        ? "Inherited from this precinct's defaults"
-        : "Set for this unit only",
+        ? "Inherited from this repository's defaults"
+        : "Set for this bot only",
     ].join("\n"),
   };
 }
@@ -644,7 +644,7 @@ export function quietNote(town) {
   const from = quiet.source === "service" ? " (service default)" : "";
   if (quiet.active) {
     const until = quiet.until ? `until ${quietTime(quiet.until)}` : "all week";
-    return `Quiet hours ${until}${from}: no new agent work or GitHub writes by the Squad; running work finishes and the repository is still watched.`;
+    return `Quiet hours ${until}${from}: no new agent work or GitHub writes by Town; running work finishes and the repository is still watched.`;
   }
   return quiet.next ? `Quiet hours${from} next begin ${quietTime(quiet.next)}.` : "";
 }
@@ -770,7 +770,7 @@ export function projectTask(town, task, now = Date.now()) {
     blocked: !!task?.blocked,
     snooze: taskSnooze(task, now),
     workerStatus: normalized(worker?.status) || "paused",
-    // A queued task must use the configured profile even while its unit has
+    // A queued task must use the configured profile even while its bot has
     // another task running with a captured profile.
     profile: workerProfile(town, task?.house, status === "working" ? worker : null),
     intent: intentFor(town, task),
