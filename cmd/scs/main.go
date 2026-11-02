@@ -395,7 +395,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 		return ctx.Err()
 	}
 	gh := town.GitHubClient{}
-	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh}
+	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh, Bots: squadBots(dir)}
 	supervisor := town.NewSupervisor(store, gh, workers)
 	supervisor.Mjolnir = mjolnir.New(dir, demo, mjolnir.Environment())
 	workers.Mjolnir = supervisor.Mjolnir

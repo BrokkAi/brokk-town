@@ -1,14 +1,16 @@
 # Bots
 
-Each bot is a Go package of this module under `bots/`. The Squad calls the
-package in process; the bot has no server, no socket and no separate version.
-Its prompt, configuration, GitHub access and durable state stay with its
-package, and its private files live in the Squad's state directory under
-`towns/<key>/<role>/{checkout,state}`, one directory per precinct.
+Each bot is a Go package of this module under `bots/`. The Squad reaches it only
+through the bot contract in `internal/botapi`; today the bots are hosted in the
+Squad's process. Each bot's prompt, configuration, GitHub access and durable
+state stay with its package, and its private files live under its data root at
+`towns/<key>/<role>/{checkout,state}`, one directory per precinct. While the bots
+run in process their data root is the Squad's state directory.
 
-The Squad adapts the precinct's agent profile and work policy into the bot's own
-config, runs one duty, and converts the typed result back into the
-`internal/town` model. Every bot drives an ACP agent through the shared
+The Squad sends the precinct's agent profile and work policy in a contract
+request; the bot's `worker.go` adapts it into the bot's own config, resolves
+the agent harness in its own environment, runs one duty, and returns a typed
+result that the Squad converts into the `internal/town` model. Every bot drives an ACP agent through the shared
 [acp-go](https://github.com/BrokkAi/acp-go) runner.
 
 Each bot staffs one unit. The browser shows the unit; configuration, the API and

@@ -1,6 +1,7 @@
-package town
+package harness
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -49,12 +50,12 @@ func museEnv(env map[string]string, key string) string {
 	return os.Getenv(key)
 }
 
-// museConfigHome derives the ACP-only config directory under root and returns
+// MuseConfigHome derives the ACP-only config directory under root and returns
 // the XDG_CONFIG_HOME to hand the child, or "" when nothing needs deriving.
 //
 // Every failure returns "": the derivation is best-effort, and a child left on
 // the operator's own config reports the host's refusal itself.
-func museConfigHome(root string, env map[string]string) string {
+func MuseConfigHome(root string, env map[string]string) string {
 	if os.Getenv(museKeepPermissions) == "keep" || os.Getenv(legacyMuseKeepPermissions) == "keep" {
 		return ""
 	}
@@ -115,4 +116,33 @@ func museMirror(real, shadow string, settings []byte) error {
 		}
 	}
 	return os.WriteFile(filepath.Join(shadow, "settings.json"), settings, 0o600)
+}
+
+// Resolve prepares one harness launch in this process's environment: it starts
+// e's launcher under root and merges the launcher's environment beneath
+// explicit, which wins. name is the operator's harness selection; the Muse
+// adapter is pointed at a derived config directory under root (see
+// MuseConfigHome). Whoever runs the agent calls this, so a bot in its own
+// container resolves the command its own filesystem can execute.
+func Resolve(ctx context.Context, root, name string, e Entry, explicit map[string]string) ([]string, map[string]string, error) {
+	command, env, err := Launch(ctx, root, e)
+	if err != nil {
+		return nil, nil, err
+	}
+	merged := map[string]string{}
+	for k, v := range env {
+		merged[k] = v
+	}
+	for k, v := range explicit {
+		merged[k] = v
+	}
+	// After the merge: the derivation already reads through whatever config
+	// directory the operator pointed at, so the redirect has to outrank it.
+	// SLOPCOP_SQUAD_MUSE_PERMISSIONS=keep is the opt-out.
+	if Canonical(name) == "brokkai/muse-acp" {
+		if home := MuseConfigHome(root, merged); home != "" {
+			merged["XDG_CONFIG_HOME"] = home
+		}
+	}
+	return command, merged, nil
 }

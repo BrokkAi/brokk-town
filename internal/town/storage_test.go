@@ -10,6 +10,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/BrokkAi/brokk-town/internal/artifact"
+	"github.com/BrokkAi/brokk-town/internal/botapi"
+	"github.com/BrokkAi/brokk-town/internal/filelock"
 )
 
 func storageFixture(t *testing.T) (*Supervisor, string, string) {
@@ -23,11 +27,12 @@ func storageFixture(t *testing.T) (*Supervisor, string, string) {
 		}
 		x.Tasks["issue:1"] = &Task{ID: "issue:1", Kind: "issue", Number: 1, House: Issue, Stage: "closed"}
 	})
-	return NewSupervisor(st, nil, nil), x.ID, filepath.Dir(st.path)
+	root := filepath.Dir(st.path)
+	return NewSupervisor(st, nil, withBots(&BotWorkers{Root: root, Store: st})), x.ID, root
 }
 func savedTranscript(t *testing.T, s *Supervisor, id, root, name string, complete bool) string {
 	t.Helper()
-	_, state := Workspace(root, id, Issue)
+	_, state := botWorkspace(root, id, Issue)
 	path := filepath.Join(state, "sessions", name+".jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
@@ -35,10 +40,14 @@ func savedTranscript(t *testing.T, s *Supervisor, id, root, name string, complet
 	if err := os.WriteFile(path, []byte("private transcript data\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	before := transcriptPaths(root, id, Issue)
-	delete(before, path)
+	// The bot reports the transcript its run wrote, relative to its workspace.
+	digest, size, err := artifact.Digest(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	b := BotWorkers{Root: root, Store: s.Store}
-	b.recordTranscripts(id, Issue, before, RunResult{Issue: 1}, complete, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	reported := RunResult{Issue: 1, transcripts: []botapi.Transcript{{Path: "state/sessions/" + name + ".jsonl", Digest: digest, Bytes: size}}}
+	b.recordTranscripts(id, Issue, transcriptPaths(root, id, Issue), reported, complete, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	update(t, s.Store, func(st *State) {
 		for k, r := range st.Towns[id].Artifacts {
 			r.Finished = time.Now().Add(-8 * 24 * time.Hour)
@@ -146,7 +155,7 @@ func TestStorageRetainsUnfinishedUnknownChangedAndSymlinkedEvidence(t *testing.T
 }
 func TestStorageReservationBlocksWorkersAndStandaloneLocks(t *testing.T) {
 	s, id, root := storageFixture(t)
-	savedTranscript(t, s, id, root, "keep", true)
+	path := savedTranscript(t, s, id, root, "keep", true)
 	release, err := s.beginStorage(id)
 	if err != nil {
 		t.Fatal(err)
@@ -163,15 +172,26 @@ func TestStorageReservationBlocksWorkersAndStandaloneLocks(t *testing.T) {
 	// Unrelated bookkeeping can persist without killing the service.
 	update(t, s.Store, func(st *State) { st.Towns[id].LastSync = time.Now() })
 	release()
-	lock, err := lockStorage(root, id)
+	// A bot working in its workspace holds its state lock; it refuses to
+	// remove anything from under itself.
+	_, state := botWorkspace(root, id, Issue)
+	lock, err := os.OpenFile(filepath.Join(state, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := findArtifact(t, s, id, "keep.jsonl", 0)
-	if _, err = s.CleanupStorage(context.Background(), id, 0, []string{a.ID}); err == nil {
-		t.Fatal("standalone lock ignored")
+	if err = filelock.TryLock(lock); err != nil {
+		t.Fatal(err)
 	}
-	lock()
+	a := findArtifact(t, s, id, "keep.jsonl", 0)
+	result, err := s.CleanupStorage(context.Background(), id, 0, []string{a.ID})
+	if err != nil || len(result) != 1 || result[0].Status != "retained" || !strings.Contains(result[0].Detail, "working") {
+		t.Fatal("standalone lock ignored", result, err)
+	}
+	if _, err = os.Stat(path); err != nil {
+		t.Fatal("locked transcript removed", err)
+	}
+	filelock.Unlock(lock)
+	lock.Close()
 	if s.Store.storageHeld(id) {
 		t.Fatal("failed cleanup leaked reservation")
 	}

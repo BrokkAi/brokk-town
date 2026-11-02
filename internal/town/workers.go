@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
@@ -21,8 +21,9 @@ type BotWorkers struct {
 	GitHub         GitHub
 	Mjolnir        *mjolnir.Catalog
 	MjolnirCommand []string
-	// botRun replaces the in-process bot with a test double. Production leaves
-	// it nil and calls the bot packages directly.
+	// Bots are the units' bots, reached only through the bot contract.
+	Bots map[Role]botapi.Bot
+	// botRun replaces the bot with a test double. Production leaves it nil.
 	botRun       func(context.Context, Role, workerRequest, bool, func(Progress)) (workerResult, error)
 	jobsQuery    func(*Town, string, int) (map[int]*issueJobSummary, error)
 	remoteURL    func(string) string
@@ -113,7 +114,6 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	defer cancel()
 	t = clone(t)
 	t.Config = t.Config.ForRole(r)
-	dir, state := Workspace(b.Root, t.ID, r)
 	remote := b.remote(t.Config.Repo)
 	if r == Issue {
 		// Repairs own the private worktrees, so the house that creates them
@@ -123,18 +123,15 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 			log.Warn("could not collect finished worktrees", "error", err)
 		}
 	}
-	agent := t.Config.Agent
+	// A managed run is told exactly what to start; otherwise the bot is sent
+	// the operator's selection and resolves it in its own environment.
+	agent := agentSelection(t.Config.Agent)
 	if !t.Config.ExecutionForRole(r).Managed() {
 		var e error
-		agent, e = agentConfig(ctx, t.Config, b.Root)
+		agent, e = botAgent(t.Config, b.Root)
 		if e != nil {
 			return result, e
 		}
-	}
-	t.Config.Agent = agent
-	if profile, overridden := t.Config.BotAgents[r]; overridden {
-		profile.Agent = agent
-		t.Config.BotAgents[r] = profile
 	}
 	var d dispatch
 	switch r {
@@ -186,7 +183,7 @@ func (b *BotWorkers) Run(ctx context.Context, t *Town, r Role, observe func(Prog
 	default:
 		return result, fmt.Errorf("unsupported worker %s", r)
 	}
-	workerResult, err := b.runBot(ctx, t, r, agent, dir, state, remote, d, deadline, observe)
+	workerResult, err := b.runBot(ctx, t, r, agent, remote, d, deadline, observe)
 	return b.complete(ctx, t, r, d, workerResult, err, observe, log)
 }
 
@@ -201,20 +198,18 @@ func (b *BotWorkers) Observe(ctx context.Context, t *Town, request InventoryRequ
 	if t.Config.ExecutionForRole(Repo).Managed() || (t.Workers[Repo] != nil && t.Workers[Repo].Recovery != nil) {
 		request.Health = false
 	}
-	dir, state := Workspace(b.Root, t.ID, Repo)
-	agent := runner.AgentConfig{}
+	agent := botapi.Agent{}
 	if request.Health {
 		// Only the branch-health duty needs an agent, and only that duty may be
 		// told how to start one.
-		resolved, err := agentConfig(ctx, t.Config, b.Root)
+		selected, err := botAgent(t.Config, b.Root)
 		if err != nil {
 			return RunResult{}, err
 		}
-		agent = resolved
-		t.Config.Agent = agent
+		agent = selected
 	}
-	d := dispatch{mode: inventoryMode(request.Health && len(agent.Command) > 0), sinceHead: request.SinceHead, commits: request.Commits, inventorySince: request.Since, inventoryBranch: request.Branch}
-	result, err := b.runBot(ctx, t, Repo, agent, dir, state, b.remote(t.Config.Repo), d, deadline, observe)
+	d := dispatch{mode: inventoryMode(request.Health && agent.Configured()), sinceHead: request.SinceHead, commits: request.Commits, inventorySince: request.Since, inventoryBranch: request.Branch}
+	result, err := b.runBot(ctx, t, Repo, agent, b.remote(t.Config.Repo), d, deadline, observe)
 	run, err := repoResult(result, err)
 	if err == nil && run.Inventory.Incremental && (request.Since == nil || run.Inventory.StartedAt.IsZero()) {
 		return RunResult{}, errors.New("repo worker returned an incremental inventory without its baseline")
@@ -286,7 +281,7 @@ func enforceManualReleasePolicy(t *Town) bool {
 // complete turns a raw worker outcome into Town's result for one dispatch. It
 // applies results only to the dispatched task.
 func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, workerResult workerResult, err error, observe func(Progress), log *slog.Logger) (RunResult, error) {
-	result := RunResult{Usage: workerResult.Usage, CostUSD: workerResult.CostUSD}
+	result := RunResult{Usage: workerResult.Usage, CostUSD: workerResult.CostUSD, transcripts: workerResult.transcripts}
 	if r == Release {
 		result.Retried = workerResult.retried
 	}
@@ -394,12 +389,11 @@ func (b *BotWorkers) complete(ctx context.Context, t *Town, r Role, d dispatch, 
 	return result, fmt.Errorf("unsupported worker %s", r)
 }
 
-func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runner.AgentConfig, dir, state, remote string, d dispatch, deadline time.Time, observe func(Progress)) (workerResult, error) {
+func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent botapi.Agent, remote string, d dispatch, deadline time.Time, observe func(Progress)) (workerResult, error) {
 	observe(Progress{Phase: "starting", Task: "Using " + string(role) + "-bot"})
 	branch := t.Branch()
 	request := workerRequest{
-		Remote: remote, Branch: branch,
-		Directory: dir, StateDirectory: state, Repo: t.Config.Repo, Host: "github.com",
+		Town: Key(t.ID), Remote: remote, Branch: branch, Repo: t.Config.Repo, Host: "github.com",
 		Agent: agent, Verify: t.Config.Verify, Issue: d.issue, PR: d.pr, BaseSHA: d.base, HeadSHA: d.head,
 	}
 	if role == Review && t.Config.ExecutionForRole(role).Managed() {
@@ -407,18 +401,18 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent runne
 		if managed == nil {
 			return workerResult{}, errors.New("managed review has no durable dispatch context")
 		}
-		path, close, e := startRemoteAgent(ctx, managed, d.head)
+		endpoint, close, e := startRemoteAgent(ctx, managed, d.head)
 		if e != nil {
 			return workerResult{}, e
 		}
 		defer close()
-		request.RemoteAgent = path
-		request.Agent = runner.AgentConfig{}
+		request.RemoteAgent = endpoint
+		request.Agent = botapi.Agent{}
 	}
 	// The house's policy carries its own verification command when it has
 	// one, so Verify stays the town default for a house without a policy.
 	if policy, configured := t.Config.PolicyForRole(role); configured {
-		request.Policy = &policy
+		request.Policy = wirePolicy(policy)
 		if len(policy.Verify) > 0 {
 			request.Verify = policy.Verify
 		}

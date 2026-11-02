@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -91,7 +92,7 @@ func managedFixture(t *testing.T) (*BotWorkers, *Town, *atomic.Int32) {
 		t.Fatal(err)
 	}
 	x.Config.ExecutionRuntimes = map[string]mjolnir.RuntimePin{runtimeSelectionKey(*x.Config.Execution): pin}
-	return &BotWorkers{Root: t.TempDir(), Mjolnir: catalog}, x, calls
+	return withBots(&BotWorkers{Root: t.TempDir(), Mjolnir: catalog}), x, calls
 }
 
 func TestManagedDispatchFreezesSettingsAndHoldsRetainedRuns(t *testing.T) {
@@ -121,11 +122,16 @@ func TestManagedDispatchFreezesSettingsAndHoldsRetainedRuns(t *testing.T) {
 func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 	head := strings.Repeat("a", 40)
 	m := &managedDispatch{failed: true}
-	path, close, err := startRemoteAgent(t.Context(), m, head)
+	endpoint, close, err := startRemoteAgent(t.Context(), m, head)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer close()
+	path, ok := strings.CutPrefix(endpoint, "unix://")
+	if !ok {
+		t.Fatalf("callback endpoint %q is not a unix URL", endpoint)
+	}
+	path = filepath.FromSlash(path)
 	info, err := os.Stat(path)
 	if err != nil || !ownerOnly(info.Mode()) {
 		t.Fatal("callback socket is not private")

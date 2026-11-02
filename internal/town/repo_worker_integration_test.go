@@ -59,7 +59,7 @@ esac
 				}
 			})
 			x = store.Snapshot().Towns[x.ID]
-			workers := &BotWorkers{Root: t.TempDir(), Store: store}
+			workers := withBots(&BotWorkers{Root: t.TempDir(), Store: store})
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
 			result, err := workers.Observe(ctx, x, InventoryRequest{Health: tc.recovery || tc.managed}, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -104,7 +104,7 @@ esac
 		if x := store.Snapshot().Towns[before.ID]; x.Error != "" || x.Initialized {
 			t.Fatalf("upgrade did not retire only the obsolete error: error=%q initialized=%v", x.Error, x.Initialized)
 		}
-		workers := &BotWorkers{Root: t.TempDir(), Store: store}
+		workers := withBots(&BotWorkers{Root: t.TempDir(), Store: store})
 		sup := NewSupervisor(store, newGH(1), workers)
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 		defer cancel()

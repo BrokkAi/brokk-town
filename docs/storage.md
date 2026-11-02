@@ -46,7 +46,10 @@ start while a **cleanup hold** applies:
 
 While cleanup runs the precinct takes a reservation so new work cannot start
 against an artifact being removed. Each artifact is re-measured and re-verified
-under that reservation; a changed artifact is retained instead of removed. Case,
+under that reservation; a changed artifact is retained instead of removed. A
+unit's own transcripts are measured and removed by its bot, which holds its
+state lock while it does: a bot working in that workspace, even one started
+outside the Squad, refuses and the transcript is retained with that reason. Case,
 ownership, intent and worker identities are never removed.
 
 Removals are recorded as receipts: `removed`, or `partial` when the directory was

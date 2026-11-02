@@ -13,6 +13,7 @@ import (
 	acp "github.com/BrokkAi/acp-go"
 	"github.com/BrokkAi/acp-go/runner"
 	"github.com/BrokkAi/acp-go/schema"
+	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
@@ -104,13 +105,17 @@ func (a AgentSettings) Apply(c Config) (Config, error) {
 	return c, c.Validate()
 }
 
-func agentConfig(ctx context.Context, c Config, root string) (runner.AgentConfig, error) {
+// botAgent is the agent selection sent to a bot. It names the harness rather
+// than launching it: the bot installs and starts it in its own environment,
+// where a command resolved on this host would not exist.
+func botAgent(c Config, root string) (botapi.Agent, error) {
 	a := c.Agent
 	if err := requireLocalExecution(c); err != nil {
-		return a, err
+		return botapi.Agent{}, err
 	}
+	selection := agentSelection(a)
 	if len(a.Command) != 0 {
-		return a, nil
+		return selection, nil
 	}
 	var entry harness.Entry
 	if c.HarnessDefinition != nil {
@@ -119,31 +124,21 @@ func agentConfig(ctx context.Context, c Config, root string) (runner.AgentConfig
 		var err error
 		entry, err = harness.New(filepath.Join(root, "harnesses"), false).Lookup(c.harness(), "")
 		if err != nil {
-			return a, err
+			return botapi.Agent{}, err
 		}
 	}
-	command, env, err := harness.Launch(ctx, root, entry)
+	selection.Harness, selection.HarnessName = &entry, c.harness()
+	return selection, nil
+}
+
+// agentConfig resolves the agent Town runs itself, for its own repair, audit
+// and probe sessions, the same way a bot resolves its selection.
+func agentConfig(ctx context.Context, c Config, root string) (runner.AgentConfig, error) {
+	selection, err := botAgent(c, root)
 	if err != nil {
-		return a, err
+		return c.Agent, err
 	}
-	a.Command = command
-	merged := map[string]string{}
-	for k, v := range env {
-		merged[k] = v
-	}
-	for k, v := range a.Environment {
-		merged[k] = v
-	}
-	// After the merge: the derivation already reads through whatever config
-	// directory the operator pointed at, so the redirect has to outrank it.
-	// SLOPCOP_SQUAD_MUSE_PERMISSIONS=keep is the opt-out.
-	if harness.Canonical(c.harness()) == "brokkai/muse-acp" {
-		if home := museConfigHome(root, merged); home != "" {
-			merged["XDG_CONFIG_HOME"] = home
-		}
-	}
-	a.Environment = merged
-	return a, nil
+	return botapi.ResolveAgent(ctx, root, selection)
 }
 
 // Prepare records the selected registry definition without downloading or

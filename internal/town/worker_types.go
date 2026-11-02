@@ -1,50 +1,11 @@
 package town
 
 import (
-	"encoding/json"
 	"regexp"
 	"time"
 
-	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/botapi"
 )
-
-// workerRequest describes one bot operation. It used to be the body Town sent
-// to a bot's worker API; now it is the argument Town passes to the bot package
-// directly.
-type workerRequest struct {
-	InventorySince  *time.Time         `json:"inventory_since,omitempty"`
-	InventoryBranch string             `json:"inventory_branch,omitempty"`
-	Remote          string             `json:"remote"`
-	Branch          string             `json:"branch"`
-	Directory       string             `json:"directory"`
-	StateDirectory  string             `json:"state_directory"`
-	Repo            string             `json:"repo"`
-	Host            string             `json:"host"`
-	Agent           runner.AgentConfig `json:"agent"`
-	Verify          []string           `json:"verify,omitempty"`
-	Issue           int                `json:"issue,omitempty"`
-	PR              int                `json:"pr,omitempty"`
-	BaseSHA         string             `json:"base_sha,omitempty"`
-	HeadSHA         string             `json:"head_sha,omitempty"`
-	RemoteAgent     string             `json:"remote_agent,omitempty"`
-	DryRun          bool               `json:"dry_run,omitempty"`
-	Mode            string             `json:"mode,omitempty"`
-	// SinceHead and Commits are the repo worker's inventory inputs: the branch
-	// head Town last observed, and the revisions it still needs release
-	// ancestry for.
-	SinceHead string   `json:"since_head,omitempty"`
-	Commits   []string `json:"commits,omitempty"`
-	// SupersededPR asks the issue worker to start the issue over because Town
-	// closed this pull request after review.
-	SupersededPR int `json:"superseded_pr,omitempty"`
-	// Arrival is the town's description of the item a Mayor judgment decides;
-	// Since and Until bound the window a Mayor bulletin summarizes.
-	Arrival json.RawMessage `json:"arrival,omitempty"`
-	Since   *time.Time      `json:"since,omitempty"`
-	Until   *time.Time      `json:"until,omitempty"`
-	// Policy is the operator's work selection and limits for this house.
-	Policy *BotPolicy `json:"policy,omitempty"`
-}
 
 type workerIssueOwnership struct {
 	PR     int    `json:"pr"`
@@ -79,6 +40,8 @@ type workerResult struct {
 	CostUSD        *float64                 `json:"cost_usd,omitempty"`
 	// retried records that this run lifted the release bot's attempt budget.
 	retried bool
+	// transcripts are the session transcripts the bot reports writing.
+	transcripts []botapi.Transcript
 }
 
 // workerInventory is the repo bot's observation of the repository. Its fields

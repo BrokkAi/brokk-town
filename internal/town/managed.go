@@ -179,7 +179,7 @@ func startRemoteAgent(ctx context.Context, m *managedDispatch, head string) (str
 	})}
 	go func() { _ = server.Serve(listener) }()
 	close := func() { _ = server.Close(); _ = os.RemoveAll(dir) }
-	return path, close, nil
+	return "unix://" + filepath.ToSlash(path), close, nil
 }
 
 func managedSetupError(err error) error { return &runner.SetupError{Err: err} }

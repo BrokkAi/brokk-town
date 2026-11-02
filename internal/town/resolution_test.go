@@ -188,7 +188,7 @@ func TestRequeuedIssueStaysQueuedUntilIssueBotStartsOver(t *testing.T) {
 	town = store.Snapshot().Towns[town.ID]
 	job := &issueJobSummary{Branch: "issue-bot/8", Status: "submitted", Tries: 1, URL: "https://github.com/acme/orchard/pull/18"}
 	writeIssueBotState(t, root, town, map[int]*issueJobSummary{8: job})
-	workers := &BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)}
+	workers := withBots(&BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)})
 	if err := workers.SyncIssues(town); err != nil {
 		t.Fatal(err)
 	}

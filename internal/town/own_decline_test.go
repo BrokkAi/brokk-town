@@ -380,7 +380,7 @@ func TestReopenedOwnPullFailingReviewAgainRequeuesItsIssue(t *testing.T) {
 	// Issue Bot starts over, which spends the requeue marker.
 	root := t.TempDir()
 	writeIssueBotState(t, root, store.Snapshot().Towns[town.ID], map[int]*issueJobSummary{3: {Branch: "issue-5", Status: "pending"}})
-	workers := &BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)}
+	workers := withBots(&BotWorkers{Root: root, Store: store, jobsQuery: fixtureIssueQuery(root)})
 	if err := workers.SyncIssues(store.Snapshot().Towns[town.ID]); err != nil {
 		t.Fatal(err)
 	}

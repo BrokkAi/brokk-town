@@ -15,6 +15,7 @@ import (
 
 	"github.com/BrokkAi/acp-go"
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/artifact"
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
@@ -745,7 +746,7 @@ func (b *BotWorkers) confirmRepair(id, taskID string, i *Intent) error {
 // for inspection; an orphan is not proof that its work is disposable.
 func (b *BotWorkers) CollectWorktrees(ctx context.Context, t *Town) error {
 	repository := filepath.Join(b.Root, "towns", Key(t.ID), "extensions", "repair", "repository.git")
-	if !storagePathSafe(b.Root, repository) {
+	if !artifact.PathSafe(b.Root, repository) {
 		return nil
 	}
 	var failures error
@@ -754,7 +755,7 @@ func (b *BotWorkers) CollectWorktrees(ctx context.Context, t *Town) error {
 			continue
 		}
 		path := intent.Directory
-		if !storagePathSafe(b.Root, path) {
+		if !artifact.PathSafe(b.Root, path) {
 			continue
 		}
 		_, head, reason := repairRetention(ctx, t, path, repository)

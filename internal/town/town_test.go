@@ -422,7 +422,7 @@ func (w *issueRetryWorker) Run(ctx context.Context, t *Town, role Role, _ func(P
 	if role != Issue {
 		return RunResult{}, fmt.Errorf("unexpected role %s", role)
 	}
-	_, state := Workspace(w.root, t.ID, Issue)
+	_, state := botWorkspace(w.root, t.ID, Issue)
 	if err := os.MkdirAll(state, 0700); err != nil {
 		return RunResult{}, err
 	}
