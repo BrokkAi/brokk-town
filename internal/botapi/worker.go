@@ -45,6 +45,9 @@ type Worker struct {
 	// harnesses are installed into it.
 	Root   string
 	Handle Handler
+	// LogLevel is the least severe record the bot sends; the zero value is
+	// Info, the service's default.
+	LogLevel slog.Level
 }
 
 func (w Worker) Run(ctx context.Context, request Request, emit func(Event)) (Result, error) {
@@ -64,7 +67,7 @@ func (w Worker) Run(ctx context.Context, request Request, emit func(Event)) (Res
 	before := sessionFiles(state)
 	result, err := w.Handle(ctx, Job{
 		Request: request, Directory: dir, StateDirectory: state, Launch: launch,
-		Log:      slog.New(&logHandler{stream: stream, attrs: []slog.Attr{slog.String("bot", w.Name)}}),
+		Log:      slog.New(&logHandler{stream: stream, level: w.LogLevel, attrs: []slog.Attr{slog.String("bot", w.Name)}}),
 		Progress: stream.progress,
 	})
 	// A run that was stopped still reports what it wrote, so the digest gets
@@ -121,26 +124,35 @@ func (s *stream) progress(phase, task string) {
 	s.send(Event{Progress: &Progress{Phase: phase, Task: Truncate(task, 4096)}})
 }
 
-// Truncate bounds a text field at limit bytes without splitting a rune.
+// Truncate bounds a text field at limit bytes, suffix included, without
+// splitting a rune. A value it returns is unchanged by a second call, so both
+// sides of the contract can bound the same text.
 func Truncate(value string, limit int) string {
 	if len(value) <= limit {
 		return value
 	}
-	cut := limit
-	for cut > 0 && cut < len(value) && value[cut]&0xC0 == 0x80 {
+	const suffix = "…[truncated]"
+	cut := limit - len(suffix)
+	if cut < 0 {
+		cut = 0
+	}
+	for cut > 0 && value[cut]&0xC0 == 0x80 {
 		cut--
 	}
-	return value[:cut] + "…[truncated]"
+	return value[:cut] + suffix
 }
 
 // logHandler turns a bot's slog records into Log events.
 type logHandler struct {
 	stream *stream
+	level  slog.Level
 	attrs  []slog.Attr
 	group  string
 }
 
-func (h *logHandler) Enabled(context.Context, slog.Level) bool { return true }
+// Enabled drops records below the bot's level before they are built, rather
+// than sending them for the service to discard.
+func (h *logHandler) Enabled(_ context.Context, level slog.Level) bool { return level >= h.level }
 
 func (h *logHandler) Handle(_ context.Context, r slog.Record) error {
 	attrs := map[string]string{}

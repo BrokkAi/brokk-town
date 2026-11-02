@@ -73,8 +73,10 @@ on Windows for `master`, plus the browser and workflow-lint checks.
 - Go 1.27.1, standard library first. `gofmt` is enforced by CI.
 - Wrap errors with context: `fmt.Errorf("...: %w", err)`. Return errors; do not
   panic outside `main`/startup.
-- Reach a bot only through `internal/botapi`. Only `bots/inprocess.go` and
-  `cmd/bt/bots.go` may import a bot package (a test enforces it). The service
+- Reach a bot only through `internal/botapi`. Outside tests, only
+  `bots/inprocess.go` and `cmd/bt/bots.go` may import a bot package (a test
+  enforces it); Town's integration tests host the real bots through
+  `inProcessBots`. The service
   never reads a bot's files, sends it a host path, or resolves a command for it
   to run: it sends a harness selection and the bot resolves it where it runs.
 - Keep state changes inside `Store.Update`. Durable writes go through

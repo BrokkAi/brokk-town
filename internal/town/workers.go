@@ -472,6 +472,9 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent botap
 	return result, err
 }
 
+// maxReviewFindings bounds one review's findings.
+const maxReviewFindings = 1000
+
 func validateWorkerResult(result workerResult, role Role) error {
 	if result.Usage != nil && (result.Usage.InputTokens < 0 || result.Usage.OutputTokens < 0) {
 		return errors.New("worker returned invalid usage")
@@ -490,6 +493,16 @@ func validateWorkerResult(result workerResult, role Role) error {
 	case Review:
 		if result.Review == nil {
 			return errors.New("review worker omitted its result")
+		}
+		// Findings are evidence for certification, so an oversized review is
+		// refused whole rather than trimmed into one that hides a finding.
+		if len(result.Review.Findings) > maxReviewFindings || len(result.Review.Severities) > maxReviewFindings {
+			return errors.New("review worker returned too many findings")
+		}
+		for id, text := range result.Review.Findings {
+			if len(id) > 128 || len(text) > wireTextBytes*4 {
+				return errors.New("review worker returned an oversized finding")
+			}
 		}
 		if result.Issue != nil {
 			return errors.New("review worker returned issue data")

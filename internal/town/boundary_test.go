@@ -2,6 +2,7 @@ package town
 
 import (
 	"context"
+	"errors"
 	"go/parser"
 	"go/token"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/harness"
@@ -127,7 +129,7 @@ func TestDispatchSendsASelectionAndKeepsOnlyTheBotsReport(t *testing.T) {
 		t.Fatalf("agent selection = %+v", sent.Agent)
 	}
 	last := progress[len(progress)-1]
-	if last.Phase != "running" || len(last.Task) > 4096+len("…[truncated]") {
+	if last.Phase != "running" || len(last.Task) > 4096 || !utf8.ValidString(last.Task) {
 		t.Fatalf("bot progress not bounded: %+v", last)
 	}
 	records := store.Snapshot().Towns[x.ID].Artifacts
@@ -145,5 +147,64 @@ func TestDispatchWithoutABotFails(t *testing.T) {
 	workers := &BotWorkers{}
 	if _, err := workers.dispatchBot(context.Background(), Review, workerRequest{}, false, nil); err == nil || !strings.Contains(err.Error(), "review-bot") {
 		t.Fatalf("dispatch without a bot: %v", err)
+	}
+}
+
+// A bot's result is input. Text that would land in saved state is bounded,
+// a malformed branch is never taken as ownership, and an oversized review is
+// refused whole.
+func TestWireResultsAreBounded(t *testing.T) {
+	huge := strings.Repeat("界", 20000)
+	got := fromWire(botapi.Result{
+		Jobs: map[int]*botapi.IssueJob{
+			7:  {Status: huge, Failure: huge, URL: "https://github.com/o/r/pull/" + huge, Branch: "bad branch\n", Tries: -3, Result: &botapi.IssueJobResult{Status: huge, Detail: huge}},
+			-1: {Status: "pending"},
+		},
+		Issue: &botapi.IssueResult{Owned: []botapi.IssueOwnership{{PR: 3, Issue: 7, Branch: "bt/issue-7"}, {PR: 4, Issue: 8, Branch: "../escape"}, {PR: 5, Issue: 9}}},
+	})
+	job := got.Jobs[7]
+	if len(got.Jobs) != 1 || job == nil {
+		t.Fatalf("jobs = %+v", got.Jobs)
+	}
+	if len(job.Status) > wireStatusBytes || len(job.Failure) > wireTextBytes || job.URL != "" || job.Branch != "" || job.Tries != 0 || len(job.Result.Detail) > wireTextBytes || !utf8.ValidString(job.Failure) {
+		t.Fatalf("job not bounded: status %d failure %d url %q branch %q tries %d", len(job.Status), len(job.Failure), job.URL, job.Branch, job.Tries)
+	}
+	owned := map[int]string{}
+	for _, o := range got.Issue.Owned {
+		owned[o.PR] = o.Branch
+	}
+	if len(owned) != 2 || owned[3] != "bt/issue-7" || owned[5] != "" {
+		t.Fatalf("ownership = %+v", got.Issue.Owned)
+	}
+
+	findings := map[string]string{}
+	for i := 0; i <= maxReviewFindings; i++ {
+		findings[strconv.Itoa(i)] = "finding"
+	}
+	if err := validateWorkerResult(workerResult{Review: &workerReviewResult{Findings: findings}}, Review); err == nil {
+		t.Fatal("accepted a review with too many findings")
+	}
+	if err := validateWorkerResult(workerResult{Review: &workerReviewResult{Findings: map[string]string{"a": strings.Repeat("x", wireTextBytes*4+1)}}}, Review); err == nil {
+		t.Fatal("accepted an oversized finding")
+	}
+	if err := validateWorkerResult(workerResult{Review: &workerReviewResult{Findings: map[string]string{"a": "fine"}}}, Review); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type unreachableStorage struct{}
+
+func (unreachableStorage) BotStorage(context.Context, Role, botapi.StorageRequest) (botapi.StorageResult, error) {
+	return botapi.StorageResult{}, errors.New("connection refused")
+}
+
+// A removal the bot never received removed nothing, so it is retained, not
+// left uncertain.
+func TestUnreachableBotRetainsSelectedTranscripts(t *testing.T) {
+	s := &Supervisor{}
+	selected := map[string]StorageArtifact{"a": {Role: Issue, botPath: "state/sessions/a.jsonl", digest: strings.Repeat("0", 64), Bytes: 1}}
+	answers := s.removeBotTranscripts(context.Background(), &Town{ID: "o/r"}, []string{"a"}, selected, unreachableStorage{})
+	if a := answers["a"]; a.Status != "retained" || !strings.Contains(a.Detail, "could not be reached") {
+		t.Fatalf("answer = %+v", a)
 	}
 }

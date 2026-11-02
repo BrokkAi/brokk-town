@@ -29,6 +29,26 @@ func TestParseRemoteAgentAcceptsSocketsAndNetworkURLs(t *testing.T) {
 	}
 }
 
+// The parent names a Windows socket as unix:///C:/..., which must not read the
+// drive letter as a host or keep the slash in front of it.
+func TestUnixSocketPathHandlesWindowsDrives(t *testing.T) {
+	for _, tc := range []struct {
+		path    string
+		windows bool
+		want    string
+	}{
+		{"/C:/Users/a/agent.sock", true, "C:/Users/a/agent.sock"},
+		{"/c:/x.sock", true, "c:/x.sock"},
+		{"/tmp/agent.sock", true, "/tmp/agent.sock"},
+		{"/C:/Users/a/agent.sock", false, "/C:/Users/a/agent.sock"},
+		{"/tmp/agent.sock", false, "/tmp/agent.sock"},
+	} {
+		if got := unixSocketPath(tc.path, tc.windows); got != tc.want {
+			t.Fatalf("unixSocketPath(%q, %v) = %q, want %q", tc.path, tc.windows, got, tc.want)
+		}
+	}
+}
+
 // A parent reached over the network gets the same request a socket parent
 // does, at the URL it named.
 func TestRemoteAgentReachesBothTransports(t *testing.T) {

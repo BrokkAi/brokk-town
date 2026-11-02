@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,5 +186,23 @@ func TestManagedUnsupportedDutiesAndDemoRemainOffline(t *testing.T) {
 	b.Store = testStore(t, true)
 	if _, err := b.beginManaged(t.Context(), x, Review, nil); err == nil || calls.Load() != before {
 		t.Fatal("demo or unsupported work contacted Mjolnir")
+	}
+}
+
+// A Windows socket path must become a unix URL with an empty host; otherwise
+// the drive letter parses as the host and Review Bot refuses the endpoint.
+func TestUnixURLKeepsTheHostEmpty(t *testing.T) {
+	for path, want := range map[string]string{
+		"/tmp/scs-agent-1/agent.sock":       "unix:///tmp/scs-agent-1/agent.sock",
+		`C:\Users\a\scs-agent-1\agent.sock`: "unix:///C:/Users/a/scs-agent-1/agent.sock",
+	} {
+		if filepath.Separator != '\\' && strings.Contains(path, `\`) {
+			path = strings.ReplaceAll(path, `\`, "/")
+		}
+		got := unixURL(path)
+		parsed, err := url.Parse(got)
+		if err != nil || got != want || parsed.Host != "" {
+			t.Fatalf("unixURL(%q) = %q (host %q, %v), want %q", path, got, parsed.Host, err, want)
+		}
 	}
 }

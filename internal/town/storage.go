@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BrokkAi/brokk-town/internal/artifact"
@@ -217,19 +218,37 @@ func storageInventory(ctx context.Context, root string, t *Town, ageHours int, b
 	}
 	// Each role's bot reports what it keeps. Town asks it to verify only the
 	// transcripts whose receipts would otherwise let them go.
-	for _, role := range AgentRoles {
+	// The bots are independent, so they are asked at once.
+	type botInventory struct {
+		kept botapi.StorageResult
+		err  error
+	}
+	inventories := make([]botInventory, len(AgentRoles))
+	if bots != nil {
+		var wg sync.WaitGroup
+		for i, role := range AgentRoles {
+			prefix := string(role) + string(filepath.Separator)
+			var verify []string
+			for _, record := range t.Artifacts {
+				if record.Role == role && strings.HasPrefix(record.Path, prefix) && retained(record) == "" {
+					verify = append(verify, filepath.ToSlash(strings.TrimPrefix(record.Path, prefix)))
+				}
+			}
+			sort.Strings(verify)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				kept, err := bots.BotStorage(ctx, role, botapi.StorageRequest{Town: Key(t.ID), Verify: verify})
+				inventories[i] = botInventory{kept, err}
+			}()
+		}
+		wg.Wait()
+	}
+	for i, role := range AgentRoles {
 		if bots == nil {
 			break
 		}
-		prefix := string(role) + string(filepath.Separator)
-		var verify []string
-		for _, record := range t.Artifacts {
-			if record.Role == role && strings.HasPrefix(record.Path, prefix) && retained(record) == "" {
-				verify = append(verify, filepath.ToSlash(strings.TrimPrefix(record.Path, prefix)))
-			}
-		}
-		sort.Strings(verify)
-		kept, err := bots.BotStorage(ctx, role, botapi.StorageRequest{Town: Key(t.ID), Verify: verify})
+		kept, err := inventories[i].kept, inventories[i].err
 		if err != nil || kept.Incomplete {
 			out.Incomplete = true
 		}
@@ -436,6 +455,10 @@ func (s *Supervisor) removeBotTranscripts(ctx context.Context, t *Town, ids []st
 		}
 		reply, err := bots.BotStorage(ctx, role, request)
 		if err != nil {
+			// The bot never took the request, so nothing was removed.
+			for _, id := range chosen {
+				answers[id] = botapi.StorageRemoval{Path: selected[id].botPath, Status: "retained", Detail: "The bot could not be reached; artifact retained."}
+			}
 			continue
 		}
 		for _, removal := range reply.Removed {
@@ -510,7 +533,7 @@ removal:
 			case outcome.Status == "uncertain":
 				result.Status, result.Detail = "uncertain", "Cleanup could not finish; refresh the inventory to inspect the outcome."
 			case outcome.Detail != "":
-				result.Detail = truncate(outcome.Detail, 512)
+				result.Detail = botapi.Truncate(outcome.Detail, 512)
 			}
 			results = append(results, result)
 			continue

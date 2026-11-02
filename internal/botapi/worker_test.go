@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BrokkAi/brokk-town/internal/artifact"
 	"github.com/BrokkAi/brokk-town/internal/filelock"
@@ -62,6 +63,7 @@ func TestWorkerResolvesWorkspaceAndStreamsEvents(t *testing.T) {
 			t.Errorf("explicit agent not passed through: %+v", job.Launch)
 		}
 		job.Progress("", "  "+strings.Repeat("x", 5000))
+		job.Log.Debug("below the bot's level")
 		job.Log.With("issue", 7).WithGroup("git").Warn("pushed", "branch", "fix")
 		straggler = job.Progress
 		return Result{}, errors.New("stopped")
@@ -74,7 +76,7 @@ func TestWorkerResolvesWorkspaceAndStreamsEvents(t *testing.T) {
 	if len(events) != 2 {
 		t.Fatalf("events = %+v", events)
 	}
-	if p := events[0].Progress; p == nil || p.Phase != "running" || len(p.Task) > 4096+len("…[truncated]") || strings.HasPrefix(p.Task, " ") {
+	if p := events[0].Progress; p == nil || p.Phase != "running" || len(p.Task) > 4096 || strings.HasPrefix(p.Task, " ") {
 		t.Fatalf("progress not normalized: %+v", events[0])
 	}
 	l := events[1].Log
@@ -204,9 +206,14 @@ func TestStreamIsSafeForConcurrentEmitters(t *testing.T) {
 	}
 }
 
-func TestTruncateKeepsRunes(t *testing.T) {
-	if got := Truncate(strings.Repeat("界", 3), 4); got != "界…[truncated]" {
-		t.Fatalf("Truncate split a rune: %q", got)
+func TestTruncateKeepsRunesAndIsIdempotent(t *testing.T) {
+	long := strings.Repeat("界", 2000) // 6000 bytes
+	got := Truncate(long, 4096)
+	if len(got) > 4096 || !utf8.ValidString(got) || !strings.HasSuffix(got, "…[truncated]") {
+		t.Fatalf("Truncate = %d bytes, valid %v", len(got), utf8.ValidString(got))
+	}
+	if again := Truncate(got, 4096); again != got {
+		t.Fatal("a second Truncate changed an already bounded value")
 	}
 	if got := Truncate("short", 10); got != "short" {
 		t.Fatal(got)

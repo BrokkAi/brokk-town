@@ -43,7 +43,7 @@ func (b *BotWorkers) dispatchBot(ctx context.Context, role Role, request workerR
 			if phase == "" {
 				phase = "running"
 			}
-			observe(Progress{Phase: truncate(phase, 128), Task: truncate(task, 4096)})
+			observe(Progress{Phase: botapi.Truncate(phase, 128), Task: botapi.Truncate(task, 4096)})
 		}
 		if l := e.Log; l != nil {
 			botLog(ctx, name, l)
@@ -69,10 +69,10 @@ func botLog(ctx context.Context, bot string, l *botapi.Log) {
 		if key == "bot" {
 			continue
 		}
-		args = append(args, truncate(key, 128), truncate(value, 4096))
+		args = append(args, botapi.Truncate(key, 128), botapi.Truncate(value, 4096))
 		count++
 	}
-	slog.Default().Log(ctx, level, truncate(l.Message, 4096), args...)
+	slog.Default().Log(ctx, level, botapi.Truncate(l.Message, 4096), args...)
 }
 
 // agentSelection carries an explicitly configured agent to a bot unchanged.
@@ -93,8 +93,17 @@ func wirePolicy(p BotPolicy) *botapi.Policy {
 	return policy
 }
 
-// fromWire copies a bot's result into Town's own types. Town validates the
-// copy before anything reaches persisted state.
+// Bounds on text a bot reports. A bot may run in another process, so its
+// result is input: these keep one bad answer from bloating saved state.
+const (
+	wireStatusBytes = 64
+	wireTextBytes   = 16 << 10
+	wireURLBytes    = 2048
+	maxWireJobs     = 10000
+)
+
+// fromWire copies a bot's result into Town's own types, bounding the text it
+// carries. Town validates the copy before anything reaches persisted state.
 func fromWire(r botapi.Result) workerResult {
 	result := workerResult{CostUSD: r.CostUSD, transcripts: r.Transcripts}
 	if r.Usage != nil {
@@ -103,12 +112,21 @@ func fromWire(r botapi.Result) workerResult {
 	if r.Jobs != nil {
 		result.Jobs = make(map[int]*issueJobSummary, len(r.Jobs))
 		for number, j := range r.Jobs {
-			if j == nil {
+			if j == nil || number < 1 || len(result.Jobs) >= maxWireJobs {
 				continue
 			}
-			v := &issueJobSummary{Status: j.Status, Failure: j.Failure, ClaimPending: j.ClaimPending, Tries: j.Tries, RetryAt: j.RetryAt, URL: j.URL, Branch: j.Branch}
+			v := &issueJobSummary{
+				Status: botapi.Truncate(j.Status, wireStatusBytes), Failure: botapi.Truncate(j.Failure, wireTextBytes), ClaimPending: j.ClaimPending,
+				Tries: max(j.Tries, 0), RetryAt: j.RetryAt,
+			}
+			if len(j.URL) <= wireURLBytes {
+				v.URL = j.URL
+			}
+			if ValidBranch(j.Branch) {
+				v.Branch = j.Branch
+			}
 			if j.Result != nil {
-				v.Result = &issueJobResult{Status: j.Result.Status, Detail: j.Result.Detail}
+				v.Result = &issueJobResult{Status: botapi.Truncate(j.Result.Status, wireStatusBytes), Detail: botapi.Truncate(j.Result.Detail, wireTextBytes)}
 			}
 			result.Jobs[number] = v
 		}
@@ -116,11 +134,15 @@ func fromWire(r botapi.Result) workerResult {
 	if r.Issue != nil {
 		result.Issue = &workerIssueResult{Owned: []workerIssueOwnership{}}
 		for _, o := range r.Issue.Owned {
-			result.Issue.Owned = append(result.Issue.Owned, workerIssueOwnership{PR: o.PR, Branch: o.Branch, Issue: o.Issue})
+			// Ownership names the branch Town may later push to or delete; an
+			// unnamed one is kept as it always was, a malformed one is not.
+			if o.Branch == "" || ValidBranch(o.Branch) {
+				result.Issue.Owned = append(result.Issue.Owned, workerIssueOwnership{PR: o.PR, Branch: o.Branch, Issue: o.Issue})
+			}
 		}
 	}
 	if v := r.Review; v != nil {
-		result.Review = &workerReviewResult{Status: v.Status, Detail: v.Detail, Complete: v.Complete, Findings: v.Findings, Severities: v.Severities, ExactBase: v.ExactBase, ExactHead: v.ExactHead}
+		result.Review = &workerReviewResult{Status: botapi.Truncate(v.Status, wireStatusBytes), Detail: botapi.Truncate(v.Detail, wireTextBytes), Complete: v.Complete, Findings: v.Findings, Severities: v.Severities, ExactBase: v.ExactBase, ExactHead: v.ExactHead}
 	}
 	if s := r.Simplification; s != nil {
 		result.Simplification = &workerSimplification{Mode: s.Mode, Decision: s.Decision, Summary: s.Summary, Detail: s.Detail}

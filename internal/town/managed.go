@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -179,7 +180,14 @@ func startRemoteAgent(ctx context.Context, m *managedDispatch, head string) (str
 	})}
 	go func() { _ = server.Serve(listener) }()
 	close := func() { _ = server.Close(); _ = os.RemoveAll(dir) }
-	return "unix://" + filepath.ToSlash(path), close, nil
+	return unixURL(path), close, nil
+}
+
+// unixURL names a socket as a unix URL with an empty host: unix:///tmp/x.sock
+// here, unix:///C:/Users/x.sock on Windows, where a drive letter right after
+// "//" would otherwise be read as the host.
+func unixURL(path string) string {
+	return "unix:///" + strings.TrimPrefix(filepath.ToSlash(path), "/")
 }
 
 func managedSetupError(err error) error { return &runner.SetupError{Err: err} }
