@@ -48,7 +48,7 @@ an inspect-branch failure instead of being retried blindly.
 ## Configuration
 
 Town fills this configuration from the repository's agent profile and the
-Issue Bot bot's work policy in the browser. The package's own fields are:
+Issue Bot's work policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

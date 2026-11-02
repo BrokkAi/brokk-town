@@ -44,7 +44,7 @@ creating bug issues. A changed HEAD or a tracked-file edit fails the scan.
 ## Configuration
 
 Town fills this configuration from the repository's agent profile and the
-Bug Bot bot's work policy, so you normally set it in the browser rather
+Bug Bot's work policy, so you normally set it in the browser rather
 than by hand. The package's own fields are:
 
 | Field | Meaning |

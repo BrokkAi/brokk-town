@@ -47,7 +47,7 @@ stale and is never attributed to the dispatched task.
 ## Configuration
 
 Town fills this configuration from the repository's agent profile and the
-Review Bot bot's policy in the browser. The package's own fields are:
+Review Bot's policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

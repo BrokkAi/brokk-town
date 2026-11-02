@@ -45,7 +45,7 @@ edit or a moved revision fails an assessment.
 ## Configuration
 
 Town fills this configuration from the repository's agent profile and the
-Simplifier Bot bot's policy in the browser. The package's own fields are:
+Simplifier Bot's policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

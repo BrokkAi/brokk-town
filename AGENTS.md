@@ -83,10 +83,11 @@ on Windows for `master`, plus the browser and workflow-lint checks.
   package to install or publish.
 - Render from committed state. The UI never invents state and never triggers a
   write that the service did not record.
-- Keep CSS in `internal/web/style.css`. Colors, spacing and type are design
-  tokens on `:root`; use them rather than literal values. Bot metadata — display
-  names, stage labels and pipeline order, keyed by the unchanged role keys —
-  lives in `internal/web/bots.js`.
+- Keep CSS in `internal/web/style.css`. Colors, type, radii and shadows are
+  design tokens on `:root`; use them rather than literal values. Bot stage
+  labels, summaries and pipeline order, keyed by the unchanged role keys, live
+  in `internal/web/bots.js`; the bot names are `botNames` in
+  `internal/web/town.js`.
 - The Overview view shows summary metrics, the pipeline of eight bot cards and
   the Activity feed; the Board and Compact views show the same snapshot as
   columns and as a dense list. There is no animation, no canvas drawing, no

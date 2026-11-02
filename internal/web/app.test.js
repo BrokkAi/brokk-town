@@ -858,6 +858,11 @@ test("the overview lists the pipeline in order, open tasks by urgency, metrics, 
   const live = structuredClone({ ...state, seq: 1, demo: false });
   live.towns["acme/project"].tasks["issue:9"] = { id: "issue:9", kind: "issue", number: 9, title: "Fresh lead", house: "simplifier", stage: "simplifying" };
   live.towns["acme/project"].tasks["pr:10"] = { id: "pr:10", kind: "pr", number: 10, title: "Blocked review", house: "review", stage: "queued", blocked: true };
+  // Attention is the projected status, not only the blocked flag: an
+  // inconclusive review needs a person, and a snoozed task does not.
+  live.towns["acme/project"].tasks["pr:11"] = { id: "pr:11", kind: "pr", number: 11, title: "Inconclusive review", house: "review", stage: "inconclusive" };
+  live.towns["acme/project"].tasks["pr:13"] = { id: "pr:13", kind: "pr", number: 13, title: "Failed release prep", house: "release", stage: "failed" };
+  live.towns["acme/project"].tasks["issue:12"] = { id: "issue:12", kind: "issue", number: 12, title: "Set aside", house: "issue", stage: "queued", blocked: true, deferred_until: "2999-01-01T00:00:00Z" };
   live.events = [
     { seq: 1, town: "acme/project", kind: "delivery", from: "outside", to: "hall", cargo: "issue:3", title: "An external issue arrived for a decision", at: "2026-09-21T12:00:00Z" },
     { seq: 1, town: "acme/project", kind: "decision", from: "simplifier", to: "hall", cargo: "issue:3", title: "Simplifier Bot advises triage", at: "2026-09-21T12:00:01Z" },
@@ -881,17 +886,17 @@ test("the overview lists the pipeline in order, open tasks by urgency, metrics, 
   assert.ok(stages.every((stage) => stage.className.includes("stage")), "every pipeline entry is a stage card");
   const stage = (role) => stages.find((button) => button.dataset.house === role).textContent;
   assert.match(stage("hall"), /5.*Triage.*Mayor Bot.*Idle.*1 awaiting decision/s, "Triage counts the decisions waiting");
-  assert.match(stage("issue"), /6.*Implementation.*Issue Bot.*Working.*1 open/s, "a working bot shows its status and open work");
-  assert.match(stage("review"), /Review Bot.*2 open.*1 blocked.*claude-opus-5/s, "a stage shows its workload and dispatch profile");
+  assert.match(stage("issue"), /6.*Implementation.*Issue Bot.*Working.*2 open/s, "a working bot shows its status and open work");
+  assert.match(stage("review"), /Review Bot.*3 open.*2 blocked.*claude-opus-5/s, "a stage shows its workload and dispatch profile");
   assert.match(elements.pipeline.innerHTML, /class="stage light-active[^"]*" data-house="issue"/, "a working bot lights up");
 
   const rows = elements["open-tasks"].querySelectorAll("[data-task]");
-  assert.deepEqual(rows.map((row) => row.dataset.task), ["pr:10", "issue:3", "issue:9", "issue:2", "pr:1"], "blocked tasks lead, then decisions, then the rest by number");
+  assert.deepEqual(rows.map((row) => row.dataset.task), ["pr:13", "pr:11", "pr:10", "issue:3", "issue:12", "issue:9", "issue:2", "pr:1"], "tasks needing attention lead, then decisions, then the rest by number");
   assert.ok(rows.every((row) => row.className.includes("link")), "open tasks are links to their details");
   assert.doesNotMatch(elements["open-tasks"].innerHTML, /data-task="pr:4"|data-task="source:done"/, "settled work is not open");
   assert.match(elements["open-tasks"].textContent, /PR 10.*Blocked review.*Review.*Blocked/s, "a row names the task, its stage and status");
-  assert.equal(elements["open-count"].textContent, "5");
-  assert.match(elements.metrics.textContent, /Bots working\s*1.*Open tasks\s*5.*Awaiting decision\s*1.*Blocked\s*1/s, "the metrics summarise the repository");
+  assert.equal(elements["open-count"].textContent, "8");
+  assert.match(elements.metrics.textContent, /Bots working\s*1.*Open tasks\s*8.*Awaiting decision\s*1.*Blocked\s*3/s, "the metrics summarise the repository, counting blocked work the way the table ranks it");
   assert.equal(elements.metrics.hidden, false);
 
   rows.find((row) => row.dataset.task === "issue:2").onclick();
@@ -904,10 +909,14 @@ test("the overview lists the pipeline in order, open tasks by urgency, metrics, 
   const line = elements.journal.querySelectorAll("button").find((button) => button.dataset.cargo === "issue:3");
   line.onclick();
   assert.match(elements.inspection.textContent, /Outside request/, "an activity line opens its task");
+  const selectedStages = () => elements.pipeline.querySelectorAll("[data-house]").filter((button) => button.className.split(" ").includes("selected")).map((button) => button.dataset.house);
+  assert.deepEqual(selectedStages(), ["hall"], "the highlight follows the bot an activity line opens");
 
   const hall = elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall");
   hall.onclick();
   assert.match(elements.inspection.innerHTML, /<p class="worker-type">Mayor Bot<\/p><h2>Triage<\/h2>/, "the Triage card opens Mayor Bot's details");
+  elements["close-inspector"].onclick();
+  assert.deepEqual(selectedStages(), [], "closing the details clears the highlight");
 });
 
 test("the task inspector snoozes a task and resumes a snoozed one", async () => {

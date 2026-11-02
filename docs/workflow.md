@@ -223,7 +223,7 @@ state.
 | decision | `mayoral_decision`; a task awaiting one has stage `awaiting_mayor` |
 | Accept | action `admit`; `mayoral_decision` `admitted` |
 | Decline, declined | action `decline`; stage and `mayoral_decision` `declined` |
-| deferred | status `delayed`; Mayor Bot answers `delay` for a bot update |
+| Delayed | status `delayed`; Mayor Bot answers `delay` for a bot update |
 | status report | `bulletins`, `bulletin_seconds` |
 | External | `outside` |
 | You | `operator` |

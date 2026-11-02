@@ -80,7 +80,6 @@ run through a shell.
   your real directory, so credentials and trust decisions stay shared and live.
   Set `BROKK_TOWN_MUSE_PERMISSIONS=keep` to launch against the unmodified
   config.
-  The pre-rename `BROKK_TOWN_MUSE_PERMISSIONS=keep` is still honoured.
 - **draupnir** — a `PATH` supplement. Install it using its own release
   instructions and configure its model provider first.
 

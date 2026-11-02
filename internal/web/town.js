@@ -311,7 +311,7 @@ function focusKey(target) {
 }
 export function focusIdentity(target) {
   if (!target) return null;
-  const surface = target.closest?.("#towns, #roster, #caseflow, #journal, #board, #compact, #inbox-list, #inspection")?.id || "";
+  const surface = target.closest?.("#towns, #pipeline, #open-tasks, #journal, #board, #compact, #inbox-list, #inspection")?.id || "";
   const dataset = target.dataset || {};
   const key = focusKey(target);
   const town = dataset.town || dataset.boardTown || dataset.compactTown || dataset.inboxTown || "";
@@ -537,7 +537,7 @@ export function effortRank(effort) {
   return effortRanks[id] || "custom";
 }
 
-// One description of a dispatch profile for every surface: the roster,
+// One description of a dispatch profile for every surface: the pipeline,
 // the operations views, the inspector and the tooltip all say the same thing.
 export function profileSummary(profile) {
   const harness = harnessLabel(profile?.harness);

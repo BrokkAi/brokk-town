@@ -17,7 +17,7 @@ Town asks Mayor Bot for one of two one-shot duties.
 
 **judge** — decide one arrival waiting for triage: an issue, an
 external pull request, or a bot proposal. Mayor Bot reads Town's
-description of the arrival (including any advice from the Simplifier Bot or the
+description of the arrival (including any advice from Simplifier Bot or
 Town's own review), the live GitHub discussion, and the repository at the
 exact revision in a detached worktree. It answers *admit* (accept) or
 *decline* — *delay* (defer) for a bot update — with a
@@ -40,7 +40,7 @@ requests from its own window.
 ## Configuration
 
 Town fills this configuration from the repository's agent profile and the
-Mayor Bot bot's policy. The package's own fields are:
+Mayor Bot's policy. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

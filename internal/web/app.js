@@ -41,6 +41,7 @@ import {
   parseQuietHours,
   formatQuietHours,
   reconnectDelay,
+  attentionStatuses,
 } from "./town.js";
 import { attentionSettings } from "./attention.js";
 import { management } from "./manage.js";
@@ -555,7 +556,10 @@ function inspectOperation(id, role, task = "") {
 function closeInspector() {
   clearLiveDetail();
   $("#inspector").classList.remove("open");
-  if (state) renderOverview();
+  if (state) {
+    renderOverview();
+    renderPipeline();
+  }
 }
 function chooseHouse(role) {
   overview = false;
@@ -813,13 +817,13 @@ function renderPipeline() {
     $("#pipeline").innerHTML = cards;
     $("#pipeline").querySelectorAll("[data-house]").forEach((b) => (b.onclick = () => chooseHouse(b.dataset.house)));
   }
-  // Open tasks, most urgent first: blocked, then waiting on a decision, then
-  // everything else by number.
+  // Open tasks, most urgent first: needing attention, then waiting on a
+  // decision, then everything else by number.
   const tasks = t
     ? Object.values(t.tasks || {})
         .filter((task) => !settled(task))
         .map((task) => ({ task, view: projectTask(t, task) }))
-        .sort((a, b) => urgency(a.task) - urgency(b.task) || (b.task.number ?? 0) - (a.task.number ?? 0))
+        .sort((a, b) => urgency(a) - urgency(b) || (b.task.number ?? 0) - (a.task.number ?? 0))
     : [];
   const shown = tasks.slice(0, 50);
   const table = tasks.length
@@ -834,12 +838,14 @@ function renderPipeline() {
     $("#open-tasks").querySelectorAll("[data-task]").forEach((b) => (b.onclick = () => openTask(b.dataset.task)));
   }
   const stats = t ? townSummary(t) : null;
+  // Blocked counts what the table ranks first, plus failed bots.
+  const blocked = tasks.filter(({ view }) => attentionStatuses.includes(view.status)).length + (stats?.failed || 0);
   const metrics = stats
     ? [
         [stats.busy, "Bots working"],
-        [stats.queued, "Open tasks"],
+        [tasks.length, "Open tasks"],
         [stats.decisions, "Awaiting decision", stats.decisions ? "decide" : ""],
-        [stats.blocked + stats.failed, "Blocked", stats.blocked + stats.failed ? "alert" : ""],
+        [blocked, "Blocked", blocked ? "alert" : ""],
       ]
         .map(([value, label, tone]) => `<div class="metric${tone ? ` ${tone}` : ""}"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`)
         .join("")
@@ -852,9 +858,12 @@ function renderPipeline() {
   $("#pipeline").closest?.(".panel")?.toggleAttribute?.("hidden", !t);
   $("#open-tasks").closest?.(".panel")?.toggleAttribute?.("hidden", !t);
 }
-function urgency(task) {
-  if (task.blocked) return 0;
-  if (task.mayoral_decision === "pending") return 1;
+// urgency ranks an open task by its projected status, the same reading the
+// Blocked metric and the inbox use: work that needs a person first, then
+// arrivals awaiting a decision. A snoozed task is set aside, not urgent.
+function urgency({ task, view }) {
+  if (attentionStatuses.includes(view.status)) return 0;
+  if (task.mayoral_decision === "pending" && !task.blocked) return 1;
   return 2;
 }
 // openTask opens a task's details from anywhere it shows up.
@@ -1158,7 +1167,7 @@ function renderJournal() {
           selectedHouse = isBot(b.dataset.house) ? b.dataset.house : "hall";
           selectedTask = b.dataset.cargo;
           $("#inspector").classList.add("open");
-          renderInspection();
+          render();
         }),
     );
 }

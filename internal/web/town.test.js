@@ -686,3 +686,11 @@ test("inspector controls keep their identity across redraws", () => {
   assert.equal(focusMatches({ dataset: { action: "pause" } }, { surface: "inspection", key: "pause", town: "" }), true);
   assert.equal(focusMatches({ dataset: { action: "stop" } }, { surface: "inspection", key: "pause", town: "" }), false);
 });
+
+// The Overview's pipeline cards and open-task rows keep keyboard focus across
+// snapshot redraws, so their containers must be focus surfaces.
+test("pipeline cards and open-task rows are focus surfaces", () => {
+  const within = (id) => ({ closest: (selector) => (selector.split(",").map((s) => s.trim()).includes(`#${id}`) ? { id } : null) });
+  assert.deepEqual(focusIdentity({ ...within("pipeline"), dataset: { house: "review" } }), { surface: "pipeline", key: "review", town: "" });
+  assert.deepEqual(focusIdentity({ ...within("open-tasks"), dataset: { task: "pr:4" } }), { surface: "open-tasks", key: "pr:4", town: "" });
+});

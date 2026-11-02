@@ -47,7 +47,7 @@ creating proposal issues. A changed HEAD or tracked-file edit fails the scan.
 ## Configuration
 
 Town fills this configuration from the repository's agent profile and the
-Feature Bot bot's work policy in the browser. The package's own fields
+Feature Bot's work policy in the browser. The package's own fields
 are:
 
 | Field | Meaning |

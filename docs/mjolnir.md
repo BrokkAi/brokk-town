@@ -14,9 +14,10 @@ Town reads two environment variables when the service starts:
 | --- | --- |
 | `BROKK_TOWN_MJOLNIR_API_URL` | Mjolnir's API base URL. Must end in `/api/v1` and use a loopback address. |
 | `BROKK_TOWN_MJOLNIR_TOKEN_FILE` | Path to the file holding the API token. |
+| `BROKK_TOWN_MJOLNIR_COMMAND` | Optional JSON command array for `mj`; defaults to `mj` on `PATH`. |
 
-Both are required to enable Mjolnir. Their names from before the rename,
-`BT_MJOLNIR_API_URL` and `BT_MJOLNIR_TOKEN_FILE`, are still read when the new
+Both are required to enable Mjolnir. The names used up to 0.10.0, `BT_MJOLNIR_API_URL`,
+`BT_MJOLNIR_TOKEN_FILE` and `BT_MJOLNIR_COMMAND`, are still read when the new
 ones are unset. `mj api-info` prints the values for a local
 daemon. The connection is deliberately restricted to loopback, rejects redirects
 and proxies, and never falls back to the public internet. Demo mode ignores the

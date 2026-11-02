@@ -1,6 +1,6 @@
 # Repo Bot
 
-Observe a repository, and keep the branch the repository covers healthy.
+Observe a repository, and keep the branch it covers healthy.
 
 `repo-bot` is a Go package of the
 [Brokk Town](https://github.com/BrokkAi/brokk-town) module. Repo Bot runs the
@@ -51,7 +51,7 @@ accordingly; this bot does not open a pull request instead.
 ## Configuration
 
 Town fills this configuration from the repository's agent profile and the
-Repo Bot bot's policy. The package's own fields are:
+Repo Bot's policy. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |

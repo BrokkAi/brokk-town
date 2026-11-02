@@ -103,10 +103,11 @@ canvas drawing and no image assets.
   pipeline: one card per bot in pipeline order, each with its stage, status and
   workload. Select a card to open the bot's details panel with its progress,
   logs and setup diagnostics. Below the pipeline, **Open tasks** lists every
-  unsettled task (blocked first, then those awaiting a decision), and the
-  **Activity** feed lists
-  recent events: a handoff names both bots, such as `External → Triage`, with
-  "External" for a submission from outside and "You" for your own action.
+  unsettled task (those needing attention first — blocked, failed, inconclusive
+  or an uncertain write — then those awaiting a decision; a snoozed task waits
+  its turn), and the **Activity** feed lists recent events: a handoff names
+  both bots, such as `External → Triage`, with "External" for a submission
+  from outside and "You" for your own action.
 - **Board** — tasks in columns by stage (Open, Simplification, Queued, In
   progress, Blocked, Review, Ready, Shipped, Completed), for one repository or
   all of them.
@@ -140,7 +141,7 @@ canvas drawing and no image assets.
 - **New request** — submit an issue request; see [Requests](#requests).
 - **History** — archived terminal tasks, with details and reopen.
 - **Storage** — the artifact inventory and explicit cleanup.
-- **Global settings** — repository settings: repository and per-bot configuration,
+- **Settings** — repository settings: repository and per-bot configuration,
   agent profiles, quiet hours, budgets and execution placement (Mjolnir
   targets, profiles and runtime selection).
 

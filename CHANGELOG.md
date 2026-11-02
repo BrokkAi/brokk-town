@@ -4,12 +4,13 @@
 
 - Redesign the browser as a clean, professional dashboard. The default
   **Overview** view shows summary metrics, the pipeline of eight bots with each
-  one's status and workload, and the **Activity** feed; select a bot to open
-  its details panel. The **Board** and **Compact** views remain.
+  one's status and workload, a table of open tasks (blocked first, then those
+  awaiting a decision), and the **Activity** feed; select a bot or a task to
+  open its details panel. Light by default, dark when the system asks for it. The **Board** and **Compact** views remain.
 - Remove the Town and Frontline themes, the factions, the canvas town and every
   pixel-art asset, along with the theme toggle, the Feature Bot artwork and
   `docs/themes.md`. The browser is plain HTML, CSS and ES modules with design
-  tokens for color, spacing and type, and ships no images.
+  tokens for color and type, and ships no images.
 - Use plain product language in the browser and the docs: towns are shown as
   repositories, houses as bots with a stage (Repository, Bug discovery, Feature
   discovery, Simplification, Triage, Implementation, Review, Release), Mayoral
@@ -17,6 +18,9 @@
   status report, and Town Guide as the Assistant. Service-wide settings are
   Global settings.
 - Keys 1–8 select bots in pipeline order, and O selects the Overview view.
+- Mjolnir settings are now `BROKK_TOWN_MJOLNIR_API_URL`,
+  `BROKK_TOWN_MJOLNIR_TOKEN_FILE` and `BROKK_TOWN_MJOLNIR_COMMAND`. The
+  `BT_MJOLNIR_*` names are still read when the new ones are unset.
 - The local API, config keys, role keys, event kinds and `state.json` are
   unchanged — `town`, `towns`, `/api/towns`, `house`, `hall`, `operator`,
   `mayoral_decision`, `awaiting_mayor`, `bulletins`, `bulletin_seconds` and

@@ -126,11 +126,12 @@ security policy. See [operations.md](operations.md) for the route list.
 The embedded UI is plain HTML, CSS and ES modules with no build step, no
 animation, no canvas drawing and no image assets. It renders the committed
 snapshot and sends every command through the same API. `internal/web/bots.js`
-owns the bot metadata — display names, stage labels and pipeline order — keyed
-by the unchanged role keys. The Overview view shows summary metrics, the
-pipeline of bot cards and the Activity feed; the Board view's columns come from
-`internal/web/town.js`. `internal/web/style.css` defines the colors, spacing and
-type as design tokens. No view invents a task or sends a command on its own.
+owns the stage labels, summaries and pipeline order, keyed by the unchanged
+role keys; the bot names are `botNames` in `internal/web/town.js`. The Overview
+view shows summary metrics, the pipeline of bot cards, the open tasks and the
+Activity feed; the Board view's columns come from
+`internal/web/town.js`. `internal/web/style.css` defines the colors, type, radii and
+shadows as design tokens. No view invents a task or sends a command on its own.
 
 ## Harnesses and Mjolnir
 
