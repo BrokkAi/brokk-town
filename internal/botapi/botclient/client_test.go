@@ -364,3 +364,44 @@ func TestAnEarlyCancelIsRetried(t *testing.T) {
 		t.Fatalf("cancellation took %s", waited)
 	}
 }
+
+type recordClose struct {
+	next   http.RoundTripper
+	closes map[string]bool
+	mu     sync.Mutex
+}
+
+func (r *recordClose) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.mu.Lock()
+	r.closes[req.URL.Path] = req.Close
+	r.mu.Unlock()
+	return r.next.RoundTrip(req)
+}
+
+// A request that may change the bot's state never reuses a pooled connection,
+// where a write into a connection the bot already closed would look like a
+// request the bot might have acted on.
+func TestStateChangingRequestsUseAFreshConnection(t *testing.T) {
+	client, _ := serve(t, &fakeBot{
+		run: func(context.Context, botapi.Request, func(botapi.Event)) (botapi.Result, error) {
+			return botapi.Result{}, nil
+		},
+		storage: func(context.Context, botapi.StorageRequest) (botapi.StorageResult, error) {
+			return botapi.StorageResult{}, nil
+		},
+	})
+	recorder := &recordClose{next: http.DefaultTransport, closes: map[string]bool{}}
+	client.HTTP = &http.Client{Transport: recorder}
+	if _, err := client.Identity(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Run(context.Background(), request(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Storage(context.Background(), botapi.StorageRequest{Town: "0123abcd", Role: "review"}); err != nil {
+		t.Fatal(err)
+	}
+	if !recorder.closes["/v1/run"] || !recorder.closes["/v1/storage"] || recorder.closes["/v1/identity"] {
+		t.Fatalf("connection reuse = %v", recorder.closes)
+	}
+}

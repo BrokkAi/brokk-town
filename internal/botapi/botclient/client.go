@@ -115,6 +115,11 @@ func (c *Client) send(ctx context.Context, method, path string, body []byte, hea
 		req.Header[k] = v
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
+	// A request with a body may change the bot's state, so it never rides a
+	// pooled connection: a write into a connection the bot already closed
+	// would look as if the bot might have acted. On a fresh connection a bot
+	// that is gone fails at dial, before anything is sent.
+	req.Close = body != nil
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
