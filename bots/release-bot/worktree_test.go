@@ -141,8 +141,10 @@ func TestDivergentPreparationMergesConcurrentWorkAndStartsNextJobSeparately(t *t
 			// The agent handles a real merge conflict in its own worktree.
 			merge := exec.Command("git", "merge", "--no-commit", "origin/master")
 			merge.Dir = dir
-			merge.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid", "GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid")
-			if output, err := merge.CombinedOutput(); err == nil || !strings.Contains(string(output), "CONFLICT") {
+			merge.Env = append(os.Environ(), "LC_ALL=C", "GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid", "GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid")
+			// Read the conflict from the index, which is stable, rather than from
+			// git's message text, which a locale can change.
+			if output, err := merge.CombinedOutput(); err == nil || localGit(t, dir, "ls-files", "--unmerged", "--", "manifest") == "" {
 				t.Fatalf("expected real merge conflict: %s %v", output, err)
 			}
 			writeTestFile(t, filepath.Join(dir, "manifest"), "both bots' changes reconciled")
