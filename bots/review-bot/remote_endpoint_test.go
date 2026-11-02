@@ -4,16 +4,25 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
+// socketURL names a socket the way the parent does: unix:///tmp/x.sock, or
+// unix:///C:/x.sock on Windows.
+func socketURL(path string) string {
+	return "unix:///" + strings.TrimPrefix(filepath.ToSlash(path), "/")
+}
+
 func TestParseRemoteAgentAcceptsSocketsAndNetworkURLs(t *testing.T) {
+	// An absolute path on this platform: /tmp/... here, C:\... on Windows.
+	socket := filepath.Join(t.TempDir(), "agent.sock")
 	for _, tc := range []struct {
 		value, url, socket string
 	}{
-		{"/run/bt/agent.sock", "http://town/v1/agent", "/run/bt/agent.sock"},
-		{"unix:///run/bt/agent.sock", "http://town/v1/agent", "/run/bt/agent.sock"},
+		{socket, "http://town/v1/agent", socket},
+		{socketURL(socket), "http://town/v1/agent", socket},
 		{"http://town:8080/v1/agent", "http://town:8080/v1/agent", ""},
 		{"https://town.example/v1/agent", "https://town.example/v1/agent", ""},
 	} {
@@ -63,7 +72,7 @@ func TestRemoteAgentReachesBothTransports(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(handler))
 	t.Cleanup(server.Close)
 	socket := remoteFixture(t, handler)
-	for _, endpoint := range []string{server.URL + "/v1/agent", "unix://" + socket, socket} {
+	for _, endpoint := range []string{server.URL + "/v1/agent", socketURL(socket), socket} {
 		text, err := executeRemote(t.Context(), Config{RemoteAgent: endpoint, RemoteHead: head}, "review")
 		if err != nil || text != "reviewed" {
 			t.Fatalf("%s: text %q, err %v", endpoint, text, err)
