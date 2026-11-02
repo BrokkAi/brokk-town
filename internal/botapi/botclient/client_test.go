@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -301,5 +302,65 @@ func TestStorageRoundTripsAndFailuresAreClassified(t *testing.T) {
 	ts.Close()
 	if _, err := client.Storage(context.Background(), botapi.StorageRequest{Town: "0123abcd", Role: "review"}); !errors.Is(err, botapi.ErrUnavailable) {
 		t.Fatalf("closed: %v", err)
+	}
+}
+
+// A run the bot's own shutdown cuts short may have acted part-way, so it is
+// uncertain even though the bot reported it, with what it completed.
+func TestABotShuttingDownLeavesItsRunUncertain(t *testing.T) {
+	started := make(chan struct{})
+	server := &botserver.Server{Bot: &fakeBot{run: func(ctx context.Context, _ botapi.Request, _ func(botapi.Event)) (botapi.Result, error) {
+		close(started)
+		<-ctx.Done()
+		return botapi.Result{Transcripts: []botapi.Transcript{{Path: "state/sessions/cut.jsonl"}}}, ctx.Err()
+	}}, Identity: botapi.Identity{Name: "review-bot", Role: "review", Version: "v1", Contract: botapi.Version}, Token: token}
+	base, shutdown := context.WithCancel(context.Background())
+	ts := httptest.NewUnstartedServer(server.Handler())
+	ts.Config.BaseContext = func(net.Listener) context.Context { return base }
+	ts.Start()
+	defer ts.Close()
+	client, _ := New(ts.URL, token, "review-bot", "review", "")
+	go func() { <-started; shutdown() }()
+	result, err := client.Run(context.Background(), request(), nil)
+	var botErr *botapi.BotError
+	if !errors.Is(err, botapi.ErrUncertain) || !errors.As(err, &botErr) || len(result.Transcripts) != 1 {
+		t.Fatalf("result %+v, err %v", result, err)
+	}
+}
+
+// A cancel that reaches the bot before it has read the request is tried
+// again, so the run stops promptly rather than after the grace period.
+func TestAnEarlyCancelIsRetried(t *testing.T) {
+	stopped := make(chan struct{})
+	server := &botserver.Server{Bot: &fakeBot{run: func(ctx context.Context, _ botapi.Request, _ func(botapi.Event)) (botapi.Result, error) {
+		<-ctx.Done()
+		close(stopped)
+		return botapi.Result{}, ctx.Err()
+	}}, Identity: botapi.Identity{Name: "review-bot", Role: "review", Version: "v1", Contract: botapi.Version}, Token: token}
+	handler := server.Handler()
+	sent := make(chan struct{}, 1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/run" {
+			sent <- struct{}{}
+			time.Sleep(700 * time.Millisecond) // a slow request body
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer ts.Close()
+	client, _ := New(ts.URL, token, "review-bot", "review", "")
+	client.Grace = time.Minute
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { <-sent; cancel() }()
+	begun := time.Now()
+	if _, err := client.Run(ctx, request(), nil); err == nil {
+		t.Fatal("canceled run succeeded")
+	}
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("the bot's run was not canceled")
+	}
+	if waited := time.Since(begun); waited > 10*time.Second {
+		t.Fatalf("cancellation took %s", waited)
 	}
 }

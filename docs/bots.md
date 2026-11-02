@@ -205,8 +205,9 @@ Every other request carries `Authorization: Bearer <token>`, compared in
 constant time. Request bodies are bounded at 8 MiB and unknown fields are
 refused. A run's stream numbers every frame from zero: a `hello` frame with the
 bot's identity, then `event` frames (progress or log) and a `heartbeat` every
-ten seconds, then exactly one `done` frame with the result and the bot's error,
-if any. Town checks the order, the bounds (1 MiB per event, 128 MiB for the
+ten seconds, then exactly one `done` frame with the result, the bot's error, if
+any, and `uncertain` when something other than Town cut the run short (the
+bot shutting down) or its result could not be delivered. Town checks the order, the bounds (1 MiB per event, 128 MiB for the
 result) and that nothing follows `done`. When Town stops a run it calls
 `/v1/cancel` and waits up to 30 seconds for `done`; a closed connection also
 cancels the run.

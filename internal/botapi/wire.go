@@ -71,6 +71,11 @@ type Frame struct {
 type Done struct {
 	Result Result `json:"result"`
 	Error  string `json:"error,omitempty"`
+	// Uncertain means the run was cut short by something other than the
+	// service's own request, such as the bot shutting down, or its result
+	// could not be delivered. The run may have acted, so the service
+	// reconciles it as it does an interrupted one.
+	Uncertain bool `json:"uncertain,omitempty"`
 }
 
 // ErrUncertain marks a failure after the bot may have acted on a request: the

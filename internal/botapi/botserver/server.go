@@ -165,6 +165,11 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 	close(stopBeat)
 	<-beatDone
 	done := &botapi.Done{Result: result}
+	// A run the bot's own shutdown cut short may have acted part-way; one the
+	// service canceled is already uncertain on the service's side.
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, errCanceledByService) {
+		done.Uncertain = true
+	}
 	if err != nil {
 		done.Error = botapi.Truncate(err.Error(), 64<<10)
 		if done.Error == "" {
@@ -173,7 +178,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 	}
 	if !out.sendDone(done) {
 		s.logger().Warn("run result exceeded the contract's bound", "run", id)
-		out.sendDone(&botapi.Done{Error: "the run's result exceeded the contract's size bound"})
+		out.sendDone(&botapi.Done{Error: "the run's result exceeded the contract's size bound", Uncertain: true})
 	}
 	if cause := context.Cause(ctx); cause != nil {
 		s.logger().Info("run stopped", "run", id, "cause", cause.Error())

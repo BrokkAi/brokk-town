@@ -62,7 +62,6 @@ func New(base, token, name, role, caFile string) (*Client, error) {
 		Proxy:                  nil,
 		DialContext:            (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:    10 * time.Second,
-		ResponseHeaderTimeout:  30 * time.Second,
 		MaxResponseHeaderBytes: 16 << 10,
 		IdleConnTimeout:        90 * time.Second,
 		ForceAttemptHTTP2:      false,
@@ -220,6 +219,9 @@ func (c *Client) Run(ctx context.Context, request botapi.Request, emit func(bota
 	if len(body) > botapi.MaxRequestBytes {
 		return botapi.Result{}, c.unavailable("the run request exceeds the contract's bound")
 	}
+	if err := ctx.Err(); err != nil {
+		return botapi.Result{}, c.unavailable("the run was canceled before it was sent: %v", err)
+	}
 	id := runID()
 	// The stream outlives ctx by the grace period, so a canceled run can
 	// still report what it completed.
@@ -233,7 +235,15 @@ func (c *Client) Run(ctx context.Context, request botapi.Request, emit func(bota
 			return
 		case <-ctx.Done():
 		}
-		c.cancelRun(id)
+		// The bot registers a run only once it has read the request, so a
+		// cancel that arrives first is tried again.
+		for attempt := 0; attempt < 5 && !c.cancelRun(id); attempt++ {
+			select {
+			case <-finished:
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
 		grace := c.Grace
 		if grace <= 0 {
 			grace = 30 * time.Second
@@ -244,6 +254,14 @@ func (c *Client) Run(ctx context.Context, request botapi.Request, emit func(bota
 			closeStream()
 		}
 	}()
+	idle := c.Idle
+	if idle <= 0 {
+		idle = time.Minute
+	}
+	// The watchdog also covers the wait for the response's headers, which the
+	// bot writes as soon as it has read the request.
+	watchdog := time.AfterFunc(idle, closeStream)
+	defer watchdog.Stop()
 	resp, wrote, err := c.send(stream, http.MethodPost, "/v1/run", body, http.Header{botapi.RunHeader: {id}})
 	if err != nil {
 		if !wrote && ctx.Err() == nil {
@@ -264,12 +282,6 @@ func (c *Client) Run(ctx context.Context, request botapi.Request, emit func(bota
 	if media := resp.Header.Get("Content-Type"); !strings.HasPrefix(media, botapi.StreamType) {
 		return botapi.Result{}, c.uncertain("the run answered %q, not a frame stream", botapi.Truncate(media, 64))
 	}
-	idle := c.Idle
-	if idle <= 0 {
-		idle = time.Minute
-	}
-	watchdog := time.AfterFunc(idle, closeStream)
-	defer watchdog.Stop()
 	reader := bufio.NewReaderSize(resp.Body, 64<<10)
 	for seq := 0; ; seq++ {
 		line, err := readLine(reader, botapi.MaxResultBytes)
@@ -326,24 +338,31 @@ func (c *Client) Run(ctx context.Context, request botapi.Request, emit func(bota
 					return botapi.Result{}, c.uncertain("the stream continued after the run's result")
 				}
 			}
+			var err error
 			if frame.Done.Error != "" {
-				return frame.Done.Result, &botapi.BotError{Message: botapi.Truncate(frame.Done.Error, 64<<10)}
+				err = &botapi.BotError{Message: botapi.Truncate(frame.Done.Error, 64<<10)}
 			}
-			return frame.Done.Result, nil
+			if frame.Done.Uncertain {
+				err = errors.Join(c.uncertain("the bot stopped the run before it finished"), err)
+			}
+			return frame.Done.Result, err
 		}
 	}
 }
 
-// cancelRun asks the bot to stop a run. It is best effort: if the request is
-// lost, closing the stream after the grace period stops the run as well.
-func (c *Client) cancelRun(id string) {
+// cancelRun asks the bot to stop a run and reports whether the bot took it.
+// It is best effort: if every request is lost, closing the stream after the
+// grace period stops the run as well.
+func (c *Client) cancelRun(id string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	resp, _, err := c.send(ctx, http.MethodPost, "/v1/cancel", nil, http.Header{botapi.RunHeader: {id}})
-	if err == nil {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 8<<10))
-		resp.Body.Close()
+	if err != nil {
+		return false
 	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 8<<10))
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusNoContent
 }
 
 // readLine reads one newline-terminated line of at most limit bytes.

@@ -39,8 +39,10 @@ on, whose result Town did not receive whole, becomes a recovery hold.
   without stopping, its connection to the bot closes, which also stops the run
   on the bot; the open `run` in `state.json` becomes a hold at the next
   startup. A restarted Town never reattaches to a run it lost.
-- **A bot stops, restarts or loses its connection mid-run.** The stream ends
-  without a result, or goes silent for a minute, and the run becomes a hold.
+- **A bot stops, restarts or loses its connection mid-run.** A bot that shuts
+  down (a rollout, `docker compose restart`) stops its runs and reports each as
+  cut short, with what it completed; a bot that dies leaves the stream without
+  a result, or silent for a minute. Either way the run becomes a hold.
 - **A bot answers something the contract forbids** — frames out of order, an
   oversized event, more after the result, the wrong bot's identity. The run
   becomes a hold.
