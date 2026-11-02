@@ -1,0 +1,943 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bug-bot-data
+  labels:
+    app.kubernetes.io/name: bug-bot
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bug-bot
+  labels:
+    app.kubernetes.io/name: bug-bot
+    app.kubernetes.io/component: bot
+spec:
+  selector:
+    app.kubernetes.io/name: bug-bot
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bug-bot
+  labels:
+    app.kubernetes.io/name: bug-bot
+    app.kubernetes.io/component: bot
+spec:
+  replicas: 1
+  # One pod owns the volume and its workspaces at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bug-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bug-bot
+        app.kubernetes.io/component: bot
+    spec:
+      automountServiceAccountToken: false
+      # Long agent runs report what they completed before the pod goes.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bug-bot
+          image: ghcr.io/brokkai/brokk-town/bug-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKK_BOT_TOKEN_FILE
+              value: /run/secrets/brokk/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: token
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bug-bot-data
+        # Each bot sees only its own token.
+        - name: token
+          secret:
+            secretName: brokk-town-bot-tokens
+            defaultMode: 0440
+            items:
+              - key: bug-bot
+                path: token
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: feature-bot-data
+  labels:
+    app.kubernetes.io/name: feature-bot
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feature-bot
+  labels:
+    app.kubernetes.io/name: feature-bot
+    app.kubernetes.io/component: bot
+spec:
+  selector:
+    app.kubernetes.io/name: feature-bot
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feature-bot
+  labels:
+    app.kubernetes.io/name: feature-bot
+    app.kubernetes.io/component: bot
+spec:
+  replicas: 1
+  # One pod owns the volume and its workspaces at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: feature-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: feature-bot
+        app.kubernetes.io/component: bot
+    spec:
+      automountServiceAccountToken: false
+      # Long agent runs report what they completed before the pod goes.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: feature-bot
+          image: ghcr.io/brokkai/brokk-town/feature-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKK_BOT_TOKEN_FILE
+              value: /run/secrets/brokk/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: token
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: feature-bot-data
+        # Each bot sees only its own token.
+        - name: token
+          secret:
+            secretName: brokk-town-bot-tokens
+            defaultMode: 0440
+            items:
+              - key: feature-bot
+                path: token
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: issue-bot-data
+  labels:
+    app.kubernetes.io/name: issue-bot
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: issue-bot
+  labels:
+    app.kubernetes.io/name: issue-bot
+    app.kubernetes.io/component: bot
+spec:
+  selector:
+    app.kubernetes.io/name: issue-bot
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: issue-bot
+  labels:
+    app.kubernetes.io/name: issue-bot
+    app.kubernetes.io/component: bot
+spec:
+  replicas: 1
+  # One pod owns the volume and its workspaces at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: issue-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: issue-bot
+        app.kubernetes.io/component: bot
+    spec:
+      automountServiceAccountToken: false
+      # Long agent runs report what they completed before the pod goes.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: issue-bot
+          image: ghcr.io/brokkai/brokk-town/issue-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKK_BOT_TOKEN_FILE
+              value: /run/secrets/brokk/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: token
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: issue-bot-data
+        # Each bot sees only its own token.
+        - name: token
+          secret:
+            secretName: brokk-town-bot-tokens
+            defaultMode: 0440
+            items:
+              - key: issue-bot
+                path: token
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: review-bot-data
+  labels:
+    app.kubernetes.io/name: review-bot
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: review-bot
+  labels:
+    app.kubernetes.io/name: review-bot
+    app.kubernetes.io/component: bot
+spec:
+  selector:
+    app.kubernetes.io/name: review-bot
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: review-bot
+  labels:
+    app.kubernetes.io/name: review-bot
+    app.kubernetes.io/component: bot
+spec:
+  replicas: 1
+  # One pod owns the volume and its workspaces at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: review-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: review-bot
+        app.kubernetes.io/component: bot
+    spec:
+      automountServiceAccountToken: false
+      # Long agent runs report what they completed before the pod goes.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: review-bot
+          image: ghcr.io/brokkai/brokk-town/review-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKK_BOT_TOKEN_FILE
+              value: /run/secrets/brokk/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: token
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: review-bot-data
+        # Each bot sees only its own token.
+        - name: token
+          secret:
+            secretName: brokk-town-bot-tokens
+            defaultMode: 0440
+            items:
+              - key: review-bot
+                path: token
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: release-bot-data
+  labels:
+    app.kubernetes.io/name: release-bot
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: release-bot
+  labels:
+    app.kubernetes.io/name: release-bot
+    app.kubernetes.io/component: bot
+spec:
+  selector:
+    app.kubernetes.io/name: release-bot
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: release-bot
+  labels:
+    app.kubernetes.io/name: release-bot
+    app.kubernetes.io/component: bot
+spec:
+  replicas: 1
+  # One pod owns the volume and its workspaces at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: release-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: release-bot
+        app.kubernetes.io/component: bot
+    spec:
+      automountServiceAccountToken: false
+      # Long agent runs report what they completed before the pod goes.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: release-bot
+          image: ghcr.io/brokkai/brokk-town/release-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKK_BOT_TOKEN_FILE
+              value: /run/secrets/brokk/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: token
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: release-bot-data
+        # Each bot sees only its own token.
+        - name: token
+          secret:
+            secretName: brokk-town-bot-tokens
+            defaultMode: 0440
+            items:
+              - key: release-bot
+                path: token
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: simplifier-bot-data
+  labels:
+    app.kubernetes.io/name: simplifier-bot
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: simplifier-bot
+  labels:
+    app.kubernetes.io/name: simplifier-bot
+    app.kubernetes.io/component: bot
+spec:
+  selector:
+    app.kubernetes.io/name: simplifier-bot
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simplifier-bot
+  labels:
+    app.kubernetes.io/name: simplifier-bot
+    app.kubernetes.io/component: bot
+spec:
+  replicas: 1
+  # One pod owns the volume and its workspaces at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: simplifier-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: simplifier-bot
+        app.kubernetes.io/component: bot
+    spec:
+      automountServiceAccountToken: false
+      # Long agent runs report what they completed before the pod goes.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: simplifier-bot
+          image: ghcr.io/brokkai/brokk-town/simplifier-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKK_BOT_TOKEN_FILE
+              value: /run/secrets/brokk/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: token
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: simplifier-bot-data
+        # Each bot sees only its own token.
+        - name: token
+          secret:
+            secretName: brokk-town-bot-tokens
+            defaultMode: 0440
+            items:
+              - key: simplifier-bot
+                path: token
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: repo-bot-data
+  labels:
+    app.kubernetes.io/name: repo-bot
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: repo-bot
+  labels:
+    app.kubernetes.io/name: repo-bot
+    app.kubernetes.io/component: bot
+spec:
+  selector:
+    app.kubernetes.io/name: repo-bot
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: repo-bot
+  labels:
+    app.kubernetes.io/name: repo-bot
+    app.kubernetes.io/component: bot
+spec:
+  replicas: 1
+  # One pod owns the volume and its workspaces at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: repo-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: repo-bot
+        app.kubernetes.io/component: bot
+    spec:
+      automountServiceAccountToken: false
+      # Long agent runs report what they completed before the pod goes.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: repo-bot
+          image: ghcr.io/brokkai/brokk-town/repo-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKK_BOT_TOKEN_FILE
+              value: /run/secrets/brokk/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: token
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: repo-bot-data
+        # Each bot sees only its own token.
+        - name: token
+          secret:
+            secretName: brokk-town-bot-tokens
+            defaultMode: 0440
+            items:
+              - key: repo-bot
+                path: token
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mayor-bot-data
+  labels:
+    app.kubernetes.io/name: mayor-bot
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mayor-bot
+  labels:
+    app.kubernetes.io/name: mayor-bot
+    app.kubernetes.io/component: bot
+spec:
+  selector:
+    app.kubernetes.io/name: mayor-bot
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mayor-bot
+  labels:
+    app.kubernetes.io/name: mayor-bot
+    app.kubernetes.io/component: bot
+spec:
+  replicas: 1
+  # One pod owns the volume and its workspaces at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mayor-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mayor-bot
+        app.kubernetes.io/component: bot
+    spec:
+      automountServiceAccountToken: false
+      # Long agent runs report what they completed before the pod goes.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mayor-bot
+          image: ghcr.io/brokkai/brokk-town/mayor-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKK_BOT_TOKEN_FILE
+              value: /run/secrets/brokk/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: token
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mayor-bot-data
+        # Each bot sees only its own token.
+        - name: token
+          secret:
+            secretName: brokk-town-bot-tokens
+            defaultMode: 0440
+            items:
+              - key: mayor-bot
+                path: token
+        - name: tmp
+          emptyDir: {}

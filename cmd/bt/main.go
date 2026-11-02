@@ -10,8 +10,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -190,10 +192,13 @@ func run(ctx context.Context, args []string) error {
 	abs := runtimeDir(base, *fl.demo)
 	switch command {
 	case "":
+		if *fl.daemon && *fl.publicURL != "" {
+			return errors.New("--public-url is for running Town in a container, in the foreground; it cannot be combined with -d")
+		}
 		if *fl.daemon {
 			return startBackground(ctx, base, *fl.demo, *fl.listen, *fl.config)
 		}
-		return serve(ctx, abs, *fl.listen, *fl.demo, *fl.config)
+		return serve(ctx, abs, *fl.listen, *fl.demo, *fl.config, *fl.publicURL)
 	case "status":
 		return printStatus(ctx, abs, *fl.json)
 	case "shutdown":
@@ -292,8 +297,9 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
-func serve(ctx context.Context, dir, address string, demo bool, configFile string) error {
-	if err := loopbackAddress(address); err != nil {
+func serve(ctx context.Context, dir, address string, demo bool, configFile, publicURL string) error {
+	origin, err := serviceOrigin(address, publicURL)
+	if err != nil {
 		return err
 	}
 	store, err := town.Open(dir, demo)
@@ -304,6 +310,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	if notice := store.Notice(); notice != "" {
 		fmt.Fprintf(os.Stderr, "bt: %s\n", notice)
 	}
+	var fileBots map[town.Role]fileBot
 	if configFile != "" {
 		data, e := os.ReadFile(configFile)
 		if e != nil {
@@ -313,6 +320,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 		if e != nil {
 			return e
 		}
+		fileBots = service.Bots
 		if demo {
 			return errors.New("real config is not accepted in demo mode")
 		}
@@ -385,8 +393,18 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	fleet, err := townBots(dir, demo, fileBots, slog.Default())
+	if err != nil {
+		return err
+	}
+	defer fleet.Stop()
+	callback, stopCallback, err := agentCallback(ctx, fleet, slog.Default())
+	if err != nil {
+		return err
+	}
+	defer stopCallback()
 	gh := town.GitHubClient{}
-	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh, Bots: townBots(dir)}
+	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh, Bots: fleet.bots, Callback: callback}
 	supervisor := town.NewSupervisor(store, gh, workers)
 	supervisor.Mjolnir = mjolnir.New(dir, demo, mjolnir.Environment())
 	workers.Mjolnir = supervisor.Mjolnir
@@ -399,7 +417,10 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	if err != nil {
 		return err
 	}
-	conn := connection{URL: "http://" + listener.Addr().String(), Token: token, PID: os.Getpid(), Version: buildVersion()}
+	if origin == "" {
+		origin = "http://" + listener.Addr().String()
+	}
+	conn := connection{URL: origin, Token: token, PID: os.Getpid(), Version: buildVersion()}
 	data, _ := json.Marshal(conn)
 	if err = os.WriteFile(filepath.Join(dir, "connection.json"), data, 0600); err != nil {
 		return err
@@ -411,11 +432,13 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	defer cancel(nil)
 	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh, Shutdown: func() { cancel(context.Canceled) }}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
-	results := make(chan error, 2)
+	results := make(chan error, 3)
 	remaining := 2
 	go func() { results <- httpServer.Serve(listener) }()
 	if demo {
 		go func() { results <- town.Demo(ctx, store) }()
+		remaining++
+		go func() { results <- town.DemoBots(ctx, store, workers) }()
 	} else {
 		go func() { results <- supervisor.Run(ctx) }()
 	}
@@ -441,11 +464,32 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile strin
 	for range remaining {
 		<-results
 	}
+	// The bots Town started outlive its workers, so a canceled run can still
+	// report what it completed; then they stop.
+	fleet.Stop()
 	_ = os.Remove(filepath.Join(dir, "connection.json"))
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
+}
+
+// serviceOrigin is the address the browser uses. Town binds a loopback IP and
+// is reached at it. In a container it binds every interface and is reached
+// through a published port, whose address --public-url names; the browser's
+// Host and Origin must match it.
+func serviceOrigin(address, publicURL string) (string, error) {
+	if publicURL == "" {
+		return "", loopbackAddress(address)
+	}
+	parsed, err := url.Parse(publicURL)
+	if err != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.Path != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("--public-url must be http://host:port, the address the browser uses")
+	}
+	if _, _, err := net.SplitHostPort(address); err != nil {
+		return "", err
+	}
+	return "http://" + parsed.Host, nil
 }
 
 // loopbackAddress rejects anything but a literal loopback IP. The service has
@@ -503,6 +547,8 @@ type fileService struct {
 	// QuietHours replaces the service default quiet hours; an empty list
 	// removes them.
 	QuietHours *[]town.QuietWindow
+	// Bots names the address of each role's bot that runs elsewhere.
+	Bots map[town.Role]fileBot
 }
 
 func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
@@ -512,6 +558,7 @@ func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
 		MaxWorkers    json.RawMessage `json:"max_workers"`
 		QuietHours    json.RawMessage `json:"quiet_hours"`
 		Towns         json.RawMessage `json:"towns"`
+		Bots          json.RawMessage `json:"bots"`
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
@@ -568,6 +615,9 @@ func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
 			return nil, none, err
 		}
 		service.QuietHours = &windows
+	}
+	if service.Bots, err = decodeFileBots(file.Bots); err != nil {
+		return nil, none, err
 	}
 	return towns, service, nil
 }

@@ -67,15 +67,26 @@ func TestRemoteAgentReachesBothTransports(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
+		if r.Header.Get("Authorization") != "Bearer dispatch-token" {
+			http.Error(w, "no token", http.StatusUnauthorized)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"protocol": 1, "head": head, "text": "reviewed", "evidence": "run-1"})
 	}
 	server := httptest.NewServer(http.HandlerFunc(handler))
 	t.Cleanup(server.Close)
 	socket := remoteFixture(t, handler)
 	for _, endpoint := range []string{server.URL + "/v1/agent", socketURL(socket), socket} {
-		text, err := executeRemote(t.Context(), Config{RemoteAgent: endpoint, RemoteHead: head}, "review")
+		text, err := executeRemote(t.Context(), Config{RemoteAgent: endpoint, RemoteAgentToken: "dispatch-token", RemoteHead: head}, "review")
 		if err != nil || text != "reviewed" {
 			t.Fatalf("%s: text %q, err %v", endpoint, text, err)
 		}
+	}
+	// The token travels in the request, and only there.
+	if _, err := executeRemote(t.Context(), Config{RemoteAgent: server.URL + "/v1/agent", RemoteHead: head}, "review"); err == nil {
+		t.Fatal("a request without the dispatch token was answered")
+	}
+	if data, _ := json.Marshal(Config{RemoteAgentToken: "dispatch-token"}); strings.Contains(string(data), "dispatch-token") {
+		t.Fatal("the dispatch token would be saved with the configuration")
 	}
 }

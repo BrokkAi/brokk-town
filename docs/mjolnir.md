@@ -75,6 +75,13 @@ When a managed duty starts, Town builds a run plan that requires the exact
 commit, a private `town/<id>` branch, a resolved placement and a pinned runtime,
 plus the selected model and effort. Loose references are refused.
 
+For a managed review Review Bot does not start an agent itself: Town serves it
+one for the dispatched revision only, at a route on Town's callback listener
+with a token minted for that review (`remote_agent` and `remote_agent_token` in
+the request). When Review Bot runs in a container, set
+`BROKK_TOWN_CALLBACK_URL` to the address it can reach Town at; see
+[configuration.md](configuration.md#bot-endpoints).
+
 ## Evidence and cleanup
 
 A managed run is not trusted on its word. Town reads back:

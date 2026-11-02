@@ -454,6 +454,13 @@ func (s *Supervisor) removeBotTranscripts(ctx context.Context, t *Town, ids []st
 			byPath[a.botPath] = id
 		}
 		reply, err := bots.BotStorage(ctx, role, request)
+		if errors.Is(err, botapi.ErrUncertain) {
+			// The bot may have removed some of them before its answer was lost.
+			for _, id := range chosen {
+				answers[id] = botapi.StorageRemoval{Path: selected[id].botPath, Status: "uncertain", Detail: "The bot's answer was lost; refresh the inventory to inspect the outcome."}
+			}
+			continue
+		}
 		if err != nil {
 			// The bot never took the request, so nothing was removed.
 			for _, id := range chosen {

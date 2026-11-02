@@ -23,6 +23,10 @@ type BotWorkers struct {
 	MjolnirCommand []string
 	// Bots are each role's bot, reached only through the bot contract.
 	Bots map[Role]botapi.Bot
+	// Callback is where a bot reaches the agent a managed dispatch serves it.
+	// Nil serves each dispatch on a private Unix socket instead, which only a
+	// bot on this machine can reach.
+	Callback *AgentCallback
 	// botRun replaces the bot with a test double. Production leaves it nil.
 	botRun       func(context.Context, Role, workerRequest, bool, func(Progress)) (workerResult, error)
 	jobsQuery    func(*Town, string, int) (map[int]*issueJobSummary, error)
@@ -401,12 +405,12 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent botap
 		if managed == nil {
 			return workerResult{}, errors.New("managed review has no durable dispatch context")
 		}
-		endpoint, close, e := startRemoteAgent(ctx, managed, d.head)
+		endpoint, token, close, e := b.startRemoteAgent(ctx, managed, d.head)
 		if e != nil {
 			return workerResult{}, e
 		}
 		defer close()
-		request.RemoteAgent = endpoint
+		request.RemoteAgent, request.RemoteAgentToken = endpoint, token
 		request.Agent = botapi.Agent{}
 	}
 	// The house's policy carries its own verification command when it has
@@ -441,10 +445,14 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent botap
 		}
 	}
 	retry := role == Release && t.Workers[Release] != nil && t.Workers[Release].RetryRequested
+	version, err := b.botIdentity(ctx, role)
+	if err != nil {
+		return workerResult{}, err
+	}
 	// Record dispatch provenance before sending work so an interrupted write
 	// remains uncertain until it is reconciled.
 	run := WorkerRun{
-		Bot: workerBotNames[role], Version: botVersion,
+		Bot: workerBotNames[role], Version: version,
 		Started: time.Now(), Deadline: deadline,
 		Issue: request.Issue, PR: request.PR, BaseSHA: request.BaseSHA, HeadSHA: request.HeadSHA, Mode: request.Mode,
 	}
@@ -468,6 +476,11 @@ func (b *BotWorkers) runBot(ctx context.Context, t *Town, role Role, agent botap
 	result.retried = retry
 	if ctx.Err() != nil {
 		return result, &WorkerInterruptedError{ctx.Err()}
+	}
+	// The bot may have acted on a request whose answer never arrived whole,
+	// so the run is reconciled before the work is sent again.
+	if errors.Is(err, botapi.ErrUncertain) {
+		return result, &WorkerInterruptedError{err}
 	}
 	return result, err
 }

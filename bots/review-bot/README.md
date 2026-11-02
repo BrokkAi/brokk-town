@@ -4,8 +4,10 @@ Review a pull request's exact revision and certify what it found.
 
 `review-bot` is a Go package of the
 [Brokk Town](https://github.com/BrokkAi/brokk-town) module. Review Bot runs
-the **Review** stage (role key `review`), and Town runs it in process, so
-there is no standalone binary, server or release tag to install. See
+the **Review** stage (role key `review`), and runs as its own binary,
+`review-bot` (`cmd/review-bot`), which Town reaches over the network. It ships in
+the same release as `bt` and as the `ghcr.io/brokkai/brokk-town/review-bot`
+image. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
 

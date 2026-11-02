@@ -124,7 +124,7 @@ func TestManagedDispatchFreezesSettingsAndHoldsRetainedRuns(t *testing.T) {
 func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 	head := strings.Repeat("a", 40)
 	m := &managedDispatch{failed: true}
-	endpoint, close, err := startRemoteAgent(t.Context(), m, head)
+	endpoint, token, close, err := (&BotWorkers{}).startRemoteAgent(t.Context(), m, head)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,14 +148,21 @@ func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		body   string
 		status int
+		token  string
 	}{
-		{`{"protocol":1,"head":"wrong","prompt":"review"}`, 400},
-		{`{"protocol":2,"head":"` + head + `","prompt":"review"}`, 400},
-		{`{"protocol":1,"head":"` + head + `","prompt":"review","command":"local"}`, 400},
-		{`{"protocol":1,"head":"` + head + `","prompt":"review"}{}`, 400},
-		{`{"protocol":1,"head":"` + head + `","prompt":"review"}`, 409},
+		{`{"protocol":1,"head":"` + head + `","prompt":"review"}`, 401, ""},
+		{`{"protocol":1,"head":"` + head + `","prompt":"review"}`, 401, "wrong"},
+		{`{"protocol":1,"head":"wrong","prompt":"review"}`, 400, ""},
+		{`{"protocol":2,"head":"` + head + `","prompt":"review"}`, 400, ""},
+		{`{"protocol":1,"head":"` + head + `","prompt":"review","command":"local"}`, 400, ""},
+		{`{"protocol":1,"head":"` + head + `","prompt":"review"}{}`, 400, ""},
+		{`{"protocol":1,"head":"` + head + `","prompt":"review"}`, 409, ""},
 	} {
 		req, _ := http.NewRequestWithContext(t.Context(), "POST", "http://worker/v1/agent", strings.NewReader(tc.body))
+		if tc.status != 401 {
+			tc.token = token
+		}
+		req.Header.Set("Authorization", "Bearer "+tc.token)
 		res, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)

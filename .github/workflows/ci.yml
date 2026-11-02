@@ -55,7 +55,7 @@ jobs:
         run: |
           sh scripts/licenses.sh
           git diff --exit-code -- licenses/THIRD_PARTY_NOTICES.txt
-      - name: Build bt
+      - name: Build bt and the bot binaries
         run: make js && make build
   windows:
     # Windows runs the whole module build, vet and tests under PowerShell. It
@@ -75,6 +75,57 @@ jobs:
           go build ./...
           go vet ./...
           go test -timeout 30m ./...
+  deploy:
+    # Builds every image, then brings Town and the eight bots up twice in demo
+    # mode: with docker compose, and on a kind cluster from the Kubernetes
+    # manifests. Each time Town must reach every bot over the network.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BROKK_TOWN_IMAGES: brokk-town
+      BROKK_TOWN_VERSION: ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Validate the Kubernetes manifests
+        run: |
+          deploy/kubernetes/generate-secrets.sh
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz -C /usr/local/bin kubeconform
+          for overlay in base demo; do
+            kubectl kustomize "deploy/kubernetes/$overlay" | kubeconform -strict -summary -
+          done
+      - name: Build the images
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml build
+      - name: Docker compose round trip
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+          scripts/demo-dispatch-check.sh docker compose exec -T bt bt status --json --demo --state-dir /data
+      - name: Compose logs
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml logs --no-color | tail -n 300
+      - name: Stop compose
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml down -v
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa
+        with:
+          cluster_name: brokk-town
+      - name: Kubernetes round trip
+        run: |
+          for image in bt bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot; do
+            kind load docker-image --name brokk-town "brokk-town/$image:ci"
+          done
+          kubectl kustomize deploy/kubernetes/demo \
+            | sed -E 's#ghcr.io/brokkai/brokk-town/([a-z-]+):latest#brokk-town/\1:ci#' \
+            | kubectl apply -f -
+          for deployment in bt bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot; do
+            kubectl -n brokk-town rollout status "deployment/$deployment" --timeout=5m
+          done
+          scripts/demo-dispatch-check.sh kubectl -n brokk-town exec deploy/bt -- bt status --json --demo --state-dir /data
+      - name: Kubernetes diagnostics
+        if: failure()
+        run: |
+          kubectl -n brokk-town get pods -o wide || true
+          kubectl -n brokk-town describe pods | tail -n 200 || true
+          kubectl -n brokk-town logs deploy/bt --tail=200 || true
   workflows:
     runs-on: ubuntu-latest
     steps:

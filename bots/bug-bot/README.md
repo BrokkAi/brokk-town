@@ -4,8 +4,10 @@ Find new bugs in a repository and file useful GitHub issues for them.
 
 `bug-bot` is a Go package of the
 [Brokk Town](https://github.com/BrokkAi/brokk-town) module. Bug Bot runs the
-**Bug discovery** stage (role key `bug`), and Town runs it in process, so
-there is no standalone binary, server or release tag to install. See
+**Bug discovery** stage (role key `bug`), and runs as its own binary,
+`bug-bot` (`cmd/bug-bot`), which Town reaches over the network. It ships in
+the same release as `bt` and as the `ghcr.io/brokkai/brokk-town/bug-bot`
+image. See
 [../../docs/bots.md](../../docs/bots.md) for the whole set and
 [../../docs/workflow.md](../../docs/workflow.md) for how its findings move
 through a repository.

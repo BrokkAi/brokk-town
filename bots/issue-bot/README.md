@@ -5,8 +5,10 @@ pull requests for review.
 
 `issue-bot` is a Go package of the
 [Brokk Town](https://github.com/BrokkAi/brokk-town) module. Issue Bot runs
-the **Implementation** stage (role key `issue`), and Town runs it in process, so
-there is no standalone binary, server or release tag to install. See
+the **Implementation** stage (role key `issue`), and runs as its own binary,
+`issue-bot` (`cmd/issue-bot`), which Town reaches over the network. It ships in
+the same release as `bt` and as the `ghcr.io/brokkai/brokk-town/issue-bot`
+image. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
 

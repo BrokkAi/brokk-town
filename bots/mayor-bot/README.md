@@ -6,8 +6,10 @@ one, and writes each repository's status report.
 Mayor Bot is the `mayor-bot` package (`bots/mayor-bot`), a Go package of the
 [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town) module. The package
 name, the `hall` role key and the `mayoral_decision` field keep their original
-names. Mayor Bot runs the **Triage** stage, and Town runs it in
-process, so there is no standalone binary, server or release tag to install. See
+names. Mayor Bot runs the **Triage** stage, and runs as its own binary,
+`mayor-bot` (`cmd/mayor-bot`), which Town reaches over the network. It ships in
+the same release as `bt` and as the `ghcr.io/brokkai/brokk-town/mayor-bot`
+image. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
 

@@ -63,7 +63,7 @@ func TestMjolnirReadOnlyAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	socket, close, err := startRemoteAgent(ctx, managed, pull.Head.SHA)
+	socket, token, close, err := b.startRemoteAgent(ctx, managed, pull.Head.SHA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestMjolnirReadOnlyAcceptance(t *testing.T) {
 	dir, state := botWorkspace(cfg.Root, x.ID, Review)
 	request := workerRequest{Remote: "https://github.com/" + cfg.Repo + ".git", Branch: pull.Base.Ref,
 		Directory: dir, StateDirectory: state, Repo: cfg.Repo, Host: "github.com", PR: cfg.PR,
-		BaseSHA: pull.Base.SHA, HeadSHA: pull.Head.SHA, RemoteAgent: socket, DryRun: true}
+		BaseSHA: pull.Base.SHA, HeadSHA: pull.Head.SHA, RemoteAgent: socket, RemoteAgentToken: token, DryRun: true}
 	result, err := b.dispatchBot(ctx, Review, request, false, observe)
 	if err != nil {
 		t.Fatalf("%v (managed cause: %v)", err, managed.failure())

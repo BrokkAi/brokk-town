@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bt-data
+  labels:
+    app.kubernetes.io/name: bt
+    app.kubernetes.io/component: town
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bt
+  labels:
+    app.kubernetes.io/name: bt
+    app.kubernetes.io/component: town
+spec:
+  selector:
+    app.kubernetes.io/name: bt
+  ports:
+    # The browser and local API. Reach it with
+    #   kubectl -n brokk-town port-forward svc/bt 8080
+    - name: http
+      port: 8080
+      targetPort: http
+    # Where Review Bot reaches the agent of a managed review.
+    - name: callback
+      port: 8091
+      targetPort: callback
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bt
+  labels:
+    app.kubernetes.io/name: bt
+    app.kubernetes.io/component: town
+spec:
+  replicas: 1
+  # Town holds a single-writer lock on its state.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bt
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bt
+        app.kubernetes.io/component: town
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bt
+          image: ghcr.io/brokkai/brokk-town/bt:latest
+          imagePullPolicy: IfNotPresent
+          # The image starts bt with --state-dir /data --listen 0.0.0.0:8080.
+          args: ["--public-url", "http://127.0.0.1:8080"]
+          env:
+            - name: BROKK_TOWN_CALLBACK_URL
+              value: http://bt:8091
+            - name: BROKK_TOWN_BOT_BUG_URL
+              value: http://bug-bot:8080
+            - name: BROKK_TOWN_BOT_BUG_TOKEN_FILE
+              value: /run/secrets/brokk/bug-bot/token
+            - name: BROKK_TOWN_BOT_FEATURE_URL
+              value: http://feature-bot:8080
+            - name: BROKK_TOWN_BOT_FEATURE_TOKEN_FILE
+              value: /run/secrets/brokk/feature-bot/token
+            - name: BROKK_TOWN_BOT_ISSUE_URL
+              value: http://issue-bot:8080
+            - name: BROKK_TOWN_BOT_ISSUE_TOKEN_FILE
+              value: /run/secrets/brokk/issue-bot/token
+            - name: BROKK_TOWN_BOT_REVIEW_URL
+              value: http://review-bot:8080
+            - name: BROKK_TOWN_BOT_REVIEW_TOKEN_FILE
+              value: /run/secrets/brokk/review-bot/token
+            - name: BROKK_TOWN_BOT_RELEASE_URL
+              value: http://release-bot:8080
+            - name: BROKK_TOWN_BOT_RELEASE_TOKEN_FILE
+              value: /run/secrets/brokk/release-bot/token
+            - name: BROKK_TOWN_BOT_SIMPLIFIER_URL
+              value: http://simplifier-bot:8080
+            - name: BROKK_TOWN_BOT_SIMPLIFIER_TOKEN_FILE
+              value: /run/secrets/brokk/simplifier-bot/token
+            - name: BROKK_TOWN_BOT_REPO_URL
+              value: http://repo-bot:8080
+            - name: BROKK_TOWN_BOT_REPO_TOKEN_FILE
+              value: /run/secrets/brokk/repo-bot/token
+            - name: BROKK_TOWN_BOT_HALL_URL
+              value: http://mayor-bot:8080
+            - name: BROKK_TOWN_BOT_HALL_TOKEN_FILE
+              value: /run/secrets/brokk/mayor-bot/token
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: callback
+              containerPort: 8091
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tokens
+              mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bt-data
+        - name: tokens
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: brokk-town-bot-tokens
+                  items:
+                      - key: bug-bot
+                        path: bug-bot/token
+                      - key: feature-bot
+                        path: feature-bot/token
+                      - key: issue-bot
+                        path: issue-bot/token
+                      - key: review-bot
+                        path: review-bot/token
+                      - key: release-bot
+                        path: release-bot/token
+                      - key: simplifier-bot
+                        path: simplifier-bot/token
+                      - key: repo-bot
+                        path: repo-bot/token
+                      - key: mayor-bot
+                        path: mayor-bot/token
+        - name: tmp
+          emptyDir: {}

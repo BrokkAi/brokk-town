@@ -1,0 +1,11 @@
+.git
+.github
+.agents
+.claude
+.brokk
+bin
+dist
+var
+node_modules
+**/__pycache__
+*.log
