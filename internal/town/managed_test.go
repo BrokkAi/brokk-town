@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -128,9 +129,14 @@ func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer close()
-	path, ok := strings.CutPrefix(endpoint, "unix://")
-	if !ok {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "unix" || parsed.Host != "" {
 		t.Fatalf("callback endpoint %q is not a unix URL", endpoint)
+	}
+	// unix:///C:/... names C:\... on Windows; elsewhere the path is as written.
+	path := parsed.Path
+	if runtime.GOOS == "windows" {
+		path = strings.TrimPrefix(path, "/")
 	}
 	path = filepath.FromSlash(path)
 	info, err := os.Stat(path)
