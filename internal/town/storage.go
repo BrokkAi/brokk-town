@@ -31,7 +31,7 @@ type StorageArtifact struct {
 	Reason   string    `json:"reason"`
 	head     string
 	digest   string
-	// botPath names a bot-owned artifact within its unit's workspace; the
+	// botPath names a bot-owned artifact within its bot's workspace; the
 	// bot, not Town, measures and removes it.
 	botPath string
 }
@@ -58,7 +58,7 @@ func (s *Store) storageHeld(id string) bool {
 func storageHold(t *Town) string {
 	for _, r := range t.Requests {
 		if r.Status == "queued" || r.Status == "uncertain" {
-			return "Pending or uncertain issue submissions retain this precinct’s artifacts."
+			return "Pending or uncertain issue submissions retain this repository’s artifacts."
 		}
 	}
 	for _, w := range t.Workers {
@@ -66,17 +66,17 @@ func storageHold(t *Town) string {
 			return "Resolve interrupted worker outcomes before cleanup."
 		}
 		if w.Enabled || w.Run != nil || w.Agent != nil || w.Status == "working" || w.Status == "pausing" {
-			return "Stand down every unit in this precinct and wait for active work to finish before cleanup."
+			return "Pause every bot in this repository and wait for active work to finish before cleanup."
 		}
 	}
 	for _, i := range t.Intents {
 		if i != nil && i.Status != "confirmed" {
-			return "Pending or uncertain write intents retain this precinct's artifacts."
+			return "Pending or uncertain write intents retain this repository's artifacts."
 		}
 	}
 	for _, i := range t.FunnelIntents {
 		if i != nil && i.Status != "confirmed" && i.Status != "rejected" {
-			return "Unresolved source write intents retain this precinct's artifacts."
+			return "Unresolved source write intents retain this repository's artifacts."
 		}
 	}
 	return ""
@@ -98,7 +98,7 @@ func (s *Supervisor) Storage(ctx context.Context, id string, ageHours int) (Stor
 	}
 	t := s.Store.Snapshot().Towns[id]
 	if t == nil {
-		return StorageInventory{}, errors.New("unknown precinct")
+		return StorageInventory{}, errors.New("unknown repository")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -106,7 +106,7 @@ func (s *Supervisor) Storage(ctx context.Context, id string, ageHours int) (Stor
 	return storageInventory(ctx, filepath.Dir(s.Store.path), t, ageHours, s.botStorage()), nil
 }
 
-// botStorer reaches each unit's bot for the data it keeps.
+// botStorer reaches each role's bot for the data it keeps.
 type botStorer interface {
 	BotStorage(context.Context, Role, botapi.StorageRequest) (botapi.StorageResult, error)
 }
@@ -120,7 +120,7 @@ func (s *Supervisor) botStorage() botStorer {
 	return nil
 }
 
-// BotStorage asks one unit's bot about the data it keeps for a precinct.
+// BotStorage asks one role's bot about the data it keeps for a repository.
 func (b *BotWorkers) BotStorage(ctx context.Context, role Role, request botapi.StorageRequest) (botapi.StorageResult, error) {
 	bot := b.Bots[role]
 	if bot == nil {
@@ -215,7 +215,7 @@ func storageInventory(ctx context.Context, root string, t *Town, ageHours int, b
 		}
 		finish(a)
 	}
-	// Each unit's bot reports what it keeps. Town asks it to verify only the
+	// Each role's bot reports what it keeps. Town asks it to verify only the
 	// transcripts whose receipts would otherwise let them go.
 	for _, role := range AgentRoles {
 		if bots == nil {
@@ -251,7 +251,7 @@ func storageInventory(ctx context.Context, root string, t *Town, ageHours int, b
 				if entry.Kind == "transcript" {
 					transcript(&a, func() (string, int64, error) {
 						if entry.Digest == "" {
-							return "", 0, errors.New("the unit could not verify this transcript")
+							return "", 0, errors.New("the bot could not verify this transcript")
 						}
 						return entry.Digest, entry.Bytes, nil
 					})
@@ -382,19 +382,19 @@ func (s *Supervisor) beginStorage(id string) (func(), error) {
 	defer s.mu.Unlock()
 	for key := range s.running {
 		if strings.HasPrefix(key, id+":") {
-			return nil, errors.New("precinct still has active work")
+			return nil, errors.New("repository still has active work")
 		}
 	}
 	for key, busy := range s.retrying {
 		if busy && strings.HasPrefix(key, id+":") {
-			return nil, errors.New("precinct still has an active retry")
+			return nil, errors.New("repository still has an active retry")
 		}
 	}
 	s.Store.mu.Lock()
 	defer s.Store.mu.Unlock()
 	t := s.Store.state.Towns[id]
 	if t == nil {
-		return nil, errors.New("unknown precinct")
+		return nil, errors.New("unknown repository")
 	}
 	if s.Store.storageBusy[id] {
 		return nil, errors.New("storage cleanup is already running")
@@ -409,7 +409,7 @@ func (s *Supervisor) beginStorage(id string) (func(), error) {
 	return func() { s.Store.mu.Lock(); delete(s.Store.storageBusy, id); s.Store.mu.Unlock(); s.notifyScheduler() }, nil
 }
 
-// removeBotTranscripts asks each unit's bot to remove the selected
+// removeBotTranscripts asks each role's bot to remove the selected
 // transcripts it keeps, and returns its answers by artifact ID.
 func (s *Supervisor) removeBotTranscripts(ctx context.Context, t *Town, ids []string, selected map[string]StorageArtifact, bots botStorer) map[string]botapi.StorageRemoval {
 	answers := map[string]botapi.StorageRemoval{}
@@ -499,7 +499,7 @@ removal:
 			outcome, answered := removedByBot[id]
 			switch {
 			case !answered:
-				result.Status, result.Detail = "uncertain", "The unit did not confirm the outcome; refresh the inventory to inspect it."
+				result.Status, result.Detail = "uncertain", "The bot did not confirm the outcome; refresh the inventory to inspect it."
 			case outcome.Status == "removed":
 				result.Status, result.Detail = "removed", "Artifact removed; task and write identities retained."
 				if e := s.Store.Update(func(st *State) error { delete(st.Towns[t.ID].Artifacts, Key(a.Path)); return nil }); e != nil {

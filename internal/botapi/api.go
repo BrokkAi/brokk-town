@@ -1,4 +1,4 @@
-// Package botapi is the contract between the SlopCop Squad service and its
+// Package botapi is the contract between the Brokk Town service and its
 // bots. The service reaches a bot only through Bot: it never imports a bot
 // package, reads a bot's files, or resolves a command for a bot to run. Every
 // value that crosses the boundary is plain JSON, carries no path on the
@@ -71,7 +71,7 @@ type Request struct {
 	Arrival json.RawMessage `json:"arrival,omitempty"`
 	Since   *time.Time      `json:"since,omitempty"`
 	Until   *time.Time      `json:"until,omitempty"`
-	// Policy is the operator's work selection and limits for this unit.
+	// Policy is the operator's work selection and limits for this bot.
 	Policy *Policy `json:"policy,omitempty"`
 }
 
@@ -95,7 +95,7 @@ type Agent struct {
 // Configured reports whether the selection names an agent at all.
 func (a Agent) Configured() bool { return len(a.Command) > 0 || a.Harness != nil }
 
-// Policy is the operator's work selection and limits for one unit.
+// Policy is the operator's work selection and limits for one bot.
 type Policy struct {
 	Labels        []string       `json:"labels,omitempty"`
 	ExcludeLabels []string       `json:"exclude_labels,omitempty"`

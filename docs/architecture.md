@@ -1,6 +1,6 @@
 # Architecture
 
-SlopCop Squad is a long-running service. Everything else — bots, agents, the
+Brokk Town is a long-running service. Everything else — bots, agents, the
 browser, Mjolnir — is something it reaches through a defined boundary. The bots
 sit behind the bot contract (`internal/botapi`), which carries no path, command
 or type the service owns, so a bot can run in its own process or container.
@@ -12,7 +12,7 @@ or type the service owns, so a bot can run in its own process or container.
    browser  <---->   |  internal/web HTTP server |
                      +------------+-------------+
                                   |
-   scs CLI  <---->   +------------v-------------+     +------------------+
+   bt CLI  <---->   +------------v-------------+     +------------------+
                      |  internal/town supervisor |---->|  ACP harness     |
                      |  store, scheduler, state  |     |  (local agent)   |
                      +------------+-------------+     +------------------+
@@ -24,9 +24,9 @@ or type the service owns, so a bot can run in its own process or container.
                      +--------------------------+     +------------------+
 ```
 
-`cmd/scs` opens the state store, starts the supervisor, the web server, the
+`cmd/bt` opens the state store, starts the supervisor, the web server, the
 harness catalog, the Mjolnir catalog and the attention watcher, then waits for a
-signal or `scs shutdown`. The small CLI (`scs status`, `scs web`, …) is the same
+signal or `bt shutdown`. The small CLI (`bt status`, `bt web`, …) is the same
 binary talking to the running service over a loopback HTTP API using a token from
 the state directory; the browser uses the same API.
 
@@ -34,14 +34,14 @@ the state directory; the browser uses the same API.
 
 | Package | Responsibility |
 | --- | --- |
-| `cmd/scs` | Service entry point, process-control CLI, background start, demo seeding. |
+| `cmd/bt` | Service entry point, process-control CLI, background start, demo seeding. |
 | `internal/town` | The domain: state model, store, supervisor, scheduling, reconciliation, policies, funnels, recovery, history, storage, outcomes. |
 | `internal/botapi` | The bot contract (request, progress and log events, result, storage) and the bot-side `Worker` that resolves workspaces and agents where the bot runs. |
 | `internal/artifact` | Path-safety, measuring and digest checks shared by the service and the bots. |
 | `internal/web` | HTTP routes and the embedded browser UI: plain HTML, CSS and ES modules. |
 | `internal/harness` | ACP harness registry, catalog cache, archive download and launch. |
 | `internal/mjolnir` | Mjolnir API client: catalog, profiles, placements, runtime pins, runs, artifacts, evidence and import. |
-| `internal/guide` | One bounded ACP conversation for the Desk Sergeant. |
+| `internal/guide` | One bounded ACP conversation for the Assistant. |
 | `internal/durable` | fsync-based atomic file replacement. |
 | `internal/filelock` | Cross-platform advisory locks. |
 | `internal/osrun` | Cross-platform process control, signals and liveness. |
@@ -49,20 +49,20 @@ the state directory; the browser uses the same API.
 
 ## State and persistence
 
-All state lives in the state directory (default `$XDG_STATE_HOME/slopcop-squad`, or
-`%LOCALAPPDATA%\slopcop-squad` on Windows):
+All state lives in the state directory (default `$XDG_STATE_HOME/brokk-town`, or
+`%LOCALAPPDATA%\brokk-town` on Windows):
 
 | Path | Contents |
 | --- | --- |
-| `state.json` | The whole snapshot: service config, precincts (`towns`), cases (`tasks`), workers, events. |
+| `state.json` | The whole snapshot: service config, repositories (`towns`), tasks (`tasks`), workers, events. |
 | `daemon.lock` | Single-writer lock. A second service on the same directory refuses to start. |
 | `token` | The loopback API access key (0600). Delete it to rotate. |
 | `connection.json` | Advertises the running service URL, PID and version to clients. |
 | `logs/` | Background service stdout and stderr. |
-| `towns/<key>/<role>/checkout` | A precinct's private git checkout for that unit, kept by its bot under the bot's data root (the service's directory while bots run in process). |
-| `towns/<key>/<role>/state` | That unit's durable bot state, likewise the bot's. |
-| `towns/<key>/extensions/` | The service's own repair, audit and Mjolnir sessions. |
-| `towns/<key>/history/` | Archived terminal cases (the Case archive). |
+| `towns/<key>/<role>/checkout` | A repository's private git checkout for that bot, kept by the bot under its own data root (Town's directory while bots run in process). |
+| `towns/<key>/<role>/state` | That bot's durable state, likewise the bot's. |
+| `towns/<key>/extensions/` | Town's own repair, audit and Mjolnir sessions. |
+| `towns/<key>/history/` | Archived terminal tasks (History). |
 | `mjolnir-options.json` | Cached Mjolnir launch catalog. |
 
 `Store` is the only writer. Every change runs through `Store.Update`, which
@@ -73,29 +73,29 @@ repairs or reports the specific problems the model defines.
 
 ## Scheduling
 
-The supervisor owns one worker per unit per precinct and a shared capacity
+The supervisor owns one worker per bot per repository and a shared capacity
 limit (`service_config.max_workers`, default 4, maximum 64). Repo Bot observes
 without holding an agent slot; it takes one only while repairing the branch.
 
-Each unit has a cadence: a precinct-wide `poll_seconds` for intake and repair
-work, thirty minutes between the Bug Detective's and the Feature Detective's
-discovery scans, five minutes for Forensics and Release. The scheduler wakes
-work when the caseload changes, not only on a timer. Release additionally
+Each bot has a cadence: a repository-wide `poll_seconds` for intake and repair
+work, thirty minutes between the Bug Bot's and the Feature Bot's
+discovery scans, five minutes for Review Bot and Release Bot. The scheduler wakes
+work when the workload changes, not only on a timer. Release Bot additionally
 follows its own cadence and burst rules; see [workflow.md](workflow.md).
 
 ## Dispatch
 
-When a unit is due, the supervisor:
+When a bot is due, the supervisor:
 
-1. Re-reads the current state and resolves the unit's agent profile and
+1. Re-reads the current state and resolves the bot's agent profile and
    execution placement at dispatch time, not from an older snapshot.
 2. Checks holds — quiet hours, budget, capacity, a selected remote runtime, a
    recovery hold — and stops before starting anything if one applies.
-3. Sends the bot one `botapi.Request` through `BotWorkers`: the precinct key and
-   role instead of directories, and the operator's agent selection (a command or
-   a harness entry) instead of a resolved launch. Progress and log events come
-   back bounded; the bot reports the transcripts it wrote.
-4. Commits the result: case moves, ownership, review audits, branch health,
+3. Sends the bot one `botapi.Request` through `BotWorkers`: the repository key
+   and role instead of directories, and the operator's agent selection (a
+   command or a harness entry) instead of a resolved launch. Progress and log
+   events come back bounded; the bot reports the transcripts it wrote.
+4. Commits the result: task moves, ownership, review audits, branch health,
    outcome records and budget charge.
 
 An interrupted dispatch is recorded as a recovery hold rather than adopted. A
@@ -107,13 +107,13 @@ Each bot is a Go package with a `Config`, a `Run` (or a focused duty) and its ow
 private state directory. Its `worker.go` adapts a contract request into that
 config; the shared `botapi.Worker` resolves the workspace under the bot's data
 root, installs and launches the selected harness there, and carries progress,
-logs and transcripts back. The Squad converts the typed result into the
-`internal/town` model and validates it before anything is persisted. The Evidence
-locker asks each bot for its own storage inventory and sends transcript removals
-back to it; the bot holds its state lock while it removes them. The service
-never reads a bot's files directly. The repo bot's inventory is the pipeline's
-observation step; the Squad itself additionally performs a few bounded,
-idempotent GitHub writes (the merge, closing work sent to the Slop Tank, filing
+logs and transcripts back. Town converts the typed result into the
+`internal/town` model and validates it before anything is persisted. The storage
+view asks each bot for its own inventory and sends transcript removals back to
+it; the bot holds its state lock while it removes them. Town never reads a
+bot's files directly. The repo bot's inventory is the pipeline's
+observation step; Town itself additionally performs a few bounded,
+idempotent GitHub writes (the merge, closing declined work, filing
 follow-ups, submitting a request), each gated on a fresh read of exactly what it
 is about to change.
 
@@ -135,19 +135,15 @@ API. Every `/api/` request must be same-origin and carry
 directory. Responses are `no-store`, and the server sets a strict content
 security policy. See [operations.md](operations.md) for the route list.
 
-The embedded UI is plain HTML, CSS and ES modules with no build step, no canvas
-drawing and no image assets. It renders the committed snapshot and sends every
-command through the same API. `internal/web/precinct.js` owns the precinct
-vocabulary — unit names, callsigns and roster order — keyed by the unchanged
-role keys. The Precinct view is a cutaway drawing of the precinct house with
-the courthouse attached: `internal/web/scene.js` lays out the rooms, stands each
-unit's officer at its post and each open case in the room of the unit holding
-it, compares consecutive committed snapshots to see which cases moved, arrived
-or left, and choreographs the walks, vehicles and stamps.
-`internal/web/animation.js` draws the cast as inline SVG — the robot officers,
-the slop (loose and cuffed), the reformed citizens and the vehicles.
-Neither invents a case or sends a command, and both stop animating when motion
-is off. The Board view's case-flow columns come from `internal/web/town.js`.
+The embedded UI is plain HTML, CSS and ES modules with no build step, no
+animation, no canvas drawing and no image assets. It renders the committed
+snapshot and sends every command through the same API. `internal/web/bots.js`
+owns the stage labels, summaries and pipeline order, keyed by the unchanged
+role keys; the bot names are `botNames` in `internal/web/town.js`. The Overview
+view shows summary metrics, the pipeline of bot cards, the open tasks and the
+Activity feed; the Board view's columns come from
+`internal/web/town.js`. `internal/web/style.css` defines the colors, type, radii and
+shadows as design tokens. No view invents a task or sends a command on its own.
 
 ## Harnesses and Mjolnir
 
@@ -155,29 +151,29 @@ is off. The Board view's case-flow columns come from `internal/web/town.js`.
 bundled supplements (`anvil`, `muse-acp`, `draupnir`), or from a custom command.
 It downloads and caches versioned archives atomically and launches without shell
 interpolation. `internal/mjolnir` is the optional remote execution path: the
-Squad discovers targets, profiles and bundles from a loopback Mjolnir API, pins
+Town discovers targets, profiles and bundles from a loopback Mjolnir API, pins
 an exact runtime, and can place review and issue-repair duties there. Other duties
 are held rather than silently run locally. See [harnesses.md](harnesses.md) and
 [mjolnir.md](mjolnir.md).
 
-## Desk Sergeant
+## Assistant
 
-The Desk Sergeant (`internal/guide`, `/api/guide`) is a separate bounded ACP
+The Assistant (`internal/guide`, `/api/guide`) is a separate bounded ACP
 conversation. It sees a context assembled from public state — worker summaries,
-recent failures, case counts and recent cases — and has no workspace tools and
-no permission to write. It may propose standing down one unit (a `pause`); the
+recent failures, task counts and recent tasks — and has no workspace tools and
+no permission to write. It may propose pausing one bot (a `pause`); the
 browser applies it only after the exact proposal digest is confirmed against
 current state. See [operations.md](operations.md).
 
 ## Demo and townsim
 
-`scs --demo` runs a closed simulation in a separate state directory: it seeds two
-precincts and never receives a GitHub client, an Mjolnir connection or a worker
+`bt --demo` runs a closed simulation in a separate state directory: it seeds two
+repositories and never receives a GitHub client, an Mjolnir connection or a worker
 runner. It is safe to run anywhere.
 
 `cmd/townsim` is a stochastic model of the scheduler. It reproduces the
-supervisor's rules — one worker per unit, shared capacity, poll cadence,
-discovery gaps, the Magistrate ahead of the Probation Judge, one repair round
+supervisor's rules — one worker per bot, shared capacity, poll cadence,
+discovery gaps, the Simplifier Bot ahead of the Mayor Bot, one repair round
 per pull request, a closed pull request restarting its issue — and reports
 whether a set of defaults can grow an unbounded backlog. It is a design tool,
 not part of the service.

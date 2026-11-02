@@ -1,6 +1,6 @@
 # Licensing and third-party notices
 
-SlopCop Squad uses [Apache-2.0](../LICENSE). [NOTICE](../NOTICE) identifies the
+Brokk Town uses [Apache-2.0](../LICENSE). [NOTICE](../NOTICE) identifies the
 project and adapted code. [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) is
 generated, not hand-written.
 

@@ -49,7 +49,7 @@ type Worker struct {
 
 func (w Worker) Run(ctx context.Context, request Request, emit func(Event)) (Result, error) {
 	if request.Role != w.Role {
-		return Result{}, fmt.Errorf("%s cannot run the %q unit", w.Name, request.Role)
+		return Result{}, fmt.Errorf("%s cannot run the %q role", w.Name, request.Role)
 	}
 	dir, state, err := Dirs(w.Root, request.Town, request.Role)
 	if err != nil {

@@ -29,7 +29,8 @@ func canonicalTestDir(t *testing.T) string {
 
 func localGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := osrun.Run(context.Background(), dir, map[string]string{"GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.test", "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.test"}, append([]string{"git"}, args...)...)
+	// LC_ALL=C keeps git's messages the same on every developer's machine.
+	out, err := osrun.Run(context.Background(), dir, map[string]string{"LC_ALL": "C", "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.test", "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.test"}, append([]string{"git"}, args...)...)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -33,13 +33,13 @@ func (r IssueRequest) validate() error {
 	if strings.TrimSpace(r.Title) == "" || utf8.RuneCountInString(r.Title) > 256 || strings.ContainsAny(r.Title, "\r\n\x00") {
 		return errors.New("issue title must be 1–256 characters on one line")
 	}
-	if strings.TrimSpace(r.Body) == "" || len(r.Body) > 30000 || strings.ContainsRune(r.Body, 0) || hasMarker(r.Body, "<!-- slopcop-squad-request:") {
-		return errors.New("describe the request in 1–30000 bytes, without the Squad's reserved markers")
+	if strings.TrimSpace(r.Body) == "" || len(r.Body) > 30000 || strings.ContainsRune(r.Body, 0) || hasMarker(r.Body, "<!-- brokk-town-request:") {
+		return errors.New("describe the request in 1–30000 bytes, without Town's reserved markers")
 	}
 	return nil
 }
 
-func requestMarker(id string) string { return "<!-- slopcop-squad-request:" + id + " -->" }
+func requestMarker(id string) string { return "<!-- brokk-town-request:" + id + " -->" }
 func (r IssueRequest) githubBody() string {
 	heading := "Feature request"
 	if r.Kind == "bug" {
@@ -86,7 +86,7 @@ func (s *Supervisor) SubmitRequest(id string, input IssueRequest) (*IssueRequest
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown precinct")
+			return errors.New("unknown repository")
 		}
 		if !st.Demo && s.Publisher == nil {
 			return errors.New("issue publishing is unavailable")
@@ -140,7 +140,7 @@ func (s *Supervisor) RecheckRequest(id, requestID string) error {
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
-			return errors.New("unknown precinct")
+			return errors.New("unknown repository")
 		}
 		r := t.Requests[requestID]
 		if r == nil {
@@ -238,7 +238,7 @@ func (s *Supervisor) publishRequest(ctx context.Context, id, requestID string) {
 		if valid {
 			confirmRequest(st, t, r, *issue, s.now())
 		} else {
-			r.Detail = "GitHub has not confirmed this submission. Check the repository before filing it again. The Squad will keep looking for its receipt."
+			r.Detail = "GitHub has not confirmed this submission. Check the repository before filing it again. Town will keep looking for its receipt."
 			r.Next = s.now().Add(5 * time.Minute)
 		}
 		return nil
@@ -246,7 +246,7 @@ func (s *Supervisor) publishRequest(ctx context.Context, id, requestID string) {
 }
 
 func confirmRequest(st *State, t *Town, r *IssueRequest, issue RemoteIssue, now time.Time) {
-	r.Status, r.Number, r.URL, r.Detail = "confirmed", issue.Number, issue.URL, "Issue created and sent to the Magistrate for arraignment."
+	r.Status, r.Number, r.URL, r.Detail = "confirmed", issue.Number, issue.URL, "Issue created and sent to Simplifier Bot for simplification review."
 	r.Next = time.Time{}
 	id := fmt.Sprintf("issue:%d", issue.Number)
 	if t.Tasks[id] == nil {

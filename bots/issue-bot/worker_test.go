@@ -13,7 +13,7 @@ import (
 
 func TestIssueJobSummaryAndTargetedRetryPreserveSavedEvidence(t *testing.T) {
 	root := t.TempDir()
-	checkout, state, err := botapi.Dirs(root, "precinct", "issue")
+	checkout, state, err := botapi.Dirs(root, "repo", "issue")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestIssueJobSummaryAndTargetedRetryPreserveSavedEvidence(t *testing.T) {
 	}
 	// The summary and the retry go through the bot contract: the request names
 	// the workspace, and the bot finds its own saved state under its root.
-	request := botapi.Request{Town: "precinct", Role: "issue", Remote: saved.Remote, Branch: saved.Branch, Repo: saved.Repo, Host: saved.Host}
+	request := botapi.Request{Town: "repo", Role: "issue", Remote: saved.Remote, Branch: saved.Branch, Repo: saved.Repo, Host: saved.Host}
 	query := func(mode string, issue int) map[int]*botapi.IssueJob {
 		t.Helper()
 		r := request

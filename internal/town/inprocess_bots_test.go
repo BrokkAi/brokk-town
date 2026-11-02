@@ -6,7 +6,7 @@ import (
 )
 
 // inProcessBots wires the real bots for tests that drive a whole dispatch with
-// fake gh, git and agents, sharing the workers' root as cmd/scs does.
+// fake gh, git and agents, sharing the workers' root as cmd/bt does.
 func inProcessBots(root string) map[Role]botapi.Bot {
 	out := map[Role]botapi.Bot{}
 	for role, bot := range bots.InProcess(root) {
@@ -21,7 +21,7 @@ func withBots(b *BotWorkers) *BotWorkers {
 	return b
 }
 
-// botWorkspace is where an in-process bot keeps a precinct's checkout and
+// botWorkspace is where an in-process bot keeps a repository's checkout and
 // state under root.
 func botWorkspace(root, id string, role Role) (string, string) {
 	checkout, state, err := botapi.Dirs(root, Key(id), string(role))

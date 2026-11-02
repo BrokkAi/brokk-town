@@ -17,7 +17,7 @@ const maxStorageEntries = 10000
 
 func (w Worker) Storage(ctx context.Context, request StorageRequest) (StorageResult, error) {
 	if request.Role != w.Role {
-		return StorageResult{}, errors.New(w.Name + " does not keep that unit's storage")
+		return StorageResult{}, errors.New(w.Name + " does not keep that role's storage")
 	}
 	dir, state, err := Dirs(w.Root, request.Town, request.Role)
 	if err != nil {
@@ -124,15 +124,15 @@ func (w Worker) remove(ctx context.Context, base, state string, transcripts []Tr
 		return results
 	}
 	if !artifact.PathSafe(w.Root, state) {
-		return refuse("The unit's state directory is missing or unsafe; cleanup refused.")
+		return refuse("The bot's state directory is missing or unsafe; cleanup refused.")
 	}
 	lock, err := os.OpenFile(filepath.Join(state, "daemon.lock"), os.O_CREATE|os.O_RDWR|artifact.NoFollow, 0600)
 	if err != nil {
-		return refuse("Cannot lock the unit's state; cleanup refused.")
+		return refuse("Cannot lock the bot's state; cleanup refused.")
 	}
 	defer lock.Close()
 	if err = filelock.TryLock(lock); err != nil {
-		return refuse("The unit is working in this workspace; cleanup refused.")
+		return refuse("The bot is working in this workspace; cleanup refused.")
 	}
 	defer filelock.Unlock(lock)
 	for _, t := range transcripts {

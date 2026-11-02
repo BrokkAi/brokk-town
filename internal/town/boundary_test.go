@@ -22,7 +22,7 @@ import (
 // else would let the service depend on running in the bot's process.
 func TestOnlyTheRegistryAndHostImportBots(t *testing.T) {
 	module := filepath.Join("..", "..")
-	allowed := map[string]bool{filepath.Join("bots", "inprocess.go"): true, filepath.Join("cmd", "scs", "bots.go"): true}
+	allowed := map[string]bool{filepath.Join("bots", "inprocess.go"): true, filepath.Join("cmd", "bt", "bots.go"): true}
 	scanned := map[string]bool{}
 	err := filepath.WalkDir(module, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -57,7 +57,7 @@ func TestOnlyTheRegistryAndHostImportBots(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Guard against a walk that silently skips the module.
-	for _, must := range []string{"internal/town/bots.go", "internal/web/server.go", "cmd/scs/main.go"} {
+	for _, must := range []string{"internal/town/bots.go", "internal/web/server.go", "cmd/bt/main.go"} {
 		if !scanned[must] {
 			t.Fatalf("import check did not scan %s (%d files scanned)", must, len(scanned))
 		}

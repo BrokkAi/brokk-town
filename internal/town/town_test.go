@@ -1107,8 +1107,8 @@ func TestRetryLeavesAPausedHousePaused(t *testing.T) {
 	if town.Intents[1].Status != "retry" {
 		t.Fatalf("retry lost the uncertain write intent: %+v", town.Intents[1])
 	}
-	if !strings.Contains(task.Detail, "stood down") {
-		t.Fatalf("operator is not told the unit is stood down: %q", task.Detail)
+	if !strings.Contains(task.Detail, "paused") {
+		t.Fatalf("operator is not told the bot is paused: %q", task.Detail)
 	}
 	events := s.Snapshot().Events
 	if len(events) != before+1 {
@@ -1447,21 +1447,21 @@ func (s *Supervisor) reconcileNow(ctx context.Context, t *Town) error {
 	return s.reconcile(ctx, t, true, func(Progress) {}, slog.Default())
 }
 
-// Every role reads as its unit in operator-facing prose, and the Probation Judge's
-// bot is Judge Bot; none falls back to its bare role key.
-func TestEveryRoleHasAUnitName(t *testing.T) {
+// Every role reads as its bot in operator-facing prose, and the hall role's
+// bot is Mayor Bot; none falls back to its bare role key.
+func TestEveryRoleHasABotName(t *testing.T) {
 	seen := map[string]Role{}
 	for _, role := range Roles {
-		name := unitName(role)
+		name := botName(role)
 		if name == "" || name == string(role) {
-			t.Fatalf("%s has no unit name: %q", role, name)
+			t.Fatalf("%s has no bot name: %q", role, name)
 		}
 		if other, dup := seen[name]; dup {
-			t.Fatalf("%s and %s share the unit name %q", other, role, name)
+			t.Fatalf("%s and %s share the bot name %q", other, role, name)
 		}
 		seen[name] = role
 	}
-	if houseName(Hall)+" Bot" != "Judge Bot" || houseName(Review)+" Bot" != "Review Bot" {
+	if botName(Hall) != "Mayor Bot" || botName(Review) != "Review Bot" {
 		t.Fatalf("bot names: %q, %q", houseName(Hall), houseName(Review))
 	}
 }

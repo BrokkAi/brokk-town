@@ -4,16 +4,16 @@ Walk GitHub issues, give a coding agent one focused attempt at each, and open
 pull requests for review.
 
 `issue-bot` is a Go package of the
-[SlopCop Squad](https://github.com/BrokkAi/brokk-town) module. Issue Bot staffs
-the **Caseworker** unit (role key `issue`), and the Squad runs it in process, so
+[Brokk Town](https://github.com/BrokkAi/brokk-town) module. Issue Bot runs
+the **Implementation** stage (role key `issue`), and Town runs it in process, so
 there is no standalone binary, server or release tag to install. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
 
 ## What it does
 
-1. Walk open, unlocked issues. The Squad may dispatch one exact issue; otherwise
-   the unit takes its eligible caseload in order. Workspace policy labels and
+1. Walk open, unlocked issues. Town may dispatch one exact issue; otherwise
+   the bot takes its eligible workload in order. Workspace policy labels and
    excludes are applied before the run.
 2. Skip issues that already have a linked or cross-referenced pull request,
    whether open, draft, merged or closed, from any author, branch or fork.
@@ -26,14 +26,14 @@ there is no standalone binary, server or release tag to install. See
    verify the branch, clean worktree, starting commit and real diff. An optional
    operator `verify` command must also pass. The claim and any existing pull
    request are rechecked before publishing.
-6. Push without force and open a pull request. The Squad asks for a regular (not
+6. Push without force and open a pull request. Town asks for a regular (not
    draft) pull request; the bot records its URL against the issue.
 
 The bot does not merge pull requests or close issues.
 
 ### Superseded work
 
-When the Squad closes a bot pull request after review, it dispatches the issue
+When Town closes a bot pull request after review, it dispatches the issue
 again with that pull request number as *superseded*. The bot resets the issue's
 saved job, discards the old worktree and branch, and records the closed pull
 request so it is never treated as the issue's existing pull request again. The
@@ -47,8 +47,8 @@ an inspect-branch failure instead of being retried blindly.
 
 ## Configuration
 
-The Squad fills this configuration from the precinct's agent profile and the
-Caseworker unit's work policy in the browser. The package's own fields are:
+Town fills this configuration from the repository's agent profile and the
+Issue Bot's work policy in the browser. The package's own fields are:
 
 | Field | Meaning |
 | --- | --- |
@@ -57,12 +57,12 @@ Caseworker unit's work policy in the browser. The package's own fields are:
 | `agent` | ACP command, environment, model and effort. |
 | `github.host`, `github.repo` | Enterprise host, or a local mirror's GitHub repository. |
 | `poll`, `timeout`, `claim_timeout`, `retry_delay`, `attempts` | Cadence, claim lease and retry budget. |
-| `labels`, `exclude_labels` | Selector for the issues the unit may take. |
-| `issue` | Pin the unit to one issue number. The Squad sets this for an exact dispatch. |
+| `labels`, `exclude_labels` | Selector for the issues the bot may take. |
+| `issue` | Pin the bot to one issue number. Town sets this for an exact dispatch. |
 | `draft` | Open draft pull requests instead of ready ones. |
 | `verify` | Operator command that must pass before publishing. |
 
-The Squad's policy mapping is `labels`, `exclude_labels`, `only` → `issue`,
+Town's policy mapping is `labels`, `exclude_labels`, `only` → `issue`,
 `attempts` and `verify`. Defaults: poll every 5 minutes, a 2-hour attempt
 budget, a 15-minute claim lease, a 15-minute retry delay and 3 attempts.
 

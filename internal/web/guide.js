@@ -1,6 +1,6 @@
 const $ = (id) => document.querySelector(`#${id}`);
 const busy = (status) => ["queued", "gathering", "answering"].includes(status);
-const pendingKey = "slopcop-squad-guide-pending";
+const pendingKey = "brokk-town-guide-pending";
 
 // These handlers are the only network entry points. render only consumes
 // state; reconnecting SSE never resubmits or confirms a conversation.
@@ -47,7 +47,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
     const ids = turns.map((turn) => turn.id).join(",");
     for (const turn of turns) {
       const item = row(turn);
-      item.question.textContent = `You: ${turn.question}`; item.answer.textContent = `Sergeant: ${turn.answer || (busy(turn.status) ? "…" : "No completed answer.")}`;
+      item.question.textContent = `You: ${turn.question}`; item.answer.textContent = `Assistant: ${turn.answer || (busy(turn.status) ? "…" : "No completed answer.")}`;
       item.status.textContent = `${turn.status}${turn.detail ? ` · ${turn.detail}` : ""}`;
       item.proposal.textContent = turn.proposal ? `${turn.proposal.status === "confirmed" ? "Confirmed" : "Proposed action"}: ${turn.proposal.description}` : "";
       item.confirm.hidden = !turn.proposal || turn.proposal.status === "confirmed";
@@ -59,7 +59,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
       for (const id of rows.keys()) if (!turns.some((turn) => turn.id === id)) rows.delete(id);
     }
     const active = turns.find((turn) => busy(turn.status));
-    $("guide-status").textContent = active ? `The Desk Sergeant is ${active.status}.` : "The Desk Sergeant is ready. Answers describe saved observations.";
+    $("guide-status").textContent = active ? `The Assistant is ${active.status}.` : "The Assistant is ready. Answers describe saved observations.";
     $("guide-send").disabled = sending || !!active || !selected();
     $("guide-cancel").disabled = sending || !active;
     $("guide-cancel").onclick = () => active && command({action:"cancel",id:active.id});
@@ -72,7 +72,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
     const town = selected();
     $("guide-town").textContent = townID;
     const profile = town?.config;
-    $("guide-profile").textContent = profile ? `Uses precinct defaults: ${profile.harness || "configured harness"} · ${profile.model || "default model"} · ${profile.effort || "default effort"}.` : "This town is no longer available.";
+    $("guide-profile").textContent = profile ? `Uses repository defaults: ${profile.harness || "configured harness"} · ${profile.model || "default model"} · ${profile.effort || "default effort"}.` : "This town is no longer available.";
     renderConversation(town?.guide);
   }
   $("guide-form").onsubmit = (event) => {

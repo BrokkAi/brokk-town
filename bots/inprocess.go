@@ -1,4 +1,4 @@
-// Package bots lists the Squad's bots for a process that hosts them itself.
+// Package bots lists Town's bots for a process that hosts them itself.
 // The service reaches every bot through the bot contract (internal/botapi);
 // this registry is the one place that names the bot packages, so swapping it
 // for remote clients changes nothing else.

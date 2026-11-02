@@ -13,12 +13,12 @@ afterEach(()=>{delete globalThis.document;delete globalThis.sessionStorage;});
 function panel(api){return guidePanel({api,getTown:()=>state.towns["acme/project"],getState:()=>state});}
 function submit(text){fields["guide-question"].value=text;fields["guide-form"].onsubmit({preventDefault(){}});}
 const proposal={action:"pause",role:"issue",digest:"exact",status:"proposed",description:"Pause issue in acme/project after current work finishes."};
-test("Desk Sergeant rendering never submits; confirmation needs a button click and retains focus identity",async()=>{
+test("Assistant rendering never submits; confirmation needs a button click and retains focus identity",async()=>{
  const calls=[];const ui=panel(async(url,body)=>{calls.push({url,body});return state.towns["acme/project"].guide;});
  fields["ask-guide"].onclick();assert.equal(calls.length,0);
  state.towns["acme/project"].guide={revision:2,next:1,turns:[{id:"question-one",question:"<script>pause</script>",answer:"<img> saved answer",status:"complete",proposal}]};
  ui.render();const article=fields["guide-turns"].children[0],confirm=article.children[4];
- assert.equal(article.children[0].textContent,"You: <script>pause</script>");assert.match(article.children[1].textContent,/^Sergeant: <img>/);
+ assert.equal(article.children[0].textContent,"You: <script>pause</script>");assert.match(article.children[1].textContent,/^Assistant: <img>/);
  for(let i=0;i<20;i++)ui.render();assert.equal(fields["guide-turns"].children[0].children[4],confirm);assert.equal(calls.length,0);
  await confirm.onclick();assert.deepEqual(calls[0],{url:"/api/guide",body:{town:"acme/project",action:"confirm",id:"question-one",digest:"exact"}});
 });

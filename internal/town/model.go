@@ -43,7 +43,7 @@ func WorkerAuthority(role Role, mergePolicy string) string {
 	case Feature:
 		return "May inspect repository content and propose or file GitHub feature issues."
 	case Issue:
-		return "May claim issues, create pull requests, and push repairs to branches the Squad owns."
+		return "May claim issues, create pull requests, and push repairs to branches Town owns."
 	case Review:
 		return "May post pull request reviews and findings and merge eligible pull requests when merge policy permits; it does not edit contributor branches."
 	case Release:
@@ -55,7 +55,7 @@ func WorkerAuthority(role Role, mergePolicy string) string {
 	case Repo:
 		return "Inventories repository state, and repairs the branch it covers when its checks fail."
 	case Simplifier:
-		return "May inspect repository content, file simplification issues, and in auto mode recommend that the Squad dismiss or close low-value complex issues."
+		return "May inspect repository content, file simplification issues, and in auto mode recommend that Town dismiss or close low-value complex issues."
 	default:
 		return ""
 	}
@@ -255,7 +255,7 @@ func (c Config) Validate() error {
 	}
 	for role, policy := range c.BotPolicies {
 		if !ValidRole(role) {
-			return fmt.Errorf("work policy names an unknown unit: %q", role)
+			return fmt.Errorf("work policy names an unknown bot: %q", role)
 		}
 		if err := policy.Validate(role); err != nil {
 			return fmt.Errorf("%s policy: %w", role, err)
@@ -411,11 +411,11 @@ func (r *WorkerRun) Validate(role Role) error {
 		switch r.Mode {
 		case "judge":
 			if (r.Issue > 0 && r.PR > 0) || (r.HeadSHA != "" && r.PR == 0) || (r.BaseSHA != "" && r.PR == 0) {
-				return errors.New("invalid judge ruling target")
+				return errors.New("invalid triage decision target")
 			}
 		case "bulletin":
 			if r.Issue > 0 || r.PR > 0 || r.BaseSHA != "" || r.HeadSHA != "" {
-				return errors.New("a blotter run names no issue, pull request or revision")
+				return errors.New("a status report run names no issue, pull request or revision")
 			}
 		default:
 			return errors.New("invalid judge run mode")
@@ -722,7 +722,7 @@ func (s *State) Add(c Config) (*Town, error) {
 	id := strings.ToLower(c.Repo)
 	if t := s.Towns[id]; t != nil {
 		if !t.Deleted {
-			return nil, fmt.Errorf("precinct already exists")
+			return nil, fmt.Errorf("repository already exists")
 		}
 		if c.Branch == "" {
 			// Adding names no branch; the restored town keeps the branch its
@@ -749,13 +749,13 @@ func (s *State) Add(c Config) (*Town, error) {
 // follows the repository default.
 func (t *Town) Restore(c Config) error {
 	if !t.Deleted {
-		return fmt.Errorf("precinct %s is not deleted", t.ID)
+		return fmt.Errorf("repository %s is not deleted", t.ID)
 	}
 	if err := c.Validate(); err != nil {
 		return err
 	}
 	if t.Initialized && c.Branch != "" && c.Branch != t.Branch() {
-		return fmt.Errorf("cannot restore precinct %s from branch %s onto %s; use a separate state directory", t.ID, t.Branch(), c.Branch)
+		return fmt.Errorf("cannot restore repository %s from branch %s onto %s; use a separate state directory", t.ID, t.Branch(), c.Branch)
 	}
 	t.Config = c
 	t.Deleted = false

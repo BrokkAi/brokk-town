@@ -54,7 +54,7 @@ func TestWorkerResolvesWorkspaceAndStreamsEvents(t *testing.T) {
 	var events []Event
 	var straggler func(phase, task string)
 	w := Worker{Name: "bug-bot", Role: "bug", Root: root, Handle: func(_ context.Context, job Job) (Result, error) {
-		checkout, state, _ := Dirs(root, "precinct", "bug")
+		checkout, state, _ := Dirs(root, "repo", "bug")
 		if job.Directory != checkout || job.StateDirectory != state {
 			t.Errorf("job workspace = %q %q", job.Directory, job.StateDirectory)
 		}
@@ -66,7 +66,7 @@ func TestWorkerResolvesWorkspaceAndStreamsEvents(t *testing.T) {
 		straggler = job.Progress
 		return Result{}, errors.New("stopped")
 	}}
-	_, err := w.Run(context.Background(), Request{Town: "precinct", Role: "bug", Agent: Agent{Command: []string{"configured-agent"}, Model: "m"}}, func(e Event) { events = append(events, e) })
+	_, err := w.Run(context.Background(), Request{Town: "repo", Role: "bug", Agent: Agent{Command: []string{"configured-agent"}, Model: "m"}}, func(e Event) { events = append(events, e) })
 	if err == nil || err.Error() != "stopped" {
 		t.Fatalf("handler error lost: %v", err)
 	}
@@ -81,14 +81,14 @@ func TestWorkerResolvesWorkspaceAndStreamsEvents(t *testing.T) {
 	if l == nil || l.Level != "WARN" || l.Message != "pushed" || l.Attrs["bot"] != "bug-bot" || l.Attrs["issue"] != "7" || l.Attrs["git.branch"] != "fix" {
 		t.Fatalf("log not carried: %+v", events[1])
 	}
-	if _, err := w.Run(context.Background(), Request{Town: "precinct", Role: "review"}, nil); err == nil {
-		t.Fatal("bug-bot ran the review unit")
+	if _, err := w.Run(context.Background(), Request{Town: "repo", Role: "review"}, nil); err == nil {
+		t.Fatal("bug-bot ran the review role")
 	}
 }
 
 func TestWorkerReportsOnlyTheTranscriptsARunWrote(t *testing.T) {
 	root := t.TempDir()
-	_, state, _ := Dirs(root, "precinct", "review")
+	_, state, _ := Dirs(root, "repo", "review")
 	sessions := filepath.Join(state, "sessions")
 	if err := os.MkdirAll(sessions, 0700); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestWorkerReportsOnlyTheTranscriptsARunWrote(t *testing.T) {
 	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	result, _ := w.Run(ctx, Request{Town: "precinct", Role: "review"}, nil)
+	result, _ := w.Run(ctx, Request{Town: "repo", Role: "review"}, nil)
 	digest, size, _ := artifact.Digest(context.Background(), filepath.Join(sessions, "new.jsonl"))
 	if !reflect.DeepEqual(result.Transcripts, []Transcript{{Path: "state/sessions/new.jsonl", Digest: digest, Bytes: size}}) {
 		t.Fatalf("transcripts = %+v", result.Transcripts)
@@ -115,7 +115,7 @@ func TestWorkerReportsOnlyTheTranscriptsARunWrote(t *testing.T) {
 func TestStorageInventoriesAndRemovesOnlyMatchingTranscripts(t *testing.T) {
 	root := t.TempDir()
 	w := Worker{Name: "issue-bot", Role: "issue", Root: root}
-	checkout, state, _ := Dirs(root, "precinct", "issue")
+	checkout, state, _ := Dirs(root, "repo", "issue")
 	sessions := filepath.Join(state, "sessions")
 	for _, dir := range []string{checkout, sessions} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
@@ -132,7 +132,7 @@ func TestStorageInventoriesAndRemovesOnlyMatchingTranscripts(t *testing.T) {
 	write(filepath.Join(sessions, "a.jsonl"), "a\n")
 	write(filepath.Join(sessions, "b.jsonl"), "b\n")
 
-	got, err := w.Storage(context.Background(), StorageRequest{Town: "precinct", Role: "issue", Verify: []string{"state/sessions/a.jsonl"}})
+	got, err := w.Storage(context.Background(), StorageRequest{Town: "repo", Role: "issue", Verify: []string{"state/sessions/a.jsonl"}})
 	if err != nil || got.Incomplete {
 		t.Fatal(got, err)
 	}
@@ -156,7 +156,7 @@ func TestStorageInventoriesAndRemovesOnlyMatchingTranscripts(t *testing.T) {
 	if err = filelock.TryLock(lock); err != nil {
 		t.Fatal(err)
 	}
-	remove := StorageRequest{Town: "precinct", Role: "issue", Remove: []Transcript{
+	remove := StorageRequest{Town: "repo", Role: "issue", Remove: []Transcript{
 		{Path: "state/sessions/a.jsonl", Digest: a.Digest, Bytes: a.Bytes},
 		{Path: "state/sessions/b.jsonl", Digest: strings.Repeat("0", 64), Bytes: 2},
 		{Path: "state/state.json", Digest: a.Digest, Bytes: a.Bytes},

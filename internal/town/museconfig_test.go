@@ -73,10 +73,9 @@ func TestAgentConfigRedirectsMuseOnly(t *testing.T) {
 	}
 }
 
-// The opt-out leaves the operator's configuration untouched, under its current
-// name or the one it had before the rename to SlopCop Squad.
+// The opt-out leaves the operator's configuration untouched.
 func TestAgentConfigMusePermissionsOptOut(t *testing.T) {
-	for _, name := range []string{"SLOPCOP_SQUAD_MUSE_PERMISSIONS", "BROKK_TOWN_MUSE_PERMISSIONS"} {
+	for _, name := range []string{"BROKK_TOWN_MUSE_PERMISSIONS"} {
 		t.Run(name, func(t *testing.T) {
 			stubHarnessPATH(t, "npx")
 			t.Setenv(name, "keep")

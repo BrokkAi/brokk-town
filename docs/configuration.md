@@ -1,23 +1,23 @@
 # Configuration
 
-SlopCop Squad has three levels of configuration, all stored in the state
+Brokk Town has three levels of configuration, all stored in the state
 directory (`--state-dir` selects the directory):
 
 1. **Service** — one shared scheduler: capacity, default quiet hours, the
-   attention hook. The browser calls these Squad settings.
-2. **Precinct** — one repository (a `town`): agent profile, merge policy,
+   attention hook. The browser calls these Global settings.
+2. **Repository** — one repository (a `town`): agent profile, merge policy,
    cadence, budget, funnels, execution placement.
-3. **Unit** — one bot in one precinct (a `house`, named by its role key): an
+3. **Bot** — one bot in one repository (a `house`, named by its role key): an
    independent agent profile, a work policy, and per-bot limits.
 
 Change any of it in the browser. A `--config` file can seed it at startup.
 Nothing is stored in the repository, and nothing is stored in the git checkout
-the Squad manages.
+Town manages.
 
 ## Changing settings
 
-Squad settings edit the service; a precinct's ⚙ Settings (Precinct settings)
-edit that precinct or one of its units. Settings only offer fields a unit can
+Global settings edit the service; a repository's Settings (Repository settings)
+edit that repository or one of its bots. Settings only offer fields a bot can
 honour, so a typo cannot quietly change another bot's behaviour. Omitted fields
 preserve the stored value.
 
@@ -25,38 +25,38 @@ preserve the stored value.
 
 | Field | Configured in | Meaning |
 | --- | --- | --- |
-| `max_workers` | Squad settings | Active agent workers across all precincts. 1–64, default 4. |
-| `quiet_hours` | Squad settings or config file | Default weekly quiet windows for precincts that set none. |
-| `attention_hook` | Squad settings | Optional local notifier for blocked/completed attention events. |
+| `max_workers` | Global settings | Active agent workers across all repositories. 1–64, default 4. |
+| `quiet_hours` | Global settings or config file | Default weekly quiet windows for repositories that set none. |
+| `attention_hook` | Global settings | Optional local notifier for blocked/completed attention events. |
 
 The attention hook is disabled by default. When enabled it receives one small
 JSON object on stdin and runs for at most ten seconds, independently of quiet
 hours and never in demo mode. Command output is discarded. See
 [operations.md](operations.md).
 
-## Precinct defaults
+## Repository defaults
 
 | JSON field | Configured in | Default | Meaning |
 | --- | --- | --- | --- |
-| `repo` | ＋ New precinct in the browser | required | `OWNER/REPO` the precinct serves. |
-| `branch` | config file | repository default | Branch the precinct covers. Empty follows GitHub's default. |
-| `merge_policy` | Settings | `bot` | `bot` (PRs the Squad created), `all` (external too), or `manual` (never; stands Release down). |
+| `repo` | Add repository in the browser | required | `OWNER/REPO` the repository serves. |
+| `branch` | config file | repository default | Branch the repository covers. Empty follows GitHub's default. |
+| `merge_policy` | Settings | `bot` | `bot` (PRs Town created), `all` (external too), or `manual` (never; keeps Release Bot paused). |
 | `poll_seconds` | config file | 60 | Base cadence for intake and repair work. Minimum 10. |
-| `report_seconds` | config file | 1800 | Cadence for periodic patrol reports. Minimum 60. |
-| `max_cycles` | config file | 5 | Attempts allowed per case before it is held. 1–20. |
-| `simplifier_mode` | config file | `suggest` | `suggest` routes arrivals through the Probation Judge for a ruling; `auto` lets the Magistrate send low-value work to the Slop Tank. |
-| `bulletin_seconds` | config file | 86400 | Minimum interval between blotter entries from Judge Bot. At least 600. |
+| `report_seconds` | config file | 1800 | Cadence for periodic scan reports. Minimum 60. |
+| `max_cycles` | config file | 5 | Attempts allowed per task before it is held. 1–20. |
+| `simplifier_mode` | config file | `suggest` | `suggest` routes arrivals through Mayor Bot for a decision; `auto` lets Simplifier Bot decline low-value work. |
+| `bulletin_seconds` | config file | 86400 | Minimum interval between status report entries from Mayor Bot. At least 600. |
 | `review_close_severity` | Settings | `P2` | Least severe finding that closes a PR after the second review. |
 | `budget` | Settings | none | Agent attempt/minute cap per accounting period. |
-| `quiet_hours` | Settings or config file | service default | The precinct's own windows; `[]` opts out. |
+| `quiet_hours` | Settings or config file | service default | The repository's own windows; `[]` opts out. |
 | `funnels` | config file | none | Named source funnels. |
-| `execution` | Execution location in Settings | direct local | Where this precinct's agent work runs. |
-| `bot_execution` | Execution location in Settings | inherit | Per-unit execution override. |
+| `execution` | Execution location in Settings | direct local | Where this repository's agent work runs. |
+| `bot_execution` | Execution location in Settings | inherit | Per-bot execution override. |
 
 ## Agent profiles
 
-A precinct has one default agent profile and each unit can override it. A unit
-with an override stays independent when the precinct default changes; restoring
+A repository has one default agent profile and each bot can override it. A bot
+with an override stays independent when the repository default changes; restoring
 inheritance returns it to the default.
 
 | Field | Configured in | Meaning |
@@ -77,35 +77,35 @@ save it. See [harnesses.md](harnesses.md).
 
 ## Work policies
 
-A work policy tells one unit what to take. Only the fields a unit supports are
+A work policy tells one bot what to take. Only the fields a bot supports are
 accepted.
 
-| Unit (role key) | Supported policy fields |
+| Bot (role key) | Supported policy fields |
 | --- | --- |
-| Bug Detective (`bug`), Feature Detective (`feature`) | `labels`, `focus`, `limit`, `attempts`, `verify` |
-| Caseworker (`issue`) | `labels`, `exclude-labels`, `only`, `attempts`, `verify` |
-| Forensics (`review`) | `labels`, `exclude-labels`, `only`, `focus`, `limit`, `attempts`, `verify` |
-| Release (`release`) | `attempts`, `verify`, plus every release flag below |
-| Magistrate (`simplifier`) | `labels`, `limit`, `verify` |
-| Patrol (`repo`) | `limit`, `verify` |
-| Probation Judge (`hall`) | `limit`, `verify` |
+| Bug Bot (`bug`), Feature Bot (`feature`) | `labels`, `focus`, `limit`, `attempts`, `verify` |
+| Issue Bot (`issue`) | `labels`, `exclude-labels`, `only`, `attempts`, `verify` |
+| Review Bot (`review`) | `labels`, `exclude-labels`, `only`, `focus`, `limit`, `attempts`, `verify` |
+| Release Bot (`release`) | `attempts`, `verify`, plus every release flag below |
+| Simplifier Bot (`simplifier`) | `labels`, `limit`, `verify` |
+| Repo Bot (`repo`) | `limit`, `verify` |
+| Mayor Bot (`hall`) | `limit`, `verify` |
 
 - `labels` is the set of labels work must carry to be eligible.
 - `exclude-labels` removes work carrying any of them.
-- `only` pins a unit to one issue or pull request number. It applies when the
-  Squad has not already dispatched an exact item.
+- `only` pins a bot to one issue or pull request number. It applies when the
+  Town has not already dispatched an exact item.
 - `focus` is free text handed to a discovery or review prompt.
 - `limit` is the per-run cap (issues filed, findings, proposals, repairs,
-  blotter items, or a page size depending on the unit).
+  status report items, or a page size depending on the bot).
 - `attempts` is how many tries one item gets before it is held.
-- `verify` is a command array that must pass; it overrides the precinct-level
+- `verify` is a command array that must pass; it overrides the repository-level
   `verify`.
 
-Clearing a policy in Settings makes the unit take everything it is given again.
+Clearing a policy in Settings makes the bot take everything it is given again.
 
 ## Release policy
 
-Set in Settings for the Release unit. These live under
+Set in Settings for Release Bot. These live under
 `bot_policies.<role>.release` in a config file.
 
 | JSON field | Configured in | Default | Meaning |
@@ -125,9 +125,9 @@ See [workflow.md](workflow.md) for the cadence rules.
 
 ## Budgets
 
-A budget bounds how much agent work a precinct starts in an accounting period.
+A budget bounds how much agent work a repository starts in an accounting period.
 It counts **attempts** and **agent minutes**, never tokens or dollars: no
-bundled harness reports usage back to the Squad.
+bundled harness reports usage back to Town.
 
 | Field | Configured in |
 | --- | --- |
@@ -135,22 +135,22 @@ bundled harness reports usage back to the Squad.
 | `max_attempts` | Settings |
 | `max_agent_minutes` | Settings |
 
-Either cap may be omitted. When the budget is exhausted, units show a wait with
+Either cap may be omitted. When the budget is exhausted, bots show a wait with
 the period that will reset them; the repository is still watched. The measured
 ledger resets at the start of each period.
 
 ## Quiet hours
 
 Quiet hours are weekly windows on the machine's local clock. During a window
-the Squad starts no new agent work and makes none of its own GitHub writes.
+Town starts no new agent work and makes none of its own GitHub writes.
 Running work finishes, and the repository keeps being watched.
 
 - One window is `DAYS HH:MM-HH:MM`; separate windows with `;`.
 - Days are `mon`…`sun`, commas and ranges are accepted, and `daily`,
   `weekdays` and `weekends` are shorthand.
 - A window that ends at or before its start runs past midnight.
-- `none` removes the schedule. A precinct inherits the service default unless
-  it sets its own; `[]` in a config file opts one precinct out.
+- `none` removes the schedule. A repository inherits the service default unless
+  it sets its own; `[]` in a config file opts one repository out.
 - At most 32 windows.
 
 ## Funnels
@@ -165,11 +165,11 @@ specifics.
 
 ## Execution placement
 
-By default an agent runs locally through the selected harness. A precinct can
+By default an agent runs locally through the selected harness. A repository can
 place supported duties on an Mjolnir target instead:
 
-Execution location, in a precinct's Settings, lists cached targets and profiles,
-refreshes the catalog, and saves a precinct default or per-unit override. Local
+Execution location, in a repository's Settings, lists cached targets and profiles,
+refreshes the catalog, and saves a repository default or per-bot override. Local
 execution and inheritance are explicit choices in the same place.
 
 Managed review and managed issue repair are supported. Other duties show an
@@ -178,9 +178,9 @@ explicit hold until you select direct local execution. See
 
 ## Config file
 
-`scs --config FILE` seeds settings at startup. Two shapes are accepted.
+`bt --config FILE` seeds settings at startup. Two shapes are accepted.
 
-**Array** — a list of precinct configurations:
+**Array** — a list of repository configurations:
 
 ```json
 [
@@ -188,7 +188,7 @@ explicit hold until you select direct local execution. See
 ]
 ```
 
-**Object** — service settings plus precincts (the `towns` array):
+**Object** — service settings plus repositories (the `towns` array):
 
 ```json
 {
@@ -203,10 +203,10 @@ explicit hold until you select direct local execution. See
 
 Rules:
 
-- Unknown fields are rejected, in the service object and inside every precinct.
-- An omitted `branch` keeps the precinct's stored branch; an explicit `""`
-  clears it so the precinct follows the repository default again.
-- A precinct already present is updated; a deleted precinct is restored with its
+- Unknown fields are rejected, in the service object and inside every repository.
+- An omitted `branch` keeps the repository's stored branch; an explicit `""`
+  clears it so the repository follows GitHub's default branch again.
+- A repository already present is updated; a deleted repository is restored with its
   recovery records.
 - A real config is refused in demo mode.
 - The object form requires a `towns` array; `max_workers` cannot be null.

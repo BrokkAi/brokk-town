@@ -12,17 +12,17 @@ func TestParseRemoteAgentAcceptsSocketsAndNetworkURLs(t *testing.T) {
 	for _, tc := range []struct {
 		value, url, socket string
 	}{
-		{"/run/scs/agent.sock", "http://town/v1/agent", "/run/scs/agent.sock"},
-		{"unix:///run/scs/agent.sock", "http://town/v1/agent", "/run/scs/agent.sock"},
-		{"http://squad:8080/v1/agent", "http://squad:8080/v1/agent", ""},
-		{"https://squad.example/v1/agent", "https://squad.example/v1/agent", ""},
+		{"/run/bt/agent.sock", "http://town/v1/agent", "/run/bt/agent.sock"},
+		{"unix:///run/bt/agent.sock", "http://town/v1/agent", "/run/bt/agent.sock"},
+		{"http://town:8080/v1/agent", "http://town:8080/v1/agent", ""},
+		{"https://town.example/v1/agent", "https://town.example/v1/agent", ""},
 	} {
 		got, err := parseRemoteAgent(tc.value)
 		if err != nil || got.url != tc.url || got.socket != tc.socket {
 			t.Fatalf("parseRemoteAgent(%q) = %+v, %v", tc.value, got, err)
 		}
 	}
-	for _, bad := range []string{"relative.sock", "unix://host/agent.sock", "unix:relative", "http:///v1/agent", "ftp://squad/v1/agent", "http://user:pass@squad/v1/agent", "http://squad/v1/agent?x=1"} {
+	for _, bad := range []string{"relative.sock", "unix://host/agent.sock", "unix:relative", "http:///v1/agent", "ftp://town/v1/agent", "http://user:pass@town/v1/agent", "http://town/v1/agent?x=1"} {
 		if _, err := parseRemoteAgent(bad); err == nil {
 			t.Fatalf("parseRemoteAgent(%q) accepted an endpoint it cannot use", bad)
 		}
