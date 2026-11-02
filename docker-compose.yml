@@ -62,7 +62,7 @@ services:
     read_only: true
     tmpfs: [/tmp]
     environment:
-        BROKK_TOWN_CALLBACK_URL: http://bt:8091
+      BROKK_TOWN_CALLBACK_URL: http://bt:8091
       BROKK_TOWN_BOT_BUG_URL: http://bug-bot:8080
       BROKK_TOWN_BOT_BUG_TOKEN_FILE: /run/secrets/brokk/bug-bot/token
       BROKK_TOWN_BOT_FEATURE_URL: http://feature-bot:8080
