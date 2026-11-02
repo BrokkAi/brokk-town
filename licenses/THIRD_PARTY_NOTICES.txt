@@ -212,7 +212,7 @@ Project license (LICENSE)
 Project notice (NOTICE)
 
 Brokk Town
-Copyright 2026 SlopCop.ai and contributors
+Copyright 2026 Brokk.ai and contributors
 
 This project is licensed under the Apache License, Version 2.0.
 See LICENSE for the full terms. Third-party terms and attribution are
