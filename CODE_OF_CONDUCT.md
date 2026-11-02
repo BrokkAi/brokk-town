@@ -67,7 +67,7 @@ and responsible disclosure. Good-faith reports that we have made a mistake are
 welcome.
 
 Do not disclose suspected vulnerabilities publicly. Report them privately to
-[feedback@slopcop.ai](mailto:feedback@slopcop.ai).
+[feedback@brokk.ai](mailto:feedback@brokk.ai).
 
 Remove secrets, personal information, and private source code from public bug
 reports and reproductions. Contributors must have the right to submit their
@@ -86,7 +86,7 @@ admins** action on the relevant content. For conduct in another official
 community space, use that space's reporting tools or contact its moderators.
 
 For security vulnerabilities, contact
-[feedback@slopcop.ai](mailto:feedback@slopcop.ai).
+[feedback@brokk.ai](mailto:feedback@brokk.ai).
 
 Maintainers will review reports in good faith and protect reporters' privacy as
 far as reasonably possible. Depending on the circumstances, maintainers may
