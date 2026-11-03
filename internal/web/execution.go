@@ -60,7 +60,13 @@ func (s *Server) executionRuntime(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
-	if err := s.Supervisor.SelectExecutionRuntime(r.Context(), input.Town, input.Role, input.Session); err != nil {
+	// The Mjolnir read can be slow; only saving the pin takes the attributed
+	// turn, so it never holds up other people's changes.
+	discovery, err := s.Supervisor.DiscoverExecutionRuntime(r.Context(), input.Town, input.Role, input.Session)
+	if err == nil {
+		err = s.Store.As(callerOf(r).Identity.Display(), func() error { return s.Supervisor.PinExecutionRuntime(r.Context(), discovery) })
+	}
+	if err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

@@ -248,8 +248,14 @@ async function connect() {
     });
     if (!response.ok) {
       if (response.status === 401) {
-        // An expired sign-in or a rotated key: sign in again.
+        // An expired sign-in or a rotated key: sign in again. In a shared
+        // Town a refused access key is dropped, so the tab offers sign-in
+        // rather than asking for a key forever.
         session = { ...session, user: null };
+        if (session.mode === "multi-user" && token) {
+          token = "";
+          try { sessionStorage.removeItem("brokk-town-token"); } catch {}
+        }
         signIn.render();
         signIn.showSignIn(session.mode === "multi-user" ? "Your sign-in expired. Sign in again." : "");
         return;

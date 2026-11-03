@@ -285,6 +285,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
+	// Proxies such as ingress-nginx buffer responses by default, which would
+	// hold a shared Town's live updates back.
+	w.Header().Set("X-Accel-Buffering", "no")
 	heartbeat := time.NewTicker(20 * time.Second)
 	defer heartbeat.Stop()
 	for {

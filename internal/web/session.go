@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"net/http"
@@ -43,22 +44,17 @@ func (s *Server) authenticate(r *http.Request) (caller, bool) {
 	return caller{Identity: identity}, ok
 }
 
-// attributed lists the API writes whose Activity records name the person who
-// made them. They run through Store.As one at a time.
+// attributed lists the API writes that record operator events or ask the
+// Assistant, so Activity can name who made them. They run through Store.As one
+// at a time, so none of them may wait on the network: runtime selection does
+// its Mjolnir read first and takes the turn itself (see executionRuntime).
 var attributed = map[string]bool{
-	"/api/control":           true,
-	"/api/guide":             true,
-	"/api/towns":             true,
-	"/api/settings":          true,
-	"/api/capacity":          true,
-	"/api/attention-hook":    true,
-	"/api/storage/cleanup":   true,
-	"/api/quiet-hours":       true,
-	"/api/execution":         true,
-	"/api/execution-runtime": true,
-	"/api/requests":          true,
-	"/api/requests/check":    true,
-	"/api/outcomes/judgment": true,
+	"/api/control":   true,
+	"/api/guide":     true,
+	"/api/towns":     true,
+	"/api/settings":  true,
+	"/api/execution": true,
+	"/api/requests":  true,
 }
 
 // operatorOnly lists the API routes a signed-in person cannot use in a
@@ -104,10 +100,38 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, next http.Hand
 		next.ServeHTTP(w, r)
 		return
 	}
+	// Answer into a buffer and send it after the turn ends, so a slow client
+	// reading a long conversation cannot hold up everyone else's changes.
+	buffered := &bufferedResponse{header: http.Header{}, status: http.StatusOK}
 	_ = s.Store.As(who.Identity.Display(), func() error {
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(buffered, r)
 		return nil
 	})
+	for key, values := range buffered.header {
+		w.Header()[key] = values
+	}
+	w.WriteHeader(buffered.status)
+	_, _ = w.Write(buffered.body.Bytes())
+}
+
+// bufferedResponse holds a handler's answer in memory. API answers are small
+// JSON documents bounded by the state they describe.
+type bufferedResponse struct {
+	header      http.Header
+	status      int
+	wroteHeader bool
+	body        bytes.Buffer
+}
+
+func (b *bufferedResponse) Header() http.Header { return b.header }
+func (b *bufferedResponse) WriteHeader(status int) {
+	if !b.wroteHeader {
+		b.status, b.wroteHeader = status, true
+	}
+}
+func (b *bufferedResponse) Write(p []byte) (int, error) {
+	b.wroteHeader = true
+	return b.body.Write(p)
 }
 
 // session tells the browser how to sign in and who it is signed in as. It
