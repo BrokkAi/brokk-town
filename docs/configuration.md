@@ -191,11 +191,12 @@ stored in the state directory and not shown in the browser.
 | `BROKK_TOWN_BOT_<ROLE>_TOKEN` | The token itself, when no file is given. |
 | `BROKK_TOWN_BOT_CA_FILE` | PEM certificates to trust for `https` bot URLs. When set, only these are trusted. |
 | `BROKK_TOWN_BOT_DIR` | Where `bt` finds the bot binaries it starts. Default: the directory `bt` is in. |
-| `BROKK_TOWN_CALLBACK_URL` | The address bots use to reach Town's managed-review callback, such as `http://bt:8091`. Required for managed reviews when Review Bot is remote. |
+| `BROKK_TOWN_CALLBACK_URL` | The address bots use to reach Town's managed-review callback, such as `http://bt:8091`, with no path. Required for managed reviews when Review Bot is remote. |
 | `BROKK_TOWN_CALLBACK_LISTEN` | Where Town listens for that callback. Default `:8091` when a callback URL is set; otherwise a loopback port that bots `bt` started can reach. |
 | `BROKK_TOWN_CALLBACK_TLS_CERT`, `BROKK_TOWN_CALLBACK_TLS_KEY` | Serve the callback over HTTPS. |
 
-A URL without a token stops startup. An environment variable outranks the
+A URL without a token stops startup. A bot that `bt` starts never inherits these
+variables, so it never sees another bot's token. An environment variable outranks the
 config file. Each managed review mints its own callback token and route, valid
 only while that review runs. The bot side of these settings is in
 [bots.md](bots.md#bot-binaries).

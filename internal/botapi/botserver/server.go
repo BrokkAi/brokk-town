@@ -224,9 +224,15 @@ func boundEvent(e botapi.Event) *botapi.Event {
 	if len(data) <= botapi.MaxEventBytes-256 {
 		return &botapi.Event{Log: &l}
 	}
+	// Escaping can make the encoded text several times longer than the raw
+	// text, so the message shrinks until the encoded record fits.
 	l.Attrs = map[string]string{"truncated_attrs": "true"}
-	l.Message = botapi.Truncate(l.Message, botapi.MaxEventBytes/2)
-	return &botapi.Event{Log: &l}
+	for limit := botapi.MaxEventBytes / 2; ; limit /= 2 {
+		l.Message = botapi.Truncate(l.Message, limit)
+		if data, _ := json.Marshal(l); len(data) <= botapi.MaxEventBytes-256 || limit < 1024 {
+			return &botapi.Event{Log: &l}
+		}
+	}
 }
 
 // frameWriter writes numbered frames, one per line, from any goroutine. A

@@ -13,7 +13,8 @@ import (
 )
 
 // DemoBots sends every bot a demo run through the bot contract, at start and
-// then every few minutes, and records each answer in Activity. Only a bot
+// then every few minutes, and records in Activity when a bot first answers,
+// stops answering or answers again. Only a bot
 // started in demo mode is ever dispatched to, so the demo still never reaches
 // GitHub or an agent; what it proves is that each bot answers over the
 // transport the service really uses. It returns only when ctx ends.
@@ -22,7 +23,7 @@ func DemoBots(ctx context.Context, store *Store, b *BotWorkers) error {
 }
 
 func runDemoBots(ctx context.Context, store *Store, b *BotWorkers, first, interval time.Duration) error {
-	if !store.Snapshot().Demo {
+	if !store.Demo() {
 		return errors.New("demo dispatch requires an isolated demo store")
 	}
 	last := map[Role]string{}
@@ -52,12 +53,17 @@ func runDemoBots(ctx context.Context, store *Store, b *BotWorkers, first, interv
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			// Repeat a failure only when it changes, so an absent bot does
-			// not fill Activity.
-			if kind == "error" && last[role] == title {
+			// Record a bot's answer only when it changes: its first answer,
+			// and each new failure or recovery. A demo left running must not
+			// push the simulated work out of Activity.
+			key := "answered"
+			if kind == "error" {
+				key = title
+			}
+			if last[role] == key {
 				continue
 			}
-			last[role] = title
+			last[role] = key
 			if err := store.Update(func(st *State) error {
 				st.Event(t.ID, kind, string(role), "hall", "", title, time.Now())
 				return nil

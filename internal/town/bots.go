@@ -31,7 +31,7 @@ func (b *BotWorkers) botIdentity(ctx context.Context, role Role) (string, error)
 	if err != nil {
 		return "", err
 	}
-	demo := b.Store != nil && b.Store.Snapshot().Demo
+	demo := b.Store != nil && b.Store.Demo()
 	if identity.Demo != demo {
 		if identity.Demo {
 			return "", fmt.Errorf("%s is running in demo mode; Town will not apply its canned results to a real repository", workerBotNames[role])

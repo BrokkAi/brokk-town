@@ -369,6 +369,14 @@ func (s *Store) Close() error {
 	s.lock = nil
 	return err
 }
+
+// Demo reports whether this is a demo store, without copying the state.
+func (s *Store) Demo() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.Demo
+}
+
 func (s *Store) Snapshot() State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

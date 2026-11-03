@@ -36,6 +36,18 @@ type connection struct {
 	Token   string `json:"token"`
 	PID     int    `json:"pid"`
 	Version string `json:"version,omitempty"`
+	// Local is where a client on the service's own host reaches it, when that
+	// differs from URL: in a container the browser's published address may
+	// not be where Town listens.
+	Local string `json:"local,omitempty"`
+}
+
+// base is the address a client on this host sends its requests to.
+func (c connection) base() string {
+	if c.Local != "" {
+		return c.Local
+	}
+	return c.URL
 }
 
 // executablePath resolves the real binary behind any launcher symlink, such as
@@ -265,7 +277,7 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 		}
 		input = &b
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, input)
+	req, err := http.NewRequestWithContext(ctx, method, c.base()+path, input)
 	if err != nil {
 		return err
 	}
@@ -409,10 +421,13 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 	if err != nil {
 		return err
 	}
+	local := ""
 	if origin == "" {
 		origin = "http://" + listener.Addr().String()
+	} else if _, port, e := net.SplitHostPort(listener.Addr().String()); e == nil && "http://127.0.0.1:"+port != origin {
+		local = "http://127.0.0.1:" + port
 	}
-	conn := connection{URL: origin, Token: token, PID: os.Getpid(), Version: buildVersion()}
+	conn := connection{URL: origin, Local: local, Token: token, PID: os.Getpid(), Version: buildVersion()}
 	data, _ := json.Marshal(conn)
 	if err = os.WriteFile(filepath.Join(dir, "connection.json"), data, 0600); err != nil {
 		return err
@@ -422,7 +437,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Version: buildVersion(), TaskGitHub: gh, Shutdown: func() { cancel(context.Canceled) }}
+	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Local: conn.Local, Version: buildVersion(), TaskGitHub: gh, Shutdown: func() { cancel(context.Canceled) }}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
 	results := make(chan error, 3)
 	remaining := 2

@@ -179,7 +179,7 @@ func TestAgentCallbackRoutesOnlyAuthorizedRequests(t *testing.T) {
 	if got := post(path, token); got != http.StatusNotFound {
 		t.Fatalf("closed route: %d", got)
 	}
-	for _, bad := range []string{"ftp://x", "http://", "http://u:p@x", "http://x?q=1"} {
+	for _, bad := range []string{"ftp://x", "http://", "http://u:p@x", "http://x?q=1", "http://gateway:8091/town"} {
 		if _, err := NewAgentCallback(bad); err == nil {
 			t.Fatalf("accepted %q", bad)
 		}
@@ -200,7 +200,7 @@ func TestDemoBotsRecordEachAnswer(t *testing.T) {
 	workers := &BotWorkers{Root: t.TempDir(), Store: store, Bots: bots}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- runDemoBots(ctx, store, workers, time.Millisecond, time.Hour) }()
+	go func() { done <- runDemoBots(ctx, store, workers, time.Millisecond, 20*time.Millisecond) }()
 	deadline := time.Now().Add(20 * time.Second)
 	for {
 		answered := 0
@@ -220,9 +220,20 @@ func TestDemoBotsRecordEachAnswer(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	// Further rounds answer the same way, which Activity does not repeat.
+	time.Sleep(500 * time.Millisecond)
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+	answered := 0
+	for _, e := range store.Snapshot().Events {
+		if strings.Contains(e.Title, "answered a demo dispatch") {
+			answered++
+		}
+	}
+	if answered != len(AgentRoles) {
+		t.Fatalf("Activity holds %d answers for %d bots", answered, len(AgentRoles))
 	}
 }
 

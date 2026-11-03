@@ -125,14 +125,19 @@ the `Recreate` strategy because each pod owns its volume.
 In a container `bt` listens on every interface and is reached through a
 published or forwarded port. `--public-url http://127.0.0.1:8080` names the
 address the browser uses; it allows a non-loopback `--listen`, and the browser
-must use exactly that address. It cannot be combined with `-d`.
+must use exactly that address. Town also answers at its own loopback port, which
+`connection.json` records for `bt status`, `bt web` and `bt shutdown` run inside
+the container. `--public-url` cannot be combined with `-d`. Containers are given
+90 seconds (bots) and 120 seconds (Town) to stop, so running work reports what
+it completed.
 
 ### Checking the bots
 
 In demo mode Town sends every bot a demo dispatch over the network shortly
-after it starts and every five minutes, and records each answer in Activity:
-"Review Bot v1.4.0 answered a demo dispatch over the network". A bot that
-cannot be reached is recorded once, with the reason.
+after it starts and every five minutes. Activity records each bot's first
+answer ("Review Bot v1.4.0 answered a demo dispatch over the network"), and
+then only changes: a bot that stops answering, with the reason, and its
+recovery.
 `scripts/demo-dispatch-check.sh` waits for all eight answers from any `bt status
 --json`, which is how CI checks the compose and Kubernetes deployments.
 

@@ -26,7 +26,10 @@ type Server struct {
 	Supervisor *town.Supervisor
 	Token      string
 	Origin     string
-	Version    string
+	// Local is a second address the service answers at, for clients on its
+	// own host when Origin is a published address. Empty means none.
+	Local   string
+	Version string
 	// TaskGitHub reads one live issue or PR for the inspector. It is a
 	// narrow slice of town.GitHub so tests fake two methods, not the whole
 	// interface. A nil handle means live details are unavailable.
@@ -99,11 +102,11 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-		if "http://"+r.Host != s.Origin {
+		if host := "http://" + r.Host; host != s.Origin && (s.Local == "" || host != s.Local) {
 			problem(w, "unrecognized local host", http.StatusForbidden)
 			return
 		}
-		if origin := r.Header.Get("Origin"); origin != "" && origin != s.Origin {
+		if origin := r.Header.Get("Origin"); origin != "" && origin != s.Origin && (s.Local == "" || origin != s.Local) {
 			problem(w, "cross-origin requests are not allowed", http.StatusForbidden)
 			return
 		}

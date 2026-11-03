@@ -62,3 +62,14 @@ func TestDemoResultsMatchTheirRole(t *testing.T) {
 		t.Fatal("repo inventory missing")
 	}
 }
+
+// A log record whose text grows when encoded still fits in one frame.
+func TestAnOversizedLogRecordFitsItsFrame(t *testing.T) {
+	for _, text := range []string{strings.Repeat("\x1b", 2*botapi.MaxEventBytes), strings.Repeat("\xff", 2*botapi.MaxEventBytes), strings.Repeat("界", botapi.MaxEventBytes)} {
+		e := boundEvent(botapi.Event{Log: &botapi.Log{Message: text, Attrs: map[string]string{"k": text}}})
+		data, err := marshalLine(botapi.Frame{Seq: 99999, Event: e})
+		if err != nil || len(data) > botapi.MaxEventBytes {
+			t.Fatalf("frame is %d bytes (%v)", len(data), err)
+		}
+	}
+}

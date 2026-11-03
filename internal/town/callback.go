@@ -25,8 +25,8 @@ type AgentCallback struct {
 // NewAgentCallback checks the address bots will use.
 func NewAgentCallback(base string) (*AgentCallback, error) {
 	parsed, err := url.Parse(base)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("the agent callback URL must be http(s)://host[:port] with no credentials, query or fragment")
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("the agent callback URL must be http(s)://host[:port] with no path, credentials, query or fragment")
 	}
 	return &AgentCallback{URL: strings.TrimRight(parsed.String(), "/")}, nil
 }
