@@ -67,36 +67,65 @@ func (c Config) ExecutionRuntimeForRole(role Role) *mjolnir.RuntimePin {
 // compare the selection again before saving so a slow read cannot pin a new
 // placement accidentally. Existing dispatches keep their copied receipts.
 func (s *Supervisor) SelectExecutionRuntime(ctx context.Context, id string, role Role, session string) error {
+	discovery, err := s.DiscoverExecutionRuntime(ctx, id, role, session)
+	if err != nil {
+		return err
+	}
+	return s.PinExecutionRuntime(ctx, discovery)
+}
+
+// RuntimeDiscovery is a runtime read from Mjolnir for one placement, waiting
+// to be pinned.
+type RuntimeDiscovery struct {
+	town      string
+	role      Role
+	selection mjolnir.Selection
+	pin       mjolnir.RuntimePin
+}
+
+// DiscoverExecutionRuntime reads the runtime for a placement from Mjolnir. It
+// writes nothing, so a caller can do the slow read before taking a turn to
+// save it.
+func (s *Supervisor) DiscoverExecutionRuntime(ctx context.Context, id string, role Role, session string) (RuntimeDiscovery, error) {
 	id = strings.ToLower(id)
 	if role != "" && !ValidAgentRole(role) {
-		return errors.New("invalid execution role")
+		return RuntimeDiscovery{}, errors.New("invalid execution role")
 	}
 	snapshot := s.Store.Snapshot()
 	if snapshot.Demo {
-		return errors.New("Mjolnir runtime selection is offline in demo mode")
+		return RuntimeDiscovery{}, errors.New("Mjolnir runtime selection is offline in demo mode")
 	}
 	t := snapshot.Towns[id]
 	if t == nil || t.Deleted {
-		return errors.New("unknown repository")
+		return RuntimeDiscovery{}, errors.New("unknown repository")
 	}
 	selection := t.Config.ExecutionForRole(role)
 	pin, err := s.Mjolnir.DiscoverRuntime(ctx, selection, session)
 	if err != nil {
-		return err
+		return RuntimeDiscovery{}, err
 	}
-	err = s.Store.Update(func(st *State) error {
+	return RuntimeDiscovery{town: id, role: role, selection: selection, pin: pin}, nil
+}
+
+// PinExecutionRuntime saves a discovered runtime if the placement it was read
+// for is still selected.
+func (s *Supervisor) PinExecutionRuntime(ctx context.Context, d RuntimeDiscovery) error {
+	if d.town == "" {
+		return errors.New("no runtime was discovered")
+	}
+	err := s.Store.Update(func(st *State) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		current := st.Towns[id]
-		if current == nil || current.Deleted || current.Config.ExecutionForRole(role) != selection {
+		current := st.Towns[d.town]
+		if current == nil || current.Deleted || current.Config.ExecutionForRole(d.role) != d.selection {
 			return errors.New("execution selection changed while reading runtime; select it again")
 		}
 		if current.Config.ExecutionRuntimes == nil {
 			current.Config.ExecutionRuntimes = map[string]mjolnir.RuntimePin{}
 		}
-		current.Config.ExecutionRuntimes[runtimeSelectionKey(selection)] = pin
-		st.Event(id, "settings", "operator", "hall", "", "Mjolnir runtime selected for future work", s.now())
+		current.Config.ExecutionRuntimes[runtimeSelectionKey(d.selection)] = d.pin
+		st.Event(d.town, "settings", "operator", "hall", "", "Mjolnir runtime selected for future work", s.now())
 		return nil
 	})
 	if err == nil {

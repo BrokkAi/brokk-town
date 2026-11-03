@@ -22,9 +22,12 @@ type GuideConversation struct {
 	Turns    []GuideTurn `json:"turns"`
 }
 type GuideTurn struct {
-	ID       string               `json:"id"`
-	Sequence uint64               `json:"sequence"`
-	Question string               `json:"question"`
+	ID       string `json:"id"`
+	Sequence uint64 `json:"sequence"`
+	Question string `json:"question"`
+	// Author is the signed-in person who asked, in a multi-user Town. Empty
+	// means the local operator.
+	Author   string               `json:"author,omitempty"`
 	Answer   string               `json:"answer"`
 	Status   string               `json:"status"`
 	Detail   string               `json:"detail,omitempty"`
@@ -74,7 +77,7 @@ func (g *GuideConversation) validate() error {
 	busy := 0
 	ids := map[string]bool{}
 	for i, t := range g.Turns {
-		if !guideID(t.ID) || ids[t.ID] || len(t.Question) > guideQuestionBytes || strings.TrimSpace(t.Question) == "" || len(t.Answer) > guideAnswerBytes || !utf8.ValidString(t.Question) || !utf8.ValidString(t.Answer) || t.Sequence >= g.Next || (i > 0 && t.Sequence <= previous) {
+		if !guideID(t.ID) || ids[t.ID] || len(t.Question) > guideQuestionBytes || len(t.Author) > MaxActor || strings.TrimSpace(t.Question) == "" || len(t.Answer) > guideAnswerBytes || !utf8.ValidString(t.Question) || !utf8.ValidString(t.Answer) || t.Sequence >= g.Next || (i > 0 && t.Sequence <= previous) {
 			return errors.New("invalid guide conversation")
 		}
 		ids[t.ID] = true
@@ -133,7 +136,7 @@ func (s *Supervisor) AskGuide(id string, q GuideQuestion) (GuideTurn, error) {
 			}
 		}
 		now := s.now()
-		answer = GuideTurn{ID: q.ID, Sequence: g.Next, Question: q.Question, Status: "queued", Started: now, Updated: now, Houses: []Role{}}
+		answer = GuideTurn{ID: q.ID, Sequence: g.Next, Question: q.Question, Author: st.actor, Status: "queued", Started: now, Updated: now, Houses: []Role{}}
 		g.Next++
 		g.Revision++
 		g.Turns = append(g.Turns, answer)

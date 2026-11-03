@@ -44,6 +44,7 @@ import {
   attentionStatuses,
 } from "./town.js";
 import { attentionSettings } from "./attention.js";
+import { account, authHeaders, readSession, signInError } from "./account.js";
 import { management } from "./manage.js";
 import {
   bots,
@@ -75,10 +76,16 @@ let token =
   sessionStorage.getItem("brokk-town-token") ||
   "";
 
+// A failed sign-in returns here with its message in the address.
+const failedSignIn = signInError(location.hash);
 if (token) {
   sessionStorage.setItem("brokk-town-token", token);
-  history.replaceState(null, "", location.pathname);
 }
+if (token || failedSignIn) history.replaceState(null, "", location.pathname);
+// session says how this browser signs in: "local" (the access key) or
+// "multi-user" (GitHub or Google, with user set once signed in).
+let session = { mode: "local" };
+const signIn = account({ $, getSession: () => session, getToken: () => token });
 let overview = (() => {
   try { return localStorage.getItem("brokk-town-scope") !== "town"; }
   catch { return true; }
@@ -138,7 +145,7 @@ async function api(path, body, signal) {
     response = await fetch(path, {
       method: body ? "POST" : "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...authHeaders(token),
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -162,7 +169,7 @@ async function api(path, body, signal) {
 async function exportOutcomes(days) {
   const query = new URLSearchParams({ town: selectedTown, format: "csv" });
   query.set("from", (days > 0 ? new Date(Date.now() - days * 86400000) : new Date(0)).toISOString());
-  const response = await fetch(`/api/outcomes?${query}`, { headers: { Authorization: `Bearer ${token}` } });
+  const response = await fetch(`/api/outcomes?${query}`, { headers: authHeaders(token) });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || response.statusText);
   const href = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
@@ -225,8 +232,8 @@ document.addEventListener("visibilitychange", () => {
   connect();
 });
 async function connect() {
-  if (!token) {
-    $("#connect-dialog").showModal();
+  if (!token && !session.user) {
+    signIn.showSignIn(failedSignIn);
     return;
   }
   clearTimeout(reconnectTimer);
@@ -236,12 +243,21 @@ async function connect() {
   streamAbort = new AbortController();
   try {
     const response = await fetch("/api/events", {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: authHeaders(token),
       signal: streamAbort.signal,
     });
     if (!response.ok) {
       if (response.status === 401) {
-        $("#connect-dialog").showModal();
+        // An expired sign-in or a rotated key: sign in again. In a shared
+        // Town a refused access key is dropped, so the tab offers sign-in
+        // rather than asking for a key forever.
+        session = { ...session, user: null };
+        if (session.mode === "multi-user" && token) {
+          token = "";
+          try { sessionStorage.removeItem("brokk-town-token"); } catch {}
+        }
+        signIn.render();
+        signIn.showSignIn(session.mode === "multi-user" ? "Your sign-in expired. Sign in again." : "");
         return;
       }
       throw new Error("Brokk Town is unavailable");
@@ -573,7 +589,7 @@ function chooseHouse(role) {
 storagePanel({ api, getTown: town });
 historyPanel({ api, getTown: town });
 
-const guideUI = guidePanel({api, getTown:town, getState:()=>state, onOpen:()=>chooseHouse("hall")});
+const guideUI = guidePanel({api, getTown:town, getState:()=>state, onOpen:()=>chooseHouse("hall"), isShared:()=>session.mode === "multi-user"});
 
 function renderTownControls(t) {
  $("#town-storage").disabled = !t;
@@ -1155,7 +1171,7 @@ function renderJournal() {
     events
       .map(
         (e) =>
-          `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span class="event-route">${esc(eventRoute(e))}</span><button data-cargo="${esc(e.cargo || "")}" data-house="${esc(e.to || "hall")}">${esc(e.title)}</button></li>`,
+          `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span class="event-route">${esc(eventRoute(e))}</span><button data-cargo="${esc(e.cargo || "")}" data-house="${esc(e.to || "hall")}">${esc(e.title)}</button>${e.actor ? `<span class="event-actor">by ${esc(e.actor)}</span>` : ""}</li>`,
       )
       .join("") ||
     '<li class="muted">No activity yet. Events appear here as tasks move.</li>';
@@ -1425,7 +1441,13 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeInspector();
   if (/^[1-8]$/.test(e.key)) chooseHouse(botOrder[Number(e.key) - 1]);
 });
-connect();
+// Ask how to sign in before connecting, so a shared Town shows its sign-in
+// screen rather than the local access-key instructions.
+readSession().then((answer) => {
+  session = answer;
+  signIn.render();
+  connect();
+});
 
 // Read and navigation tools mirror the visible multi-town controls. Worker
 // mutation remains an explicit action through the operator controls.

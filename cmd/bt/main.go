@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BrokkAi/brokk-town/internal/auth"
 	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 	"github.com/BrokkAi/brokk-town/internal/town"
@@ -202,7 +203,10 @@ func run(ctx context.Context, args []string) error {
 		if *fl.daemon {
 			return startBackground(ctx, base, *fl.demo, *fl.listen, *fl.config)
 		}
-		return serve(ctx, abs, *fl.listen, *fl.demo, *fl.config, *fl.publicURL)
+		if *fl.multiUser && *fl.publicURL == "" {
+			return errors.New("--multi-user needs --public-url, the address people open in their browsers")
+		}
+		return serveWith(ctx, abs, *fl.listen, *fl.demo, *fl.config, *fl.publicURL, *fl.multiUser)
 	case "status":
 		return printStatus(ctx, abs, *fl.json)
 	case "shutdown":
@@ -302,7 +306,13 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
 func serve(ctx context.Context, dir, address string, demo bool, configFile, publicURL string) error {
-	origin, err := serviceOrigin(address, publicURL)
+	return serveWith(ctx, dir, address, demo, configFile, publicURL, false)
+}
+
+// serveWith runs Town. multiUser shares it with the people its sign-in
+// allowlist admits; otherwise the local access key is the only credential.
+func serveWith(ctx context.Context, dir, address string, demo bool, configFile, publicURL string, multiUser bool) error {
+	origin, err := serviceOrigin(address, publicURL, multiUser)
 	if err != nil {
 		return err
 	}
@@ -311,6 +321,20 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 		return describeLock(dir, err)
 	}
 	defer store.Close()
+	var signin *auth.Service
+	if multiUser {
+		key, e := auth.SessionKey(dir)
+		if e != nil {
+			return fmt.Errorf("session key: %w", e)
+		}
+		cfg, e := auth.FromEnvironment(origin, key, os.Getenv)
+		if e != nil {
+			return e
+		}
+		if signin, e = auth.New(cfg); e != nil {
+			return e
+		}
+	}
 	if notice := store.Notice(); notice != "" {
 		fmt.Fprintf(os.Stderr, "bt: %s\n", notice)
 	}
@@ -437,7 +461,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Local: conn.Local, Version: buildVersion(), TaskGitHub: gh, Shutdown: func() { cancel(context.Canceled) }}
+	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Local: conn.Local, Version: buildVersion(), TaskGitHub: gh, Shutdown: func() { cancel(context.Canceled) }, Auth: signin}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
 	results := make(chan error, 3)
 	remaining := 2
@@ -449,7 +473,11 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 	} else {
 		go func() { results <- supervisor.Run(ctx) }()
 	}
-	fmt.Print(serveBanner(conn, demo))
+	if signin != nil {
+		fmt.Printf("Brokk Town %s\nShared Town: people on the allowlist sign in at %s\n", buildVersion(), conn.URL)
+	} else {
+		fmt.Print(serveBanner(conn, demo))
+	}
 	if demo {
 		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
 	}
@@ -485,18 +513,25 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 // is reached at it. In a container it binds every interface and is reached
 // through a published port, whose address --public-url names; the browser's
 // Host and Origin must match it.
-func serviceOrigin(address, publicURL string) (string, error) {
+//
+// A multi-user Town is reached at a public URL, normally https:// through a
+// TLS-terminating proxy or ingress; it still listens on plain HTTP itself.
+func serviceOrigin(address, publicURL string, multiUser bool) (string, error) {
 	if publicURL == "" {
 		return "", loopbackAddress(address)
 	}
 	parsed, err := url.Parse(publicURL)
-	if err != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.Path != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+	scheme := parsed != nil && (parsed.Scheme == "http" || (multiUser && parsed.Scheme == "https"))
+	if err != nil || !scheme || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		if multiUser {
+			return "", errors.New("--public-url must be https://host[:port] (or http:// for a trial on one machine), the address people open")
+		}
 		return "", errors.New("--public-url must be http://host:port, the address the browser uses")
 	}
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		return "", err
 	}
-	return "http://" + parsed.Host, nil
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 // loopbackAddress rejects anything but a literal loopback IP. The service has

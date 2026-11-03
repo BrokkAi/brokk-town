@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -15,10 +14,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/BrokkAi/brokk-town/internal/auth"
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-//go:embed index.html style.css badge.svg app.js town.js bots.js tools.js manage.js execution.js attention.js storage.js history.js guide.js
+//go:embed index.html style.css badge.svg app.js town.js bots.js tools.js manage.js execution.js attention.js storage.js history.js guide.js account.js
 var files embed.FS
 
 type Server struct {
@@ -37,6 +37,9 @@ type Server struct {
 	// Shutdown, when set, stops the service after the request is answered. It
 	// is how bt shutdown reaches a service it cannot signal, as on Windows.
 	Shutdown func()
+	// Auth, when set, makes this a multi-user Town: people sign in with
+	// GitHub or Google and share it. Nil keeps the single local operator.
+	Auth *auth.Service
 }
 
 // taskGitHub fetches a single live issue or pull request on demand. Bodies
@@ -93,6 +96,9 @@ func (s *Server) Handler() http.Handler {
 			s.Shutdown()
 		})
 	}
+	if s.Auth != nil {
+		s.Auth.Routes(mux)
+	}
 	mux.Handle("/", http.FileServerFS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Embedded assets change with every service binary; a reload after a
@@ -102,7 +108,7 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-		if host := "http://" + r.Host; host != s.Origin && (s.Local == "" || host != s.Local) {
+		if r.Host != hostOf(s.Origin) && (s.Local == "" || r.Host != hostOf(s.Local)) {
 			problem(w, "unrecognized local host", http.StatusForbidden)
 			return
 		}
@@ -111,15 +117,19 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			w.Header().Set("Cache-Control", "no-store")
-			provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || subtle.ConstantTimeCompare([]byte(provided), []byte(s.Token)) != 1 || s.Token == "" {
-				problem(w, "local access key required", http.StatusUnauthorized)
-				return
-			}
+			s.serveAPI(w, r, mux)
+			return
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// hostOf is the host:port of an origin such as https://town.example.com.
+// Behind a TLS proxy the request reaches Town over plain HTTP, so the Host
+// header is compared without the scheme.
+func hostOf(origin string) string {
+	_, host, _ := strings.Cut(origin, "://")
+	return host
 }
 
 func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
@@ -275,6 +285,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
+	// Proxies such as ingress-nginx buffer responses by default, which would
+	// hold a shared Town's live updates back.
+	w.Header().Set("X-Accel-Buffering", "no")
 	heartbeat := time.NewTicker(20 * time.Second)
 	defer heartbeat.Stop()
 	for {
@@ -344,6 +357,10 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
+	if s.refusesCommand(r, input.Agent.Command) {
+		problem(w, hostCommandRefused, http.StatusForbidden)
+		return
+	}
 	if s.Store.Snapshot().Demo {
 		problem(w, "Use a live service to add real repositories", 400)
 		return
@@ -396,6 +413,10 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	var input settingsInput
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
+		return
+	}
+	if s.refusesCommand(r, input.Agent.Command) {
+		problem(w, hostCommandRefused, http.StatusForbidden)
 		return
 	}
 	edits := town.TownSettings{MergePolicy: input.MergePolicy, SimplifierMode: input.SimplifierMode, CloseSeverity: input.ReviewCloseSeverity, Budget: input.Budget, WorkPolicy: input.WorkPolicy, QuietHours: input.QuietHours}
@@ -491,6 +512,10 @@ func (s *Server) choices(w http.ResponseWriter, r *http.Request) {
 	var input settingsInput
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
+		return
+	}
+	if s.refusesCommand(r, input.Agent.Command) {
+		problem(w, hostCommandRefused, http.StatusForbidden)
 		return
 	}
 	choices, err := s.Supervisor.ChoicesForRole(r.Context(), input.Town, input.Role, input.Agent)

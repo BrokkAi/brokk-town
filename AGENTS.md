@@ -27,6 +27,7 @@ bot's URL and token.
 | `internal/botlaunch` | Starts, restarts and stops the bot binaries on loopback for `bt`. |
 | `internal/artifact` | Path-safety, measuring and digest checks shared by the service and the bots. |
 | `internal/web` | HTTP server, embedded assets and the browser UI. |
+| `internal/auth` | Sign-in for a shared Town (`bt --multi-user`): GitHub and Google OAuth, allowlist, session cookies. |
 | `internal/harness` | ACP harness catalog, download and launch. |
 | `internal/mjolnir` | Mjolnir catalog, profiles, runtime pins, remote runs and evidence. |
 | `internal/guide` | Assistant agent session. |

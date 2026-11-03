@@ -1,0 +1,25 @@
+# Publishes Town's browser port over HTTPS. Set the host, the TLS secret and,
+# if the cluster has several, the ingress class. The managed-review callback
+# (8091) stays inside the cluster.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bt
+  labels:
+    app.kubernetes.io/name: bt
+    app.kubernetes.io/component: town
+spec:
+  tls:
+    - hosts: [town.example.com]
+      secretName: brokk-town-tls
+  rules:
+    - host: town.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bt
+                port:
+                  name: http

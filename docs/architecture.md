@@ -50,6 +50,7 @@ the state directory; the browser uses the same API.
 | `internal/botlaunch` | Starts, restarts and stops bot binaries on loopback for a service on one machine. |
 | `internal/artifact` | Path-safety, measuring and digest checks shared by the service and the bots. |
 | `internal/web` | HTTP routes and the embedded browser UI: plain HTML, CSS and ES modules. |
+| `internal/auth` | Sign-in for a shared Town: GitHub and Google OAuth, the allowlist and signed session cookies. |
 | `internal/harness` | ACP harness registry, catalog cache, archive download and launch. |
 | `internal/mjolnir` | Mjolnir API client: catalog, profiles, placements, runtime pins, runs, artifacts, evidence and import. |
 | `internal/guide` | One bounded ACP conversation for the Assistant. |
@@ -149,6 +150,16 @@ API. Every `/api/` request must be same-origin and carry
 `Authorization: Bearer <token>`; the token is the local access key in the state
 directory. Responses are `no-store`, and the server sets a strict content
 security policy. See [operations.md](operations.md) for the route list.
+
+In a shared Town (`bt --multi-user`) `internal/auth` signs people in with GitHub
+or Google (authorization code with PKCE), checks them against the configured
+allowlist and issues an HMAC-signed session cookie; nothing about a session is
+stored. The web layer accepts that cookie in place of the access key, refuses a
+session's writes without the public origin, and keeps host commands and
+shutdown with the access key. Writes that record operator events run through
+`Store.As`, which runs them one at a time and stamps their operator events, and
+an Assistant question, with the signed-in person. Everyone shares one state;
+there is no per-person Town.
 
 The embedded UI is plain HTML, CSS and ES modules with no build step, no
 animation, no canvas drawing and no image assets. It renders the committed

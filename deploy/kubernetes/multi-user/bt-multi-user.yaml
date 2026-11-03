@@ -1,0 +1,27 @@
+# Town in multi-user mode. Replace town.example.com with the address people
+# open; it must match the Ingress host and the OAuth apps' callback URLs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bt
+spec:
+  template:
+    spec:
+      containers:
+        - name: bt
+          args: ["--public-url", "https://town.example.com", "--multi-user"]
+          envFrom:
+            - secretRef:
+                name: brokk-town-credentials
+                optional: true
+            - configMapRef:
+                name: brokk-town-auth
+          volumeMounts:
+            - name: oauth
+              mountPath: /run/secrets/brokk-oauth
+              readOnly: true
+      volumes:
+        - name: oauth
+          secret:
+            secretName: brokk-town-oauth
+            defaultMode: 0440

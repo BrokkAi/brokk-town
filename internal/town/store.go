@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/BrokkAi/brokk-town/internal/durable"
 	"github.com/BrokkAi/brokk-town/internal/filelock"
@@ -25,6 +27,47 @@ type Store struct {
 	lock        *os.File
 	changed     chan struct{}
 	notice      string
+	// actorMu serializes Store.As, so the actor it sets belongs to exactly
+	// one caller's updates.
+	actorMu sync.Mutex
+	actor   string
+}
+
+// MaxActor bounds the name recorded for a signed-in person.
+const MaxActor = 160
+
+// As runs fn with actor attributed: operator events that fn's updates record
+// carry the actor, and so does a question it asks the Assistant. Calls to As
+// run one at a time; updates outside As are never attributed. An empty actor
+// still takes the turn, so an unattributed operator action cannot be credited
+// to someone else's concurrent one.
+func (s *Store) As(actor string, fn func() error) error {
+	actor = clipActor(actor)
+	s.actorMu.Lock()
+	defer s.actorMu.Unlock()
+	s.mu.Lock()
+	s.actor = actor
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.actor = ""
+		s.mu.Unlock()
+	}()
+	return fn()
+}
+
+func clipActor(actor string) string {
+	actor = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(actor))
+	for len(actor) > MaxActor {
+		_, size := utf8.DecodeLastRuneInString(actor)
+		actor = actor[:len(actor)-size]
+	}
+	return actor
 }
 
 // ErrServiceRunning means another process holds this state directory's lock.
@@ -199,7 +242,7 @@ func validateState(s State, demo bool) error {
 	}
 	var last uint64
 	for _, e := range s.Events {
-		if e.Seq <= last || e.Seq > s.Seq || s.Towns[e.Town] == nil {
+		if e.Seq <= last || e.Seq > s.Seq || s.Towns[e.Town] == nil || len(e.Actor) > MaxActor {
 			return errors.New("invalid event sequence")
 		}
 		last = e.Seq
@@ -455,6 +498,7 @@ func (s *Store) Update(fn func(*State) error) error {
 		return errors.New("state store is closed")
 	}
 	next := clone(s.state)
+	next.actor = s.actor
 	if err := fn(&next); err != nil {
 		return err
 	}
