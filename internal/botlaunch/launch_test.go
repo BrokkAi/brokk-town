@@ -1,12 +1,15 @@
 package botlaunch
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,5 +91,50 @@ func TestAMissingBinaryIsUnavailable(t *testing.T) {
 	_, err := p.Run(context.Background(), botapi.Request{Role: "review"}, nil)
 	if !errors.Is(err, botapi.ErrUnavailable) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A launched bot never inherits the tokens the service holds for other bots
+// or for its callback.
+func TestALaunchedBotGetsNoOtherBotsCredentials(t *testing.T) {
+	t.Setenv("BROKK_TOWN_BOT_REVIEW_TOKEN", "review-secret")
+	t.Setenv("BROKK_TOWN_BOT_REVIEW_URL", "http://review")
+	t.Setenv("BROKK_TOWN_CALLBACK_TLS_KEY", "/key")
+	t.Setenv("BROKK_BOT_TOKEN", "stale")
+	t.Setenv("BROKK_TOWN_MUSE_PERMISSIONS", "keep")
+	t.Setenv("GH_TOKEN", "gh")
+	env := strings.Join(childEnvironment(), "\n")
+	for _, leaked := range []string{"review-secret", "http://review", "/key", "stale"} {
+		if strings.Contains(env, leaked) {
+			t.Fatalf("environment carries %q", leaked)
+		}
+	}
+	if !strings.Contains(env, "GH_TOKEN=gh") || !strings.Contains(env, "BROKK_TOWN_MUSE_PERMISSIONS=keep") {
+		t.Fatal("the bot lost settings it needs")
+	}
+}
+
+// Every line a bot writes reaches the log, including the last ones a failing
+// bot writes as it exits, and the first line is the readiness report.
+func TestLineLogKeepsEveryLine(t *testing.T) {
+	var buf bytes.Buffer
+	var first string
+	l := &lineLog{log: slog.New(slog.NewTextHandler(&buf, nil)), source: "review-bot", first: func(s string) { first = s }}
+	_, _ = l.Write([]byte("{\"address\":\"x\"}\npanic: boo"))
+	_, _ = l.Write([]byte("m\r\ngoroutine 1\n"))
+	if first != `{"address":"x"}` || !strings.Contains(buf.String(), "panic: boom") || !strings.Contains(buf.String(), "goroutine 1") {
+		t.Fatalf("first %q, log %q", first, buf.String())
+	}
+}
+
+// After a launch fails, a call is told why at once instead of waiting out the
+// ready timeout.
+func TestAFailedLaunchFailsCallsAtOnce(t *testing.T) {
+	p := Start(Spec{Name: "review-bot", Role: "review", Executable: filepath.Join(t.TempDir(), "absent"), Root: t.TempDir()}, nil)
+	defer p.Stop()
+	begun := time.Now()
+	_, err := p.Identity(context.Background())
+	if !errors.Is(err, botapi.ErrUnavailable) || !strings.Contains(err.Error(), "cannot find") || time.Since(begun) > 5*time.Second {
+		t.Fatalf("err %v after %s", err, time.Since(begun))
 	}
 }

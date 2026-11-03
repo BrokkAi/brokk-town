@@ -6,12 +6,11 @@
 package botlaunch
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -132,32 +131,26 @@ func (p *Process) launch(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
+	// os/exec copies the bot's output into these writers itself, and Wait
+	// returns only once the copies are done, so the last lines a failing bot
+	// writes, such as a panic, always reach the log. WaitDelay bounds that
+	// wait if a process the bot started keeps the output open.
+	readyLine := make(chan botserver.Ready, 1)
+	cmd.Stdout = &lineLog{log: p.raw, source: p.spec.Name, first: func(line string) {
+		var ready botserver.Ready
+		if json.Unmarshal([]byte(line), &ready) == nil {
+			readyLine <- ready
+		}
+	}}
+	cmd.Stderr = &lineLog{log: p.raw, source: p.spec.Name}
+	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s: %w", p.spec.Name, err)
 	}
 	p.mu.Lock()
 	p.pid = cmd.Process.Pid
 	p.mu.Unlock()
-	go p.relay(stderr)
 	exited := make(chan error, 1)
-	readyLine := make(chan botserver.Ready, 1)
-	go func() {
-		reader := bufio.NewReader(stdout)
-		line, err := reader.ReadString('\n')
-		var ready botserver.Ready
-		if err == nil && json.Unmarshal([]byte(line), &ready) == nil {
-			readyLine <- ready
-		}
-		p.relay(reader)
-	}()
 	go func() { exited <- cmd.Wait() }()
 
 	var waitErr error
@@ -218,13 +211,42 @@ func (p *Process) connect(ready botserver.Ready, token string) (*botclient.Clien
 	return botclient.New("http://"+ready.Address, token, p.spec.Name, p.spec.Role, "")
 }
 
-// relay copies the bot's own diagnostics into the service's log.
-func (p *Process) relay(r io.Reader) {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64<<10), 1<<20)
-	for scanner.Scan() {
-		p.raw.Info(botapi.Truncate(scanner.Text(), 8<<10), "source", p.spec.Name)
+// lineLog writes a bot's output into the service's log one line at a time.
+// The first line goes to first instead, when it is set: that is the bot's
+// readiness report.
+type lineLog struct {
+	log     *slog.Logger
+	source  string
+	first   func(string)
+	pending []byte
+}
+
+func (l *lineLog) Write(p []byte) (int, error) {
+	l.pending = append(l.pending, p...)
+	for {
+		i := bytes.IndexByte(l.pending, '\n')
+		if i < 0 {
+			break
+		}
+		l.line(string(bytes.TrimRight(l.pending[:i], "\r")))
+		l.pending = l.pending[i+1:]
 	}
+	// A line longer than any log record is written as it is.
+	if len(l.pending) > 64<<10 {
+		l.line(string(l.pending))
+		l.pending = nil
+	}
+	return len(p), nil
+}
+
+func (l *lineLog) line(text string) {
+	if l.first != nil {
+		first := l.first
+		l.first = nil
+		first(text)
+		return
+	}
+	l.log.Info(botapi.Truncate(text, 8<<10), "source", l.source)
 }
 
 // current waits for a ready bot.
@@ -245,8 +267,15 @@ func (p *Process) current(ctx context.Context) (*botclient.Client, error) {
 		if client != nil {
 			return client, nil
 		}
+		// The last launch failed, and the next waits out its backoff. A call
+		// is told why now rather than after waiting for a launch that may
+		// fail the same way, such as a missing binary.
+		if failure != nil {
+			return nil, fmt.Errorf("%s: %w: %v", p.spec.Name, botapi.ErrUnavailable, failure)
+		}
 		select {
 		case <-ready:
+		case <-time.After(200 * time.Millisecond): // a launch may have failed meanwhile
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-deadline.C:
@@ -283,11 +312,13 @@ func (p *Process) Identity(ctx context.Context) (botapi.Identity, error) {
 }
 
 // childEnvironment is the service's environment without any bot settings of
-// its own, so a launched bot takes only what its parent passes it.
+// its own, so a launched bot takes only what its parent passes it, and
+// without the credentials the service holds for other bots and its callback:
+// a bot never learns another bot's token.
 func childEnvironment() []string {
 	var env []string
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "BROKK_BOT_") {
+		if strings.HasPrefix(kv, "BROKK_BOT_") || strings.HasPrefix(kv, "BROKK_TOWN_BOT_") || strings.HasPrefix(kv, "BROKK_TOWN_CALLBACK_") {
 			continue
 		}
 		env = append(env, kv)
