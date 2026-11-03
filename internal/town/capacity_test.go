@@ -224,8 +224,27 @@ func TestCapacityReporterRunDoesNotConsumeAgentSlot(t *testing.T) {
 	addCapacityTown(t, s, "acme/worker", Issue)
 	w := newCapacityWorker(t, "acme/worker:issue")
 	sup := NewSupervisor(s, newGH(1), w)
-	sup.schedule(context.Background())
-	waitCapacityStarts(t, w.started, 1)
+	// Every repo run first claims a free slot in case the branch needs a
+	// repair, so a pass that reaches the reporter before the worker can find
+	// the only slot taken until that inventory ends. The running scheduler
+	// passes again when it does; schedule the same way until the worker starts.
+	started := make(chan string, 1)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			sup.schedule(context.Background())
+			select {
+			case key := <-w.started:
+				started <- key
+				return
+			case <-stop:
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+	}()
+	waitCapacityStarts(t, started, 1)
 	eventually(t, func() bool {
 		state := s.Snapshot()
 		reporter := state.Towns["acme/reporter"]
