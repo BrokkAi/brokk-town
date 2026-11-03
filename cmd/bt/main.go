@@ -18,11 +18,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 	"github.com/BrokkAi/brokk-town/internal/town"
 	"github.com/BrokkAi/brokk-town/internal/web"
@@ -98,15 +98,7 @@ func stateHome() string {
 	}
 	return filepath.Join(base, "brokk-town")
 }
-func buildVersion() string {
-	v := version
-	if v == "dev" {
-		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-			v = info.Main.Version
-		}
-	}
-	return v
-}
+func buildVersion() string { return botapi.BuildVersion(version) }
 
 // shutdownSignals end the process through the ordinary shutdown sequence.
 // SIGHUP belongs here: closing a terminal or dropping an SSH connection would

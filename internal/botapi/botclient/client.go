@@ -8,10 +8,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -227,7 +225,10 @@ func (c *Client) Run(ctx context.Context, request botapi.Request, emit func(bota
 	if err := ctx.Err(); err != nil {
 		return botapi.Result{}, c.unavailable("the run was canceled before it was sent: %v", err)
 	}
-	id := runID()
+	id, err := botapi.NewToken()
+	if err != nil {
+		return botapi.Result{}, err
+	}
 	// The stream outlives ctx by the grace period, so a canceled run can
 	// still report what it completed.
 	stream, closeStream := context.WithCancel(context.WithoutCancel(ctx))
@@ -390,10 +391,4 @@ func readLine(r *bufio.Reader, limit int) ([]byte, error) {
 			return nil, err
 		}
 	}
-}
-
-func runID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }

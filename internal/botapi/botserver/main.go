@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -75,7 +74,7 @@ func Run(ctx context.Context, args []string, version string, worker func(root st
 		}
 		return err
 	}
-	version = Version(version)
+	version = botapi.BuildVersion(version)
 	if *showVersion {
 		fmt.Fprintln(stdout, version)
 		return nil
@@ -184,18 +183,6 @@ func readToken(file string) (string, error) {
 		return "", errors.New("the bearer token must be at least 16 characters")
 	}
 	return token, nil
-}
-
-// Version is the release a binary reports: the linker-set version, or the
-// module version a go install recorded.
-func Version(linked string) string {
-	if linked != "" && linked != "dev" {
-		return linked
-	}
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		return info.Main.Version
-	}
-	return "dev"
 }
 
 func envOr(name, fallback string) string {

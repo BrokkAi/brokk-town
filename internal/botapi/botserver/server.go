@@ -6,15 +6,12 @@ package botserver
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -66,14 +63,10 @@ func (s *Server) logger() *slog.Logger {
 	return s.Log
 }
 
-// authorized admits a request that carries the bot's token. Both sides are
-// hashed first so the comparison takes the same time whatever the length.
+// authorized admits a request that carries the bot's token.
 func (s *Server) authorized(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		presented, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		want := sha256.Sum256([]byte(s.Token))
-		got := sha256.Sum256([]byte(presented))
-		if !ok || s.Token == "" || subtle.ConstantTimeCompare(want[:], got[:]) != 1 {
+		if !botapi.BearerMatches(r, s.Token) {
 			writeError(w, http.StatusUnauthorized, "missing or wrong bot token")
 			return
 		}

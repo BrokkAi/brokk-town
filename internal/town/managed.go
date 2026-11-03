@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
@@ -127,7 +128,7 @@ func (m *managedDispatch) finish(ctx context.Context) error {
 // bot in another container can reach, and otherwise a private Unix socket.
 // Either way the bot must present the token minted for this dispatch.
 func (b *BotWorkers) startRemoteAgent(ctx context.Context, m *managedDispatch, head string) (endpoint, token string, close func(), err error) {
-	token, err = callbackToken()
+	token, err = botapi.NewToken()
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -168,7 +169,7 @@ func (b *BotWorkers) startRemoteAgent(ctx context.Context, m *managedDispatch, h
 func remoteAgentHandler(ctx context.Context, m *managedDispatch, head, token string) http.Handler {
 	var gate sync.Mutex
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !bearerMatches(r, token) {
+		if !botapi.BearerMatches(r, token) {
 			http.Error(w, "missing or wrong callback token", http.StatusUnauthorized)
 			return
 		}

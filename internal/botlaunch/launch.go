@@ -8,8 +8,6 @@ package botlaunch
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,7 +117,7 @@ func (p *Process) launch(ctx context.Context) error {
 	if _, err := os.Stat(p.spec.Executable); err != nil {
 		return fmt.Errorf("cannot find the %s binary at %s; install it next to bt or set BROKK_TOWN_BOT_DIR", p.spec.Name, p.spec.Executable)
 	}
-	token, err := newToken()
+	token, err := botapi.NewToken()
 	if err != nil {
 		return err
 	}
@@ -295,12 +293,4 @@ func childEnvironment() []string {
 		env = append(env, kv)
 	}
 	return env
-}
-
-func newToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }

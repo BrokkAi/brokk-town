@@ -1,15 +1,13 @@
 package town
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/BrokkAi/brokk-town/internal/botapi"
 )
 
 // AgentCallback is the address bots reach Town at when a managed dispatch
@@ -50,7 +48,7 @@ func (c *AgentCallback) Handler() http.Handler {
 }
 
 func (c *AgentCallback) register(h http.Handler) (string, func(), error) {
-	id, err := callbackToken()
+	id, err := botapi.NewToken()
 	if err != nil {
 		return "", nil, err
 	}
@@ -65,19 +63,4 @@ func (c *AgentCallback) register(h http.Handler) (string, func(), error) {
 		delete(c.routes, id)
 		c.mu.Unlock()
 	}, nil
-}
-
-func callbackToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// bearerMatches compares a request's bearer token in constant time.
-func bearerMatches(r *http.Request, token string) bool {
-	presented, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	want, got := sha256.Sum256([]byte(token)), sha256.Sum256([]byte(presented))
-	return ok && token != "" && subtle.ConstantTimeCompare(want[:], got[:]) == 1
 }
