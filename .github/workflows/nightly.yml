@@ -1,0 +1,113 @@
+name: Nightly
+# Every night, if master has commits the latest release does not, run CI on
+# every platform. Green: tag the next minor version and publish it. Red: open
+# an issue naming the failed jobs and their errors.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          latest="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+          if [ -z "$latest" ]; then
+            echo "No release tag found" >&2
+            exit 1
+          fi
+          count="$(git rev-list --count "$latest..HEAD")"
+          echo "Latest release $latest; $count new commit(s) on master"
+          if [ "$count" -eq 0 ]; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          IFS=. read -r major minor _ <<EOF
+          ${latest#v}
+          EOF
+          echo "changed=true" >>"$GITHUB_OUTPUT"
+          echo "tag=v$major.$((minor + 1)).0" >>"$GITHUB_OUTPUT"
+
+  ci:
+    # Called from a scheduled run, ci.yml runs Linux, macOS and Windows.
+    needs: changes
+    if: needs.changes.outputs.changed == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  tag:
+    needs: [changes, ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - env:
+          TAG: ${{ needs.changes.outputs.tag }}
+        run: |
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
+
+  release:
+    # A tag pushed with the workflow token does not start release-town.yml,
+    # so the nightly calls it directly.
+    needs: [changes, tag]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-town.yml
+    with:
+      tag: ${{ needs.changes.outputs.tag }}
+
+  report:
+    needs: [changes, ci, tag, release]
+    if: failure() && needs.changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: |
+          short="${GITHUB_SHA:0:7}"
+          title="Nightly failed at $short"
+          if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[].number')" ]; then
+            echo "An open issue already reports this commit"
+            exit 0
+          fi
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "The nightly run for $GITHUB_SHA failed."
+            echo
+            echo "Run: $RUN_URL"
+          } >"$body"
+          gh api --paginate "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure") | [.id, .name, .html_url] | @tsv' |
+          while IFS="$(printf '\t')" read -r id name url; do
+            {
+              echo
+              echo "## $name"
+              echo
+              echo "Job: $url"
+              echo
+              echo '```'
+              log="$(gh api "repos/$GH_REPO/actions/jobs/$id/logs" 2>/dev/null | sed -E 's/^[0-9TZ:.-]+ //')"
+              errors="$(printf '%s\n' "$log" | grep -E -e '--- FAIL|^FAIL|panic:|##\[error\]|[Ee]rror' | tail -n 40)"
+              if [ -n "$errors" ]; then printf '%s\n' "$errors"; else printf '%s\n' "$log" | tail -n 40; fi
+              echo '```'
+            } >>"$body"
+          done
+          gh issue create --title "$title" --body-file "$body"
