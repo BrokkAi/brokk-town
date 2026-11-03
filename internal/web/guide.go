@@ -22,6 +22,13 @@ func (s *Server) guide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Town = strings.ToLower(input.Town)
+	need := operator
+	if input.Action == "read" {
+		need = viewer
+	}
+	if !s.allow(w, r, input.Town, need) {
+		return
+	}
 	var err error
 	switch input.Action {
 	case "read":

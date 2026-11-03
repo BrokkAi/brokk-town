@@ -21,6 +21,21 @@ export const houseAuthorities = {
   hall: "Accepts or declines every arrival and writes the status report of features added and bugs fixed; it never edits the repository or GitHub.",
 };
 
+// Access levels in order. The service reports the viewer's level for each
+// repository under state.access, from their access to it on GitHub; a Town
+// administrator, or a browser using the access key, has every level.
+const accessOrder = ["none", "viewer", "operator", "admin"];
+
+// canAct reports whether the viewer has at least level need for repository
+// id, or for Town itself when id is empty. A snapshot without access comes
+// from a service that has no levels, where everyone may do everything.
+export function canAct(state, id, need) {
+  const access = state?.access;
+  if (!access || access.admin) return true;
+  if (!id) return false;
+  return accessOrder.indexOf(access.towns?.[id] || "none") >= accessOrder.indexOf(need);
+}
+
 export function houseAuthority(role, mergePolicy = "bot") {
   if (role === "release" && mergePolicy === "manual")
     return `${houseAuthorities.release} Paused while every merge is manual.`;

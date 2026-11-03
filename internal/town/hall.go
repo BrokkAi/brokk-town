@@ -192,6 +192,11 @@ func applyBulletin(st *State, t *Town, b Bulletin, now time.Time) error {
 	return nil
 }
 
+// ErrAlreadyDecided refuses a decision on a task someone has already decided,
+// such as when two people decide the same task at once. Its message carries
+// what the first decision recorded.
+var ErrAlreadyDecided = errors.New("this task has already been decided")
+
 // decideTask applies one Mayoral decision. It is the single path for the
 // Mayor's own clicks and for Mayor Bot, so both leave the same state and the
 // same events; only the name in those events differs.
@@ -201,6 +206,9 @@ func applyBulletin(st *State, t *Town, b Bulletin, now time.Time) error {
 // reaches it because it judges only pending decisions.
 func (s *State) decideTask(t *Town, task *Task, action, by string, now time.Time) error {
 	overrule := action == "admit" && task != nil && task.House == Hall && task.Stage == "declined" && task.MayoralDecision == "" && autoDeclined(task)
+	if !overrule && task != nil && (task.MayoralDecision == "admitted" || task.MayoralDecision == "declined") {
+		return fmt.Errorf("%w: %s", ErrAlreadyDecided, task.Detail)
+	}
 	if !overrule && (task == nil || task.MayoralDecision != "pending" || task.Stage != "awaiting_mayor" || task.House != Hall) {
 		return errors.New("task is not awaiting a decision")
 	}

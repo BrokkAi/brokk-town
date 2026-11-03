@@ -15,8 +15,8 @@ func TestTheConfigFileTurnsOnSignIn(t *testing.T) {
 	if service.Auth == nil || service.Auth.GitHub.ClientID != "Iv1.abc" || service.Auth.GitHub.Organizations[0] != "BrokkAi" {
 		t.Fatalf("auth %+v", service.Auth)
 	}
-	_, service, err = decodeConfigFile([]byte(`{"auth":{"allow_insecure_http":true,"github":{"client_id":"x","client_secret_file":"/s","users":["a"],"url":"https://ghe.internal","api_url":"https://ghe.internal/api/v3","ca_file":"/etc/brokk/ghe-ca.pem"}},` + oneTown + `}`))
-	if err != nil || !service.Auth.AllowInsecureHTTP || service.Auth.GitHub.CAFile != "/etc/brokk/ghe-ca.pem" {
+	_, service, err = decodeConfigFile([]byte(`{"auth":{"allow_insecure_http":true,"admins":["octocat"],"github":{"client_id":"x","client_secret_file":"/s","users":["a"],"url":"https://ghe.internal","api_url":"https://ghe.internal/api/v3","ca_file":"/etc/brokk/ghe-ca.pem"}},` + oneTown + `}`))
+	if err != nil || !service.Auth.AllowInsecureHTTP || service.Auth.GitHub.CAFile != "/etc/brokk/ghe-ca.pem" || service.Auth.Admins[0] != "octocat" {
 		t.Fatalf("an internal Town's auth %+v %v", service.Auth, err)
 	}
 	_, service, err = decodeConfigFile([]byte(`{` + oneTown + `}`))

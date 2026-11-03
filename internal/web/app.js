@@ -42,6 +42,7 @@ import {
   formatQuietHours,
   reconnectDelay,
   attentionStatuses,
+  canAct,
 } from "./town.js";
 import { attentionSettings } from "./attention.js";
 import { management } from "./manage.js";
@@ -602,6 +603,23 @@ historyPanel({ api, getTown: town });
 
 const guideUI = guidePanel({api, getTown:town, getState:()=>state, onOpen:()=>chooseHouse("hall")});
 
+// renderAccess hides what the viewer's access does not allow. The service
+// refuses those actions regardless; hiding them only spares a refusal.
+function renderAccess(t) {
+  const id = t?.id || "";
+  for (const [selector, need] of [
+    ["#town-toggle", "operator"],
+    ["#pause-all", "operator"],
+    ["#ask-guide", "operator"],
+    ["#new-request", "operator"],
+    ["#town-storage", "admin"],
+    ["#town-settings", "admin"],
+  ]) {
+    if (t && !canAct(state, id, need)) $(selector).hidden = true;
+    else if (selector !== "#pause-all") $(selector).hidden = false;
+  }
+  $("#capacity-settings").hidden = !canAct(state, "", "admin");
+}
 function renderTownControls(t) {
  $("#town-storage").disabled = !t;
  $("#town-history").disabled = !t;
@@ -648,6 +666,7 @@ function render() {
   $("#demo-note").hidden = !state.demo;
   $("#empty").hidden = !!t;
   renderTownControls(t);
+  renderAccess(t);
   guideUI.render();
   $("#repo-owner").textContent = t ? t.config.repo.split("/")[0] : "Brokk Town";
   $("#town-name").textContent = t

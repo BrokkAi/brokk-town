@@ -445,6 +445,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 		if server.Auth, err = auth.New(*signIn, conn.URL, dir); err != nil {
 			return err
 		}
+		server.Access = gh
 	}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
 	results := make(chan error, 3)

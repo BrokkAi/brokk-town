@@ -17,6 +17,9 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
+	if !s.allow(w, r, input.Town, viewer) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	if input.Task != "" {

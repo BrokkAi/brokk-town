@@ -211,6 +211,9 @@ func TestSignInConfiguration(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
+	if err := (Config{Admins: []string{"not a login"}, GitHub: &good}).Validate(); err == nil || !strings.Contains(err.Error(), "auth.admins") {
+		t.Errorf("an invalid admin: %v", err)
+	}
 	if (Config{}).Validate() == nil {
 		t.Error("an auth object without github was accepted")
 	}

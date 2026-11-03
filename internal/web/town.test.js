@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  canAct,
   botNames,
   houseAuthority,
   branchHealthNote,
@@ -693,4 +694,16 @@ test("pipeline cards and open-task rows are focus surfaces", () => {
   const within = (id) => ({ closest: (selector) => (selector.split(",").map((s) => s.trim()).includes(`#${id}`) ? { id } : null) });
   assert.deepEqual(focusIdentity({ ...within("pipeline"), dataset: { house: "review" } }), { surface: "pipeline", key: "review", town: "" });
   assert.deepEqual(focusIdentity({ ...within("open-tasks"), dataset: { task: "pr:4" } }), { surface: "open-tasks", key: "pr:4", town: "" });
+});
+
+test("the browser offers only what the viewer's access allows", () => {
+  const state = { access: { admin: false, towns: { "acme/a": "operator", "acme/b": "viewer" } } };
+  assert.equal(canAct(state, "acme/a", "operator"), true);
+  assert.equal(canAct(state, "acme/a", "admin"), false);
+  assert.equal(canAct(state, "acme/b", "operator"), false);
+  assert.equal(canAct(state, "acme/b", "viewer"), true);
+  assert.equal(canAct(state, "acme/c", "viewer"), false);
+  assert.equal(canAct(state, "", "admin"), false);
+  assert.equal(canAct({ access: { admin: true, towns: {} } }, "", "admin"), true);
+  assert.equal(canAct({}, "acme/a", "admin"), true);
 });

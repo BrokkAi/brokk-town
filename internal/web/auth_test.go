@@ -1,7 +1,9 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,9 +19,33 @@ import (
 
 const publicOrigin = "https://town.example"
 
-// signedInServer is a Town reached at an https address that admits alice
-// through a fake GitHub, and her session cookie.
+// fakeAccess answers GitHub's role for repo and login, keyed "repo\x00login";
+// anything unlisted has no access. A key mapped to "error" fails the lookup.
+type fakeAccess map[string]string
+
+func (f fakeAccess) Access(_ context.Context, repo, login string) (town.RepoAccess, error) {
+	role := f[repo+"\x00"+login]
+	if role == "error" {
+		return town.RepoAccess{}, errors.New("GitHub is unavailable")
+	}
+	if role == "" {
+		return town.RepoAccess{Permission: "none"}, nil
+	}
+	return town.RepoAccess{RoleName: role}, nil
+}
+
+// signedInServer is a Town reached at an https address that admits alice,
+// an administrator of acme/a on GitHub, and her session cookie.
 func signedInServer(t *testing.T) (*Server, *http.Cookie) {
+	t.Helper()
+	s, session := townWithSignIn(t, fakeAccess{"acme/a\x00alice": "admin"}, nil, "alice")
+	return s, session("alice")
+}
+
+// townWithSignIn is a Town reached at an https address that admits users
+// through a fake GitHub, reads their repository access from access and has
+// admins as its administrators. session signs one of them in.
+func townWithSignIn(t *testing.T, access fakeAccess, admins []string, users ...string) (*Server, func(login string) *http.Cookie) {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /login/oauth/access_token", func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +61,7 @@ func signedInServer(t *testing.T) (*Server, *http.Cookie) {
 	if err := os.WriteFile(secret, []byte("shh"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	signIn, err := auth.New(auth.Config{GitHub: &auth.GitHubConfig{ClientID: "id", ClientSecretFile: secret, Users: []string{"alice"}, URL: gh.URL, APIURL: gh.URL + "/api"}}, publicOrigin, dir)
+	signIn, err := auth.New(auth.Config{Admins: admins, GitHub: &auth.GitHubConfig{ClientID: "id", ClientSecretFile: secret, Users: users, URL: gh.URL, APIURL: gh.URL + "/api"}}, publicOrigin, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,22 +71,25 @@ func signedInServer(t *testing.T) (*Server, *http.Cookie) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	s := &Server{Store: store, Token: "test-key", Supervisor: town.NewSupervisor(store, nil, nil), Origin: publicOrigin, Auth: signIn}
-	start := serve(s, "GET", "/auth/login", "", nil)
-	to, _ := url.Parse(start.Header().Get("Location"))
-	back := httptest.NewRequest("GET", publicOrigin+"/auth/callback?code=alice&state="+to.Query().Get("state"), nil)
-	for _, c := range start.Result().Cookies() {
-		back.AddCookie(c)
-	}
-	done := httptest.NewRecorder()
-	s.Handler().ServeHTTP(done, back)
-	for _, c := range done.Result().Cookies() {
-		if c.Name == "__Host-brokk-town-session" && c.Value != "" {
-			return s, c
+	s := &Server{Store: store, Token: "test-key", Supervisor: town.NewSupervisor(store, nil, nil), Origin: publicOrigin, Auth: signIn, Access: access}
+	return s, func(login string) *http.Cookie {
+		t.Helper()
+		start := serve(s, "GET", "/auth/login", "", nil)
+		to, _ := url.Parse(start.Header().Get("Location"))
+		back := httptest.NewRequest("GET", publicOrigin+"/auth/callback?code="+login+"&state="+to.Query().Get("state"), nil)
+		for _, c := range start.Result().Cookies() {
+			back.AddCookie(c)
 		}
+		done := httptest.NewRecorder()
+		s.Handler().ServeHTTP(done, back)
+		for _, c := range done.Result().Cookies() {
+			if c.Name == "__Host-brokk-town-session" && c.Value != "" {
+				return c
+			}
+		}
+		t.Fatalf("no session for %s: %d %s", login, done.Code, done.Body)
+		return nil
 	}
-	t.Fatalf("no session after sign-in: %d %s", done.Code, done.Body)
-	return nil, nil
 }
 
 // serve sends one request to the handler as a browser at the public address
@@ -123,7 +152,7 @@ func TestASignedInPersonActsAsThemselves(t *testing.T) {
 	if strings.Join(actors, "|") != strings.Join(want, "|") {
 		t.Fatalf("actors %q, want %q", actors, want)
 	}
-	public, _ := json.Marshal(s.publicState()["events"])
+	public, _ := json.Marshal(s.publicState(httptest.NewRequest("GET", "/", nil))["events"])
 	if !strings.Contains(string(public), `"actor":"alice"`) {
 		t.Fatalf("public events omit the actor: %s", public)
 	}

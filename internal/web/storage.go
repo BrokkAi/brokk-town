@@ -14,6 +14,9 @@ func (s *Server) storage(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
+	if !s.allow(w, r, input.Town, repoAdmin) {
+		return
+	}
 	age := 168
 	if input.MinimumAgeHours != nil {
 		age = *input.MinimumAgeHours

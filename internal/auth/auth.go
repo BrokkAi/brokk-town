@@ -41,6 +41,10 @@ type Config struct {
 	// crosses the network unencrypted, so anyone who can read that traffic
 	// can act as the person it belongs to.
 	AllowInsecureHTTP bool `json:"allow_insecure_http,omitempty"`
+	// Admins are the GitHub logins who administer Town itself: global
+	// settings, adding repositories, and every repository's settings. They
+	// must also be able to sign in.
+	Admins []string `json:"admins,omitempty"`
 }
 
 // GitHubConfig names the GitHub OAuth app Town signs people in with and who
@@ -74,7 +78,7 @@ const (
 type Service struct {
 	clientID, clientSecret string
 	webURL, apiURL         string
-	users, orgs            []string
+	users, orgs, admins    []string
 	key                    []byte
 	// origin is the address browsers use, such as https://town.example.com.
 	origin string
@@ -98,6 +102,14 @@ func (c Config) Validate() error {
 	}
 	if len(g.Users) == 0 && len(g.Organizations) == 0 {
 		return errors.New("auth.github: list the users or organizations who may sign in")
+	}
+	if len(c.Admins) > maxListed {
+		return fmt.Errorf("auth: at most %d admins", maxListed)
+	}
+	for _, name := range c.Admins {
+		if !ValidLogin(name) {
+			return fmt.Errorf("auth.admins: %q is not a GitHub login", name)
+		}
 	}
 	if len(g.Users) > maxListed || len(g.Organizations) > maxListed {
 		return fmt.Errorf("auth.github: at most %d users and %d organizations", maxListed, maxListed)
@@ -169,6 +181,9 @@ func New(c Config, origin, stateDir string) (*Service, error) {
 	}
 	for _, name := range g.Organizations {
 		s.orgs = append(s.orgs, strings.ToLower(name))
+	}
+	for _, name := range c.Admins {
+		s.admins = append(s.admins, strings.ToLower(name))
 	}
 	return s, nil
 }
@@ -301,6 +316,11 @@ func (s *Service) Login(r *http.Request) (string, bool) {
 		return v.Login, true
 	}
 	return "", false
+}
+
+// Admin reports whether login administers Town itself.
+func (s *Service) Admin(login string) bool {
+	return login != "" && slices.Contains(s.admins, strings.ToLower(login))
 }
 
 // Handler serves /auth/login, /auth/callback and /auth/logout.

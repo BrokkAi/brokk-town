@@ -11,6 +11,12 @@
   address on a trusted network, and `auth.github.ca_file` trusts an Enterprise
   Server's own certificate authority. The local access key keeps working
   alongside sign-in.
+- Give signed-in people the access they have on GitHub. A repository is
+  hidden from anyone who cannot read it there; read and triage access see it,
+  write and maintain also run its bots and decide its tasks, and admin also
+  changes its settings and deletes it. `auth.admins` names Town's own
+  administrators, who change Global settings. A second decision on the same
+  task is refused with who decided first.
 - Run every bot as its own binary (`bug-bot`, `feature-bot`, `issue-bot`,
   `review-bot`, `release-bot`, `simplifier-bot`, `repo-bot`, `mayor-bot`) and
   container image, reached by Town over an authenticated HTTP contract with a

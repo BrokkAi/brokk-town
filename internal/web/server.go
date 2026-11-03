@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -41,6 +42,12 @@ type Server struct {
 	// Auth, when set, lets people sign in with GitHub and use Town as
 	// themselves. The access key keeps working alongside it.
 	Auth *auth.Service
+	// Access reads a signed-in person's access to a repository on GitHub,
+	// which sets what they may see and do there. Without it a signed-in
+	// person who is not a Town administrator sees no repository.
+	Access     repoAccess
+	accessOnce sync.Once
+	access     *accessCache
 }
 
 type actorKey struct{}
@@ -68,14 +75,24 @@ type taskGitHub interface {
 	Pull(ctx context.Context, repo string, n int) (town.Pull, error)
 }
 
-func (s *Server) publicState() map[string]any {
-	return s.decorate(s.Store.Snapshot())
+func (s *Server) publicState(r *http.Request) map[string]any {
+	return s.decorate(r, s.Store.Snapshot())
 }
 
 // decorate adds service-level facts to a snapshot's public view. Clients use
 // the version to roll a stale service forward and to reload their own assets.
-func (s *Server) decorate(snapshot town.State) map[string]any {
+// Each request sees only the repositories it has access to, and its level for
+// each under access.
+func (s *Server) decorate(r *http.Request, snapshot town.State) map[string]any {
+	snapshot, levels := s.visible(r, snapshot)
 	state := snapshot.Public()
+	towns := map[string]string{}
+	for id, l := range levels {
+		if l > noAccess {
+			towns[id] = l.String()
+		}
+	}
+	state["access"] = map[string]any{"admin": s.townAdmin(r), "towns": towns}
 	if s.Version != "" {
 		state["version"] = s.Version
 	}
@@ -84,26 +101,26 @@ func (s *Server) decorate(snapshot town.State) map[string]any {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, s.publicState()) })
+	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, s.publicState(r)) })
 	mux.HandleFunc("GET /api/session", s.session)
 	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/guide", s.guide)
 	mux.HandleFunc("POST /api/towns", s.add)
 	mux.HandleFunc("POST /api/settings", s.settings)
-	mux.HandleFunc("POST /api/capacity", s.capacity)
-	mux.HandleFunc("POST /api/attention-hook", s.attentionHook)
+	mux.HandleFunc("POST /api/capacity", s.adminOnly(s.capacity))
+	mux.HandleFunc("POST /api/attention-hook", s.adminOnly(s.attentionHook))
 	mux.HandleFunc("POST /api/storage", s.storage)
 	mux.HandleFunc("POST /api/history", s.history)
 	mux.HandleFunc("POST /api/storage/cleanup", s.storage)
-	mux.HandleFunc("POST /api/quiet-hours", s.quietHours)
+	mux.HandleFunc("POST /api/quiet-hours", s.adminOnly(s.quietHours))
 	mux.HandleFunc("POST /api/choices", s.choices)
 	mux.HandleFunc("GET /api/execution-options", s.executionOptions)
-	mux.HandleFunc("POST /api/execution-options/refresh", s.refreshExecutionOptions)
+	mux.HandleFunc("POST /api/execution-options/refresh", s.adminOnly(s.refreshExecutionOptions))
 	mux.HandleFunc("POST /api/execution", s.execution)
 	mux.HandleFunc("POST /api/execution-runtime", s.executionRuntime)
 	mux.HandleFunc("GET /api/harnesses", func(w http.ResponseWriter, r *http.Request) { respond(w, s.Supervisor.Harnesses.List()) })
-	mux.HandleFunc("POST /api/harnesses/refresh", s.refreshHarnesses)
+	mux.HandleFunc("POST /api/harnesses/refresh", s.adminOnly(s.refreshHarnesses))
 	mux.HandleFunc("POST /api/requests", s.submitRequest)
 	mux.HandleFunc("POST /api/requests/check", s.checkRequest)
 	mux.HandleFunc("POST /api/task-detail", s.taskDetail)
@@ -111,10 +128,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/outcomes", s.outcomes)
 	mux.HandleFunc("POST /api/outcomes/judgment", s.outcomeJudgment)
 	if s.Shutdown != nil {
-		mux.HandleFunc("POST /api/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("POST /api/shutdown", s.adminOnly(func(w http.ResponseWriter, r *http.Request) {
 			respond(w, map[string]bool{"stopping": true})
 			s.Shutdown()
-		})
+		}))
 	}
 	if s.Auth != nil {
 		mux.Handle("/auth/", s.Auth.Handler())
@@ -182,7 +199,7 @@ func (s *Server) authenticate(r *http.Request) (string, bool) {
 // session tells the browser who it is signed in as. An empty login is the
 // access key.
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
-	respond(w, map[string]any{"login": actor(r), "sign_in": s.Auth != nil})
+	respond(w, map[string]any{"login": actor(r), "sign_in": s.Auth != nil, "admin": s.townAdmin(r)})
 }
 
 func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +208,9 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
+		return
+	}
+	if !s.allow(w, r, input.Town, viewer) {
 		return
 	}
 	report, err := s.Supervisor.Diagnose(r.Context(), input.Town)
@@ -218,7 +238,12 @@ func (s *Server) outcomes(w http.ResponseWriter, r *http.Request) {
 		problem(w, "from and to must be RFC3339 timestamps", http.StatusBadRequest)
 		return
 	}
-	report, err := town.BuildOutcomeReport(s.Store.Snapshot(), strings.ToLower(r.URL.Query().Get("town")), from, to, now)
+	id := strings.ToLower(r.URL.Query().Get("town"))
+	if id != "" && !s.allow(w, r, id, viewer) {
+		return
+	}
+	snapshot, _ := s.visible(r, s.Store.Snapshot())
+	report, err := town.BuildOutcomeReport(snapshot, id, from, to, now)
 	if err != nil {
 		problem(w, err.Error(), http.StatusBadRequest)
 		return
@@ -276,6 +301,9 @@ func (s *Server) outcomeJudgment(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
+		return
+	}
+	if !s.allow(w, r, input.Town, operator) {
 		return
 	}
 	if err := s.act(r).JudgeOutcome(strings.ToLower(input.Town), input.Outcome, input.Value, input.Explanation); err != nil {
@@ -336,7 +364,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	for {
 		changed := s.Store.Watch()
 		snapshot := s.Store.Snapshot()
-		data, err := json.Marshal(s.decorate(snapshot))
+		data, err := json.Marshal(s.decorate(r, snapshot))
 		if err != nil {
 			return
 		}
@@ -367,6 +395,13 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
+	need := operator
+	if input.Action == "delete" {
+		need = repoAdmin
+	}
+	if !s.allow(w, r, input.Town, need) {
+		return
+	}
 	if input.Action == "defer" {
 		until, err := time.Parse(time.RFC3339, strings.TrimSpace(input.Until))
 		if err != nil {
@@ -385,7 +420,11 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.act(r).Control(input.Town, input.Role, input.Action, input.Task); err != nil {
-		problem(w, err.Error(), 400)
+		status := http.StatusBadRequest
+		if errors.Is(err, town.ErrAlreadyDecided) {
+			status = http.StatusConflict
+		}
+		problem(w, err.Error(), status)
 		return
 	}
 	respond(w, map[string]bool{"ok": true})
@@ -402,6 +441,12 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Store.Snapshot().Demo {
 		problem(w, "Use a live service to add real repositories", 400)
+		return
+	}
+	// A repository's own administrators may add it; anything else is a Town
+	// administrator's call.
+	if !s.townAdmin(r) && s.levelFor(r, input.Repo) < repoAdmin {
+		problem(w, "adding a repository needs admin access to it on GitHub", http.StatusForbidden)
 		return
 	}
 	id, err := s.act(r).AddRepo(input.Repo, input.MergePolicy, input.Agent)
@@ -454,6 +499,9 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
+	if !s.allow(w, r, input.Town, repoAdmin) {
+		return
+	}
 	edits := town.TownSettings{MergePolicy: input.MergePolicy, SimplifierMode: input.SimplifierMode, CloseSeverity: input.ReviewCloseSeverity, Budget: input.Budget, WorkPolicy: input.WorkPolicy, QuietHours: input.QuietHours}
 	if err := s.act(r).ApplySettings(input.Town, input.Role, input.Agent, edits); err != nil {
 		problem(w, err.Error(), 400)
@@ -504,6 +552,9 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
 		problem(w, "town and task are required", 400)
 		return
 	}
+	if !s.allow(w, r, input.Town, viewer) {
+		return
+	}
 	snapshot := s.Store.Snapshot()
 	if snapshot.Demo {
 		problem(w, "demo repositories have no live source", http.StatusConflict)
@@ -549,6 +600,9 @@ func (s *Server) choices(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
+	if input.Town != "" && !s.allow(w, r, input.Town, viewer) {
+		return
+	}
 	choices, err := s.Supervisor.ChoicesForRole(r.Context(), input.Town, input.Role, input.Agent)
 	if err != nil {
 		problem(w, err.Error(), 400)
@@ -568,6 +622,9 @@ func (s *Server) submitRequest(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
+	if !s.allow(w, r, input.Town, operator) {
+		return
+	}
 	result, err := s.act(r).SubmitRequest(input.Town, town.IssueRequest{ID: input.ID, Kind: input.Kind, Title: input.Title, Body: input.Body})
 	if err != nil {
 		problem(w, err.Error(), 400)
@@ -584,6 +641,9 @@ func (s *Server) checkRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
+		return
+	}
+	if !s.allow(w, r, input.Town, operator) {
 		return
 	}
 	if err := s.Supervisor.RecheckRequest(input.Town, input.ID); err != nil {

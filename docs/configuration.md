@@ -225,9 +225,10 @@ instead let each person sign in with their GitHub account. Turn it on with an
 | `client_secret_file` | File holding that app's client secret, such as a mounted secret. The config file never holds the secret itself. |
 | `users` | GitHub logins that may sign in. |
 | `organizations` | Organizations whose active members may sign in. Town asks for the `read:org` scope to check membership; an organization that restricts OAuth app access must approve the app first. |
-| `url`, `api_url` | GitHub Enterprise Server's web and API addresses, both `https`. They default to `https://github.com` and `https://api.github.com`. |
+| `url`, `api_url` | GitHub Enterprise Server's web and API addresses, both `https`. They default to `https://github.com` and `https://api.github.com`. Town's bots and its own GitHub reads, including the access checks below, currently work only with github.com, so a Town on an Enterprise Server is not yet usable end to end. |
 | `ca_file` | PEM file of the certificate authorities that sign GitHub's certificate, for an Enterprise Server with an internal or self-signed certificate. Sign-in then trusts only those, as a bot's `ca_file` does; the rest of Town is unaffected. |
 
+`admins`, beside `github`, lists Town's administrators (see below).
 `allow_insecure_http`, beside `github`, accepts sign-in on a plain `http`
 address that is not loopback, such as an internal host without TLS. Use it only
 on a network you trust: the session cookie then crosses the network
@@ -252,8 +253,35 @@ decisions, outcome judgments and the issues filed from **Submit request** name
 them. Town reads the login and organization membership at sign-in and keeps no
 GitHub token from it; the bots still act on GitHub with the service's own
 credentials. A sign-in lasts 12 hours. The local access key keeps working
-alongside sign-in for `bt` itself and for an administrator. Everyone who signs
-in can currently take every action, including changing settings.
+alongside sign-in for `bt` itself and for an administrator.
+
+### What each person may do
+
+A signed-in person sees only the repositories they can reach on GitHub, and what
+they may do in each follows their access to it there:
+
+| GitHub access | In Town |
+| --- | --- |
+| none | The repository is hidden; asking for it reads as an unknown repository. |
+| read, triage | See the repository, its Activity, History, outcomes and task details. |
+| write, maintain | Also start, pause, stop and retry bots, accept and decline tasks, snooze them, submit requests, judge outcomes and use the Assistant. |
+| admin | Also change the repository's settings, execution placement and storage, and delete it. |
+
+A custom role counts as the base permission it extends. `admins`, beside
+`github`, lists the GitHub logins who administer Town itself: they may do
+everything in every repository, change Global settings (capacity, quiet hours,
+the attention hook), refresh the Mjolnir and harness catalogs, stop the
+service, and add any repository. Anyone else may add a repository they
+administer on GitHub. The local access key is an administrator.
+
+Town reads each person's access with its own GitHub credentials, so those must
+be able to read the repository's collaborators. It remembers an answer for 5
+minutes, so a change on GitHub reaches Town within that time; if GitHub cannot be
+reached it keeps using an answer up to an hour old, and after that hides the
+repository.
+
+When two people decide the same task, the second is told who decided first, and
+the first decision stands.
 
 ## Config file
 
@@ -278,6 +306,7 @@ in can currently take every action, including changing settings.
     "review": { "url": "https://review-bot.internal:8443", "token_file": "/run/secrets/review-bot-token", "ca_file": "/etc/brokk/ca.pem" }
   },
   "auth": {
+    "admins": ["octocat"],
     "github": { "client_id": "Iv1.0123456789abcdef", "client_secret_file": "/run/secrets/github-oauth-secret", "organizations": ["BrokkAi"] }
   },
   "towns": [

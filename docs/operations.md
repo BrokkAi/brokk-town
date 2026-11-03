@@ -198,7 +198,7 @@ content or error text.
 `bt web` prints a loopback URL containing the access key. When
 [sign-in](configuration.md#sign-in) is on, a browser without the key offers
 **Sign in with GitHub** instead, and the header shows the signed-in login with
-**Sign out**. The browser reads the same committed snapshot and writes only
+**Sign out**. Controls the person's access does not allow are hidden. The browser reads the same committed snapshot and writes only
 through the authenticated API. It is
 plain HTML, CSS and JavaScript modules, with no build step, no animation, no
 canvas drawing and no image assets.
@@ -298,13 +298,18 @@ state directory's `token` file, and must be same-origin. When
 [sign-in](configuration.md#sign-in) is on, a request may instead carry a
 signed-in session cookie; a write made with it must also send an `Origin` header
 naming the public address. A request without either is answered 401 with
-`"sign_in": "/auth/login"`. Responses are `no-store`. `POST /api/shutdown` is
+`"sign_in": "/auth/login"`. A signed-in request sees only the repositories its
+person can reach, and `access` in the snapshot gives their level for each
+(`viewer`, `operator` or `admin`) and whether they administer Town; an action
+their level does not allow is answered 403, and a repository they cannot reach
+404 (see [What each person may do](configuration.md#what-each-person-may-do)).
+Deciding a task someone else has already decided is answered 409. Responses are `no-store`. `POST /api/shutdown` is
 present only when the service registered a shutdown hook.
 
 | Route | Purpose |
 | --- | --- |
 | `GET /api/state` | The full public snapshot. |
-| `GET /api/session` | Who the request acts as: `login` is the signed-in GitHub login, or empty for the access key; `sign_in` reports whether sign-in is on. |
+| `GET /api/session` | Who the request acts as: `login` is the signed-in GitHub login, or empty for the access key; `sign_in` reports whether sign-in is on; `admin` whether they administer Town. |
 | `GET /api/events` | Server-sent events of the snapshot stream. |
 | `POST /api/control` | `start`/`pause`/`stop`/`retry`/`delete`/`admit`/`decline` a repository (`town`), bot (`house`) or task (`task`). |
 | `POST /api/guide` | Ask, cancel or confirm an Assistant turn. |

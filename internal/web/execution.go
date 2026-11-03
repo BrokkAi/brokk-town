@@ -43,6 +43,9 @@ func (s *Server) execution(w http.ResponseWriter, r *http.Request) {
 		problem(w, "invalid execution selection", 400)
 		return
 	}
+	if !s.allow(w, r, input.Town, repoAdmin) {
+		return
+	}
 	if err := s.act(r).SetExecution(input.Town, input.Role, selection); err != nil {
 		problem(w, err.Error(), 400)
 		return
@@ -58,6 +61,9 @@ func (s *Server) executionRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(w, r, &input); err != nil {
 		rejectInput(w, err)
+		return
+	}
+	if !s.allow(w, r, input.Town, repoAdmin) {
 		return
 	}
 	if err := s.act(r).SelectExecutionRuntime(r.Context(), input.Town, input.Role, input.Session); err != nil {

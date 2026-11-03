@@ -223,6 +223,29 @@ func (g GitHubClient) api(ctx context.Context, method, path string, body any, ou
 	}
 	return json.Unmarshal([]byte(text), out)
 }
+
+// RepoAccess is one person's access to a repository as GitHub reports it: the
+// legacy permission (admin, write, read or none) and the role it comes from
+// (admin, maintain, write, triage, read, or a custom role's name).
+type RepoAccess struct {
+	Permission string `json:"permission"`
+	RoleName   string `json:"role_name"`
+}
+
+// Access reads login's access to repo with the service's own credentials. A
+// login GitHub does not know, or one with no access, has permission none.
+func (g GitHubClient) Access(ctx context.Context, repo, login string) (RepoAccess, error) {
+	var out RepoAccess
+	err := g.api(ctx, "GET", "repos/"+repo+"/collaborators/"+url.PathEscape(login)+"/permission", nil, &out)
+	if err != nil {
+		if m := ghHTTPStatus.FindStringSubmatch(err.Error()); m != nil && m[1] == "404" {
+			return RepoAccess{Permission: "none"}, nil
+		}
+		return RepoAccess{}, err
+	}
+	return out, nil
+}
+
 func pages[T any](ctx context.Context, g GitHubClient, path string) ([]T, error) {
 	all := []T{}
 	join := "?"
