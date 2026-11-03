@@ -32,7 +32,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address to serve on")
 	fl.demo = fs.Bool("demo", false, "the isolated demo (simulated repositories)")
 	fl.config = fs.String("config", "", "optional JSON array or object with max_workers, quiet_hours and towns, applied at startup")
-	fl.publicURL = fs.String("public-url", "", "the http://host:port browsers use when Town runs in a container; allows --listen on any interface")
+	fl.publicURL = fs.String("public-url", "", "the http://host:port or https://host browsers use when Town runs in a container; allows --listen on any interface")
 	fl.json = fs.Bool("json", false, "print the full Town state as JSON (status)")
 	return fl
 }

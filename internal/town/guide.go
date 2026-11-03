@@ -163,7 +163,8 @@ func (s *Supervisor) CancelGuide(id, turnID string) error {
 		return nil
 	})
 }
-func (s *Supervisor) ConfirmGuide(id, turnID, digest string) error {
+func (a Acting) ConfirmGuide(id, turnID, digest string) error {
+	s := a.s
 	id = strings.ToLower(id)
 	snapshot := s.Store.Snapshot()
 	t := snapshot.Towns[id]
@@ -181,7 +182,7 @@ func (s *Supervisor) ConfirmGuide(id, turnID, digest string) error {
 	if p.Status == "confirmed" {
 		return nil
 	}
-	return s.control(id, p.Role, p.Action, "", func(current *Town) error {
+	return s.control(a.actor, id, p.Role, p.Action, "", func(current *Town) error {
 		turn := current.Guide.turn(turnID)
 		if turn == nil || turn.Status != "complete" || turn.Proposal == nil {
 			return errors.New("the Assistant's proposal is no longer available")

@@ -46,6 +46,9 @@ type OutcomeJudgment struct {
 	Value       string    `json:"value"`
 	Explanation string    `json:"explanation"`
 	RecordedAt  time.Time `json:"recorded_at"`
+	// RecordedBy is the GitHub login of the signed-in person who recorded
+	// the judgment; empty for the local access key.
+	RecordedBy string `json:"recorded_by,omitempty"`
 }
 
 type OutcomeSummary struct {
@@ -86,7 +89,7 @@ func (r OutcomeRecord) validate() error {
 	if r.CostUSD != nil && *r.CostUSD < 0 {
 		return errors.New("invalid outcome cost")
 	}
-	if r.Judgment != nil && (r.Kind != "finding_filed" || (r.Judgment.Value != "useful" && r.Judgment.Value != "false_positive") || strings.TrimSpace(r.Judgment.Explanation) == "" || r.Judgment.RecordedAt.IsZero()) {
+	if r.Judgment != nil && (r.Kind != "finding_filed" || (r.Judgment.Value != "useful" && r.Judgment.Value != "false_positive") || strings.TrimSpace(r.Judgment.Explanation) == "" || r.Judgment.RecordedAt.IsZero() || (r.Judgment.RecordedBy != "" && !ValidLogin(r.Judgment.RecordedBy))) {
 		return errors.New("invalid outcome judgment")
 	}
 	return nil
@@ -134,6 +137,10 @@ func (t *Town) RecordOutcome(record OutcomeRecord) {
 }
 
 func (t *Town) JudgeOutcome(id, value, explanation string, now time.Time) error {
+	return t.judgeOutcome("", id, value, explanation, now)
+}
+
+func (t *Town) judgeOutcome(actor, id, value, explanation string, now time.Time) error {
 	explanation = strings.TrimSpace(explanation)
 	if value != "useful" && value != "false_positive" {
 		return errors.New("judgment must be useful or false_positive")
@@ -146,7 +153,7 @@ func (t *Town) JudgeOutcome(id, value, explanation string, now time.Time) error 
 			if t.Outcomes[i].Kind != "finding_filed" {
 				return errors.New("only filed findings can receive usefulness judgments")
 			}
-			t.Outcomes[i].Judgment = &OutcomeJudgment{Value: value, Explanation: explanation, RecordedAt: now}
+			t.Outcomes[i].Judgment = &OutcomeJudgment{Value: value, Explanation: explanation, RecordedAt: now, RecordedBy: actor}
 			return nil
 		}
 	}

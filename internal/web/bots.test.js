@@ -11,6 +11,7 @@ import {
   taskRef,
   cargoRef,
   eventRoute,
+  eventActor,
   pipeline,
 } from "./bots.js";
 import { botNames } from "./town.js";
@@ -33,6 +34,13 @@ test("activity routes name both ends and other events by kind", () => {
   assert.equal(eventRoute({ kind: "delivery", from: "operator", to: "issue" }), "You → Implementation");
   assert.equal(eventRoute({ kind: "control" }), "Control");
   assert.equal(eventRoute({ kind: "uncertain_write" }), "Uncertain write");
+});
+
+test("an event names the signed-in person who acted", () => {
+  assert.equal(eventActor({ kind: "control" }, "alice"), "");
+  assert.equal(eventActor({ kind: "control", actor: "Alice" }, "alice"), "You");
+  assert.equal(eventActor({ kind: "decision", actor: "bob" }, "alice"), "bob");
+  assert.equal(eventActor({ kind: "decision", actor: "bob" }, ""), "bob");
 });
 
 test("tasks read by number, pull request or commit", () => {

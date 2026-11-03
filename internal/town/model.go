@@ -595,6 +595,10 @@ type Event struct {
 	To    string    `json:"to,omitempty"`
 	Cargo string    `json:"cargo,omitempty"`
 	Title string    `json:"title"`
+	// Actor is the GitHub login of the signed-in person whose action
+	// appended the event. It is empty for bots, for Town itself and for an
+	// action taken with the local access key.
+	Actor string `json:"actor,omitempty"`
 }
 type Town struct {
 	Guide          *GuideConversation        `json:"guide,omitempty"`
@@ -807,9 +811,24 @@ func (t *Town) PublicConfig() PublicConfig {
 
 func (s *State) Event(town, kind, from, to, cargo, title string, now time.Time) {
 	s.Seq++
-	s.Events = append(s.Events, Event{s.Seq, now, town, kind, from, to, cargo, title})
+	s.Events = append(s.Events, Event{Seq: s.Seq, At: now, Town: town, Kind: kind, From: from, To: to, Cargo: cargo, Title: title})
 	if len(s.Events) > 512 {
 		s.Events = s.Events[len(s.Events)-512:]
+	}
+}
+
+// Acted appends the event for a person's action. actor is their GitHub login,
+// or empty for the local access key.
+func (s *State) Acted(town, kind, actor, to, cargo, title string, now time.Time) {
+	s.Event(town, kind, "operator", to, cargo, title, now)
+	s.Events[len(s.Events)-1].Actor = actor
+}
+
+// attribute names actor on every event appended after sequence since, for
+// actions whose events are written by shared code such as a decision.
+func (s *State) attribute(since uint64, actor string) {
+	for i := len(s.Events) - 1; i >= 0 && s.Events[i].Seq > since; i-- {
+		s.Events[i].Actor = actor
 	}
 }
 func (s *State) Move(t *Town, task *Task, stage string, house Role, title string, now time.Time) {

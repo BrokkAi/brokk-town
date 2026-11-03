@@ -93,6 +93,15 @@ export function eventRoute(event) {
   return words[0].toUpperCase() + words.slice(1);
 }
 
+// eventActor names the person whose action an event records: "You" for the
+// viewer's own, the GitHub login for anyone else's, and "" when the event names
+// no one, as for bots and for the local access key.
+export function eventActor(event, me) {
+  const actor = String(event?.actor || "");
+  if (!actor) return "";
+  return me && actor.toLowerCase() === String(me).toLowerCase() ? "You" : actor;
+}
+
 // pipeline is every bot in order with what it is doing now and its workload.
 // Triage is measured in decisions: what waits on it is a decision.
 export function pipeline(town) {

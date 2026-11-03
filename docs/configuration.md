@@ -201,6 +201,60 @@ config file. Each managed review mints its own callback token and route, valid
 only while that review runs. The bot side of these settings is in
 [bots.md](bots.md#bot-binaries).
 
+## Sign-in
+
+By default a Town has one user: whoever holds the local access key. A Town that
+several people share, such as one run with docker compose or on Kubernetes, can
+instead let each person sign in with their GitHub account. Turn it on with an
+`auth` object in the [config file](#config-file):
+
+```json
+"auth": {
+  "github": {
+    "client_id": "Iv1.0123456789abcdef",
+    "client_secret_file": "/run/secrets/github-oauth-secret",
+    "organizations": ["BrokkAi"],
+    "users": ["octocat"]
+  }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `client_id` | The client ID of a GitHub OAuth app. |
+| `client_secret_file` | File holding that app's client secret, such as a mounted secret. The config file never holds the secret itself. |
+| `users` | GitHub logins that may sign in. |
+| `organizations` | Organizations whose active members may sign in. Town asks for the `read:org` scope to check membership; an organization that restricts OAuth app access must approve the app first. |
+| `url`, `api_url` | GitHub Enterprise Server's web and API addresses, both `https`. They default to `https://github.com` and `https://api.github.com`. |
+| `ca_file` | PEM file of the certificate authorities that sign GitHub's certificate, for an Enterprise Server with an internal or self-signed certificate. Sign-in then trusts only those, as a bot's `ca_file` does; the rest of Town is unaffected. |
+
+`allow_insecure_http`, beside `github`, accepts sign-in on a plain `http`
+address that is not loopback, such as an internal host without TLS. Use it only
+on a network you trust: the session cookie then crosses the network
+unencrypted, and anyone who can read that traffic can act as the person it
+belongs to.
+
+At least one user or organization is required. Register the OAuth app with the
+callback URL `<public address>/auth/callback`, where the public address is
+`--public-url` (see [Running bt in a container](operations.md#running-bt-in-a-container)).
+Sign-in requires an `https` public address, unless `allow_insecure_http` is
+set; a loopback address is accepted for trying it out locally.
+
+GitHub never connects to Town during sign-in: it sends the person's browser back
+to the callback URL, and Town makes outbound requests to GitHub. A Town reachable
+only on an internal network therefore works, as long as it can reach GitHub
+(through `HTTPS_PROXY` if your network requires one). An `https` address with a
+self-signed certificate works when browsers trust that certificate or the CA
+that signed it; clicking past the browser's warning is not reliable.
+
+Each person's actions are recorded under their GitHub login: Activity, triage
+decisions, outcome judgments and the issues filed from **Submit request** name
+them. Town reads the login and organization membership at sign-in and keeps no
+GitHub token from it; the bots still act on GitHub with the service's own
+credentials. A sign-in lasts 12 hours. The local access key keeps working
+alongside sign-in for `bt` itself and for an administrator. Everyone who signs
+in can currently take every action, including changing settings.
+
 ## Config file
 
 `bt --config FILE` seeds settings at startup. Two shapes are accepted.
@@ -223,6 +277,9 @@ only while that review runs. The bot side of these settings is in
   "bots": {
     "review": { "url": "https://review-bot.internal:8443", "token_file": "/run/secrets/review-bot-token", "ca_file": "/etc/brokk/ca.pem" }
   },
+  "auth": {
+    "github": { "client_id": "Iv1.0123456789abcdef", "client_secret_file": "/run/secrets/github-oauth-secret", "organizations": ["BrokkAi"] }
+  },
   "towns": [
     { "repo": "OWNER/REPO", "branch": "main", "merge_policy": "bot", "poll_seconds": 60, "report_seconds": 1800, "max_cycles": 5 }
   ]
@@ -232,7 +289,7 @@ only while that review runs. The bot side of these settings is in
 `bots` is keyed by role key. Each entry needs `url`; `token_file` and
 `ca_file` are optional and take the place of the matching environment
 variables in [Bot endpoints](#bot-endpoints). The config file never holds a
-token itself.
+token itself. `auth` turns on [sign-in](#sign-in).
 
 Rules:
 

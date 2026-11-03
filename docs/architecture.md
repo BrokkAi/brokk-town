@@ -50,6 +50,7 @@ the state directory; the browser uses the same API.
 | `internal/botlaunch` | Starts, restarts and stops bot binaries on loopback for a service on one machine. |
 | `internal/artifact` | Path-safety, measuring and digest checks shared by the service and the bots. |
 | `internal/web` | HTTP routes and the embedded browser UI: plain HTML, CSS and ES modules. |
+| `internal/auth` | GitHub sign-in for a shared Town: the OAuth flow, the allow list and signed session cookies. |
 | `internal/harness` | ACP harness registry, catalog cache, archive download and launch. |
 | `internal/mjolnir` | Mjolnir API client: catalog, profiles, placements, runtime pins, runs, artifacts, evidence and import. |
 | `internal/guide` | One bounded ACP conversation for the Assistant. |

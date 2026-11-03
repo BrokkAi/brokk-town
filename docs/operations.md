@@ -38,6 +38,7 @@ it can never open real state.
 | `state.json` | The committed snapshot. |
 | `daemon.lock` | Single-writer lock. |
 | `token` | Local API access key, mode 0600. Delete it to rotate. |
+| `session-key` | Signs sign-in sessions, mode 0600, when [sign-in](configuration.md#sign-in) is on. Delete it and restart to sign everyone out. |
 | `connection.json` | URL, PID and version advertised to clients. |
 | `logs/serve.log`, `logs/serve.err.log` | Background service output. |
 | `towns/<key>/<role>/checkout` | A bot's private git checkout, for a bot `bt` starts itself. |
@@ -125,7 +126,10 @@ the `Recreate` strategy because each pod owns its volume.
 In a container `bt` listens on every interface and is reached through a
 published or forwarded port. `--public-url http://127.0.0.1:8080` names the
 address the browser uses; it allows a non-loopback `--listen`, and the browser
-must use exactly that address. Town also answers at its own loopback port, which
+must use exactly that address. Behind a proxy or ingress that terminates TLS,
+name the `https` address, such as `--public-url https://town.example.com`; Town
+still serves plain HTTP to the proxy, which must pass the original `Host`
+header. A shared Town should turn on [sign-in](configuration.md#sign-in). Town also answers at its own loopback port, which
 `connection.json` records for `bt status`, `bt web` and `bt shutdown` run inside
 the container. `--public-url` cannot be combined with `-d`. Containers are given
 90 seconds (bots) and 120 seconds (Town) to stop, so running work reports what
@@ -191,8 +195,11 @@ content or error text.
 
 ## Browser
 
-`bt web` prints a loopback URL containing the access key. The browser reads the
-same committed snapshot and writes only through the authenticated API. It is
+`bt web` prints a loopback URL containing the access key. When
+[sign-in](configuration.md#sign-in) is on, a browser without the key offers
+**Sign in with GitHub** instead, and the header shows the signed-in login with
+**Sign out**. The browser reads the same committed snapshot and writes only
+through the authenticated API. It is
 plain HTML, CSS and JavaScript modules, with no build step, no animation, no
 canvas drawing and no image assets.
 
@@ -287,13 +294,17 @@ record.
 
 The service binds loopback and serves the UI plus `/api/*`. Every API request
 must carry `Authorization: Bearer <token>` where the token is the contents of the
-state directory's `token` file, and must be same-origin. Responses are
-`no-store`. `POST /api/shutdown` is present only when the service registered a
-shutdown hook.
+state directory's `token` file, and must be same-origin. When
+[sign-in](configuration.md#sign-in) is on, a request may instead carry a
+signed-in session cookie; a write made with it must also send an `Origin` header
+naming the public address. A request without either is answered 401 with
+`"sign_in": "/auth/login"`. Responses are `no-store`. `POST /api/shutdown` is
+present only when the service registered a shutdown hook.
 
 | Route | Purpose |
 | --- | --- |
 | `GET /api/state` | The full public snapshot. |
+| `GET /api/session` | Who the request acts as: `login` is the signed-in GitHub login, or empty for the access key; `sign_in` reports whether sign-in is on. |
 | `GET /api/events` | Server-sent events of the snapshot stream. |
 | `POST /api/control` | `start`/`pause`/`stop`/`retry`/`delete`/`admit`/`decline` a repository (`town`), bot (`house`) or task (`task`). |
 | `POST /api/guide` | Ask, cancel or confirm an Assistant turn. |
@@ -314,5 +325,8 @@ shutdown hook.
 | `GET /api/outcomes`, `POST /api/outcomes/judgment` | Outcome report and operator judgments. |
 | `POST /api/shutdown` | Stop the service. |
 
-The API is private to this machine. Do not expose the listen address to a
-network; the token is the only authorization.
+With sign-in on, Town also serves `GET /auth/login` (start GitHub sign-in),
+`GET /auth/callback` (GitHub's return) and `POST /auth/logout`.
+
+Without sign-in the API is private to this machine. Do not expose the listen
+address to a network; the token is the only authorization.

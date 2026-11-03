@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Let several people share one Town. An `auth` object in the config file turns
+  on sign-in with GitHub: listed users, or active members of listed
+  organizations, sign in through a GitHub OAuth app and act as themselves.
+  Activity, triage decisions, outcome judgments and submitted issues name the
+  person who acted. `--public-url` accepts an `https` address for a Town behind
+  a TLS proxy; `auth.allow_insecure_http` accepts sign-in on a plain http
+  address on a trusted network, and `auth.github.ca_file` trusts an Enterprise
+  Server's own certificate authority. The local access key keeps working
+  alongside sign-in.
 - Run every bot as its own binary (`bug-bot`, `feature-bot`, `issue-bot`,
   `review-bot`, `release-bot`, `simplifier-bot`, `repo-bot`, `mayor-bot`) and
   container image, reached by Town over an authenticated HTTP contract with a

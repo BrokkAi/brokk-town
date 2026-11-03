@@ -55,6 +55,7 @@ import {
   statusLight,
   taskRef,
   eventRoute,
+  eventActor,
   pipeline,
 } from "./bots.js";
 const $ = (s) => document.querySelector(s),
@@ -79,6 +80,13 @@ if (token) {
   sessionStorage.setItem("brokk-town-token", token);
   history.replaceState(null, "", location.pathname);
 }
+// A browser opened with the access key sends it; one signed in with GitHub
+// sends its session cookie instead.
+function authHeaders() {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+// signedIn is the GitHub login this browser acts as, or "" for the access key.
+let signedIn = "";
 let overview = (() => {
   try { return localStorage.getItem("brokk-town-scope") !== "town"; }
   catch { return true; }
@@ -138,7 +146,7 @@ async function api(path, body, signal) {
     response = await fetch(path, {
       method: body ? "POST" : "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...authHeaders(),
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -162,7 +170,7 @@ async function api(path, body, signal) {
 async function exportOutcomes(days) {
   const query = new URLSearchParams({ town: selectedTown, format: "csv" });
   query.set("from", (days > 0 ? new Date(Date.now() - days * 86400000) : new Date(0)).toISOString());
-  const response = await fetch(`/api/outcomes?${query}`, { headers: { Authorization: `Bearer ${token}` } });
+  const response = await fetch(`/api/outcomes?${query}`, { headers: authHeaders() });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || response.statusText);
   const href = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
@@ -224,11 +232,29 @@ document.addEventListener("visibilitychange", () => {
   reconnectAttempt = 0;
   connect();
 });
-async function connect() {
-  if (!token) {
-    $("#connect-dialog").showModal();
+// needSignIn shows how to connect: the GitHub sign-in when this Town offers
+// it, otherwise the bt web instructions.
+function needSignIn(failure) {
+  const signIn = typeof failure?.sign_in === "string" && failure.sign_in.startsWith("/auth/");
+  $("#connect-key").hidden = signIn;
+  $("#connect-sign-in").hidden = !signIn;
+  if (!$("#connect-dialog").open) $("#connect-dialog").showModal();
+}
+async function showSession() {
+  try {
+    const session = await api("/api/session");
+    signedIn = session.login || "";
+  } catch {
     return;
   }
+  $("#signed-in").hidden = !signedIn;
+  $("#signed-in-login").textContent = signedIn;
+}
+$("#sign-out").addEventListener("click", async () => {
+  await fetch("/auth/logout", { method: "POST" }).catch(() => {});
+  location.reload();
+});
+async function connect() {
   clearTimeout(reconnectTimer);
   reconnectTimer = 0;
   reconnectHeld = false;
@@ -236,16 +262,17 @@ async function connect() {
   streamAbort = new AbortController();
   try {
     const response = await fetch("/api/events", {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: authHeaders(),
       signal: streamAbort.signal,
     });
     if (!response.ok) {
       if (response.status === 401) {
-        $("#connect-dialog").showModal();
+        needSignIn(await response.json().catch(() => ({})));
         return;
       }
       throw new Error("Brokk Town is unavailable");
     }
+    if (!signedIn) showSession();
     $("#connection").textContent = "Connected";
     $("#connection-dot").className = "dot active";
     let buffer = "";
@@ -1037,7 +1064,7 @@ function renderInspection() {
     const metric = (value, label) => `<span><strong>${value}</strong>${label}</span>`;
     const outcomeRows = outcomes.records.slice().reverse().slice(0, 50).map((record) => {
       const unknown = record.elapsed_ms == null ? "elapsed unknown" : `${Math.round(record.elapsed_ms / 1000)}s`;
-      const judgment = record.judgment ? `${record.judgment.value.replaceAll("_", " ")}: ${record.judgment.explanation}` : "unjudged";
+      const judgment = record.judgment ? `${record.judgment.value.replaceAll("_", " ")}: ${record.judgment.explanation}${record.judgment.recorded_by ? ` (${record.judgment.recorded_by})` : ""}` : "unjudged";
       const judging = busy(writeKey("judgment", selectedTown, record.id));
       const judge = record.kind === "finding_filed" ? `<span class="judgment-actions"><button data-judgment="useful" data-outcome="${esc(record.id)}"${judging}>Useful</button><button data-judgment="false_positive" data-outcome="${esc(record.id)}"${judging}>False positive</button></span>` : "";
       const title = esc(record.kind.replaceAll("_", " "));
@@ -1155,7 +1182,7 @@ function renderJournal() {
     events
       .map(
         (e) =>
-          `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span class="event-route">${esc(eventRoute(e))}</span><button data-cargo="${esc(e.cargo || "")}" data-house="${esc(e.to || "hall")}">${esc(e.title)}</button></li>`,
+          `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span class="event-route">${esc(eventRoute(e))}${eventActor(e, signedIn) ? ` · ${esc(eventActor(e, signedIn))}` : ""}</span><button data-cargo="${esc(e.cargo || "")}" data-house="${esc(e.to || "hall")}">${esc(e.title)}</button></li>`,
       )
       .join("") ||
     '<li class="muted">No activity yet. Events appear here as tasks move.</li>';

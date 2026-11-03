@@ -202,6 +202,9 @@ func validateState(s State, demo bool) error {
 		if e.Seq <= last || e.Seq > s.Seq || s.Towns[e.Town] == nil {
 			return errors.New("invalid event sequence")
 		}
+		if e.Actor != "" && !ValidLogin(e.Actor) {
+			return errors.New("invalid event actor")
+		}
 		last = e.Seq
 	}
 	for id, t := range s.Towns {

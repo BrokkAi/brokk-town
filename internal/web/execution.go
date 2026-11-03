@@ -43,7 +43,7 @@ func (s *Server) execution(w http.ResponseWriter, r *http.Request) {
 		problem(w, "invalid execution selection", 400)
 		return
 	}
-	if err := s.Supervisor.SetExecution(input.Town, input.Role, selection); err != nil {
+	if err := s.act(r).SetExecution(input.Town, input.Role, selection); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}
@@ -60,7 +60,7 @@ func (s *Server) executionRuntime(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
-	if err := s.Supervisor.SelectExecutionRuntime(r.Context(), input.Town, input.Role, input.Session); err != nil {
+	if err := s.act(r).SelectExecutionRuntime(r.Context(), input.Town, input.Role, input.Session); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}

@@ -32,6 +32,10 @@
         ><span id="connection">Connecting</span>
       </div>
       <span id="capacity-summary" class="capacity-summary" role="status"></span>
+      <span id="signed-in" class="signed-in" hidden
+        ><span id="signed-in-login" title="Signed in with GitHub"></span
+        ><button id="sign-out" class="quiet" type="button">Sign out</button></span
+      >
       <button
         id="inbox-toggle"
         class="quiet inbox-toggle"
@@ -166,10 +170,14 @@
     </dialog>
     <dialog id="connect-dialog" aria-labelledby="connect-heading">
       <h2 id="connect-heading">Connect to Brokk Town</h2>
-      <p>
+      <p id="connect-key">
         Run <code>bt web</code> and open the URL it prints. That link carries the
         local access key for this browser.
       </p>
+      <div id="connect-sign-in" hidden>
+        <p>Sign in with your GitHub account to use this Brokk Town.</p>
+        <p><a class="primary" href="/auth/login">Sign in with GitHub</a></p>
+      </div>
     </dialog>
     <dialog id="capacity-dialog" aria-labelledby="capacity-heading">
       <form id="capacity-form">

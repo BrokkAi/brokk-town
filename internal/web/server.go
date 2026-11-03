@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/BrokkAi/brokk-town/internal/auth"
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
@@ -37,6 +38,27 @@ type Server struct {
 	// Shutdown, when set, stops the service after the request is answered. It
 	// is how bt shutdown reaches a service it cannot signal, as on Windows.
 	Shutdown func()
+	// Auth, when set, lets people sign in with GitHub and use Town as
+	// themselves. The access key keeps working alongside it.
+	Auth *auth.Service
+}
+
+type actorKey struct{}
+
+// actor is the signed-in person's GitHub login for a request, or empty for
+// the access key.
+func actor(r *http.Request) string {
+	login, _ := r.Context().Value(actorKey{}).(string)
+	return login
+}
+
+// act is the supervisor acting for the request's person.
+func (s *Server) act(r *http.Request) town.Acting { return s.Supervisor.As(actor(r)) }
+
+// host is the host and port of an http or https origin.
+func host(origin string) string {
+	_, rest, _ := strings.Cut(origin, "://")
+	return rest
 }
 
 // taskGitHub fetches a single live issue or pull request on demand. Bodies
@@ -63,6 +85,7 @@ func (s *Server) decorate(snapshot town.State) map[string]any {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, s.publicState()) })
+	mux.HandleFunc("GET /api/session", s.session)
 	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("POST /api/control", s.control)
 	mux.HandleFunc("POST /api/guide", s.guide)
@@ -93,6 +116,9 @@ func (s *Server) Handler() http.Handler {
 			s.Shutdown()
 		})
 	}
+	if s.Auth != nil {
+		mux.Handle("/auth/", s.Auth.Handler())
+	}
 	mux.Handle("/", http.FileServerFS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Embedded assets change with every service binary; a reload after a
@@ -102,7 +128,9 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-		if host := "http://" + r.Host; host != s.Origin && (s.Local == "" || host != s.Local) {
+		// Behind a TLS proxy the request reaches Town as plain HTTP, so the
+		// host is compared without the scheme; Origin is compared in full.
+		if r.Host != host(s.Origin) && (s.Local == "" || r.Host != host(s.Local)) {
 			problem(w, "unrecognized local host", http.StatusForbidden)
 			return
 		}
@@ -112,14 +140,49 @@ func (s *Server) Handler() http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-store")
-			provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || subtle.ConstantTimeCompare([]byte(provided), []byte(s.Token)) != 1 || s.Token == "" {
+			login, ok := s.authenticate(r)
+			if !ok {
+				if s.Auth != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusUnauthorized)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "sign in required", "sign_in": "/auth/login"})
+					return
+				}
 				problem(w, "local access key required", http.StatusUnauthorized)
 				return
+			}
+			if login != "" {
+				// A cookie rides along on any request the browser sends, so a
+				// signed-in write must also come from Town's own page.
+				if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("Origin") != s.Origin {
+					problem(w, "cross-origin requests are not allowed", http.StatusForbidden)
+					return
+				}
+				r = r.WithContext(context.WithValue(r.Context(), actorKey{}, login))
 			}
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// authenticate admits a request that carries the access key, which acts for
+// no one in particular, or a signed-in person's session, which acts for their
+// login. A request that offers a key is judged on the key alone; another kind
+// of Authorization header, such as a proxy's own, is not Town's to judge.
+func (s *Server) authenticate(r *http.Request) (string, bool) {
+	if provided, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		return "", s.Token != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(s.Token)) == 1
+	}
+	if s.Auth == nil {
+		return "", false
+	}
+	return s.Auth.Login(r)
+}
+
+// session tells the browser who it is signed in as. An empty login is the
+// access key.
+func (s *Server) session(w http.ResponseWriter, r *http.Request) {
+	respond(w, map[string]any{"login": actor(r), "sign_in": s.Auth != nil})
 }
 
 func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
@@ -215,14 +278,7 @@ func (s *Server) outcomeJudgment(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
-	err := s.Store.Update(func(state *town.State) error {
-		current := state.Towns[strings.ToLower(input.Town)]
-		if current == nil || current.Deleted {
-			return fmt.Errorf("unknown repository")
-		}
-		return current.JudgeOutcome(input.Outcome, input.Value, input.Explanation, time.Now())
-	})
-	if err != nil {
+	if err := s.act(r).JudgeOutcome(strings.ToLower(input.Town), input.Outcome, input.Value, input.Explanation); err != nil {
 		problem(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -317,7 +373,7 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 			problem(w, "resume time must be an RFC 3339 timestamp such as 2026-01-02T15:04:05Z", 400)
 			return
 		}
-		if err := s.Supervisor.Defer(input.Town, input.Task, until, input.Reason); err != nil {
+		if err := s.act(r).Defer(input.Town, input.Task, until, input.Reason); err != nil {
 			problem(w, err.Error(), 400)
 			return
 		}
@@ -328,7 +384,7 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 		problem(w, "until and reason apply only to the defer action", 400)
 		return
 	}
-	if err := s.Supervisor.Control(input.Town, input.Role, input.Action, input.Task); err != nil {
+	if err := s.act(r).Control(input.Town, input.Role, input.Action, input.Task); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}
@@ -348,7 +404,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		problem(w, "Use a live service to add real repositories", 400)
 		return
 	}
-	id, err := s.Supervisor.AddRepo(input.Repo, input.MergePolicy, input.Agent)
+	id, err := s.act(r).AddRepo(input.Repo, input.MergePolicy, input.Agent)
 	if err != nil {
 		problem(w, err.Error(), 400)
 		return
@@ -399,7 +455,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	edits := town.TownSettings{MergePolicy: input.MergePolicy, SimplifierMode: input.SimplifierMode, CloseSeverity: input.ReviewCloseSeverity, Budget: input.Budget, WorkPolicy: input.WorkPolicy, QuietHours: input.QuietHours}
-	if err := s.Supervisor.ApplySettings(input.Town, input.Role, input.Agent, edits); err != nil {
+	if err := s.act(r).ApplySettings(input.Town, input.Role, input.Agent, edits); err != nil {
 		problem(w, err.Error(), 400)
 		return
 	}
@@ -512,7 +568,7 @@ func (s *Server) submitRequest(w http.ResponseWriter, r *http.Request) {
 		rejectInput(w, err)
 		return
 	}
-	result, err := s.Supervisor.SubmitRequest(input.Town, town.IssueRequest{ID: input.ID, Kind: input.Kind, Title: input.Title, Body: input.Body})
+	result, err := s.act(r).SubmitRequest(input.Town, town.IssueRequest{ID: input.ID, Kind: input.Kind, Title: input.Title, Body: input.Body})
 	if err != nil {
 		problem(w, err.Error(), 400)
 		return

@@ -519,6 +519,18 @@ input[type="checkbox"] {
   padding-left: 10px;
   border-left: 1px solid var(--line);
 }
+.signed-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+.signed-in[hidden] {
+  display: none;
+}
 .mode-chip {
   padding: 2px 8px;
   border-radius: 999px;

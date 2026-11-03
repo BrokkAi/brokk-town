@@ -21,6 +21,9 @@ type IssueRequest struct {
 	Detail  string    `json:"detail,omitempty"`
 	Created time.Time `json:"created"`
 	Next    time.Time `json:"next,omitempty"`
+	// RequestedBy is the GitHub login of the signed-in person who submitted
+	// the request; empty for the local access key. The issue names them.
+	RequestedBy string `json:"requested_by,omitempty"`
 }
 
 func (r IssueRequest) validate() error {
@@ -36,6 +39,9 @@ func (r IssueRequest) validate() error {
 	if strings.TrimSpace(r.Body) == "" || len(r.Body) > 30000 || strings.ContainsRune(r.Body, 0) || hasMarker(r.Body, "<!-- brokk-town-request:") {
 		return errors.New("describe the request in 1–30000 bytes, without Town's reserved markers")
 	}
+	if r.RequestedBy != "" && !ValidLogin(r.RequestedBy) {
+		return errors.New("invalid requester")
+	}
 	return nil
 }
 
@@ -45,7 +51,11 @@ func (r IssueRequest) githubBody() string {
 	if r.Kind == "bug" {
 		heading = "Bug report"
 	}
-	return "## " + heading + "\n\n" + r.Body + "\n\n" + requestMarker(r.ID)
+	body := "## " + heading + "\n\n" + r.Body + "\n\n"
+	if r.RequestedBy != "" {
+		body += "Requested by @" + r.RequestedBy + " through Brokk Town.\n\n"
+	}
+	return body + requestMarker(r.ID)
 }
 
 type IssuePublisher interface {
@@ -77,7 +87,8 @@ func (g GitHubClient) FindRequest(ctx context.Context, repo, id string) (*Remote
 	return found, nil
 }
 
-func (s *Supervisor) SubmitRequest(id string, input IssueRequest) (*IssueRequest, error) {
+func (a Acting) SubmitRequest(id string, input IssueRequest) (*IssueRequest, error) {
+	s := a.s
 	input.Title, input.Body = strings.TrimSpace(input.Title), strings.TrimSpace(input.Body)
 	if err := input.validate(); err != nil {
 		return nil, err
@@ -107,12 +118,12 @@ func (s *Supervisor) SubmitRequest(id string, input IssueRequest) (*IssueRequest
 		if pending >= 50 {
 			return errors.New("finish or reconcile pending submissions before adding more")
 		}
-		r := &IssueRequest{ID: input.ID, Kind: input.Kind, Title: input.Title, Body: input.Body, Created: s.now(), Status: "queued"}
+		r := &IssueRequest{ID: input.ID, Kind: input.Kind, Title: input.Title, Body: input.Body, Created: s.now(), Status: "queued", RequestedBy: a.actor}
 		if t.Requests == nil {
 			t.Requests = map[string]*IssueRequest{}
 		}
 		t.Requests[r.ID] = r
-		st.Event(id, "request", "operator", "hall", "", "Issue submission queued: "+r.Title, s.now())
+		st.Acted(id, "request", a.actor, "hall", "", "Issue submission queued: "+r.Title, s.now())
 		if st.Demo {
 			n := 10000
 			for t.Tasks[fmt.Sprintf("issue:%d", n)] != nil {

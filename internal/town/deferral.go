@@ -24,7 +24,7 @@ const (
 
 // deferTask sets, or with a zero until clears, the operator's snooze on one
 // task. Clearing wakes the task's house so the task is eligible at once.
-func (s *State) deferTask(t *Town, task *Task, until time.Time, reason string, now time.Time) error {
+func (s *State) deferTask(actor string, t *Town, task *Task, until time.Time, reason string, now time.Time) error {
 	if task == nil {
 		return errors.New("unknown task")
 	}
@@ -40,7 +40,7 @@ func (s *State) deferTask(t *Town, task *Task, until time.Time, reason string, n
 		if w := t.Workers[task.House]; w != nil {
 			w.Next = time.Time{}
 		}
-		s.Event(t.ID, "control", "operator", string(task.House), task.ID, "Snooze cleared: "+task.Title, now)
+		s.Acted(t.ID, "control", actor, string(task.House), task.ID, "Snooze cleared: "+task.Title, now)
 		return nil
 	}
 	if finished(task) {
@@ -59,7 +59,7 @@ func (s *State) deferTask(t *Town, task *Task, until time.Time, reason string, n
 	task.DeferredUntil, task.DeferReason = until.UTC(), reason
 	task.Updated = now
 	title := "Snoozed until " + until.UTC().Format(time.RFC3339) + ": " + task.Title
-	s.Event(t.ID, "control", "operator", string(task.House), task.ID, title, now)
+	s.Acted(t.ID, "control", actor, string(task.House), task.ID, title, now)
 	return nil
 }
 
@@ -125,13 +125,14 @@ func expireDeferrals(st *State, now time.Time) {
 // Defer snoozes one task until the given time with a short reason; a zero
 // until clears the snooze. It commits through the same store update as every
 // other operator control and wakes the scheduler.
-func (s *Supervisor) Defer(id, taskID string, until time.Time, reason string) error {
+func (a Acting) Defer(id, taskID string, until time.Time, reason string) error {
+	s := a.s
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
 			return errors.New("unknown repository")
 		}
-		return st.deferTask(t, t.Tasks[taskID], until, reason, s.now())
+		return st.deferTask(a.actor, t, t.Tasks[taskID], until, reason, s.now())
 	})
 	if err != nil {
 		return err

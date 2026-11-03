@@ -44,7 +44,7 @@ func (s *Server) guide(w http.ResponseWriter, r *http.Request) {
 				err = s.Supervisor.CancelGuide(input.Town, input.ID)
 			}
 		} else {
-			err = s.Supervisor.ConfirmGuide(input.Town, input.ID, input.Digest)
+			err = s.act(r).ConfirmGuide(input.Town, input.ID, input.Digest)
 		}
 	default:
 		err = errors.New("unknown guide action")

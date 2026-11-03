@@ -200,7 +200,9 @@ bounded (the most recent 512) and carry a sequence, time, `town` (the
 repository id), kind, from/to bots, cargo and title. The browser's Activity
 feed reads them from the same committed state: a handoff names both bots, with
 "External" for a submission from outside (`outside`) and "You" for your own
-action (`operator`).
+action (`operator`). When people [sign in](configuration.md#sign-in), an event
+from a person's action also carries `actor`, their GitHub login, and Activity
+names them; the viewer's own actions still read "You".
 
 ## Glossary
 

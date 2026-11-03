@@ -66,7 +66,8 @@ func (c Config) ExecutionRuntimeForRole(role Role) *mjolnir.RuntimePin {
 // catalog refresh. The network read happens outside the store/render lock;
 // compare the selection again before saving so a slow read cannot pin a new
 // placement accidentally. Existing dispatches keep their copied receipts.
-func (s *Supervisor) SelectExecutionRuntime(ctx context.Context, id string, role Role, session string) error {
+func (a Acting) SelectExecutionRuntime(ctx context.Context, id string, role Role, session string) error {
+	s := a.s
 	id = strings.ToLower(id)
 	if role != "" && !ValidAgentRole(role) {
 		return errors.New("invalid execution role")
@@ -96,7 +97,7 @@ func (s *Supervisor) SelectExecutionRuntime(ctx context.Context, id string, role
 			current.Config.ExecutionRuntimes = map[string]mjolnir.RuntimePin{}
 		}
 		current.Config.ExecutionRuntimes[runtimeSelectionKey(selection)] = pin
-		st.Event(id, "settings", "operator", "hall", "", "Mjolnir runtime selected for future work", s.now())
+		st.Acted(id, "settings", a.actor, "hall", "", "Mjolnir runtime selected for future work", s.now())
 		return nil
 	})
 	if err == nil {
@@ -108,7 +109,8 @@ func (s *Supervisor) SelectExecutionRuntime(ctx context.Context, id string, role
 // SetExecution saves only catalog references. A nil selection resets the town
 // to direct local execution, or removes a bot override. Stale options can be
 // selected: availability is advisory, never authority to launch work.
-func (s *Supervisor) SetExecution(id string, role Role, selection *mjolnir.Selection) error {
+func (a Acting) SetExecution(id string, role Role, selection *mjolnir.Selection) error {
+	s := a.s
 	id = strings.ToLower(id)
 	if role != "" && !ValidAgentRole(role) {
 		return errors.New("invalid execution role")
@@ -148,7 +150,7 @@ func (s *Supervisor) SetExecution(id string, role Role, selection *mjolnir.Selec
 		if target == "" {
 			target = "hall"
 		}
-		st.Event(id, "settings", "operator", target, "", "Execution selection saved for future work", s.now())
+		st.Acted(id, "settings", a.actor, target, "", "Execution selection saved for future work", s.now())
 		return nil
 	})
 	if err == nil {

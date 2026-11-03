@@ -190,15 +190,16 @@ func (s *Supervisor) prepareAgent(c Config, settings AgentSettings) (Config, err
 // Add establishes a town from a complete configuration. A deleted town is
 // restored under that configuration.
 func (s *Supervisor) Add(c Config) (string, error) {
-	return s.add(c.Repo, func(*Town) (Config, error) { return s.Prepare(c, AgentSettings{}) })
+	return s.add("", c.Repo, func(*Town) (Config, error) { return s.Prepare(c, AgentSettings{}) })
 }
 
 // AddRepo is the operator's add request: only a non-empty merge policy and the
 // agent settings are supplied. A new town starts from the defaults; a deleted
 // town is restored with those settings applied over the ones it kept, so its
 // budget, work policies, bot profiles and funnels survive.
-func (s *Supervisor) AddRepo(repo, mergePolicy string, settings AgentSettings) (string, error) {
-	return s.add(repo, func(existing *Town) (Config, error) {
+func (a Acting) AddRepo(repo, mergePolicy string, settings AgentSettings) (string, error) {
+	s := a.s
+	return s.add(a.actor, repo, func(existing *Town) (Config, error) {
 		cfg := DefaultConfig(repo)
 		if existing != nil {
 			cfg = clone(existing.Config)
@@ -210,7 +211,7 @@ func (s *Supervisor) AddRepo(repo, mergePolicy string, settings AgentSettings) (
 	})
 }
 
-func (s *Supervisor) add(repo string, prepare func(existing *Town) (Config, error)) (string, error) {
+func (s *Supervisor) add(actor, repo string, prepare func(existing *Town) (Config, error)) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := strings.ToLower(repo)
@@ -239,13 +240,14 @@ func (s *Supervisor) add(repo string, prepare func(existing *Town) (Config, erro
 		if existing != nil {
 			title = "Repository restored with the new settings; recovery records retained"
 		}
-		st.Event(t.ID, "town", "operator", "repo", "", title, s.now())
+		st.Acted(t.ID, "town", actor, "repo", "", title, s.now())
 		return nil
 	})
 	return id, err
 }
 
-func (s *Supervisor) Delete(id string) error {
+func (a Acting) Delete(id string) error {
+	s := a.s
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.Store.Update(func(st *State) error {
@@ -263,7 +265,7 @@ func (s *Supervisor) Delete(id string) error {
 				r.Detail = "Submission canceled when the repository was deleted."
 			}
 		}
-		st.Event(id, "town", "operator", "hall", "", "Repository deleted; recovery records retained", s.now())
+		st.Acted(id, "town", a.actor, "hall", "", "Repository deleted; recovery records retained", s.now())
 		return nil
 	}); err != nil {
 		return err
@@ -329,7 +331,8 @@ func (s *Supervisor) SettingsForRoleAndPolicy(id string, role Role, settings Age
 
 // ApplySettings commits one agent profile edit and any town-wide edits in a
 // single transaction.
-func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings, edits TownSettings) error {
+func (a Acting) ApplySettings(id string, role Role, settings AgentSettings, edits TownSettings) error {
+	s := a.s
 	mergePolicy, simplifierMode, closeSeverity := edits.MergePolicy, edits.SimplifierMode, edits.CloseSeverity
 	if err := settings.validateRole(role); err != nil {
 		return err
@@ -435,7 +438,7 @@ func (s *Supervisor) ApplySettings(id string, role Role, settings AgentSettings,
 				title = string(role) + " now inherits the repository agent defaults"
 			}
 		}
-		st.Event(id, "settings", "operator", target, "", title, s.now())
+		st.Acted(id, "settings", a.actor, target, "", title, s.now())
 		return nil
 	})
 	if err != nil {

@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BrokkAi/brokk-town/internal/auth"
 	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 	"github.com/BrokkAi/brokk-town/internal/town"
@@ -315,6 +316,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 		fmt.Fprintf(os.Stderr, "bt: %s\n", notice)
 	}
 	var fileBots map[town.Role]fileBot
+	var signIn *auth.Config
 	if configFile != "" {
 		data, e := os.ReadFile(configFile)
 		if e != nil {
@@ -325,6 +327,7 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 			return e
 		}
 		fileBots = service.Bots
+		signIn = service.Auth
 		if demo {
 			return errors.New("real config is not accepted in demo mode")
 		}
@@ -438,6 +441,11 @@ func serve(ctx context.Context, dir, address string, demo bool, configFile, publ
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Local: conn.Local, Version: buildVersion(), TaskGitHub: gh, Shutdown: func() { cancel(context.Canceled) }}
+	if signIn != nil {
+		if server.Auth, err = auth.New(*signIn, conn.URL, dir); err != nil {
+			return err
+		}
+	}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
 	results := make(chan error, 3)
 	remaining := 2
@@ -490,13 +498,13 @@ func serviceOrigin(address, publicURL string) (string, error) {
 		return "", loopbackAddress(address)
 	}
 	parsed, err := url.Parse(publicURL)
-	if err != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.Path != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", errors.New("--public-url must be http://host:port, the address the browser uses")
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("--public-url must be http://host:port or https://host, the address the browser uses")
 	}
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		return "", err
 	}
-	return "http://" + parsed.Host, nil
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 // loopbackAddress rejects anything but a literal loopback IP. The service has
@@ -556,6 +564,8 @@ type fileService struct {
 	QuietHours *[]town.QuietWindow
 	// Bots names the address of each role's bot that runs elsewhere.
 	Bots map[town.Role]fileBot
+	// Auth, when present, lets people sign in with GitHub.
+	Auth *auth.Config
 }
 
 func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
@@ -566,6 +576,7 @@ func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
 		QuietHours    json.RawMessage `json:"quiet_hours"`
 		Towns         json.RawMessage `json:"towns"`
 		Bots          json.RawMessage `json:"bots"`
+		Auth          json.RawMessage `json:"auth"`
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
@@ -625,6 +636,21 @@ func decodeConfigFile(data []byte) ([]townEntry, fileService, error) {
 	}
 	if service.Bots, err = decodeFileBots(file.Bots); err != nil {
 		return nil, none, err
+	}
+	if len(file.Auth) > 0 {
+		var signIn *auth.Config
+		ad := json.NewDecoder(bytes.NewReader(file.Auth))
+		ad.DisallowUnknownFields()
+		if err := ad.Decode(&signIn); err != nil {
+			return nil, none, fmt.Errorf("auth: %w", err)
+		}
+		if signIn == nil {
+			return nil, none, errors.New("auth must be an object with github")
+		}
+		if err := signIn.Validate(); err != nil {
+			return nil, none, err
+		}
+		service.Auth = signIn
 	}
 	return towns, service, nil
 }

@@ -1169,18 +1169,18 @@ func closableDecline(task *Task) bool {
 	}
 	return task.MayoralDecision == "" && task.House == Hall && autoDeclined(task) && (task.Stage == "declined" || task.Stage == "closing" || task.Stage == "locked")
 }
-func (s *Supervisor) Control(id string, role Role, action, taskID string) error {
-	return s.control(id, role, action, taskID, nil)
+func (a Acting) Control(id string, role Role, action, taskID string) error {
+	return a.s.control(a.actor, id, role, action, taskID, nil)
 }
-func (s *Supervisor) control(id string, role Role, action, taskID string, guard func(*Town) error) error {
+func (s *Supervisor) control(actor, id string, role Role, action, taskID string, guard func(*Town) error) error {
 	if action == "delete" {
 		if role != "all" {
 			return errors.New("delete applies to the entire repository")
 		}
-		return s.Delete(id)
+		return s.As(actor).Delete(id)
 	}
 	if action == "undefer" {
-		return s.Defer(id, taskID, time.Time{}, "")
+		return s.As(actor).Defer(id, taskID, time.Time{}, "")
 	}
 	if action == "defer" {
 		return errors.New("a snooze needs a resume time")
@@ -1193,7 +1193,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 		return errors.New("unknown role")
 	}
 	if action == "retry" && taskID == "" && role == Release {
-		return s.retryRelease(id)
+		return s.retryRelease(actor, id)
 	}
 	if action == "retry" {
 		state := s.Store.Snapshot()
@@ -1207,7 +1207,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 		}
 		if task.Kind == "issue" && !state.Demo {
 			if _, ok := s.Workers.(IssueRetrier); ok {
-				return s.retryIssueTask(id, taskID)
+				return s.retryIssueTask(actor, id, taskID)
 			}
 		}
 	}
@@ -1222,7 +1222,12 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 			}
 		}
 		if decision {
-			return st.decideTask(t, t.Tasks[taskID], action, "You", s.now())
+			since := st.Seq
+			if err := st.decideTask(t, t.Tasks[taskID], action, s.As(actor).decider(), s.now()); err != nil {
+				return err
+			}
+			st.attribute(since, actor)
+			return nil
 		}
 		if action == "retry" {
 			task := t.Tasks[taskID]
@@ -1230,7 +1235,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 				return errors.New("unknown task")
 			}
 			resetTaskForRetry(t, task)
-			st.Event(id, "control", "operator", string(task.House), task.ID, "retry "+task.ID, s.now())
+			st.Acted(id, "control", actor, string(task.House), task.ID, "retry "+task.ID, s.now())
 			return nil
 		}
 		for _, r := range Roles {
@@ -1270,7 +1275,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 				w.Status = "paused"
 			}
 		}
-		st.Event(id, "control", "operator", string(role), "", action+" "+string(role), s.now())
+		st.Acted(id, "control", actor, string(role), "", action+" "+string(role), s.now())
 		return nil
 	})
 	if errors.Is(err, errGuideAlreadyConfirmed) {
@@ -1298,7 +1303,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 // retryRelease asks the next release dispatch to lift the release bot's
 // exhausted attempt budget through the bot's own retry. Town never edits the
 // bot's private state itself; the bot resets it and the same run resumes the job.
-func (s *Supervisor) retryRelease(id string) error {
+func (s *Supervisor) retryRelease(actor, id string) error {
 	return s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
 		if t == nil || t.Deleted {
@@ -1317,7 +1322,7 @@ func (s *Supervisor) retryRelease(id string) error {
 		w.Error = ""
 		w.Status = "waiting"
 		w.Task = "Retry requested: the next release run resets the release bot's attempt budget"
-		st.Event(id, "control", "operator", string(Release), "", "retry release", s.now())
+		st.Acted(id, "control", actor, string(Release), "", "retry release", s.now())
 		return nil
 	})
 }
@@ -1383,7 +1388,7 @@ func botName(role Role) string {
 	return houseName(role) + " Bot"
 }
 
-func (s *Supervisor) retryIssueTask(id, taskID string) error {
+func (s *Supervisor) retryIssueTask(actor, id, taskID string) error {
 	retrier, ok := s.Workers.(IssueRetrier)
 	if !ok {
 		return errors.New("issue worker durable retry support changed")
@@ -1439,7 +1444,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 				return errors.New("issue task changed while committing retry")
 			}
 			resetTaskForRetry(current, currentTask)
-			st.Event(id, "control", "operator", string(currentTask.House), currentTask.ID, "retry "+currentTask.ID, s.now())
+			st.Acted(id, "control", actor, string(currentTask.House), currentTask.ID, "retry "+currentTask.ID, s.now())
 			return nil
 		})
 		s.mu.Unlock()
@@ -1494,7 +1499,7 @@ func (s *Supervisor) retryIssueTask(id, taskID string) error {
 			return errors.New("issue task changed while committing retry")
 		}
 		resetTaskForRetry(current, currentTask)
-		st.Event(id, "control", "operator", string(currentTask.House), currentTask.ID, "retry "+currentTask.ID, s.now())
+		st.Acted(id, "control", actor, string(currentTask.House), currentTask.ID, "retry "+currentTask.ID, s.now())
 		return nil
 	})
 }
