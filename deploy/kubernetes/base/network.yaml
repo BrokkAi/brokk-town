@@ -1,0 +1,38 @@
+# Only Town reaches the bots; probes from the node are unaffected.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bots-accept-only-town
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: bot
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: bt
+      ports:
+        - port: 8080
+---
+# Only the bots reach Town's managed-review callback; the browser port is
+# reached through kubectl port-forward.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: town-callback-only-from-bots
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bt
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: bot
+      ports:
+        - port: 8091
+    - ports:
+        - port: 8080

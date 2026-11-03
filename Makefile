@@ -1,6 +1,11 @@
-.PHONY: build test js check
-build:
+BOTS := bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot
+
+.PHONY: build bots test js check images
+# bt starts the bot binaries it finds next to itself, so they build together.
+build: bots
 	go build -o bin/bt ./cmd/bt
+bots:
+	@for bot in $(BOTS); do go build -o bin/$$bot ./cmd/$$bot || exit 1; done
 test:
 	go test -race ./...
 	$(MAKE) js
@@ -9,3 +14,6 @@ js:
 	node --test internal/web/*.test.js
 check: test
 	go vet ./...
+# One image per bot plus Town's, all from the one Dockerfile.
+images:
+	docker compose build

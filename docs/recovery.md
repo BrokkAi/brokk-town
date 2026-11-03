@@ -26,6 +26,33 @@ placement and pinned runtime when one was in use. Cancellation records the cause
 (operator stop, service shutdown, worker detail, or unknown) and the last known
 phase in the durable log and outcome history.
 
+## Runs on a bot over the network
+
+Every bot runs in its own process, so Town and a bot can stop independently.
+The rule is the same as for any interrupted run: a run the bot may have acted
+on, whose result Town did not receive whole, becomes a recovery hold.
+
+- **Town stops or restarts** (`bt shutdown`, SIGTERM, a pod rescheduled). Town
+  cancels its runs: it asks each bot to stop the run, waits up to 30 seconds
+  for the result the bot completed (its transcripts are recorded), then
+  records the run as interrupted, which is a recovery hold. If Town dies
+  without stopping, its connection to the bot closes, which also stops the run
+  on the bot; the open `run` in `state.json` becomes a hold at the next
+  startup. A restarted Town never reattaches to a run it lost.
+- **A bot stops, restarts or loses its connection mid-run.** A bot that shuts
+  down (a rollout, `docker compose restart`) stops its runs and reports each as
+  cut short, with what it completed; a bot that dies leaves the stream without
+  a result, or silent for a minute. Either way the run becomes a hold.
+- **A bot answers something the contract forbids** — frames out of order, an
+  oversized event, more after the result, the wrong bot's identity. The run
+  becomes a hold.
+- **A bot cannot be reached, or refuses the request** (wrong token, a request it
+  rejects). Town learns this before the bot acts: the dispatch fails with the
+  reason, the bot backs off, and no hold is recorded. Before each dispatch Town
+  asks the bot for its identity, so an absent bot is caught there.
+- **A transcript removal whose answer is lost** reports `uncertain`; refresh the
+  Storage inventory to see what was removed.
+
 ## Resolving a hold
 
 1. Check GitHub and the bot's saved state for evidence of the write.
@@ -66,7 +93,8 @@ write.
 
 Opening the store repairs what is safely repairable and reports the rest:
 
-- Open runs become recovery holds.
+- Open runs become recovery holds, including runs on a bot in another process
+  or container.
 - An Assistant turn that was gathering or answering is marked `interrupted`
   and can be re-asked.
 - A known obsolete startup failure — a default-branch error written by an older

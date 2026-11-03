@@ -6,36 +6,41 @@ Instructions for automated and human contributors working in this repository.
 
 Brokk Town is one Go module. `cmd/bt` is the service: an embedded browser UI
 and a small process-control CLI. The eight bots live under `bots/` as packages
-of this module, and the service reaches them only through the bot contract in
-`internal/botapi`: a JSON request naming the workspace (repository key and
-role, never a path), progress and log events, and a typed result. The bots are
-heading into their own binaries and container images, so the service must not
-depend on sharing a process, filesystem, `PATH` or `gh` login with them. Today
-`cmd/bt` still hosts them in process through the registry in `bots/inprocess.go`.
+of this module, and each runs as its own binary (`cmd/<bot>`) and container
+image. The service reaches them only over the network through the bot contract
+in `internal/botapi`: a JSON request naming the workspace (repository key and
+role, never a path), a stream of progress and log events, and a typed result.
+The service must not depend on sharing a process, filesystem, `PATH` or `gh`
+login with a bot. On one machine `bt` starts the bot binaries itself on
+loopback (`internal/botlaunch`); docker compose and Kubernetes give it each
+bot's URL and token.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `cmd/bt` | Service entry point, process-control CLI, background start. |
+| `cmd/bt` | Service entry point, process-control CLI, background start, bot endpoints. |
+| `cmd/<bot>` | One binary per bot, serving it over the network contract. |
 | `cmd/townsim` | A stochastic scheduler model used to sanity-check defaults. |
 | `internal/town` | State model, store, supervisor, scheduling, funnels, recovery, storage. |
-| `internal/botapi` | The bot contract: request, events, result and storage operations, plus the bot-side worker every bot runs. |
+| `internal/botapi` | The bot contract: request, events, result and storage operations, plus the bot-side worker every bot runs. `botserver` serves it over HTTP, `botclient` reaches it. |
+| `internal/botlaunch` | Starts, restarts and stops the bot binaries on loopback for `bt`. |
 | `internal/artifact` | Path-safety, measuring and digest checks shared by the service and the bots. |
 | `internal/web` | HTTP server, embedded assets and the browser UI. |
 | `internal/harness` | ACP harness catalog, download and launch. |
 | `internal/mjolnir` | Mjolnir catalog, profiles, runtime pins, remote runs and evidence. |
 | `internal/guide` | Assistant agent session. |
 | `internal/durable`, `internal/filelock`, `internal/osrun` | Durable writes, locking and process control. |
-| `bots/*` | One package per bot; each owns its prompt, config, durable state and its `worker.go` adapter onto the contract. `bots/inprocess.go` is the registry. |
-| `scripts/` | Generates the license file attached to a release. |
+| `bots/*` | One package per bot; each owns its prompt, config, durable state and its `worker.go` adapter onto the contract. `bots/inprocess.go` hosts them in a test's process. |
+| `Dockerfile`, `docker-compose*.yml`, `deploy/kubernetes/` | Images (one target per bot and `bt`), the compose deployment and the Kubernetes manifests. |
+| `scripts/` | Generates the license file attached to a release; checks a demo deployment's bots. |
 | `docs/` | Operator and developer documentation. |
 | `licenses/` | Generated third-party notices and supplementary license texts. |
 
 ## Build and test
 
 ```sh
-make build     # go build -o bin/bt ./cmd/bt
+make build     # bin/bt and the eight bot binaries
 make test      # go test -race ./... and the browser JavaScript tests
 make js        # node --check every browser source, then node --test
 make check     # full gate: race tests, browser tests and vet
@@ -52,7 +57,9 @@ make js                                # browser JavaScript
 
 CI (`.github/workflows/ci.yml`) runs the race-enabled Go checks on Linux for
 pull requests and on Linux and macOS for `master`, a build, vet and test pass
-on Windows for `master`, plus the browser and workflow-lint checks.
+on Windows for `master`, plus the browser and workflow-lint checks. Its
+`deploy` job builds every image and checks that a demo Town reaches all eight
+bots under docker compose and on a kind cluster.
 
 ## Working rules
 
@@ -74,11 +81,15 @@ on Windows for `master`, plus the browser and workflow-lint checks.
 - Wrap errors with context: `fmt.Errorf("...: %w", err)`. Return errors; do not
   panic outside `main`/startup.
 - Reach a bot only through `internal/botapi`. Outside tests, only
-  `bots/inprocess.go` and `cmd/bt/bots.go` may import a bot package (a test
-  enforces it); Town's integration tests host the real bots through
-  `inProcessBots`. The service
-  never reads a bot's files, sends it a host path, or resolves a command for it
-  to run: it sends a harness selection and the bot resolves it where it runs.
+  `bots/inprocess.go` and each `cmd/<bot>/main.go` (for its own bot) may import
+  a bot package (a test enforces it); Town's integration tests host the real
+  bots through `inProcessBots`, and its network tests through `botserver` and
+  `botclient`. The service never reads a bot's files, sends it a host path, or
+  resolves a command for it to run: it sends a harness selection and the bot
+  resolves it where it runs.
+- A change to the contract must work over the network: values are plain JSON,
+  bounded, and an older peer must not misread them (raise `botapi.Version` if it
+  would). Never log a bot token or a callback token.
 - Keep state changes inside `Store.Update`. Durable writes go through
   `internal/durable`; never write `state.json` directly.
 - Validate anything that enters persisted state, and keep private data (tokens,

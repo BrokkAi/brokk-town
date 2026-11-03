@@ -26,6 +26,7 @@ func handle(ctx context.Context, job botapi.Job) (botapi.Result, error) {
 	cfg.StateDirectory = job.StateDirectory
 	cfg.Agent = job.Launch
 	cfg.RemoteAgent = job.RemoteAgent
+	cfg.RemoteAgentToken = job.RemoteAgentToken
 	cfg.DryRun = job.DryRun
 	cfg.GitHub.Repo = job.Repo
 	cfg.GitHub.Host = job.Host

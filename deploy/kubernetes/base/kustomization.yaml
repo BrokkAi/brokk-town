@@ -1,0 +1,29 @@
+# Brokk Town on Kubernetes: Town (bt) and each bot in its own Deployment with
+# its own volume. Generate the secrets first:
+#
+#   deploy/kubernetes/generate-secrets.sh
+#   kubectl apply -k deploy/kubernetes/base
+#
+# See docs/operations.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: brokk-town
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: brokk-town
+resources:
+  - namespace.yaml
+  - bt.yaml
+  - bots.yaml
+  - network.yaml
+secretGenerator:
+  # One bearer token per bot, keyed by the bot's name.
+  - name: brokk-town-bot-tokens
+    envs: [bot-tokens.env]
+    options:
+      disableNameSuffixHash: true
+  # GH_TOKEN and the agent harnesses' API keys, given to Town and every bot.
+  - name: brokk-town-credentials
+    envs: [credentials.env]
+    options:
+      disableNameSuffixHash: true

@@ -176,6 +176,31 @@ Managed review and managed issue repair are supported. Other duties show an
 explicit hold until you select direct local execution. See
 [mjolnir.md](mjolnir.md).
 
+## Bot endpoints
+
+Town reaches each bot over the network. A bot with a URL is reached at that
+URL; every other bot is started by `bt` from the binaries installed beside it
+(see [operations.md](operations.md#bots)). These are process settings, read at
+startup from the environment or the config file's `bots` object; they are not
+stored in the state directory and not shown in the browser.
+
+| Environment variable | Meaning |
+| --- | --- |
+| `BROKK_TOWN_BOT_<ROLE>_URL` | The bot's base URL, `http(s)://host:port`. `<ROLE>` is the upper-case role key: `BUG`, `FEATURE`, `ISSUE`, `REVIEW`, `RELEASE`, `SIMPLIFIER`, `REPO`, `HALL`. |
+| `BROKK_TOWN_BOT_<ROLE>_TOKEN_FILE` | File holding the bot's bearer token, such as a mounted secret. |
+| `BROKK_TOWN_BOT_<ROLE>_TOKEN` | The token itself, when no file is given. |
+| `BROKK_TOWN_BOT_CA_FILE` | PEM certificates to trust for `https` bot URLs. When set, only these are trusted. |
+| `BROKK_TOWN_BOT_DIR` | Where `bt` finds the bot binaries it starts. Default: the directory `bt` is in. |
+| `BROKK_TOWN_CALLBACK_URL` | The address bots use to reach Town's managed-review callback, such as `http://bt:8091`, with no path. Required for managed reviews when Review Bot is remote. |
+| `BROKK_TOWN_CALLBACK_LISTEN` | Where Town listens for that callback. Default `:8091` when a callback URL is set; otherwise a loopback port that bots `bt` started can reach. |
+| `BROKK_TOWN_CALLBACK_TLS_CERT`, `BROKK_TOWN_CALLBACK_TLS_KEY` | Serve the callback over HTTPS. |
+
+A URL without a token stops startup. A bot that `bt` starts never inherits these
+variables, so it never sees another bot's token. An environment variable outranks the
+config file. Each managed review mints its own callback token and route, valid
+only while that review runs. The bot side of these settings is in
+[bots.md](bots.md#bot-binaries).
+
 ## Config file
 
 `bt --config FILE` seeds settings at startup. Two shapes are accepted.
@@ -195,11 +220,19 @@ explicit hold until you select direct local execution. See
   "max_workers": 4,
   "quiet_hours": [{ "days": ["sat", "sun"], "start": "00:00", "end": "24:00" }],
   "attention_hook": { "enabled": false },
+  "bots": {
+    "review": { "url": "https://review-bot.internal:8443", "token_file": "/run/secrets/review-bot-token", "ca_file": "/etc/brokk/ca.pem" }
+  },
   "towns": [
     { "repo": "OWNER/REPO", "branch": "main", "merge_policy": "bot", "poll_seconds": 60, "report_seconds": 1800, "max_cycles": 5 }
   ]
 }
 ```
+
+`bots` is keyed by role key. Each entry needs `url`; `token_file` and
+`ca_file` are optional and take the place of the matching environment
+variables in [Bot endpoints](#bot-endpoints). The config file never holds a
+token itself.
 
 Rules:
 

@@ -19,6 +19,8 @@ type cliFlags struct {
 	demo   *bool
 	config *string
 	json   *bool
+	// publicURL is the browser's address for a service in a container.
+	publicURL *string
 }
 
 // addCLIFlags defines the process and connection flags shared by the small
@@ -30,6 +32,7 @@ func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address to serve on")
 	fl.demo = fs.Bool("demo", false, "the isolated demo (simulated repositories)")
 	fl.config = fs.String("config", "", "optional JSON array or object with max_workers, quiet_hours and towns, applied at startup")
+	fl.publicURL = fs.String("public-url", "", "the http://host:port browsers use when Town runs in a container; allows --listen on any interface")
 	fl.json = fs.Bool("json", false, "print the full Town state as JSON (status)")
 	return fl
 }
@@ -47,7 +50,7 @@ type commandInfo struct {
 var globalFlagNames = []string{"demo", "state-dir"}
 
 // runFlagNames start Town: bare bt in the foreground, or bt -d.
-var runFlagNames = []string{"config", "d", "listen"}
+var runFlagNames = []string{"config", "d", "listen", "public-url"}
 
 // rootCommand is bare bt, which runs Town rather than a client command.
 var rootCommand = commandInfo{flags: runFlagNames}

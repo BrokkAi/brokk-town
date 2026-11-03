@@ -1,7 +1,7 @@
 # Contributing to Brokk Town
 
 Thanks for helping. Brokk Town is one Go module that runs a local service, an
-embedded browser UI and eight in-process bots. This document covers the working
+embedded browser UI and eight bots, each its own binary. This document covers the working
 agreement; [AGENTS.md](AGENTS.md) has the same material in a shorter form for
 automated contributors.
 

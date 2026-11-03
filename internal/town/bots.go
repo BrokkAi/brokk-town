@@ -11,9 +11,54 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/botapi"
 )
 
-// botVersion is the identity Town records for a dispatch. The bot contract
-// does not report a release yet, so every dispatch records this placeholder.
+// botVersion is the version Town records for a bot that cannot report one,
+// such as a test double hosted in Town's own process.
 const botVersion = "0.0.0"
+
+// BotName is the name of the bot that serves a role, such as "review-bot".
+func BotName(role Role) string { return workerBotNames[role] }
+
+// botIdentity asks the role's bot who it is before Town records a dispatch to
+// it. A bot that cannot answer has not been sent the work, so the dispatch
+// fails without an uncertain outcome. A demo bot only ever answers a demo
+// service, and a demo service only ever dispatches to a demo bot.
+func (b *BotWorkers) botIdentity(ctx context.Context, role Role) (string, error) {
+	identifier, ok := b.Bots[role].(botapi.Identifier)
+	if !ok || b.botRun != nil {
+		return botVersion, nil
+	}
+	identity, err := identifier.Identity(ctx)
+	if err != nil {
+		return "", err
+	}
+	demo := b.Store != nil && b.Store.Demo()
+	if identity.Demo != demo {
+		if identity.Demo {
+			return "", fmt.Errorf("%s is running in demo mode; Town will not apply its canned results to a real repository", workerBotNames[role])
+		}
+		return "", fmt.Errorf("%s is a real bot; the demo dispatches only to bots started with --demo", workerBotNames[role])
+	}
+	return recordedVersion(identity.Version), nil
+}
+
+// recordedVersion keeps a reported version Town can store. A development build
+// reports "dev", which is recorded as a pre-release of 0.0.0.
+func recordedVersion(v string) string {
+	if workerVersionPattern.MatchString(v) {
+		return v
+	}
+	clean := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' {
+			return r
+		}
+		return '-'
+	}, v)
+	clean = strings.Trim(clean, ".-")
+	if clean == "" || len(clean) > 64 {
+		clean = "unknown"
+	}
+	return "0.0.0-" + clean
+}
 
 // workerRequest is the contract's request: what Town sends is exactly what a
 // bot receives, wherever it runs.

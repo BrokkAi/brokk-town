@@ -29,3 +29,35 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
+  images:
+    # One image per bot and one for Town, for docker compose and Kubernetes.
+    # They are published beside the archives and do not gate them.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [bt, bug-bot, feature-bot, issue-bot, review-bot, release-bot, simplifier-bot, repo-bot, mayor-bot]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ github.ref_name }}
+          push: true
+          provenance: false
+          tags: |
+            ghcr.io/brokkai/brokk-town/${{ matrix.target }}:${{ github.ref_name }}
+            ghcr.io/brokkai/brokk-town/${{ matrix.target }}:latest

@@ -54,8 +54,10 @@ type Request struct {
 	// RemoteAgent is the URL of an agent endpoint the service serves for this
 	// run (unix:///path or http(s)://host/...). It replaces Agent.
 	RemoteAgent string `json:"remote_agent,omitempty"`
-	DryRun      bool   `json:"dry_run,omitempty"`
-	Mode        string `json:"mode,omitempty"`
+	// RemoteAgentToken is the bearer token the bot presents to RemoteAgent.
+	RemoteAgentToken string `json:"remote_agent_token,omitempty"`
+	DryRun           bool   `json:"dry_run,omitempty"`
+	Mode             string `json:"mode,omitempty"`
 	// Retry asks Release Bot to lift its attempt budget before running.
 	Retry bool `json:"retry,omitempty"`
 	// SinceHead and Commits are the repo bot's inventory inputs: the branch
