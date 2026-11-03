@@ -5,8 +5,10 @@ proposals for them.
 
 `feature-bot` is a Go package of the
 [Brokk Town](https://github.com/BrokkAi/brokk-town) module. Feature Bot runs
-the **Feature discovery** stage (role key `feature`), and Town runs it in
-process, so there is no standalone binary, server or release tag to install. See
+the **Feature discovery** stage (role key `feature`), and runs as its own binary,
+`feature-bot` (`cmd/feature-bot`), which Town reaches over the network. It ships in
+the same release as `bt` and as the `ghcr.io/brokkai/brokk-town/feature-bot`
+image. See
 [../../docs/bots.md](../../docs/bots.md).
 
 ## What it does

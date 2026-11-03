@@ -20,11 +20,12 @@ import (
 )
 
 // The service reaches a bot only through the bot contract. Only the bots'
-// registry and the binary that hosts them may name a bot package; anything
-// else would let the service depend on running in the bot's process.
-func TestOnlyTheRegistryAndHostImportBots(t *testing.T) {
+// test registry and each bot's own binary may name a bot package, and a bot
+// binary only its own; anything else would let the service depend on running
+// in the bot's process.
+func TestOnlyTheRegistryAndBotBinariesImportBots(t *testing.T) {
 	module := filepath.Join("..", "..")
-	allowed := map[string]bool{filepath.Join("bots", "inprocess.go"): true, filepath.Join("cmd", "bt", "bots.go"): true}
+	allowed := map[string]bool{filepath.Join("bots", "inprocess.go"): true}
 	scanned := map[string]bool{}
 	err := filepath.WalkDir(module, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -48,8 +49,13 @@ func TestOnlyTheRegistryAndHostImportBots(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		// cmd/<name>-bot/main.go serves bots/<name>-bot.
+		own := ""
+		if parts := strings.Split(filepath.ToSlash(rel), "/"); len(parts) == 3 && parts[0] == "cmd" && strings.HasSuffix(parts[1], "-bot") {
+			own = "github.com/BrokkAi/brokk-town/bots/" + parts[1]
+		}
 		for _, spec := range file.Imports {
-			if p, _ := strconv.Unquote(spec.Path.Value); strings.HasPrefix(p, "github.com/BrokkAi/brokk-town/bots") {
+			if p, _ := strconv.Unquote(spec.Path.Value); strings.HasPrefix(p, "github.com/BrokkAi/brokk-town/bots") && p != own {
 				t.Errorf("%s imports %s; reach bots through internal/botapi", rel, p)
 			}
 		}
@@ -59,7 +65,7 @@ func TestOnlyTheRegistryAndHostImportBots(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Guard against a walk that silently skips the module.
-	for _, must := range []string{"internal/town/bots.go", "internal/web/server.go", "cmd/bt/main.go"} {
+	for _, must := range []string{"internal/town/bots.go", "internal/web/server.go", "cmd/bt/main.go", "cmd/bt/bots.go", "cmd/review-bot/main.go"} {
 		if !scanned[must] {
 			t.Fatalf("import check did not scan %s (%d files scanned)", must, len(scanned))
 		}

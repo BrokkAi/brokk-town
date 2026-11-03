@@ -61,7 +61,10 @@ type Config struct {
 	// http(s)://host/path for one reached over the network, or a bare absolute
 	// path, which names a socket. RemoteHead is frozen per session.
 	RemoteAgent string `json:"remote_agent,omitempty"`
-	RemoteHead  string `json:"-"`
+	// RemoteAgentToken is the bearer token the parent minted for this
+	// dispatch. It is never written to the bot's configuration.
+	RemoteAgentToken string `json:"-"`
+	RemoteHead       string `json:"-"`
 }
 
 func DefaultConfig() Config {

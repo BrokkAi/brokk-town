@@ -7,10 +7,11 @@ worth doing, keeps the branch it covers healthy, and ships releases. You drive i
 starting and stopping the local service. Everything runs on your machine with
 the `gh` and agent credentials you already have.
 
-The eight bots are Go packages of this module. Town calls them in process:
-there is no separate bot daemon to install, no worker protocol to keep in
-version step, and no per-bot release to track. One binary (`bt`) and one
-release tag (`vX.Y.Z`) cover the whole project.
+The eight bots are Go packages of this module, and each runs as its own binary
+that Town reaches over the network. On your machine `bt` starts them for you;
+with docker compose or Kubernetes each bot runs in its own container (see
+[docs/operations.md](docs/operations.md#bots)). One release tag (`vX.Y.Z`)
+covers `bt`, the eight bot binaries and their container images.
 
 ## Requirements
 
@@ -28,15 +29,18 @@ release tag (`vX.Y.Z`) cover the whole project.
 Go 1.27.1 or newer:
 
 ```sh
-go install github.com/BrokkAi/brokk-town/cmd/bt@latest
+go install github.com/BrokkAi/brokk-town/cmd/...@latest
 export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
 To pin a specific release:
 
 ```sh
-go install github.com/BrokkAi/brokk-town/cmd/bt@vX.Y.Z
+go install github.com/BrokkAi/brokk-town/cmd/...@vX.Y.Z
 ```
+
+`cmd/...` installs `bt` and the eight bot binaries side by side, which is where
+`bt` looks for them.
 
 `go install` records the module version in the binary, so `bt version` reports
 what you installed. Or build from a checkout:
@@ -50,15 +54,18 @@ export PATH="$PWD/bin:$PATH"
 
 Every release also publishes prebuilt archives for Linux, macOS and Windows on
 amd64 and arm64 on the [releases page](https://github.com/BrokkAi/brokk-town/releases).
-Download the archive for your platform, unpack it, and put `bt` on your `PATH`.
+Download the archive for your platform, unpack it, and put `bt` and the bot
+binaries together in a directory on your `PATH`.
 Linux and macOS ship as `.tar.gz`; Windows ships as `.zip`:
 
 ```sh
 tar -xzf brokk-town_vX.Y.Z_linux_amd64.tar.gz
-install -m 755 bt "$HOME/.local/bin/bt"
+install -m 755 bt *-bot "$HOME/.local/bin/"
 ```
 
-Each archive contains `bt`, `LICENSE`, `NOTICE` and
+Each archive contains `bt`, the eight bot binaries (`bug-bot`, `feature-bot`,
+`issue-bot`, `review-bot`, `release-bot`, `simplifier-bot`, `repo-bot`,
+`mayor-bot`), `LICENSE`, `NOTICE` and
 `licenses/THIRD_PARTY_NOTICES.txt`. The release's `checksums.txt` verifies the
 download.
 

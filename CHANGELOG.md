@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Run every bot as its own binary (`bug-bot`, `feature-bot`, `issue-bot`,
+  `review-bot`, `release-bot`, `simplifier-bot`, `repo-bot`, `mayor-bot`) and
+  container image, reached by Town over an authenticated HTTP contract with a
+  streamed run, cancellation, storage and identity. On one machine `bt` starts
+  the binaries installed beside it on loopback; `docker-compose.yml` and
+  `deploy/kubernetes/` run each bot in its own container with its own volume.
+  Town records each bot's reported version with its runs, and a run whose
+  stream breaks becomes a recovery hold. Release archives now carry all nine
+  binaries; install from source with `go install .../cmd/...@latest`.
+- Managed reviews reach Town's agent on an authenticated callback listener
+  (`BROKK_TOWN_CALLBACK_URL`) that a bot in another container can reach.
 - Redesign the browser as a clean, professional dashboard. The default
   **Overview** view shows summary metrics, the pipeline of eight bots with each
   one's status and workload, a table of open tasks (blocked first, then those

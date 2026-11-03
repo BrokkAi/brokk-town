@@ -6,3 +6,6 @@ node_modules/
 __pycache__/
 /.brokk/
 /.claude/
+/brokk.env
+/deploy/kubernetes/base/bot-tokens.env
+/deploy/kubernetes/base/credentials.env

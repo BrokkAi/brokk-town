@@ -108,6 +108,9 @@ func executeRemote(ctx context.Context, c Config, prompt string) (string, error)
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.RemoteAgentToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.RemoteAgentToken)
+	}
 	response, err := client.Do(req)
 	if err != nil {
 		return "", errors.Join(errors.New("remote review outcome was not confirmed; inspect the parent's retained run before retrying"), ctx.Err())

@@ -144,6 +144,11 @@ func (b *BotWorkers) queryIssueJobs(t *Town, mode string, issue int) (map[int]*i
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	// The query writes the bot's own state when it retries an issue, so it is
+	// sent only to a bot of the same kind as this service, as a run is.
+	if _, err := b.botIdentity(ctx, Issue); err != nil {
+		return nil, err
+	}
 	result, err := b.dispatchBot(ctx, Issue, workerRequest{Town: Key(t.ID), Remote: b.remote(t.Config.Repo), Branch: t.Branch(), Repo: t.Config.Repo, Host: "github.com", Mode: mode, Issue: issue}, false, func(Progress) {})
 	return result.Jobs, err
 }

@@ -1,7 +1,6 @@
-// Package bots lists Town's bots for a process that hosts them itself.
-// The service reaches every bot through the bot contract (internal/botapi);
-// this registry is the one place that names the bot packages, so swapping it
-// for remote clients changes nothing else.
+// Package bots lists Town's bots for tests that host them in the test's own
+// process. Production never does: each bot is its own binary (cmd/<bot>)
+// that the service reaches over the network (internal/botapi/botclient).
 package bots
 
 import (

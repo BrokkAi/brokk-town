@@ -4,8 +4,10 @@ Observe a repository, and keep the branch it covers healthy.
 
 `repo-bot` is a Go package of the
 [Brokk Town](https://github.com/BrokkAi/brokk-town) module. Repo Bot runs the
-**Repository** stage (role key `repo`), and Town runs it in process, so there is
-no standalone binary, server or release tag to install. See
+**Repository** stage (role key `repo`), and runs as its own binary,
+`repo-bot` (`cmd/repo-bot`), which Town reaches over the network. It ships in
+the same release as `bt` and as the `ghcr.io/brokkai/brokk-town/repo-bot`
+image. See
 [../../docs/bots.md](../../docs/bots.md).
 
 ## What it does

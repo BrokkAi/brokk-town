@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
+	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/mjolnir"
 )
 
@@ -121,28 +122,55 @@ func (m *managedDispatch) finish(ctx context.Context) error {
 	return nil
 }
 
-// startRemoteAgent exposes only a single frozen review revision on a private
-// socket. It cannot run arbitrary commands, switch targets, publish, or merge.
-func startRemoteAgent(ctx context.Context, m *managedDispatch, head string) (string, func(), error) {
+// startRemoteAgent exposes only a single frozen review revision to the bot.
+// It cannot run arbitrary commands, switch targets, publish, or merge. The
+// endpoint is a route on Town's agent callback when one is configured, which a
+// bot in another container can reach, and otherwise a private Unix socket.
+// Either way the bot must present the token minted for this dispatch.
+func (b *BotWorkers) startRemoteAgent(ctx context.Context, m *managedDispatch, head string) (endpoint, token string, close func(), err error) {
+	token, err = botapi.NewToken()
+	if err != nil {
+		return "", "", nil, err
+	}
+	handler := remoteAgentHandler(ctx, m, head, token)
+	if b.Callback != nil {
+		endpoint, close, err = b.Callback.register(handler)
+		return endpoint, token, close, err
+	}
 	dir, err := os.MkdirTemp("", "bt-agent-")
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	path := filepath.Join(dir, "agent.sock")
 	listener, err := net.Listen("unix", path)
 	if err != nil {
 		os.RemoveAll(dir)
-		return "", nil, err
+		return "", "", nil, err
 	}
 	if err := os.Chmod(path, 0600); err != nil {
 		listener.Close()
 		os.RemoveAll(dir)
-		return "", nil, err
+		return "", "", nil, err
 	}
-	var gate sync.Mutex
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, MaxHeaderBytes: 8 << 10, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" || r.URL.Path != "/v1/agent" {
 			http.NotFound(w, r)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})}
+	go func() { _ = server.Serve(listener) }()
+	close = func() { _ = server.Close(); _ = os.RemoveAll(dir) }
+	return unixURL(path), token, close, nil
+}
+
+// remoteAgentHandler answers one dispatch's agent requests: one at a time, for
+// the exact dispatched revision, from a caller holding the dispatch's token.
+func remoteAgentHandler(ctx context.Context, m *managedDispatch, head, token string) http.Handler {
+	var gate sync.Mutex
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !botapi.BearerMatches(r, token) {
+			http.Error(w, "missing or wrong callback token", http.StatusUnauthorized)
 			return
 		}
 		if !gate.TryLock() {
@@ -177,10 +205,7 @@ func startRemoteAgent(ctx context.Context, m *managedDispatch, head string) (str
 			Text     string `json:"text"`
 			Evidence string `json:"evidence"`
 		}{1, answer.Artifacts.Head, answer.Text, answer.Run.Record().Plan.ID})
-	})}
-	go func() { _ = server.Serve(listener) }()
-	close := func() { _ = server.Close(); _ = os.RemoveAll(dir) }
-	return unixURL(path), close, nil
+	})
 }
 
 // unixURL names a socket as a unix URL with an empty host: unix:///tmp/x.sock

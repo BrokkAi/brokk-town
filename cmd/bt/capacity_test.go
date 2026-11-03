@@ -63,7 +63,7 @@ func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		return serve(ctx, dir, "127.0.0.1:0", false, path)
+		return serve(ctx, dir, "127.0.0.1:0", false, path, "")
 	}
 	readLimit := func(t *testing.T) int {
 		t.Helper()
@@ -137,7 +137,7 @@ func TestServeConfigBranchOmittedKeepsPinAndEmptyClearsIt(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		if e := serve(ctx, dir, "127.0.0.1:0", false, path); e != nil && !errors.Is(e, context.Canceled) {
+		if e := serve(ctx, dir, "127.0.0.1:0", false, path, ""); e != nil && !errors.Is(e, context.Canceled) {
 			return e
 		}
 		return nil

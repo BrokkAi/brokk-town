@@ -5,8 +5,10 @@ complexity against its value.
 
 `simplifier-bot` is a Go package of the
 [BrokkAi/brokk-town](https://github.com/BrokkAi/brokk-town) module. Simplifier Bot
-runs the **Simplification** stage (role key `simplifier`), and Town runs it in
-process, so there is no standalone binary, server or release tag to install. See
+runs the **Simplification** stage (role key `simplifier`), and runs as its own binary,
+`simplifier-bot` (`cmd/simplifier-bot`), which Town reaches over the network. It ships in
+the same release as `bt` and as the `ghcr.io/brokkai/brokk-town/simplifier-bot`
+image. See
 [../../docs/bots.md](../../docs/bots.md) and
 [../../docs/workflow.md](../../docs/workflow.md).
 
