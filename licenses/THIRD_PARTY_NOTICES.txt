@@ -235,7 +235,7 @@ The listed agents are not bundled; each retains its own license and terms.
 
 ==============================================================
 
-github.com/BrokkAi/acp-go v0.12.1
+github.com/BrokkAi/acp-go v0.13.0
 
 LICENSE
 

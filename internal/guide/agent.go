@@ -56,6 +56,16 @@ func Run(ctx context.Context, config runner.AgentConfig, directory, prompt strin
 	total := 0
 	var sessionID acp.SessionID
 	prompting := false
+	// acp-go absorbs a notification handler's error instead of closing the
+	// connection, so a refused chunk is recorded here and stops the prompt.
+	var fault error
+	promptCtx, stopPrompt := context.WithCancel(ctx)
+	defer stopPrompt()
+	refuse := func(err error) error {
+		fault = err
+		stopPrompt()
+		return err
+	}
 	connection := acp.Connect(out, in, deny, acp.SessionUpdates(func(update acp.Update) error {
 		chunk := update.Update.AgentMessageChunk
 		if chunk == nil || chunk.Content.Text == nil {
@@ -64,14 +74,20 @@ func Run(ctx context.Context, config runner.AgentConfig, directory, prompt strin
 		text := chunk.Content.Text.Text
 		mu.Lock()
 		defer mu.Unlock()
+		if fault != nil {
+			return fault
+		}
 		if !prompting || update.SessionID != sessionID {
-			return errors.New("guide received an unexpected session answer")
+			return refuse(errors.New("guide received an unexpected session answer"))
 		}
 		total += len(text)
 		if total > MaxAnswer {
-			return errors.New("guide answer exceeded its limit")
+			return refuse(errors.New("guide answer exceeded its limit"))
 		}
-		return emit(text)
+		if err := emit(text); err != nil {
+			return refuse(err)
+		}
+		return nil
 	}))
 	defer connection.Close()
 	caps := acp.Capabilities{}
@@ -124,7 +140,13 @@ func Run(ctx context.Context, config runner.AgentConfig, directory, prompt strin
 	sessionID = session.SessionID
 	prompting = true
 	mu.Unlock()
-	reason, err := connection.Prompt(ctx, session, prompt)
+	reason, err := connection.Prompt(promptCtx, session, prompt)
+	mu.Lock()
+	refused := fault
+	mu.Unlock()
+	if refused != nil {
+		return refused
+	}
 	if err != nil {
 		return err
 	}

@@ -133,7 +133,11 @@ affected page in the same change:
 
 ## Releasing
 
-A release is a tag push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The workflow
-runs GoReleaser, which builds the archives, checksums them and publishes the
-GitHub release. Do not create tags or push to a release branch unless the user
+Releases come from the nightly workflow (`.github/workflows/nightly.yml`). Each
+night, if `master` has commits the latest release does not, it runs CI on Linux,
+macOS and Windows. When that is green it tags the next minor version and runs
+the release workflow, where GoReleaser builds the archives, checksums them and
+publishes the GitHub release. When it is red it opens a `Nightly failed at
+<commit>` issue with the failed jobs and their errors. A manual tag push
+(`git tag vX.Y.Z && git push origin vX.Y.Z`) still publishes a release. Do not create tags or push to a release branch unless the user
 explicitly asked for a release.

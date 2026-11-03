@@ -180,13 +180,7 @@ func TestAgentProcessACP(t *testing.T) {
 	for _, scenario := range []string{"success", "reject", "cancel", "uncategorized-effort", "thought-level-id-only", "disconnect-terminal"} {
 		t.Run(scenario, func(t *testing.T) {
 			process := testACPProcess(t, scenario)
-			timeout := 10 * time.Second
-			if scenario == "disconnect-terminal" {
-				// acp-go drains in-flight request handlers before surfacing
-				// transport EOF, so this run ends at the caller's deadline.
-				timeout = 3 * time.Second
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			type result struct {
 				text string
@@ -237,11 +231,11 @@ func TestAgentProcessACP(t *testing.T) {
 					t.Fatalf("cancel error = %v", got.err)
 				}
 			case "disconnect-terminal":
-				// The agent exits while a terminal command outlives it. acp-go
-				// waits for that handler before reporting EOF, so the run is
-				// bounded by the caller's context rather than failing fast.
-				if !errors.Is(got.err, context.DeadlineExceeded) || ctx.Err() == nil || errors.As(got.err, &setup) || got.text != "" {
-					t.Fatalf("disconnect result = %+v, context error = %v", got, ctx.Err())
+				// The agent exits while a terminal command outlives it. The
+				// runner ends the connection once the agent is gone, so the run
+				// fails before the caller's deadline instead of waiting on it.
+				if got.err == nil || ctx.Err() != nil || errors.As(got.err, &setup) || got.text != "" {
+					t.Fatalf("disconnect result = %+v (%v), context error = %v", got, got.err, ctx.Err())
 				}
 			}
 			files, err := filepath.Glob(filepath.Join(process.config.StateDirectory, "sessions", "*.jsonl"))

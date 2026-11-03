@@ -165,7 +165,7 @@ func executorFixture(t *testing.T, scenario string) (Executor, RunPlan, string) 
 }
 
 func TestManagedACPDispatchGuardsAndDurableOutcomes(t *testing.T) {
-	for _, scenario := range []string{"success", "stale configuration", "stale completion", "completion drift", "wrong daemon", "lost create", "runtime drift", "lost setting", "missing evidence", "wrong session", "incomplete turn"} {
+	for _, scenario := range []string{"success", "stale configuration", "stale completion", "completion drift", "wrong daemon", "lost create", "runtime drift", "lost setting", "missing evidence", "wrong session", "oversized answer", "incomplete turn"} {
 		t.Run(scenario, func(t *testing.T) {
 			e, plan, record := executorFixture(t, scenario)
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -352,6 +352,9 @@ func TestMjACPHelper(t *testing.T) {
 			}
 			for _, chunk := range []string{managedAnswer[:10], managedAnswer[10:]} {
 				send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": id, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": chunk}}}})
+			}
+			if fixture.Scenario == "oversized answer" {
+				send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": id, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": strings.Repeat("x", 1<<20)}}}})
 			}
 			stop := "end_turn"
 			if fixture.Scenario == "incomplete turn" {

@@ -37,6 +37,18 @@
   `mayoral_decision`, `awaiting_mayor`, `bulletins`, `bulletin_seconds` and
   `/api/guide` keep their names. The glossary in `docs/workflow.md` maps each
   browser term to its identifier.
+- Release nightly: when `master` has new commits, a scheduled workflow runs CI
+  on Linux, macOS and Windows and, if it passes, tags and publishes the next
+  minor version. A failure opens an issue with the failed jobs and errors.
+- Update acp-go to 0.13.0. A run whose agent exits while a request is still
+  in flight now fails within a few seconds instead of waiting for the caller's
+  deadline, and an agent that exits with a failure status after a completed
+  turn fails the run. The Assistant and Mjolnir dispatch stop a turn whose
+  answer runs past its limit or arrives for another session, since acp-go no
+  longer closes the connection when a session update is refused. Session
+  config options must carry the `name` the ACP schema requires; an option
+  without one is ignored, so model and effort selection report it as not
+  advertised.
 
 ## 0.10.0 — 2026-10-07
 

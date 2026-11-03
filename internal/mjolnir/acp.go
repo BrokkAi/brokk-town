@@ -77,6 +77,11 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 	var session acp.Session
 	var text strings.Builder
 	prompting := false
+	// acp-go absorbs a notification handler's error instead of closing the
+	// connection, so a refused chunk is recorded here and stops the prompt.
+	var fault error
+	promptCtx, stopPrompt := context.WithCancel(ctx)
+	defer stopPrompt()
 	conn := acp.Connect(out, in, func(context.Context, string, json.RawMessage) (any, error) {
 		return nil, &acp.RPCError{Code: -32601, Message: "Mjolnir owns target tools; Town exposes none"}
 	}, acp.SessionUpdates(func(update acp.Update) error {
@@ -86,8 +91,13 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 		}
 		mu.Lock()
 		defer mu.Unlock()
+		if fault != nil {
+			return fault
+		}
 		if !prompting || update.SessionID != session.SessionID || text.Len()+len(chunk.Content.Text.Text) > 1<<20 {
-			return errors.New("Mjolnir returned an unexpected or oversized ACP answer")
+			fault = errors.New("Mjolnir returned an unexpected or oversized ACP answer")
+			stopPrompt()
+			return fault
 		}
 		text.WriteString(chunk.Content.Text.Text)
 		return nil
@@ -140,7 +150,13 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 	mu.Lock()
 	prompting = true
 	mu.Unlock()
-	stop, promptErr := conn.Prompt(ctx, session, prompt)
+	stop, promptErr := conn.Prompt(promptCtx, session, prompt)
+	mu.Lock()
+	refused := fault
+	mu.Unlock()
+	if refused != nil {
+		return answer, errors.Join(errors.New("Mjolnir did not confirm a completed turn; retain its run for recovery"), refused)
+	}
 	if promptErr != nil || stop != schema.StopReasonEndTurn {
 		return answer, errors.Join(errors.New("Mjolnir did not confirm a completed turn; retain its run for recovery"), ctx.Err())
 	}

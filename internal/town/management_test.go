@@ -430,7 +430,7 @@ func TestChoiceAgentHelper(t *testing.T) {
 		if model == "careful" {
 			effort = "high"
 		}
-		return []any{map[string]any{"id": "model", "type": "select", "currentValue": model, "options": []any{map[string]string{"value": "quick", "name": "Quick"}, map[string]string{"value": "careful", "name": "Careful"}}}, map[string]any{"id": "reasoning_effort", "type": "select", "currentValue": effort, "options": []any{map[string]string{"value": effort, "name": effort}}}}
+		return []any{map[string]any{"id": "model", "name": "Model", "type": "select", "currentValue": model, "options": []any{map[string]string{"value": "quick", "name": "Quick"}, map[string]string{"value": "careful", "name": "Careful"}}}, map[string]any{"id": "reasoning_effort", "name": "Effort", "type": "select", "currentValue": effort, "options": []any{map[string]string{"value": effort, "name": effort}}}}
 	}
 	for scanner.Scan() {
 		var request struct {

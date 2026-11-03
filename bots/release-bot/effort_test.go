@@ -28,13 +28,13 @@ func TestEffortWirePeer(t *testing.T) {
 	model := "small"
 	effort := "low"
 	options := func() []any {
-		modelOption := map[string]any{"id": "model", "name": "Model", "type": "select", "category": "model", "currentValue": model, "options": []any{map[string]string{"value": "small"}, map[string]string{"value": "large"}}}
+		modelOption := map[string]any{"id": "model", "name": "Model", "type": "select", "category": "model", "currentValue": model, "options": []any{map[string]string{"value": "small", "name": "Small"}, map[string]string{"value": "large", "name": "Large"}}}
 		if mode == "unsupported" {
 			return []any{modelOption}
 		}
-		choices := []any{map[string]string{"value": "low"}}
+		choices := []any{map[string]string{"value": "low", "name": "Low"}}
 		if mode != "with-model" || model == "large" {
-			choices = append(choices, map[string]string{"value": "high"})
+			choices = append(choices, map[string]string{"value": "high", "name": "High"})
 		}
 		effortOption := map[string]any{"id": id, "name": "Reasoning effort", "type": "select", "currentValue": effort, "options": choices}
 		if category != "" {
