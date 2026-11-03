@@ -595,6 +595,10 @@ type Event struct {
 	To    string    `json:"to,omitempty"`
 	Cargo string    `json:"cargo,omitempty"`
 	Title string    `json:"title"`
+	// Actor names the signed-in person behind an operator action in a
+	// multi-user Town. It is empty for automatic work and for the local
+	// access key.
+	Actor string `json:"actor,omitempty"`
 }
 type Town struct {
 	Guide          *GuideConversation        `json:"guide,omitempty"`
@@ -710,6 +714,9 @@ type State struct {
 	Demo             bool                       `json:"demo"`
 	Towns            map[string]*Town           `json:"towns"`
 	Events           []Event                    `json:"events"`
+	// actor is the person on whose behalf the current Store.Update runs, set
+	// by Store.As. It is never persisted.
+	actor string
 }
 
 func NewState(demo bool) State {
@@ -807,7 +814,11 @@ func (t *Town) PublicConfig() PublicConfig {
 
 func (s *State) Event(town, kind, from, to, cargo, title string, now time.Time) {
 	s.Seq++
-	s.Events = append(s.Events, Event{s.Seq, now, town, kind, from, to, cargo, title})
+	event := Event{Seq: s.Seq, At: now, Town: town, Kind: kind, From: from, To: to, Cargo: cargo, Title: title}
+	if from == "operator" {
+		event.Actor = s.actor
+	}
+	s.Events = append(s.Events, event)
 	if len(s.Events) > 512 {
 		s.Events = s.Events[len(s.Events)-512:]
 	}

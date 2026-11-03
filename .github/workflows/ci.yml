@@ -90,7 +90,7 @@ jobs:
         run: |
           deploy/kubernetes/generate-secrets.sh
           curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz -C /usr/local/bin kubeconform
-          for overlay in base demo; do
+          for overlay in base demo multi-user; do
             kubectl kustomize "deploy/kubernetes/$overlay" | kubeconform -strict -summary -
           done
       - name: Build the images

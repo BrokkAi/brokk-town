@@ -519,6 +519,33 @@ input[type="checkbox"] {
   padding-left: 10px;
   border-left: 1px solid var(--line);
 }
+.account {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+.account[hidden] {
+  display: none;
+}
+.signin-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+.signin-providers a[hidden] {
+  display: none;
+}
+.event-actor {
+  grid-column: 3;
+  margin-top: -8px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .mode-chip {
   padding: 2px 8px;
   border-radius: 999px;

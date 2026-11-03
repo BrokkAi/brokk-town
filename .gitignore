@@ -9,3 +9,7 @@ __pycache__/
 /brokk.env
 /deploy/kubernetes/base/bot-tokens.env
 /deploy/kubernetes/base/credentials.env
+/deploy/kubernetes/multi-user/auth.env
+/deploy/kubernetes/multi-user/oauth-secrets.env
+/brokk-auth.env
+/brokk-auth/

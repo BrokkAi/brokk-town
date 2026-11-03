@@ -1,10 +1,19 @@
+import { whoLabel } from "./account.js";
+
 const $ = (id) => document.querySelector(`#${id}`);
 const busy = (status) => ["queued", "gathering", "answering"].includes(status);
 const pendingKey = "brokk-town-guide-pending";
 
 // These handlers are the only network entry points. render only consumes
 // state; reconnecting SSE never resubmits or confirms a conversation.
-export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
+// In a shared Town everyone sees one conversation per repository; each
+// question names who asked it.
+export const conflictMessage = "Someone else asked the Assistant first. Read their question, then send yours again.";
+export function guideError(error) {
+  return /conversation changed/.test(error?.message || "") ? conflictMessage : error?.message || "";
+}
+
+export function guidePanel({api, getTown, getState, onOpen = () => {}, isShared = () => false}) {
   let townID = "", sending = false, pending = null, order = "";
   const rows = new Map(), conversations = new Map();
   try { pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null"); } catch {}
@@ -27,7 +36,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
     } catch (error) {
       const rejected = error.status >= 400 && error.status < 500 && error.status !== 408;
       if (rejected && body.action === "ask" && pending?.id === body.id) savePending(null);
-      if (origin === townID) $("guide-error").textContent = rejected ? error.message : `${error.message} Check the conversation before trying again; the submission may have been saved.`;
+      if (origin === townID) $("guide-error").textContent = rejected ? guideError(error) : `${error.message} Check the conversation before trying again; the submission may have been saved.`;
     } finally { sending = false; render(); }
   }
   function row(turn) {
@@ -47,7 +56,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
     const ids = turns.map((turn) => turn.id).join(",");
     for (const turn of turns) {
       const item = row(turn);
-      item.question.textContent = `You: ${turn.question}`; item.answer.textContent = `Assistant: ${turn.answer || (busy(turn.status) ? "…" : "No completed answer.")}`;
+      item.question.textContent = `${whoLabel(turn.author, {shared: isShared()})}: ${turn.question}`; item.answer.textContent = `Assistant: ${turn.answer || (busy(turn.status) ? "…" : "No completed answer.")}`;
       item.status.textContent = `${turn.status}${turn.detail ? ` · ${turn.detail}` : ""}`;
       item.proposal.textContent = turn.proposal ? `${turn.proposal.status === "confirmed" ? "Confirmed" : "Proposed action"}: ${turn.proposal.description}` : "";
       item.confirm.hidden = !turn.proposal || turn.proposal.status === "confirmed";
@@ -59,7 +68,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
       for (const id of rows.keys()) if (!turns.some((turn) => turn.id === id)) rows.delete(id);
     }
     const active = turns.find((turn) => busy(turn.status));
-    $("guide-status").textContent = active ? `The Assistant is ${active.status}.` : "The Assistant is ready. Answers describe saved observations.";
+    $("guide-status").textContent = active ? `The Assistant is ${active.status}${active.author ? ` for ${active.author}` : ""}.` : "The Assistant is ready. Answers describe saved observations.";
     $("guide-send").disabled = sending || !!active || !selected();
     $("guide-cancel").disabled = sending || !active;
     $("guide-cancel").onclick = () => active && command({action:"cancel",id:active.id});

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Share a Town with your team: `bt --multi-user` (docker compose with
+  `docker-compose.multi-user.yml`, Kubernetes with
+  `deploy/kubernetes/multi-user`) lets people sign in with GitHub or Google and
+  work on the same repositories, decisions, settings and Assistant
+  conversations. An allowlist of GitHub organizations or users, Google
+  Workspace domains or emails decides who gets in. Activity names who made each
+  change, and each Assistant question names who asked it. Custom agent
+  commands, the attention hook and shutdown stay with the operator's access
+  key. A Town started without the flag is unchanged.
 - Run every bot as its own binary (`bug-bot`, `feature-bot`, `issue-bot`,
   `review-bot`, `release-bot`, `simplifier-bot`, `repo-bot`, `mayor-bot`) and
   container image, reached by Town over an authenticated HTTP contract with a

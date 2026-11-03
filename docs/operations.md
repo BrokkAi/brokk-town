@@ -38,6 +38,7 @@ it can never open real state.
 | `state.json` | The committed snapshot. |
 | `daemon.lock` | Single-writer lock. |
 | `token` | Local API access key, mode 0600. Delete it to rotate. |
+| `session-key` | Signs a shared Town's sign-in cookies, mode 0600. Delete it to sign everyone out. |
 | `connection.json` | URL, PID and version advertised to clients. |
 | `logs/serve.log`, `logs/serve.err.log` | Background service output. |
 | `towns/<key>/<role>/checkout` | A bot's private git checkout, for a bot `bt` starts itself. |
@@ -131,6 +132,67 @@ the container. `--public-url` cannot be combined with `-d`. Containers are given
 90 seconds (bots) and 120 seconds (Town) to stop, so running work reports what
 it completed.
 
+### Shared Town
+
+By default Town has one operator: whoever holds the local access key. Started
+with `--multi-user`, Town is shared instead. People sign in with GitHub or
+Google, and everyone who signs in works on the same Town: the same
+repositories, tasks, decisions, settings and Assistant conversations, updated
+live in every browser. Activity names who made each change ("pause bug — by Ada
+Lovelace (@ada)"), and the Assistant labels each question with who asked it.
+There are no private Towns and no roles: everyone admitted can do what the
+browser offers, with the exceptions below.
+
+Multi-user mode is for docker compose and Kubernetes, behind a reverse proxy or
+Ingress that terminates TLS. `--multi-user` needs `--public-url`, which may be
+`https://` here: the address people open, which must also be the OAuth apps'
+callback base.
+
+Sign-in is configured from the environment. Configure GitHub, Google or both:
+
+| Variable | Meaning |
+| --- | --- |
+| `BROKK_TOWN_GITHUB_CLIENT_ID` | A GitHub OAuth app's client ID. Its callback URL is `<public URL>/auth/callback/github`. |
+| `BROKK_TOWN_GITHUB_CLIENT_SECRET_FILE` | A file holding that app's client secret. |
+| `BROKK_TOWN_GOOGLE_CLIENT_ID` | A Google OAuth web client's ID. Its redirect URI is `<public URL>/auth/callback/google`. |
+| `BROKK_TOWN_GOOGLE_CLIENT_SECRET_FILE` | A file holding that client's secret. |
+| `BROKK_TOWN_ALLOW_GITHUB_ORGS` | Admit active members of these GitHub organizations. |
+| `BROKK_TOWN_ALLOW_GITHUB_USERS` | Admit these GitHub logins. |
+| `BROKK_TOWN_ALLOW_GOOGLE_DOMAINS` | Admit Google Workspace accounts of these domains (by the account's verified Workspace domain, not the address's suffix). |
+| `BROKK_TOWN_ALLOW_EMAILS` | Admit these verified email addresses, from either provider. |
+
+Lists are comma-separated and case-insensitive. Town refuses to start without
+at least one allowlist rule, since a Town open to every GitHub or Google
+account is never intended. Client secrets are read only from files, never from
+the environment, because Town passes its environment to the commands it
+starts. For an organization that restricts OAuth app access, an owner must
+approve the app before membership can be read.
+
+A sign-in lasts seven days in an HTTP-only, same-site cookie signed with the
+`session-key` file in the state directory. Every request re-checks the
+allowlist, so removing someone and restarting Town signs them out; organization
+membership is checked when a person signs in. Delete `session-key` and restart
+to sign everyone out.
+
+A signed-in person cannot stop Town or name a command for Town's hosts to run:
+a custom agent command, its model probe and the attention hook stay with the
+operator, who sets them in the config file or with the local access key
+(`bt web` inside the container prints a link that carries it). Choosing a
+harness from the catalog is open to everyone.
+
+With docker compose, put the client IDs and allowlist in `brokk-auth.env` and
+the secrets as files in `./brokk-auth/` (readable by uid 10001), then:
+
+```sh
+BT_PUBLIC_URL=https://town.example.com \
+  docker compose -f docker-compose.yml -f docker-compose.multi-user.yml up -d --build
+```
+
+On Kubernetes, `deploy/kubernetes/generate-secrets.sh` also writes
+`deploy/kubernetes/multi-user/auth.env` and `oauth-secrets.env` to fill in.
+Replace `town.example.com` in that overlay's `bt-multi-user.yaml` and
+`ingress.yaml`, then `kubectl apply -k deploy/kubernetes/multi-user`.
+
 ### Checking the bots
 
 In demo mode Town sends every bot a demo dispatch over the network shortly
@@ -148,7 +210,8 @@ backs off. The version it reports is recorded with the run.
 ## Commands
 
 Run `bt COMMAND --help` for the exact flags. Global flags are `--state-dir` and
-`--demo`; `--listen`, `--public-url` and `--config` apply to the service.
+`--demo`; `--listen`, `--public-url`, `--multi-user` and `--config` apply to
+the service.
 
 | Command | Description |
 | --- | --- |
@@ -191,7 +254,8 @@ content or error text.
 
 ## Browser
 
-`bt web` prints a loopback URL containing the access key. The browser reads the
+`bt web` prints a loopback URL containing the access key; in a shared Town
+people open the public URL and sign in instead. The browser reads the
 same committed snapshot and writes only through the authenticated API. It is
 plain HTML, CSS and JavaScript modules, with no build step, no animation, no
 canvas drawing and no image assets.
@@ -271,6 +335,11 @@ inert until you confirm its exact digest against current state.
 Ask the Assistant from a repository in the browser. Answers stream from
 service state. The API route is `/api/guide`.
 
+In a shared Town each repository has one Assistant conversation that everyone
+sees, and each question names who asked it. The Assistant answers one question
+at a time; a question sent from a page that had not yet seen someone else's is
+refused, and the browser asks you to read theirs and send yours again.
+
 ## Outcomes
 
 Town records three kinds of outcome, which the browser shows as outcomes: **attempts** (one dispatch), **artifacts** (an issue, pull request or
@@ -287,12 +356,19 @@ record.
 
 The service binds loopback and serves the UI plus `/api/*`. Every API request
 must carry `Authorization: Bearer <token>` where the token is the contents of the
-state directory's `token` file, and must be same-origin. Responses are
+state directory's `token` file, and must be same-origin. In a shared Town a
+signed-in browser's session cookie works instead, and its writes must carry the
+public URL as their `Origin`. `GET /api/session` needs no credentials: it says
+whether Town is `local` or `multi-user`, which sign-in providers it offers and
+who the caller is signed in as. The sign-in routes are `GET
+/auth/login/{github|google}`, `GET /auth/callback/{provider}` and `POST
+/auth/logout`. Responses are
 `no-store`. `POST /api/shutdown` is present only when the service registered a
 shutdown hook.
 
 | Route | Purpose |
 | --- | --- |
+| `GET /api/session` | How this browser signs in, and as whom. |
 | `GET /api/state` | The full public snapshot. |
 | `GET /api/events` | Server-sent events of the snapshot stream. |
 | `POST /api/control` | `start`/`pause`/`stop`/`retry`/`delete`/`admit`/`decline` a repository (`town`), bot (`house`) or task (`task`). |
@@ -314,5 +390,6 @@ shutdown hook.
 | `GET /api/outcomes`, `POST /api/outcomes/judgment` | Outcome report and operator judgments. |
 | `POST /api/shutdown` | Stop the service. |
 
-The API is private to this machine. Do not expose the listen address to a
-network; the token is the only authorization.
+A local Town's API is private to this machine. Do not expose its listen address
+to a network; the token is the only authorization. Expose only a shared Town,
+and only over HTTPS.

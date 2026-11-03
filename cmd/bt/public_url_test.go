@@ -41,3 +41,25 @@ func TestAClientOnTheHostReachesAPublishedService(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// Only a shared Town is published over HTTPS; a single-operator Town in a
+// container keeps a plain loopback-forwarded address.
+func TestOnlyASharedTownTakesAnHTTPSPublicURL(t *testing.T) {
+	for _, tc := range []struct {
+		url       string
+		multiUser bool
+		want      string
+	}{
+		{"https://town.example.com", true, "https://town.example.com"},
+		{"https://town.example.com/", true, "https://town.example.com"},
+		{"http://127.0.0.1:8080", true, "http://127.0.0.1:8080"},
+		{"https://town.example.com", false, ""},
+		{"https://town.example.com/town", true, ""},
+		{"ftp://town.example.com", true, ""},
+	} {
+		got, err := serviceOrigin("0.0.0.0:8080", tc.url, tc.multiUser)
+		if (err != nil) != (tc.want == "") || got != tc.want {
+			t.Errorf("%s multi-user=%v: %q, %v", tc.url, tc.multiUser, got, err)
+		}
+	}
+}

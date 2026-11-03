@@ -32,6 +32,10 @@
         ><span id="connection">Connecting</span>
       </div>
       <span id="capacity-summary" class="capacity-summary" role="status"></span>
+      <span id="account" class="account" hidden
+        ><span id="account-name"></span
+        ><button id="sign-out" class="quiet" type="button" hidden>Sign out</button></span
+      >
       <button
         id="inbox-toggle"
         class="quiet inbox-toggle"
@@ -170,6 +174,18 @@
         Run <code>bt web</code> and open the URL it prints. That link carries the
         local access key for this browser.
       </p>
+    </dialog>
+    <dialog id="signin-dialog" aria-labelledby="signin-heading">
+      <h2 id="signin-heading">Sign in to Brokk Town</h2>
+      <p>
+        This Town is shared. Everyone who signs in sees the same repositories,
+        decisions and Assistant conversations, and Activity names who made each change.
+      </p>
+      <div class="signin-providers">
+        <a id="signin-github" class="primary" href="/auth/login/github" hidden>Continue with GitHub</a>
+        <a id="signin-google" class="primary" href="/auth/login/google" hidden>Continue with Google</a>
+      </div>
+      <p id="signin-error" class="form-error" role="alert"></p>
     </dialog>
     <dialog id="capacity-dialog" aria-labelledby="capacity-heading">
       <form id="capacity-form">
