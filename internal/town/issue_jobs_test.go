@@ -46,7 +46,7 @@ func fixtureIssueQuery(root string) func(*Town, string, int) (map[int]*issueJobS
 func TestBlockedIssueJobSurvivesInventoryAndRestartThenRetries(t *testing.T) {
 	root := t.TempDir()
 	storeDir := t.TempDir()
-	store, err := Open(storeDir, false)
+	store, err := Open(storeDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestBlockedIssueJobSurvivesInventoryAndRestartThenRetries(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	store, err = Open(storeDir, false)
+	store, err = Open(storeDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestBlockedIssueJobSurvivesInventoryAndRestartThenRetries(t *testing.T) {
 
 func TestSubmittedIssueJobImportsOwnershipWithoutDuplicateDelivery(t *testing.T) {
 	root := t.TempDir()
-	store := testStore(t, false)
+	store := testStore(t)
 	town := addTown(t, store)
 	update(t, store, func(st *State) {
 		st.Towns[town.ID].Tasks["issue:8"] = &Task{ID: "issue:8", Kind: "issue", Number: 8, Title: "Done", House: Issue, Stage: "queued"}

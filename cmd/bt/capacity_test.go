@@ -36,7 +36,8 @@ func TestDecodeConfigFileReadsServiceSettingsAndTowns(t *testing.T) {
 
 func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 	dir := t.TempDir()
-	store, err := town.Open(dir, false)
+	sharedTown(t)
+	store, err := town.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +64,11 @@ func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		return serve(ctx, dir, "127.0.0.1:0", false, path, "")
+		return serve(ctx, dir, "127.0.0.1:0", path, testPublicURL)
 	}
 	readLimit := func(t *testing.T) int {
 		t.Helper()
-		current, err := town.Open(dir, false)
+		current, err := town.Open(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +106,8 @@ func TestServeConfigCapacityPrecedenceAndAtomicTownValidation(t *testing.T) {
 // releases it so the town follows the repository default again.
 func TestServeConfigBranchOmittedKeepsPinAndEmptyClearsIt(t *testing.T) {
 	dir := t.TempDir()
-	store, err := town.Open(dir, false)
+	sharedTown(t)
+	store, err := town.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,14 +139,14 @@ func TestServeConfigBranchOmittedKeepsPinAndEmptyClearsIt(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		if e := serve(ctx, dir, "127.0.0.1:0", false, path, ""); e != nil && !errors.Is(e, context.Canceled) {
+		if e := serve(ctx, dir, "127.0.0.1:0", path, testPublicURL); e != nil && !errors.Is(e, context.Canceled) {
 			return e
 		}
 		return nil
 	}
 	read := func(t *testing.T) *town.Town {
 		t.Helper()
-		current, e := town.Open(dir, false)
+		current, e := town.Open(dir)
 		if e != nil {
 			t.Fatal(e)
 		}

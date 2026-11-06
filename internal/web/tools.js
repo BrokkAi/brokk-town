@@ -19,7 +19,6 @@ export function registerTownTools(context, getState, selectTown, chooseHouse) {
         const state = getState();
         if (!state) throw new Error("Brokk Town has not connected");
         return {
-          demo: state.demo,
           towns: Object.values(state.towns).map((t) => ({
             id: t.id,
             ...townSummary(t),

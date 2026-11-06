@@ -26,13 +26,12 @@
         <button type="button" data-view="compact" role="tab" aria-selected="false">Compact</button>
       </div>
       <div class="header-space"></div>
-      <span id="mode" class="mode-chip" hidden>Demo</span>
-      <div class="connection" title="Connection to the local service">
+      <div class="connection" title="Connection to Brokk Town">
         <span id="connection-dot" class="dot"></span
         ><span id="connection">Connecting</span>
       </div>
       <span id="capacity-summary" class="capacity-summary" role="status"></span>
-      <span id="account" class="account" hidden
+      <span id="account" class="account"
         ><span id="account-name"></span
         ><button id="sign-out" class="quiet" type="button" hidden>Sign out</button></span
       >
@@ -80,10 +79,6 @@
           </div>
         </div>
         <div id="error" role="alert" hidden></div>
-        <div id="demo-note" hidden>
-          <strong>Demo mode</strong
-          ><span>Simulated bots and tasks. No GitHub writes; no agents are running.</span>
-        </div>
         <section id="overview" aria-label="All repositories"></section>
         <section id="board" class="operations-board" aria-label="Board" hidden></section>
         <section id="compact" class="operations-compact" aria-label="Compact view" hidden></section>
@@ -169,10 +164,11 @@
       </form>
     </dialog>
     <dialog id="connect-dialog" aria-labelledby="connect-heading">
-      <h2 id="connect-heading">Connect to Brokk Town</h2>
+      <h2 id="connect-heading">Access key refused</h2>
       <p>
-        Run <code>bt web</code> and open the URL it prints. That link carries the
-        local access key for this browser.
+        Brokk Town did not accept this browser's access key. Run
+        <code>kubectl -n brokk-town exec deploy/bt -- bt web</code> and open the URL
+        it prints, or reload the page to sign in.
       </p>
     </dialog>
     <dialog id="signin-dialog" aria-labelledby="signin-heading">
@@ -214,8 +210,8 @@
         </div>
       </form>
       <form id="attention-hook-form">
-        <h3>Local attention hook</h3>
-        <p class="muted">Run a local command when a task is blocked. It receives public task identities and a reason code as JSON on stdin, with a ten-second limit. Hooks run independently of quiet hours. Demo mode never runs them.</p>
+        <h3>Attention hook</h3>
+        <p class="muted">Run a command on Town's host when a task is blocked. It receives public task identities and a reason code as JSON on stdin, with a ten-second limit. Hooks run independently of quiet hours.</p>
         <p id="attention-hook-status" class="muted" role="status"></p>
         <label><input id="attention-hook-enabled" type="checkbox" /> Enable attention hook</label>
         <label for="attention-hook-command">Command and arguments (JSON array)</label>

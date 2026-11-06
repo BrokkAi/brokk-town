@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -133,17 +132,11 @@ func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 	if err != nil || parsed.Scheme != "unix" || parsed.Host != "" {
 		t.Fatalf("callback endpoint %q is not a unix URL", endpoint)
 	}
-	// unix:///C:/... names C:\... on Windows; elsewhere the path is as written.
-	path := parsed.Path
-	if runtime.GOOS == "windows" {
-		path = strings.TrimPrefix(path, "/")
-	}
-	path = filepath.FromSlash(path)
-	info, err := os.Stat(path)
-	if err != nil || !ownerOnly(info.Mode()) {
+	info, err := os.Stat(parsed.Path)
+	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatal("callback socket is not private")
 	}
-	client := unixSocketClient(path)
+	client := unixSocketClient(parsed.Path)
 	defer client.CloseIdleConnections()
 	for _, tc := range []struct {
 		body   string
@@ -178,7 +171,7 @@ func TestManagedSocketRequiresExactRevisionAndRetainsRefusals(t *testing.T) {
 	}
 }
 
-func TestManagedUnsupportedDutiesAndDemoRemainOffline(t *testing.T) {
+func TestManagedUnsupportedDutiesRemainOffline(t *testing.T) {
 	b, x, calls := managedFixture(t)
 	before := calls.Load()
 	for _, role := range []Role{Bug, Feature, Issue, Release, Hall, Simplifier} {
@@ -196,9 +189,8 @@ func TestManagedUnsupportedDutiesAndDemoRemainOffline(t *testing.T) {
 	if executionHold(x, Issue) != "" {
 		t.Fatal("review repair was held")
 	}
-	b.Store = testStore(t, true)
-	if _, err := b.beginManaged(t.Context(), x, Review, nil); err == nil || calls.Load() != before {
-		t.Fatal("demo or unsupported work contacted Mjolnir")
+	if calls.Load() != before {
+		t.Fatal("unsupported work contacted Mjolnir")
 	}
 }
 

@@ -111,7 +111,7 @@ func NewSupervisor(store *Store, gh GitHub, workers Workers) *Supervisor {
 	if provider, ok := gh.(GitHubFunnelProvider); ok {
 		registry[ProviderID("github")] = &GitHubFunnel{Client: provider}
 	}
-	return &Supervisor{Mjolnir: mjolnir.New(filepath.Dir(store.path), store.Snapshot().Demo, mjolnir.Connection{}), Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses"), store.Snapshot().Demo), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]chan struct{}{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
+	return &Supervisor{Mjolnir: mjolnir.New(filepath.Dir(store.path), mjolnir.Connection{}), Store: store, GitHub: gh, Workers: workers, Publisher: publisher, Funnels: registry, Harnesses: harness.New(filepath.Join(filepath.Dir(store.path), "harnesses")), running: map[string]context.CancelFunc{}, retrying: map[string]bool{}, reconciling: map[string]chan struct{}{}, wake: make(chan struct{}, 1), fatal: make(chan error, 1), now: time.Now}
 }
 func (s *Supervisor) fail(err error) {
 	if err != nil {
@@ -148,9 +148,6 @@ func (s *Supervisor) Run(ctx context.Context) (runErr error) {
 }
 func (s *Supervisor) schedule(ctx context.Context) {
 	state := s.Store.Snapshot()
-	if state.Demo {
-		return
-	}
 	if now := s.now(); expiredDeferrals(state, now) {
 		s.update(func(st *State) error { expireDeferrals(st, now); return nil })
 		state = s.Store.Snapshot()
@@ -1205,7 +1202,7 @@ func (s *Supervisor) control(id string, role Role, action, taskID string, guard 
 		if task == nil {
 			return errors.New("unknown task")
 		}
-		if task.Kind == "issue" && !state.Demo {
+		if task.Kind == "issue" {
 			if _, ok := s.Workers.(IssueRetrier); ok {
 				return s.retryIssueTask(id, taskID)
 			}

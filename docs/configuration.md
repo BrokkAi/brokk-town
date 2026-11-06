@@ -27,11 +27,11 @@ preserve the stored value.
 | --- | --- | --- |
 | `max_workers` | Global settings | Active agent workers across all repositories. 1–64, default 4. |
 | `quiet_hours` | Global settings or config file | Default weekly quiet windows for repositories that set none. |
-| `attention_hook` | Global settings | Optional local notifier for blocked/completed attention events. |
+| `attention_hook` | Global settings | Optional notifier for blocked/completed attention events. |
 
 The attention hook is disabled by default. When enabled it receives one small
 JSON object on stdin and runs for at most ten seconds, independently of quiet
-hours and never in demo mode. Command output is discarded. See
+hours. Command output is discarded. See
 [operations.md](operations.md).
 
 ## Repository defaults
@@ -141,7 +141,8 @@ ledger resets at the start of each period.
 
 ## Quiet hours
 
-Quiet hours are weekly windows on the machine's local clock. During a window
+Quiet hours are weekly windows on the local clock of Town's pod, UTC unless its
+time zone is set. During a window
 Town starts no new agent work and makes none of its own GitHub writes.
 Running work finishes, and the repository keeps being watched.
 
@@ -178,11 +179,12 @@ explicit hold until you select direct local execution. See
 
 ## Bot endpoints
 
-Town reaches each bot over the network. A bot with a URL is reached at that
-URL; every other bot is started by `bt` from the binaries installed beside it
-(see [operations.md](operations.md#bots)). These are process settings, read at
-startup from the environment or the config file's `bots` object; they are not
-stored in the state directory and not shown in the browser.
+Town reaches each bot over the network at its URL (see
+[operations.md](operations.md#bots)), and does not start unless every bot has
+a URL and a token. These are process settings, read at startup from the
+environment or the config file's `bots` object; they are not stored in the
+state directory and not shown in the browser. `deploy/kubernetes/bt.yaml` sets
+them for every bot.
 
 | Environment variable | Meaning |
 | --- | --- |
@@ -190,14 +192,13 @@ stored in the state directory and not shown in the browser.
 | `BROKK_TOWN_BOT_<ROLE>_TOKEN_FILE` | File holding the bot's bearer token, such as a mounted secret. |
 | `BROKK_TOWN_BOT_<ROLE>_TOKEN` | The token itself, when no file is given. |
 | `BROKK_TOWN_BOT_CA_FILE` | PEM certificates to trust for `https` bot URLs. When set, only these are trusted. |
-| `BROKK_TOWN_BOT_DIR` | Where `bt` finds the bot binaries it starts. Default: the directory `bt` is in. |
-| `BROKK_TOWN_CALLBACK_URL` | The address bots use to reach Town's managed-review callback, such as `http://bt:8091`, with no path. Required for managed reviews when Review Bot is remote. |
-| `BROKK_TOWN_CALLBACK_LISTEN` | Where Town listens for that callback. Default `:8091` when a callback URL is set; otherwise a loopback port that bots `bt` started can reach. |
+| `BROKK_TOWN_CALLBACK_URL` | The address bots use to reach Town's managed-review callback, such as `http://bt:8091`, with no path. Required for managed reviews. |
+| `BROKK_TOWN_CALLBACK_LISTEN` | Where Town listens for that callback. Default `:8091`. |
 | `BROKK_TOWN_CALLBACK_TLS_CERT`, `BROKK_TOWN_CALLBACK_TLS_KEY` | Serve the callback over HTTPS. |
 
-A URL without a token stops startup. A bot that `bt` starts never inherits these
-variables, so it never sees another bot's token. An environment variable outranks the
-config file. Each managed review mints its own callback token and route, valid
+A missing URL, or a URL without a token, stops startup. Each bot's pod mounts
+only its own token, so a bot never sees another bot's. An environment variable
+outranks the config file. Each managed review mints its own callback token and route, valid
 only while that review runs. The bot side of these settings is in
 [bots.md](bots.md#bot-binaries).
 
@@ -241,7 +242,6 @@ Rules:
   clears it so the repository follows GitHub's default branch again.
 - A repository already present is updated; a deleted repository is restored with its
   recovery records.
-- A real config is refused in demo mode.
 - The object form requires a `towns` array; `max_workers` cannot be null.
 
 A complete example is in [config.example.json](config.example.json).

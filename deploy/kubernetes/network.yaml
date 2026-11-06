@@ -17,7 +17,7 @@ spec:
         - port: 8080
 ---
 # Only the bots reach Town's managed-review callback; the browser port is
-# reached through kubectl port-forward.
+# reached through the Ingress.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

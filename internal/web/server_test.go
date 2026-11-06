@@ -13,24 +13,36 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/BrokkAi/brokk-town/internal/auth"
 	"github.com/BrokkAi/brokk-town/internal/harness"
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-func fixture(t *testing.T) (*Server, *httptest.Server) {
-	return fixtureMode(t, false)
+// testAuth signs people in to a Town at origin through a GitHub app that is
+// never contacted, and admits @ada and @grace.
+func testAuth(t *testing.T, origin string) *auth.Service {
+	t.Helper()
+	service, err := auth.New(auth.Config{Origin: origin, GitHub: &auth.Provider{ClientID: "id", ClientSecret: "secret"}, Allow: auth.Allow{GitHubUsers: []string{"ada", "grace"}}, Key: []byte(strings.Repeat("k", 32))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
 }
 
-func fixtureMode(t *testing.T, demo bool) (*Server, *httptest.Server) {
+// fixture is a Town served on a loopback port, reached with the operator's
+// access key "test-key" or a signed-in person's session.
+func fixture(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
-	store, e := town.Open(t.TempDir(), demo)
+	store, e := town.Open(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { store.Close() })
 	s := &Server{Store: store, Token: "test-key", Supervisor: town.NewSupervisor(store, nil, nil)}
-	httpServer := httptest.NewUnstartedServer(s.Handler())
+	httpServer := httptest.NewUnstartedServer(nil)
 	s.Origin = "http://" + httpServer.Listener.Addr().String()
+	s.Auth = testAuth(t, s.Origin)
+	httpServer.Config.Handler = s.Handler()
 	httpServer.Start()
 	t.Cleanup(httpServer.Close)
 	return s, httpServer
@@ -69,6 +81,8 @@ func TestLocalAPIAuthenticationOriginAndStrictInput(t *testing.T) {
 		{"/api/control", "POST", "test-key", "", `{"town":"acme/a","role":"bug","action":"start"}`, 200},
 		{"/api/control", "POST", "test-key", "", `{"town":"acme/a","role":"wat","action":"start"}`, 400},
 		{"/api/control", "POST", "test-key", "", `{"town":"acme/a","role":"bug","action":"launch"}`, 400},
+		// Kubernetes stops Town; there is no API for it.
+		{"/api/shutdown", "POST", "test-key", "", `{}`, 404},
 	} {
 		r := call(t, h.URL, tc.method, tc.path, tc.body, tc.token, tc.origin)
 		if r.StatusCode != tc.status {
@@ -230,14 +244,6 @@ func TestTaskDetailReadsOneLiveIssueOrPR(t *testing.T) {
 	}
 }
 
-func TestTaskDetailRefusesDemoTowns(t *testing.T) {
-	s, h := fixtureMode(t, true)
-	s.TaskGitHub = &fakeTaskGitHub{}
-	if r := call(t, h.URL, "POST", "/api/task-detail", `{"town":"acme/demo","task":"issue:1"}`, "test-key", ""); r.StatusCode != http.StatusConflict {
-		t.Fatal("demo live details were not refused")
-	}
-}
-
 func TestTruncateTaskDetailBodyKeepsRunesIntact(t *testing.T) {
 	long := strings.Repeat("é", maxTaskDetailBody)
 	body, truncated := truncateTaskDetailBody(long)
@@ -362,19 +368,6 @@ func TestBotProfileAPIsIsolateSettingsAndValidateDiscoveryRole(t *testing.T) {
 	if c.ForRole(town.Review).Agent.Model != "new-default" || c.ForRole(town.Issue).Agent.Model != "issue-model" {
 		t.Fatal("reset did not isolate its target bot")
 	}
-	t.Run("demo choice discovery", func(t *testing.T) {
-		demo, server := fixtureMode(t, true)
-		if err := demo.Store.Update(func(st *town.State) error { _, err := st.Add(town.DefaultConfig("acme/team")); return err }); err != nil {
-			t.Fatal(err)
-		}
-		for _, role := range []string{"review", "issue", "release", "feature", "bug"} {
-			r := call(t, server.URL, "POST", "/api/choices", `{"town":"acme/team","role":"`+role+`","agent":{}}`, "test-key", "")
-			var choices town.AgentChoices
-			if r.StatusCode != 200 || json.NewDecoder(r.Body).Decode(&choices) != nil || len(choices.Models) == 0 {
-				t.Fatal("demo role discovery failed", role, r.Status)
-			}
-		}
-	})
 }
 
 type issuePublisher struct{}
@@ -463,16 +456,14 @@ func TestEventStreamSnapshotAndCommittedUpdate(t *testing.T) {
 
 func TestHarnessCatalogAPIIncludesRegistryAndSupplements(t *testing.T) {
 	s, h := fixture(t)
-	s.Supervisor.Harnesses = harness.New(t.TempDir(), true)
+	// A refresh would reach the live registry, so only the bundled catalog is
+	// read here; the harness package tests refreshing against a fake.
+	s.Supervisor.Harnesses = harness.New(t.TempDir())
 	if r := call(t, h.URL, "GET", "/api/harnesses", "", "", ""); r.StatusCode != 401 {
 		t.Fatal("unauthenticated catalog")
 	}
-	for _, method := range []string{"GET", "POST"} {
-		path, body := "/api/harnesses", ""
-		if method == "POST" {
-			path, body = path+"/refresh", "{}"
-		}
-		r := call(t, h.URL, method, path, body, "test-key", "")
+	{
+		r := call(t, h.URL, "GET", "/api/harnesses", "", "test-key", "")
 		if r.StatusCode != 200 {
 			t.Fatal(r.Status)
 		}
@@ -484,7 +475,7 @@ func TestHarnessCatalogAPIIncludesRegistryAndSupplements(t *testing.T) {
 		for _, entry := range list.Agents {
 			found[entry.ID] = true
 		}
-		if len(found) < 33 || !list.Demo || list.Source != harness.RegistryURL {
+		if len(found) < 33 || list.Source != harness.RegistryURL {
 			t.Fatal(list)
 		}
 		for _, id := range []string{"codex-acp", "brokkai/anvil", "brokkai/muse-acp", "foundev/draupnir"} {

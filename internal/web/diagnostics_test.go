@@ -7,8 +7,8 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-func TestDiagnosticsAPIIsAuthenticatedStrictAndSavesDemoResult(t *testing.T) {
-	s, h := fixtureMode(t, true)
+func TestDiagnosticsAPIIsAuthenticatedStrictAndSavesItsResult(t *testing.T) {
+	s, h := fixture(t)
 	if err := s.Store.Update(func(st *town.State) error { _, err := st.Add(town.DefaultConfig("acme/app")); return err }); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,13 @@ func TestDiagnosticsAPIIsAuthenticatedStrictAndSavesDemoResult(t *testing.T) {
 			if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {
 				t.Fatal(err)
 			}
-			if len(report.Checks) != 1 || report.Checks[0].Code != "demo" || report.Checks[0].Status != "unknown" {
+			// Without a GitHub handle the account cannot be checked; nothing
+			// is executed either way.
+			github := false
+			for _, check := range report.Checks {
+				github = github || (check.Code == "github_auth" && check.Status == "unknown")
+			}
+			if !github {
 				t.Fatal(report)
 			}
 		}

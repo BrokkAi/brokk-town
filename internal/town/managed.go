@@ -52,8 +52,8 @@ func (b *BotWorkers) beginManaged(ctx context.Context, t *Town, role Role, obser
 	if !managedSupported(t, role) {
 		return nil, errors.New("this bot duty does not yet support managed execution; select direct local execution")
 	}
-	if b.Mjolnir == nil || (b.Store != nil && b.Store.Snapshot().Demo) {
-		return nil, errors.New("managed execution requires a configured Mjolnir connection outside demo mode")
+	if b.Mjolnir == nil {
+		return nil, errors.New("managed execution requires a configured Mjolnir connection")
 	}
 	config := t.Config.ForRole(role)
 	pin := config.ExecutionRuntimeForRole(role)

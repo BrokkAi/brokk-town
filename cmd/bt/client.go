@@ -6,8 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -46,7 +44,6 @@ func checkFlags(fs *flag.FlagSet, cmd *commandInfo, explicit bool) error {
 
 // statusView is the part of the town state the status summary reads.
 type statusView struct {
-	Demo     bool `json:"demo"`
 	Capacity *struct {
 		Active int `json:"active"`
 		Limit  int `json:"limit"`
@@ -66,7 +63,7 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 	conn, alive := serviceAlive(ctx, dir)
 	if asJSON {
 		if !alive {
-			return errors.New("Brokk Town is not running; start bt or bt -d")
+			return errors.New("Brokk Town is not running")
 		}
 		var state any
 		if err := request(ctx, conn, "GET", "/api/state", nil, &state); err != nil {
@@ -85,9 +82,6 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 		return err
 	}
 	fmt.Printf("Brokk Town %s running (pid %d at %s)\n", conn.Version, conn.PID, conn.URL)
-	if state.Demo {
-		fmt.Println("Demo: simulated events only")
-	}
 	if state.Capacity != nil {
 		fmt.Printf("Capacity: %d active · limit %d\n", state.Capacity.Active, state.Capacity.Limit)
 	}
@@ -142,9 +136,6 @@ func printStatus(ctx context.Context, dir string, asJSON bool) error {
 			}
 		}
 	}
-	if logs := filepath.Join(dir, "logs"); dirExists(logs) {
-		fmt.Println("Logs:", logs)
-	}
 	return nil
 }
 
@@ -166,9 +157,4 @@ func printDiagnostics(label string, report *town.DiagnosticReport) {
 			fmt.Printf("      %s\n", check.URL)
 		}
 	}
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }

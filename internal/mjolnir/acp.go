@@ -34,8 +34,8 @@ func (e Executor) Execute(ctx context.Context, plan RunPlan, prompt string, repa
 	if !utf8.ValidString(prompt) || strings.TrimSpace(prompt) == "" || utf8.RuneCountInString(prompt) > 65536 || strings.HasPrefix(prompt, "!") {
 		return answer, errors.New("Mjolnir prompts must contain 1–65536 characters and cannot start with !; no session was created")
 	}
-	if e.Runs == nil || e.Runs.Catalog == nil || e.Runs.Catalog.listing.Demo || len(e.Command) == 0 {
-		return answer, errors.New("managed execution requires configured Mjolnir and a bounded prompt outside demo mode")
+	if e.Runs == nil || e.Runs.Catalog == nil || len(e.Command) == 0 {
+		return answer, errors.New("managed execution requires configured Mjolnir and a bounded prompt")
 	}
 	if err := plan.Validate(); err != nil {
 		return answer, err

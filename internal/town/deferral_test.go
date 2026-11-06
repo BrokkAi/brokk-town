@@ -39,7 +39,7 @@ func snoozeTown(t *testing.T, s *Store) *Town {
 }
 
 func TestSnoozedTaskIsSkippedWhileTheHouseWorksTheRest(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := snoozeTown(t, s)
 	now := time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC)
 	sup := NewSupervisor(s, nil, nil)
@@ -83,7 +83,7 @@ func TestSnoozedTaskIsSkippedWhileTheHouseWorksTheRest(t *testing.T) {
 }
 
 func TestSnoozedReadyPullRequestIsNotMerged(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	gh := newGH(1)
 	sup := NewSupervisor(s, gh, observing{gh: gh})
@@ -109,7 +109,7 @@ func TestSnoozedReadyPullRequestIsNotMerged(t *testing.T) {
 }
 
 func TestSnoozeEndsOnTheSchedulerClockAndWakesTheHouse(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := snoozeTown(t, s)
 	clock := time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC)
 	sup := NewSupervisor(s, nil, nil)
@@ -155,7 +155,7 @@ func TestSnoozeEndsOnTheSchedulerClockAndWakesTheHouse(t *testing.T) {
 
 func TestSnoozeSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
-	s, err := Open(dir, false)
+	s, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestSnoozeSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Close()
-	s, err = Open(dir, false)
+	s, err = Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestSnoozeSurvivesRestart(t *testing.T) {
 }
 
 func TestReconcileKeepsTheOperatorSnooze(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	until := time.Now().Add(time.Hour).UTC()
 	if err := NewSupervisor(s, nil, nil).Defer(x.ID, "pr:1", until, "contributor is away"); err != nil {
@@ -203,7 +203,7 @@ func TestReconcileKeepsTheOperatorSnooze(t *testing.T) {
 }
 
 func TestSnoozeRejectsInvalidRequests(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := snoozeTown(t, s)
 	now := time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC)
 	update(t, s, func(st *State) {
@@ -256,7 +256,7 @@ func TestSnoozeRejectsInvalidRequests(t *testing.T) {
 }
 
 func TestClearingASnoozeMakesTheTaskEligibleImmediately(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := snoozeTown(t, s)
 	now := time.Now()
 	sup := NewSupervisor(s, nil, nil)
@@ -286,35 +286,8 @@ func TestClearingASnoozeMakesTheTaskEligibleImmediately(t *testing.T) {
 	}
 }
 
-func TestDemoSnoozeEndsOnTheDemoClock(t *testing.T) {
-	s := testStore(t, true)
-	now := time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC)
-	update(t, s, func(st *State) {
-		c := DefaultConfig("brokkai/orchard")
-		x, err := st.Add(c)
-		if err != nil {
-			t.Fatal(err)
-		}
-		x.Initialized = true
-		x.Head = baseSHA
-		seedDemoBoard(st, x, now)
-	})
-	task := s.Snapshot().Towns["brokkai/orchard"].Tasks["issue:707"]
-	if task == nil || !task.Deferred(now) || task.DeferReason == "" {
-		t.Fatalf("the demo board has no snoozed task: %+v", task)
-	}
-	update(t, s, func(st *State) { expireDeferrals(st, now.Add(5*time.Hour)) })
-	if task := s.Snapshot().Towns["brokkai/orchard"].Tasks["issue:707"]; !task.Deferred(now.Add(5 * time.Hour)) {
-		t.Fatal("the demo snooze ended early")
-	}
-	update(t, s, func(st *State) { expireDeferrals(st, now.Add(6*time.Hour)) })
-	if task := s.Snapshot().Towns["brokkai/orchard"].Tasks["issue:707"]; !task.DeferredUntil.IsZero() {
-		t.Fatalf("the demo snooze did not end on the demo clock: %+v", task)
-	}
-}
-
 func TestIssueAttemptIsChargedToTheIssueItRan(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := snoozeTown(t, s)
 	now := time.Now()
 	if err := NewSupervisor(s, nil, nil).Defer(x.ID, "issue:1", now.Add(time.Hour), "not now"); err != nil {
@@ -334,7 +307,7 @@ func TestIssueAttemptIsChargedToTheIssueItRan(t *testing.T) {
 }
 
 func TestSnoozeReasonIsCountedInCharacters(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := snoozeTown(t, s)
 	sup := NewSupervisor(s, nil, nil)
 	until := time.Now().Add(time.Hour)
@@ -348,7 +321,7 @@ func TestSnoozeReasonIsCountedInCharacters(t *testing.T) {
 }
 
 func TestFinishedSnoozedTaskEndsQuietly(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	now := time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC)
 	sup := NewSupervisor(s, nil, nil)

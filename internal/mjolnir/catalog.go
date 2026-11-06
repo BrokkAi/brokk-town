@@ -85,7 +85,6 @@ type Options struct {
 type Listing struct {
 	Options
 	Configured bool      `json:"configured"`
-	Demo       bool      `json:"demo"`
 	Fetched    time.Time `json:"fetched"`
 	Stale      bool      `json:"stale"`
 	Refreshing bool      `json:"refreshing"`
@@ -124,13 +123,9 @@ type saved struct {
 	Options  Options   `json:"options"`
 }
 
-func New(dir string, demo bool, connection Connection) *Catalog {
+func New(dir string, connection Connection) *Catalog {
 	c := &Catalog{connection: connection, cache: filepath.Join(dir, "mjolnir-options.json"), wake: make(chan struct{}, 1)}
-	c.listing = Listing{Demo: demo, Stale: true, Options: Options{Profiles: []Profile{}, Targets: []Target{}, Bundles: []Bundle{}}}
-	// Demo ignores even an explicitly configured connection and the disk cache.
-	if demo {
-		return c
-	}
+	c.listing = Listing{Stale: true, Options: Options{Profiles: []Profile{}, Targets: []Target{}, Bundles: []Bundle{}}}
 	c.listing.Configured = connection.URL != "" || connection.TokenFile != ""
 	if !c.listing.Configured {
 		return c
@@ -182,7 +177,7 @@ func (c *Catalog) RequestRefresh() {
 	if c.listing.Refreshing {
 		return
 	}
-	if c.listing.Demo || !c.listing.Configured || c.setupError != "" {
+	if !c.listing.Configured || c.setupError != "" {
 		return
 	}
 	select {
@@ -192,7 +187,7 @@ func (c *Catalog) RequestRefresh() {
 	}
 }
 func (c *Catalog) Run(ctx context.Context) {
-	if c.listing.Demo || !c.listing.Configured || c.setupError != "" {
+	if !c.listing.Configured || c.setupError != "" {
 		return
 	}
 	defer c.client.CloseIdleConnections()
@@ -216,7 +211,7 @@ func (c *Catalog) Run(ctx context.Context) {
 func (c *Catalog) refreshNow(ctx context.Context) {
 	c.refresh.Lock()
 	defer c.refresh.Unlock()
-	if c.listing.Demo || !c.listing.Configured || c.setupError != "" || ctx.Err() != nil {
+	if !c.listing.Configured || c.setupError != "" || ctx.Err() != nil {
 		return
 	}
 	c.mu.Lock()
@@ -314,9 +309,6 @@ func (c *Catalog) get(ctx context.Context, path, resource string, out any) error
 // catalog and artifact reads. Callers own the response body and status checks.
 func (c *Catalog) request(ctx context.Context, method, path string, body io.Reader, timeout time.Duration) (*http.Response, error) {
 	fail := errors.New
-	if c.listing.Demo {
-		return nil, fail("Mjolnir is offline in demo mode.")
-	}
 	if c.setupError != "" {
 		return nil, fail(c.setupError)
 	}

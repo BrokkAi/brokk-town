@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func workspace(t *testing.T) Config {
@@ -45,7 +43,7 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !testplatform.OwnerOnly(info.Mode()) {
+	if info.Mode().Perm() != 0600 {
 		t.Fatalf("repair state must stay private, got %v", info.Mode().Perm())
 	}
 }

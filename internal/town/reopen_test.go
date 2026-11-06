@@ -10,7 +10,7 @@ import (
 // later inventory is a transition.
 func reopenTown(t *testing.T, mode string) (*State, *Town) {
 	t.Helper()
-	state := NewState(false)
+	state := NewState()
 	cfg := DefaultConfig("acme/orchard")
 	cfg.SimplifierMode = mode
 	town, err := state.Add(cfg)
@@ -25,7 +25,7 @@ func reconcileIssues(t *testing.T, state *State, town *Town, issues ...RemoteIss
 	remote := inventory()
 	remote.Issues = issues
 	Reconcile(state, town, remote, time.Now())
-	if err := validateState(*state, false); err != nil {
+	if err := validateState(*state); err != nil {
 		t.Fatalf("reconcile left invalid state: %v", err)
 	}
 }
@@ -33,7 +33,7 @@ func reconcileIssues(t *testing.T, state *State, town *Town, issues ...RemoteIss
 func reconcilePulls(t *testing.T, state *State, town *Town, pulls ...Pull) {
 	t.Helper()
 	Reconcile(state, town, inventory(pulls...), time.Now())
-	if err := validateState(*state, false); err != nil {
+	if err := validateState(*state); err != nil {
 		t.Fatalf("reconcile left invalid state: %v", err)
 	}
 }
@@ -322,7 +322,7 @@ func TestMayorCanAdmitWorkSimplifierDeclined(t *testing.T) {
 		if task.MayoralDecision != "admitted" || task.Simplification != nil || selectedBy(town, task) != want {
 			t.Fatalf("%s: admitted work did not reach its worker: %+v", kind, task)
 		}
-		if err := validateState(*state, false); err != nil {
+		if err := validateState(*state); err != nil {
 			t.Fatal(err)
 		}
 	}

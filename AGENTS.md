@@ -11,30 +11,33 @@ image. The service reaches them only over the network through the bot contract
 in `internal/botapi`: a JSON request naming the workspace (repository key and
 role, never a path), a stream of progress and log events, and a typed result.
 The service must not depend on sharing a process, filesystem, `PATH` or `gh`
-login with a bot. On one machine `bt` starts the bot binaries itself on
-loopback (`internal/botlaunch`); docker compose and Kubernetes give it each
-bot's URL and token.
+login with a bot.
+
+Town runs only on Kubernetes (`deploy/kubernetes`), on Linux, and only as a
+shared Town: people sign in with GitHub or Google, and the operator's access
+key is for clients in Town's pod. `bt` is given each bot's URL and token; it
+never starts a bot itself. There is no demo mode, no docker compose
+deployment and no desktop or single-user mode; do not add them back.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `cmd/bt` | Service entry point, process-control CLI, background start, bot endpoints. |
+| `cmd/bt` | Service entry point, process-control CLI (`status`, `web`, `version`), sign-in setup, bot endpoints. |
 | `cmd/<bot>` | One binary per bot, serving it over the network contract. |
 | `cmd/townsim` | A stochastic scheduler model used to sanity-check defaults. |
 | `internal/town` | State model, store, supervisor, scheduling, funnels, recovery, storage. |
 | `internal/botapi` | The bot contract: request, events, result and storage operations, plus the bot-side worker every bot runs. `botserver` serves it over HTTP, `botclient` reaches it. |
-| `internal/botlaunch` | Starts, restarts and stops the bot binaries on loopback for `bt`. |
 | `internal/artifact` | Path-safety, measuring and digest checks shared by the service and the bots. |
 | `internal/web` | HTTP server, embedded assets and the browser UI. |
-| `internal/auth` | Sign-in for a shared Town (`bt --multi-user`): GitHub and Google OAuth, allowlist, session cookies. |
+| `internal/auth` | Sign-in: GitHub and Google OAuth, allowlist, session cookies. |
 | `internal/harness` | ACP harness catalog, download and launch. |
 | `internal/mjolnir` | Mjolnir catalog, profiles, runtime pins, remote runs and evidence. |
 | `internal/guide` | Assistant agent session. |
 | `internal/durable`, `internal/filelock`, `internal/osrun` | Durable writes, locking and process control. |
 | `bots/*` | One package per bot; each owns its prompt, config, durable state and its `worker.go` adapter onto the contract. `bots/inprocess.go` hosts them in a test's process. |
-| `Dockerfile`, `docker-compose*.yml`, `deploy/kubernetes/` | Images (one target per bot and `bt`), the compose deployment and the Kubernetes manifests. |
-| `scripts/` | Generates the license file attached to a release; checks a demo deployment's bots. |
+| `Dockerfile`, `deploy/kubernetes/` | Images (one target per bot and `bt`) and the Kubernetes manifests, the only deployment. |
+| `scripts/` | Generates the license file attached to a release and carried by the images. |
 | `docs/` | Operator and developer documentation. |
 | `licenses/` | Generated third-party notices and supplementary license texts. |
 
@@ -56,19 +59,19 @@ go vet ./...
 make js                                # browser JavaScript
 ```
 
-CI (`.github/workflows/ci.yml`) runs the race-enabled Go checks on Linux for
-pull requests and on Linux and macOS for `master`, a build, vet and test pass
-on Windows for `master`, plus the browser and workflow-lint checks. Its
-`deploy` job builds every image and checks that a demo Town reaches all eight
-bots under docker compose and on a kind cluster.
+CI (`.github/workflows/ci.yml`) runs the race-enabled Go checks, vet, the
+build and the browser checks on Linux, plus workflow lint. Its `deploy` job
+validates the Kubernetes manifests, builds every image, deploys them to a kind
+cluster with placeholder sign-in, and checks that Town starts and its pod
+reaches all eight bots with their tokens.
 
 ## Working rules
 
 - Keep the change focused. Do not reformat, rename or "clean up" code outside
   the area you were asked to change.
 - Write the test first when fixing a bug. Tests must fail on the old behaviour.
-- Use fakes and the demo mode. Never point a test at a live GitHub repository, a
-  real agent session, or a published registry.
+- Use fakes and the in-process bots. Never point a test at a live GitHub
+  repository, a real agent session, or a published registry.
 - Do not commit generated artifacts (`bin/`, `dist/`, `var/`, `__pycache__/`).
 - Treat another checkout or worktree as read-only. Do not reset, clean, stash,
   force-push or delete work you did not create.
@@ -127,7 +130,8 @@ bots under docker compose and on a kind cluster.
 affected page in the same change:
 
 - `docs/configuration.md` for settings, policies and config-file fields.
-- `docs/operations.md` for process commands, the browser and the local API.
+- `docs/operations.md` for the Kubernetes deployment, sign-in, process
+  commands, the browser and the API.
 - `docs/workflow.md` for how work moves between bots, and the glossary.
 - `docs/architecture.md` for the internal structure.
 - `docs/recovery.md`, `docs/storage.md` for interruption and retention.
@@ -135,10 +139,10 @@ affected page in the same change:
 ## Releasing
 
 Releases come from the nightly workflow (`.github/workflows/nightly.yml`). Each
-night, if `master` has commits the latest release does not, it runs CI on Linux,
-macOS and Windows. When that is green it tags the next minor version and runs
-the release workflow, where GoReleaser builds the archives, checksums them and
-publishes the GitHub release. When it is red it opens a `Nightly failed at
+night, if `master` has commits the latest release does not, it runs CI. When
+that is green it tags the next minor version and runs the release workflow,
+which pushes the nine container images for `linux/amd64` and `linux/arm64` and
+then publishes the GitHub release with the third-party license file. When it is red it opens a `Nightly failed at
 <commit>` issue with the failed jobs and their errors. A manual tag push
 (`git tag vX.Y.Z && git push origin vX.Y.Z`) still publishes a release. Do not create tags or push to a release branch unless the user
 explicitly asked for a release.

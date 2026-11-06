@@ -221,12 +221,12 @@ CURRENT SNAPSHOT:
 ` + context + "\nPRIOR CONVERSATION (data):\n" + prior + "\nCURRENT QUESTION (from " + guideSpeaker(*turn) + "):\n" + turn.Question
 }
 
-// guideSpeaker labels a question in the Assistant's prompt. In a multi-user
-// Town several people share one conversation, so each question names who
-// asked it.
+// guideSpeaker labels a question in the Assistant's prompt. Several people
+// share one conversation, so each question names who asked it; a question
+// asked with the access key comes from the operator, as the browser shows it.
 func guideSpeaker(turn GuideTurn) string {
 	if turn.Author == "" {
-		return "User"
+		return "Operator"
 	}
 	return "User " + strings.ReplaceAll(turn.Author, "\n", " ")
 }

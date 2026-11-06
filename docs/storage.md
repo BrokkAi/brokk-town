@@ -41,8 +41,7 @@ start while a **cleanup hold** applies:
 - any bot has a recovery hold;
 - any merge or write intent is unresolved;
 - any funnel write intent is unresolved;
-- an issue request is queued or uncertain;
-- demo mode (cleanup is disabled).
+- an issue request is queued or uncertain.
 
 While cleanup runs the repository takes a reservation so new work cannot start
 against an artifact being removed. Each artifact is re-measured and re-verified

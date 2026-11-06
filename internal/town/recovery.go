@@ -10,7 +10,7 @@ import (
 // if the next inventory is canceled or the house is paused. This is not evidence
 // of successful inventory or of an interrupted repair's outcome.
 func recoverDefaultBranchFailure(s *State, t *Town, now time.Time) bool {
-	if s.Demo || t.Deleted || t.Initialized || t.Config.Branch != "" || t.DefaultBranch != "" {
+	if t.Deleted || t.Initialized || t.Config.Branch != "" || t.DefaultBranch != "" {
 		return false
 	}
 	w := t.Workers[Repo]

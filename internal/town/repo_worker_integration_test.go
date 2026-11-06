@@ -16,7 +16,6 @@ import (
 // Exercise the actual Repo Bot in process: it must resolve the repository's
 // default branch even when Town configured none.
 func TestRepoWorkerResolvesTheDefaultBranch(t *testing.T) {
-	skipPOSIXFakes(t)
 	bin := t.TempDir()
 	// Only these reads are allowed. Git and agents must never run in this test.
 	writeTestCommand(t, filepath.Join(bin, "gh"), `#!/bin/sh
@@ -44,7 +43,7 @@ esac
 		{"managed placement keeps inventory local without repair", "", "", "main", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store := testStore(t, false)
+			store := testStore(t)
 			x := addTown(t, store)
 			update(t, store, func(st *State) {
 				st.Towns[x.ID].Config.Branch = tc.configured
@@ -96,7 +95,7 @@ esac
 		// alone do not prove an upgraded service can reconcile saved state.
 		dir := t.TempDir()
 		before := legacyBranchFailure(t, dir, true, true)
-		store, err := Open(dir, false)
+		store, err := Open(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -122,7 +121,7 @@ esac
 		}
 		check(store.Snapshot().Towns[before.ID])
 		store.Close()
-		reopened, err := Open(dir, false)
+		reopened, err := Open(dir)
 		if err != nil {
 			t.Fatal(err)
 		}

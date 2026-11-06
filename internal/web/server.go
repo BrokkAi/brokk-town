@@ -34,11 +34,8 @@ type Server struct {
 	// narrow slice of town.GitHub so tests fake two methods, not the whole
 	// interface. A nil handle means live details are unavailable.
 	TaskGitHub taskGitHub
-	// Shutdown, when set, stops the service after the request is answered. It
-	// is how bt shutdown reaches a service it cannot signal, as on Windows.
-	Shutdown func()
-	// Auth, when set, makes this a multi-user Town: people sign in with
-	// GitHub or Google and share it. Nil keeps the single local operator.
+	// Auth signs people in with GitHub or Google. It is required: every Town
+	// is shared by the people its allowlist admits.
 	Auth *auth.Service
 }
 
@@ -90,15 +87,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/diagnostics", s.diagnostics)
 	mux.HandleFunc("GET /api/outcomes", s.outcomes)
 	mux.HandleFunc("POST /api/outcomes/judgment", s.outcomeJudgment)
-	if s.Shutdown != nil {
-		mux.HandleFunc("POST /api/shutdown", func(w http.ResponseWriter, r *http.Request) {
-			respond(w, map[string]bool{"stopping": true})
-			s.Shutdown()
-		})
-	}
-	if s.Auth != nil {
-		s.Auth.Routes(mux)
-	}
+	s.Auth.Routes(mux)
 	mux.Handle("/", http.FileServerFS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Embedded assets change with every service binary; a reload after a
@@ -361,10 +350,6 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		problem(w, hostCommandRefused, http.StatusForbidden)
 		return
 	}
-	if s.Store.Snapshot().Demo {
-		problem(w, "Use a live service to add real repositories", 400)
-		return
-	}
 	id, err := s.Supervisor.AddRepo(input.Repo, input.MergePolicy, input.Agent)
 	if err != nil {
 		problem(w, err.Error(), 400)
@@ -470,10 +455,6 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snapshot := s.Store.Snapshot()
-	if snapshot.Demo {
-		problem(w, "demo repositories have no live source", http.StatusConflict)
-		return
-	}
 	t := snapshot.Towns[strings.ToLower(input.Town)]
 	if t == nil {
 		problem(w, "unknown repository", 404)

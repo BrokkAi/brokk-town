@@ -152,5 +152,3 @@ needed by the generic adapter methods, not by the low-level history read.
   never treated as deletion.
 - A write whose outcome is unknown is kept as an unresolved intent and retried
   against the same idempotency marker; it is never assumed to have failed.
-- Demo mode uses read-only funnels with synthetic items
-  only.

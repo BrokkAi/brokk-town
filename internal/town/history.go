@@ -127,9 +127,6 @@ func writeHistoryFile(path string, data []byte) error {
 }
 func (s *Store) loadHistory() error {
 	s.history = map[string]map[string]historyEntry{}
-	if s.state.Demo {
-		return nil
-	}
 	root := filepath.Dir(s.path)
 	for id, t := range s.state.Towns {
 		path := filepath.Join(historyRoot(root, id), "index.json")
@@ -221,7 +218,7 @@ func (s *Store) ArchiveCompleted(ctx context.Context, id string, now time.Time) 
 	defer s.historyMu.Unlock()
 	state := s.Snapshot()
 	t := state.Towns[id]
-	if state.Demo || t == nil || t.Deleted || s.storageHeld(id) || historyHold(t) {
+	if t == nil || t.Deleted || s.storageHeld(id) || historyHold(t) {
 		return nil
 	}
 	s.mu.RLock()

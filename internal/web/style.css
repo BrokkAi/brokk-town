@@ -546,14 +546,6 @@ input[type="checkbox"] {
   color: var(--muted);
   font-size: 12px;
 }
-.mode-chip {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--amber-soft);
-  color: var(--amber);
-  font-size: 12px;
-  font-weight: 600;
-}
 .inbox-toggle {
   position: relative;
 }
@@ -715,20 +707,6 @@ main {
   border-radius: var(--radius);
   background: var(--red-soft);
   color: var(--red);
-}
-#demo-note {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--amber);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--soft);
-}
-#demo-note strong {
-  color: var(--amber);
 }
 
 .panel {

@@ -16,18 +16,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
-    # One runner per platform covers the root module and every bot. Fanning the
-    # projects out across separate runners per platform asked for nine macOS
-    # machines at once, and macOS runners queue: concurrent runs starved each
-    # other while the work itself takes under half an hour in total. The bots
-    # share the root module and its Go version, so one toolchain setup serves
-    # them all. The account's runner limit is tight, so pull requests run on
-    # Ubuntu only; macOS runs on master.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
-    runs-on: ${{ matrix.os }}
+    # Town and its bots run only in Linux containers, so one Linux runner
+    # covers the root module and every bot. The bots share the root module
+    # and its Go version, so one toolchain setup serves them all.
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -57,69 +49,63 @@ jobs:
           git diff --exit-code -- licenses/THIRD_PARTY_NOTICES.txt
       - name: Build bt and the bot binaries
         run: make js && make build
-  windows:
-    # Windows runs the whole module build, vet and tests under PowerShell. It
-    # is separate from the matrix because the Unix steps use a POSIX shell, and
-    # the account's runner limit keeps pull requests on Ubuntu.
-    if: github.event_name != 'pull_request'
-    runs-on: windows-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Check the module
-        run: |
-          go build ./...
-          go vet ./...
-          go test -timeout 30m ./...
   deploy:
-    # Builds every image, then brings Town and the eight bots up twice in demo
-    # mode: with docker compose, and on a kind cluster from the Kubernetes
-    # manifests. Each time Town must reach every bot over the network.
+    # Builds every image, then brings Town and the eight bots up on a kind
+    # cluster from the Kubernetes manifests, with placeholder sign-in. Town
+    # must start, and its pod must reach every bot over the network with that
+    # bot's token.
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      BROKK_TOWN_IMAGES: brokk-town
-      BROKK_TOWN_VERSION: ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Validate the Kubernetes manifests
         run: |
           deploy/kubernetes/generate-secrets.sh
           curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz -C /usr/local/bin kubeconform
-          for overlay in base demo multi-user; do
-            kubectl kustomize "deploy/kubernetes/$overlay" | kubeconform -strict -summary -
-          done
+          kubectl kustomize deploy/kubernetes | kubeconform -strict -summary -
       - name: Build the images
-        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml build
-      - name: Docker compose round trip
-        run: |
-          docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
-          scripts/demo-dispatch-check.sh docker compose exec -T bt bt status --json --demo --state-dir /data
-      - name: Compose logs
-        if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml logs --no-color | tail -n 300
-      - name: Stop compose
-        if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml down -v
+        run: make images IMAGES=brokk-town IMAGE_TAG=ci
       - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa
         with:
           cluster_name: brokk-town
       - name: Kubernetes round trip
         run: |
+          # Placeholder sign-in: Town needs an OAuth client and an allowlist
+          # to start, and nobody signs in here.
+          cat > deploy/kubernetes/auth.env <<'AUTH'
+          BROKK_TOWN_GITHUB_CLIENT_ID=ci-placeholder
+          BROKK_TOWN_GITHUB_CLIENT_SECRET_FILE=/run/secrets/brokk-oauth/github-client-secret
+          BROKK_TOWN_ALLOW_GITHUB_USERS=octocat
+          AUTH
+          printf 'github-client-secret=ci-placeholder\n' > deploy/kubernetes/oauth-secrets.env
           for image in bt bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot; do
             kind load docker-image --name brokk-town "brokk-town/$image:ci"
           done
-          kubectl kustomize deploy/kubernetes/demo \
+          kubectl kustomize deploy/kubernetes \
             | sed -E 's#ghcr.io/brokkai/brokk-town/([a-z-]+):latest#brokk-town/\1:ci#' \
             | kubectl apply -f -
           for deployment in bt bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot; do
             kubectl -n brokk-town rollout status "deployment/$deployment" --timeout=5m
           done
-          scripts/demo-dispatch-check.sh kubectl -n brokk-town exec deploy/bt -- bt status --json --demo --state-dir /data
+          kubectl -n brokk-town exec deploy/bt -- bt status
+          # In Town's pod, reach each bot at the URL and with the token file
+          # bt.yaml gives Town, and check it reports the role Town expects.
+          kubectl -n brokk-town exec -i deploy/bt -- sh -es <<'CHECK'
+          curl -fsS http://127.0.0.1:8080/api/session | grep -q github
+          for role in bug feature issue review release simplifier repo hall; do
+            upper="$(printf '%s' "$role" | tr '[:lower:]' '[:upper:]')"
+            url="$(printenv "BROKK_TOWN_BOT_${upper}_URL" || true)"
+            token_file="$(printenv "BROKK_TOWN_BOT_${upper}_TOKEN_FILE" || true)"
+            if [ -z "$url" ] || [ -z "$token_file" ]; then
+              echo "Town has no URL or token file for the $role bot" >&2
+              exit 1
+            fi
+            identity="$(curl -fsS -H "Authorization: Bearer $(cat "$token_file")" "$url/v1/identity")"
+            echo "$identity"
+            printf '%s' "$identity" | grep -q "\"role\":\"$role\""
+          done
+          echo "every bot answered at the address and with the token Town uses"
+          CHECK
       - name: Kubernetes diagnostics
         if: failure()
         run: |

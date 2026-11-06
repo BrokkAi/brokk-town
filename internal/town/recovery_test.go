@@ -16,7 +16,7 @@ func TestRepoInventoryResumesFromPersistedRecovery(t *testing.T) {
 		for _, enabled := range []bool{true, false} {
 			t.Run(state+map[bool]string{true: "/enabled", false: "/paused"}[enabled], func(t *testing.T) {
 				dir := t.TempDir()
-				s, err := Open(dir, false)
+				s, err := Open(dir)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -41,7 +41,7 @@ func TestRepoInventoryResumesFromPersistedRecovery(t *testing.T) {
 					}
 				})
 				s.Close()
-				s, err = Open(dir, false)
+				s, err = Open(dir)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -86,7 +86,7 @@ func TestRepoInventoryResumesFromPersistedRecovery(t *testing.T) {
 					t.Fatal(err)
 				}
 				s.Close()
-				reopened, err := Open(dir, false)
+				reopened, err := Open(dir)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -136,7 +136,7 @@ func (o *overlappingRepoObserver) Observe(ctx context.Context, x *Town, request 
 
 func TestInterruptedRepairRecoveryPrecedesConfirmationInventory(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := testStore(t, false)
+		s := testStore(t)
 		x := addTown(t, s)
 		update(t, s, func(st *State) {
 			st.Towns[x.ID].Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Hall, Stage: "declined", MayoralDecision: "declined"}
@@ -187,7 +187,7 @@ func TestInterruptedRepairRecoveryPrecedesConfirmationInventory(t *testing.T) {
 			t.Errorf("confirmation did not retire its own dispatch while preserving recovery: %+v", w)
 		}
 		s.Close()
-		reopened, err := Open(filepath.Dir(s.path), false)
+		reopened, err := Open(filepath.Dir(s.path))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -219,7 +219,7 @@ func TestInterruptedInventoryDoesNotCreateOrReplaceRepairRecovery(t *testing.T) 
 	for _, mode := range []string{"inventory", "full"} {
 		for _, existing := range []bool{false, true} {
 			t.Run(mode+map[bool]string{true: "/held", false: "/unheld"}[existing], func(t *testing.T) {
-				s := testStore(t, false)
+				s := testStore(t)
 				x := addTown(t, s)
 				started := time.Now().Add(-time.Hour).Round(0)
 				if existing {
@@ -253,7 +253,7 @@ func TestInterruptedInventoryDoesNotCreateOrReplaceRepairRecovery(t *testing.T) 
 }
 
 func TestRepoRecoveryDoesNotAuthorizeReconcileWrites(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		x := st.Towns[x.ID]
@@ -290,7 +290,7 @@ func TestRepoRecoveryDoesNotAuthorizeReconcileWrites(t *testing.T) {
 
 func TestUnknownDispatchSurvivesRestartAndRequiresTargetedRecovery(t *testing.T) {
 	dir := t.TempDir()
-	s, err := Open(dir, false)
+	s, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestUnknownDispatchSurvivesRestartAndRequiresTargetedRecovery(t *testing.T)
 		return RunResult{}, nil
 	})
 	s.Close()
-	s, err = Open(dir, false)
+	s, err = Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestUnknownDispatchSurvivesRestartAndRequiresTargetedRecovery(t *testing.T)
 }
 
 func TestIssueRecoveryRequiresAffirmativeSavedPublication(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	x.Workers[Issue].Recovery = &WorkerRecovery{TaskID: "issue:7", Detail: "uncertain"}
 	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, House: Issue, Stage: "queued"}
@@ -355,7 +355,7 @@ func TestIssueRecoveryRequiresAffirmativeSavedPublication(t *testing.T) {
 }
 
 func TestPersistedLiveHandleNeverAllowsReplacementDispatch(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]

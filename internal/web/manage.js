@@ -203,12 +203,10 @@ export function management({ api, getTown, getState, refresh }) {
       if (version !== catalogVersion) return;
       catalog = next;
       renderCatalog();
-      $("#registry-status").textContent = next.demo
-        ? "Bundled registry · demo is offline"
-        : next.stale
-          ? "Using bundled or cached registry"
-          : `Registry updated ${new Date(next.fetched).toLocaleDateString()}`;
-      if (!refresh && next.stale && !next.demo) {
+      $("#registry-status").textContent = next.stale
+        ? "Using bundled or cached registry"
+        : `Registry updated ${new Date(next.fetched).toLocaleDateString()}`;
+      if (!refresh && next.stale) {
         void loadCatalog(true);
         return;
       }
@@ -539,13 +537,7 @@ export function management({ api, getTown, getState, refresh }) {
     $("#request-repo").textContent = t.config.repo;
     $("#request-error").textContent = "";
     $("#request-success").textContent = "";
-    const demo = getState().demo;
-    $("#submit-request").textContent = demo
-      ? "Create demo issue"
-      : "Create GitHub issue";
-    $("#request-note").textContent = demo
-      ? "Demo: this files a simulated task for Issue Bot. Nothing is sent to GitHub."
-      : "This posts an issue to this repository and queues it for Issue Bot. If Issue Bot is paused, start it when you’re ready for implementation.";
+    $("#request-note").textContent = "This posts an issue to this repository and queues it for Issue Bot. If Issue Bot is paused, start it when you’re ready for implementation.";
     requestPlaceholder();
     renderRequests();
     $("#request-dialog").showModal();

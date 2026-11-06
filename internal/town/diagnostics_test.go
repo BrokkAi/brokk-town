@@ -50,7 +50,7 @@ func TestMergeBlockersPreventWritesAndRecover(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := setupPR(t, s, 1)
 			gh := newGH(1)
 			update(t, s, func(st *State) { tc.change(gh, st.Towns[x.ID].Tasks["pr:1"]) })
@@ -84,7 +84,7 @@ func TestMergeBlockersPreventWritesAndRecover(t *testing.T) {
 			if err := s.Close(); err != nil {
 				t.Fatal(err)
 			}
-			reopened, err := Open(dir, false)
+			reopened, err := Open(dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -112,7 +112,7 @@ func (g unavailableGate) Gate(context.Context, string, int) (MergeGate, error) {
 }
 
 func TestUnavailableMergeGateIsDurableAndDoesNotExposeOutput(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	gh := unavailableGate{newGH(1)}
 	sup := NewSupervisor(s, gh, nil)
@@ -127,7 +127,7 @@ func TestUnavailableMergeGateIsDurableAndDoesNotExposeOutput(t *testing.T) {
 }
 
 func TestSetupChecksMissingCommandsAndNeverExecutesThem(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	dir := t.TempDir()
 	t.Setenv("PATH", dir)
@@ -160,7 +160,7 @@ func TestSetupChecksMissingCommandsAndNeverExecutesThem(t *testing.T) {
 	assertCheck(report, "agent", Issue, "blocked")
 	assertCheck(report, "verify", Issue, "blocked")
 	for _, name := range []string{"git", "gh", "agent", "verify"} {
-		if err := os.WriteFile(filepath.Join(dir, exeName(name)), []byte("#!/bin/sh\nprintf invoked > '"+dir+"/unexpected'\nexit 1\n"), 0700); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nprintf invoked > '"+dir+"/unexpected'\nexit 1\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -186,33 +186,22 @@ func TestSetupChecksMissingCommandsAndNeverExecutesThem(t *testing.T) {
 	}
 }
 
-func TestSetupGitHubUsesOnlyMetadataReadsAndDemoSkipsEverything(t *testing.T) {
-	for _, demo := range []bool{false, true} {
-		t.Run(strconv.FormatBool(demo), func(t *testing.T) {
-			s := testStore(t, demo)
-			x := addTown(t, s)
-			gh := fakeGitHubCLI(t, ghRoute{prefix: apiPrefix + "GET user", stdout: `{"login":"reader"}`}, ghRoute{prefix: apiPrefix + "GET repos/acme/orchard", stdout: `{"full_name":"acme/orchard"}`})
-			sup := NewSupervisor(s, GitHubClient{}, nil)
-			report, err := sup.Diagnose(t.Context(), x.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			calls := gh.calls(t)
-			if demo {
-				if len(calls) != 0 || len(report.Checks) != 1 || report.Checks[0].Code != "demo" {
-					t.Fatal(calls, report)
-				}
-			} else {
-				if len(calls) != 2 {
-					t.Fatal(calls)
-				}
-				for _, c := range report.Checks {
-					if (c.Code == "repository" || c.Code == "github_auth") && c.Status != "passed" {
-						t.Fatal(c)
-					}
-				}
-			}
-		})
+func TestSetupGitHubUsesOnlyMetadataReads(t *testing.T) {
+	s := testStore(t)
+	x := addTown(t, s)
+	gh := fakeGitHubCLI(t, ghRoute{prefix: apiPrefix + "GET user", stdout: `{"login":"reader"}`}, ghRoute{prefix: apiPrefix + "GET repos/acme/orchard", stdout: `{"full_name":"acme/orchard"}`})
+	sup := NewSupervisor(s, GitHubClient{}, nil)
+	report, err := sup.Diagnose(t.Context(), x.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls := gh.calls(t); len(calls) != 2 {
+		t.Fatal(calls)
+	}
+	for _, c := range report.Checks {
+		if (c.Code == "repository" || c.Code == "github_auth") && c.Status != "passed" {
+			t.Fatal(c)
+		}
 	}
 }
 
@@ -236,7 +225,7 @@ func (g *heldSetup) SetupAccess(context.Context, string) error { return nil }
 func TestSetupCancellationAndSettingsChangesKeepLastReport(t *testing.T) {
 	for _, cancelRead := range []bool{false, true} {
 		t.Run(strconv.FormatBool(cancelRead), func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := addTown(t, s)
 			fakeGitHubCLI(t) // a local gh exists, but must never actually run
 			previous := &DiagnosticReport{At: time.Date(2026, 9, 25, 10, 0, 0, 0, time.UTC), Checks: []Diagnostic{{Code: "previous", Status: "unknown", Detail: "Previous result"}}}
@@ -272,11 +261,11 @@ func TestSetupCancellationAndSettingsChangesKeepLastReport(t *testing.T) {
 }
 
 func TestSetupRelativeExecutablesAndPerBotOverride(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	dir := t.TempDir()
 	t.Setenv("PATH", dir)
-	if err := os.WriteFile(filepath.Join(dir, exeName("review-agent")), []byte("must never run"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "review-agent"), []byte("must never run"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	update(t, s, func(st *State) {
@@ -303,7 +292,7 @@ func TestSetupRelativeExecutablesAndPerBotOverride(t *testing.T) {
 }
 
 func TestOldMergeObservationCannotOverwriteNewRevision(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	sup := NewSupervisor(s, newGH(1), nil)
 	checks := []Diagnostic{{Code: "checks", Status: "blocked", Detail: "Old check failed"}}
@@ -324,7 +313,7 @@ func TestOldMergeObservationCannotOverwriteNewRevision(t *testing.T) {
 
 func TestSetupCallerDeadlinePreservesLastCompletedReport(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := testStore(t, false)
+		s := testStore(t)
 		x := addTown(t, s)
 		fakeGitHubCLI(t)
 		previous := &DiagnosticReport{At: time.Now().UTC(), Checks: []Diagnostic{{Code: "previous", Status: "passed", Detail: "Last completed probe"}}}
@@ -345,7 +334,7 @@ func TestSetupCallerDeadlinePreservesLastCompletedReport(t *testing.T) {
 func TestMergeDiagnosticsCannotReplaceRetargetExplanation(t *testing.T) {
 	for _, clear := range []bool{false, true} {
 		t.Run(strconv.FormatBool(clear), func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := setupPR(t, s, 1)
 			sup := NewSupervisor(s, newGH(1), nil)
 			checks := []Diagnostic{{Code: "checks", Status: "blocked", Detail: "Old check failed", Action: "Inspect the check logs."}}
@@ -375,7 +364,7 @@ func TestMergeDiagnosticsCannotReplaceRetargetExplanation(t *testing.T) {
 func TestRepositoryCompletionRetiresMergeDiagnostics(t *testing.T) {
 	for _, merged := range []bool{false, true} {
 		t.Run(strconv.FormatBool(merged), func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := setupPR(t, s, 1)
 			sup := NewSupervisor(s, newGH(1), nil)
 			if err := sup.saveMergeWait(x, x.Tasks["pr:1"], pull(1), []Diagnostic{{Code: "checks", Status: "blocked", Detail: "Checks failed", Action: "Fix them."}}); err != nil {
@@ -399,7 +388,7 @@ func TestRepositoryCompletionRetiresMergeDiagnostics(t *testing.T) {
 
 func TestSetupReadDeadlineStillSavesUnknownResult(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := testStore(t, false)
+		s := testStore(t)
 		x := addTown(t, s)
 		fakeGitHubCLI(t)
 		gh := &heldSetup{fakeGH: newGH(1), entered: make(chan struct{}), release: make(chan struct{})}

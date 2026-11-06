@@ -21,9 +21,9 @@ var baseSHA = strings.Repeat("a", 40)
 var headSHA = strings.Repeat("b", 40)
 var fixSHA = strings.Repeat("c", 40)
 
-func testStore(t *testing.T, demo bool) *Store {
+func testStore(t *testing.T) *Store {
 	t.Helper()
-	s, e := Open(t.TempDir(), demo)
+	s, e := Open(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -122,7 +122,7 @@ func TestReceiptRejectsMissingOrTrailingStructuredResult(t *testing.T) {
 	}
 }
 func TestReconcileArrivalsRevisionAndReleaseAncestry(t *testing.T) {
-	s := NewState(false)
+	s := NewState()
 	x, _ := s.Add(DefaultConfig("acme/orchard"))
 	now := time.Now()
 	remote := inventory(pull(2))
@@ -182,7 +182,7 @@ func TestReconcileArrivalsRevisionAndReleaseAncestry(t *testing.T) {
 }
 func TestStoreRestartLockSecretsAndUnknownIntent(t *testing.T) {
 	dir := t.TempDir()
-	s, e := Open(dir, false)
+	s, e := Open(dir)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -197,17 +197,14 @@ func TestStoreRestartLockSecretsAndUnknownIntent(t *testing.T) {
 	if strings.Contains(string(raw), "do-not-show") {
 		t.Fatal("agent environment leaked")
 	}
-	if _, e := Open(dir, false); e == nil {
+	if _, e := Open(dir); e == nil {
 		t.Fatal("second writer acquired lock")
 	}
 	s.Close()
 	if e = s.Update(func(*State) error { return nil }); e == nil {
 		t.Fatal("closed store wrote state")
 	}
-	if _, e := Open(dir, true); e == nil {
-		t.Fatal("demo opened live state")
-	}
-	s, e = Open(dir, false)
+	s, e = Open(dir)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -228,11 +225,11 @@ func TestStoreRestartLockSecretsAndUnknownIntent(t *testing.T) {
 	}
 	state := s.Snapshot()
 	state.Towns[x.ID].Intents[1].Head = "bad"
-	if validateState(state, false) == nil {
+	if validateState(state) == nil {
 		t.Fatal("corrupt intent accepted")
 	}
 	info, _ := os.Stat(filepath.Join(dir, "state.json"))
-	if !ownerOnly(info.Mode()) {
+	if info.Mode().Perm() != 0600 {
 		t.Fatal(info.Mode())
 	}
 }
@@ -487,7 +484,7 @@ func blockedIssueTown(t *testing.T, s *Store) *Town {
 }
 
 func TestIssueRetryWithoutDurableJobDoesNotStopActiveWorker(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := blockedIssueTown(t, s)
 	workers := &issueRetryWorker{root: t.TempDir(), entered: make(chan int, 2)}
 	sup := NewSupervisor(s, newGH(1), workers)
@@ -521,7 +518,7 @@ func TestIssueRetryWithoutDurableJobDoesNotStopActiveWorker(t *testing.T) {
 }
 
 func TestIssueRetryValidationFailureDoesNotStopActiveWorker(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := blockedIssueTown(t, s)
 	entered := make(chan struct{})
 	canceled := make(chan struct{})
@@ -564,7 +561,7 @@ func TestIssueRetryValidationFailureDoesNotStopActiveWorker(t *testing.T) {
 }
 
 func TestIssueRetryResetsSelectedDurableJobAfterActiveWorkerStops(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	now := time.Now()
 	update(t, s, func(st *State) {
@@ -614,7 +611,7 @@ func TestIssueRetryResetsSelectedDurableJobAfterActiveWorkerStops(t *testing.T) 
 }
 
 func TestIssueRetryFailureDoesNotAcknowledgeTownRetry(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	retryAt := time.Now().Add(time.Hour)
 	update(t, s, func(st *State) {
@@ -642,7 +639,7 @@ func TestIssueRetryFailureDoesNotAcknowledgeTownRetry(t *testing.T) {
 func TestMergePersistsIntentAndChecksFreshEvidence(t *testing.T) {
 	for _, scenario := range []string{"clean", "stale", "checks", "discussion", "description", "external", "manual", "uncertain"} {
 		t.Run(scenario, func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := setupPR(t, s, 1)
 			gh := newGH(1)
 			sup := NewSupervisor(s, gh, observing{gh: gh})
@@ -705,7 +702,7 @@ func TestMergePersistsIntentAndChecksFreshEvidence(t *testing.T) {
 }
 
 func TestReviewFailuresGetOneMoreAttemptThenCloseAndRequeue(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]
@@ -776,7 +773,7 @@ func TestReviewFailuresGetOneMoreAttemptThenCloseAndRequeue(t *testing.T) {
 func TestCompletedNegativeReviewRoutesByOwnership(t *testing.T) {
 	for _, external := range []bool{false, true} {
 		t.Run(fmt.Sprint("external=", external), func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := setupPR(t, s, 1)
 			negative := clean()
 			negative.Verdict = "changes_needed"
@@ -810,7 +807,7 @@ func TestCompletedNegativeReviewRoutesByOwnership(t *testing.T) {
 }
 
 func TestSupervisorPauseFinishStopCancelAndTownIsolation(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		t := st.Towns[x.ID]
@@ -886,7 +883,7 @@ func TestSupervisorPauseFinishStopCancelAndTownIsolation(t *testing.T) {
 	}
 }
 func TestFailedInitialPersistenceNeverRunsWorker(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	x.Workers[Bug].Enabled = true
 	s.Close()
@@ -900,42 +897,8 @@ func TestFailedInitialPersistenceNeverRunsWorker(t *testing.T) {
 		t.Fatal("ran agent without durable state")
 	}
 }
-func TestDemoIsIsolatedAndCompletesTheLoop(t *testing.T) {
-	s := testStore(t, true)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- runDemo(ctx, s, time.Millisecond) }()
-	eventually(t, func() bool {
-		for _, e := range s.Snapshot().Events {
-			if e.From == "feature" && e.To == "hall" {
-				return true
-			}
-		}
-		return false
-	})
-	cancel()
-	<-done
-	st := s.Snapshot()
-	if len(st.Towns) != 2 {
-		t.Fatal("demo lost multi-town view")
-	}
-	routes := map[string]bool{}
-	for _, e := range st.Events {
-		routes[e.From+">"+e.To] = true
-	}
-	for _, r := range []string{"bug>issue", "feature>hall", "issue>review", "review>issue", "review>release", "release>outside", "simplifier>hall"} {
-		if !routes[r] {
-			t.Fatal("missing route", r)
-		}
-	}
-	live := testStore(t, false)
-	if Demo(context.Background(), live) == nil {
-		t.Fatal("demo accepted live store")
-	}
-}
-
 func TestDirectCommitArrivesAtReleaseAndAppearsInReport(t *testing.T) {
-	s := NewState(false)
+	s := NewState()
 	x, _ := s.Add(DefaultConfig("acme/orchard"))
 	now := time.Now()
 	Reconcile(&s, x, inventory(), now)
@@ -960,7 +923,7 @@ func TestDirectCommitArrivesAtReleaseAndAppearsInReport(t *testing.T) {
 }
 
 func TestSlowInventoryCannotUndoConfirmedRepair(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	remote := inventory(pull(1))
 	remote.ObservedHeads = map[int]string{1: headSHA}
@@ -976,7 +939,7 @@ func TestSlowInventoryCannotUndoConfirmedRepair(t *testing.T) {
 	}
 }
 func TestRepairConfirmationIsIdempotentAcrossReporterAndWorker(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	intent := &Intent{Kind: "repair", PR: 1, Base: baseSHA, Head: headSHA, NewHead: fixSHA, Branch: pull(1).Head.Ref, Directory: t.TempDir(), Status: "uncertain"}
 	update(t, s, func(st *State) {
@@ -1025,7 +988,7 @@ func TestProgressChannelKeepsNewestPhase(t *testing.T) {
 // One failing verify command must not bloat state.json or the snapshot pushed
 // to every client, however much output the subprocess produced.
 func TestPersistedTextIsBounded(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	huge := strings.Repeat("verify output ", 100000)
 	update(t, s, func(st *State) {
@@ -1071,7 +1034,7 @@ func TestPersistedTextIsBounded(t *testing.T) {
 // Retrying one blocked task must not start a house the operator paused: that
 // would release every other ready merge and queued review at the same time.
 func TestRetryLeavesAPausedHousePaused(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]
@@ -1136,7 +1099,7 @@ func TestRetryLeavesAPausedHousePaused(t *testing.T) {
 // looking up a branch that no longer existed, and an operator's own choice was
 // replaced on every poll.
 func TestReconcileTracksTheDefaultBranchWithoutRewritingConfig(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	update(t, s, func(st *State) {
 		follower := DefaultConfig("acme/follower")
 		if _, e := st.Add(follower); e != nil {
@@ -1231,7 +1194,7 @@ func (g *orderedGH) Observe(ctx context.Context, t *Town, request InventoryReque
 // commit in the order they finished rather than the order they observed,
 // leaving the town's recorded head behind the repository.
 func TestReconcileIsSerializedPerTown(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	older, newer := strings.Repeat("1", 40), strings.Repeat("2", 40)
 	gh := &orderedGH{fakeGH: newGH(1), heads: []string{older, newer}, entered: make(chan struct{}), release: make(chan struct{})}
@@ -1286,7 +1249,7 @@ func TestReconcileIsSerializedPerTown(t *testing.T) {
 // A reconcile waiting its turn still answers a stop, so a shutdown does not
 // have to wait out a full inventory of a large repository.
 func TestWaitingReconcileAnswersCancellation(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	gh := &orderedGH{fakeGH: newGH(1), entered: make(chan struct{}), release: make(chan struct{})}
 	sup := NewSupervisor(s, gh, gh)
@@ -1319,7 +1282,7 @@ func TestWaitingReconcileAnswersCancellation(t *testing.T) {
 // Release ancestry is proven by the repo worker now. Town's part is to name the
 // commits it cannot account for and to apply what comes back.
 func TestInventoryAsksTheWorkerToProveUnshippedCommits(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	shipped, unshipped := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	update(t, s, func(st *State) {
@@ -1401,7 +1364,7 @@ func countCommits(t *testing.T, s *Store, fn func()) int {
 // commit them, and each transaction clones, revalidates and fsyncs the whole
 // state and pushes a snapshot to every client.
 func TestWorkerChatterIsCoalescedIntoFewTransactions(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]

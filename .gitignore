@@ -6,10 +6,14 @@ node_modules/
 __pycache__/
 /.brokk/
 /.claude/
+/deploy/kubernetes/bot-tokens.env
+/deploy/kubernetes/credentials.env
+/deploy/kubernetes/auth.env
+/deploy/kubernetes/oauth-secrets.env
+# Secrets generated for the removed docker compose files and Kubernetes
+# overlays; still ignored so a checkout that has them never commits them.
 /brokk.env
-/deploy/kubernetes/base/bot-tokens.env
-/deploy/kubernetes/base/credentials.env
-/deploy/kubernetes/multi-user/auth.env
-/deploy/kubernetes/multi-user/oauth-secrets.env
 /brokk-auth.env
 /brokk-auth/
+/deploy/kubernetes/base/
+/deploy/kubernetes/multi-user/

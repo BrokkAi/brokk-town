@@ -101,7 +101,7 @@ func TestExecuteRoutesWorkerResults(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := setupPR(t, s, 1)
 			update(t, s, func(st *State) {
 				town := st.Towns[x.ID]

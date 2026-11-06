@@ -11,7 +11,6 @@ import (
 // environment that points at it.
 func writeMuseConfig(t *testing.T, settings string) (string, map[string]string) {
 	t.Helper()
-	requireSymlinks(t)
 	xdg := t.TempDir()
 	dir := filepath.Join(xdg, "muse")
 	if err := os.MkdirAll(dir, 0o700); err != nil {

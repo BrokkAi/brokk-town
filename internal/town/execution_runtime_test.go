@@ -23,7 +23,7 @@ func runtimeCatalog(t *testing.T, handler http.HandlerFunc) *mjolnir.Catalog {
 	if err := os.WriteFile(token, []byte("fixture"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return mjolnir.New(dir, false, mjolnir.Connection{URL: h.URL + "/api/v1", TokenFile: token})
+	return mjolnir.New(dir, mjolnir.Connection{URL: h.URL + "/api/v1", TokenFile: token})
 }
 
 func runtimeResponse(w http.ResponseWriter, id string) {
@@ -33,7 +33,7 @@ func runtimeResponse(w http.ResponseWriter, id string) {
 }
 
 func TestRuntimeSelectionPersistsWithoutLocalHarnessAndFreezesDispatch(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
 	var replacement atomic.Bool
@@ -85,7 +85,7 @@ func TestRuntimeSelectionPersistsWithoutLocalHarnessAndFreezesDispatch(t *testin
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := Open(filepath.Dir(path), false)
+	reopened, err := Open(filepath.Dir(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,8 +95,8 @@ func TestRuntimeSelectionPersistsWithoutLocalHarnessAndFreezesDispatch(t *testin
 	}
 }
 
-func TestRuntimeSelectionRefusesChangedPlacementAndDemo(t *testing.T) {
-	store := testStore(t, false)
+func TestRuntimeSelectionRefusesChangedPlacement(t *testing.T) {
+	store := testStore(t)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
 	selection := mjolnir.Selection{Target: "builder", Profile: "coder"}
@@ -119,12 +119,6 @@ func TestRuntimeSelectionRefusesChangedPlacementAndDemo(t *testing.T) {
 	}
 	if len(store.Snapshot().Towns[x.ID].Config.ExecutionRuntimes) != 0 {
 		t.Fatal("saved stale runtime")
-	}
-	demo := testStore(t, true)
-	d := NewSupervisor(demo, nil, nil)
-	d.Mjolnir = s.Mjolnir
-	if err := d.SelectExecutionRuntime(t.Context(), x.ID, Review, "discovery"); err == nil || calls.Load() != 1 {
-		t.Fatal("demo contacted Mjolnir")
 	}
 }
 

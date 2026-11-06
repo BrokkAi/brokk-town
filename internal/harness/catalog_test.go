@@ -40,7 +40,7 @@ func TestBundledOfficialCatalogAndRequestedSupplements(t *testing.T) {
 	if len(entries) < 30 {
 		t.Fatal("bundled catalog is a handpicked subset")
 	}
-	c := New(t.TempDir(), true)
+	c := New(t.TempDir())
 	for _, id := range []string{"codex", "claude", "gemini", "opencode", "kimi", "fast-agent", "BrokkAi/anvil", "BrokkAi/muse-acp", "foundev/draupnir"} {
 		e, err := c.Lookup(id, "")
 		if err != nil || e.ID != Canonical(id) {
@@ -73,7 +73,7 @@ func TestBundledOfficialCatalogAndRequestedSupplements(t *testing.T) {
 
 func TestRegistryRefreshPersistsAndKeepsLastGoodCatalog(t *testing.T) {
 	dir := t.TempDir()
-	c := New(dir, false)
+	c := New(dir)
 	entry := sampleEntry()
 	data := indexBytes(t, entry)
 	c.client = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
@@ -104,7 +104,7 @@ func TestRegistryRefreshPersistsAndKeepsLastGoodCatalog(t *testing.T) {
 	if _, err = c.Lookup(entry.ID, "1.2.3"); err == nil {
 		t.Fatal("stale selection accepted")
 	}
-	reopened := New(dir, false)
+	reopened := New(dir)
 	current, err := reopened.Lookup(entry.ID, "")
 	if err != nil || current.Version != "2.0.0" {
 		t.Fatal("cache did not survive restart", current, err)
@@ -127,20 +127,8 @@ func TestRegistryRefreshPersistsAndKeepsLastGoodCatalog(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, "registry-cache.json"), []byte("broken"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = New(dir, false).Lookup("codex", ""); err != nil {
+	if _, err = New(dir).Lookup("codex", ""); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestDemoCatalogNeverReadsNetworkOrLiveCache(t *testing.T) {
-	dir := t.TempDir()
-	c := New(dir, true)
-	c.client = &http.Client{Transport: transport(func(*http.Request) (*http.Response, error) { t.Fatal("demo network access"); return nil, nil })}
-	if err := c.Refresh(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "registry-cache.json")); !os.IsNotExist(err) {
-		t.Fatal("demo wrote a cache")
 	}
 }
 
@@ -159,7 +147,7 @@ func TestInvalidMetadataAndUnavailablePlatforms(t *testing.T) {
 		other = "linux-x86_64"
 	}
 	e.Distribution = Distribution{Binary: map[string]Binary{other: {Archive: "https://example.com/a.zip", Cmd: "./agent.exe"}}}
-	c := New(t.TempDir(), false)
+	c := New(t.TempDir())
 	c.entries = []Entry{e}
 	for _, v := range c.List().Agents {
 		if v.ID == e.ID && v.Available {
@@ -177,7 +165,7 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 	// No anvil or muse-acp binary is stubbed: those harnesses must resolve
 	// through npx.
 	for _, name := range []string{"npx", "uvx", "draupnir"} {
-		if err := os.WriteFile(filepath.Join(dir, exeName(name)), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -187,13 +175,13 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{filepath.Join(dir, exeName("npx")), "--yes", "--", "@example/agent@1.2.3", "--acp", "literal $(text)"}
+	want := []string{filepath.Join(dir, "npx"), "--yes", "--", "@example/agent@1.2.3", "--acp", "literal $(text)"}
 	if !reflect.DeepEqual(command, want) || env["SETTING"] != "value" {
 		t.Fatal(command, env)
 	}
 	e.Distribution = Distribution{Uvx: &Package{Package: "agent==1.2.3", Args: []string{"acp"}}}
 	command, _, err = Launch(context.Background(), t.TempDir(), e)
-	if err != nil || !reflect.DeepEqual(command, []string{filepath.Join(dir, exeName("uvx")), "--", "agent==1.2.3", "acp"}) {
+	if err != nil || !reflect.DeepEqual(command, []string{filepath.Join(dir, "uvx"), "--", "agent==1.2.3", "acp"}) {
 		t.Fatal(command, err)
 	}
 	for _, extra := range supplements() {
@@ -202,13 +190,13 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 			t.Fatal(extra.ID, err)
 		}
 		if pkg, ok := map[string]string{"brokkai/anvil": "@brokkai/anvil", "brokkai/muse-acp": "@brokkai/muse-acp"}[extra.ID]; ok {
-			want := []string{filepath.Join(dir, exeName("npx")), "--yes", "--", pkg}
+			want := []string{filepath.Join(dir, "npx"), "--yes", "--", pkg}
 			if !reflect.DeepEqual(command, want) {
 				t.Fatal(extra.ID, command)
 			}
 			continue
 		}
-		if len(command) != 1 || command[0] != filepath.Join(dir, exeName(extra.Command[0])) {
+		if len(command) != 1 || command[0] != filepath.Join(dir, extra.Command[0]) {
 			t.Fatal(extra.ID, command, err)
 		}
 	}
@@ -224,13 +212,13 @@ func TestPackageCommandsAndAdditionalInstalledHarnesses(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"anvil", "muse-acp"} {
-		if err := os.WriteFile(filepath.Join(dir, exeName(name)), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, legacy := range legacies {
 		command, _, err := Launch(context.Background(), t.TempDir(), legacy)
-		if err != nil || len(command) != 1 || command[0] != filepath.Join(dir, exeName(legacy.Command[0])) {
+		if err != nil || len(command) != 1 || command[0] != filepath.Join(dir, legacy.Command[0]) {
 			t.Fatal("legacy launch", legacy.ID, command, err)
 		}
 	}

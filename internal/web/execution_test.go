@@ -9,8 +9,8 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-func TestExecutionAPIValidatesIdentityAndKeepsDemoOffline(t *testing.T) {
-	s, h := fixtureMode(t, true)
+func TestExecutionAPIValidatesIdentity(t *testing.T) {
+	s, h := fixture(t)
 	if err := s.Store.Update(func(st *town.State) error { _, err := st.Add(town.DefaultConfig("acme/app")); return err }); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestExecutionAPIValidatesIdentityAndKeepsDemoOffline(t *testing.T) {
 			if err := json.Unmarshal(data, &listing); err != nil {
 				t.Fatal(err)
 			}
-			if listing["demo"] != true || listing["configured"] != false {
+			if listing["configured"] != false {
 				t.Fatal(listing)
 			}
 		}

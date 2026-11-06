@@ -260,7 +260,7 @@ func TestManagedCheckoutRetainsEvidenceWhenFilesOrConnectionChange(t *testing.T)
 	if _, err := rs.Records(); err == nil {
 		t.Fatal("accepted changed evidence after restart")
 	}
-	other := New(t.TempDir(), false, Connection{URL: rs.Catalog.connection.URL, TokenFile: rs.Catalog.connection.TokenFile + "-other"})
+	other := New(t.TempDir(), Connection{URL: rs.Catalog.connection.URL, TokenFile: rs.Catalog.connection.TokenFile + "-other"})
 	if _, err := (&Runs{other, rs.Directory}).Records(); err == nil {
 		t.Fatal("adopted another daemon's session")
 	}

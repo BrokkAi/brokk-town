@@ -23,7 +23,7 @@ import (
 
 const RegistryURL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json"
 
-// The Apache-2.0 registry snapshot keeps offline startup and demos useful.
+// The Apache-2.0 registry snapshot keeps offline startup useful.
 //
 //go:embed registry.json
 var bundled []byte
@@ -77,14 +77,12 @@ type Listing struct {
 	Source  string    `json:"source"`
 	Fetched time.Time `json:"fetched"`
 	Stale   bool      `json:"stale"`
-	Demo    bool      `json:"demo"`
 }
 type Catalog struct {
 	mu      sync.RWMutex
 	entries []Entry
 	fetched time.Time
 	cache   string
-	demo    bool
 	refresh chan struct{}
 	url     string
 	client  *http.Client
@@ -224,18 +222,16 @@ func lookup(entries []Entry, id, version string) (Entry, error) {
 	}
 	return Entry{}, fmt.Errorf("unknown harness %q; refresh the official registry or use custom", id)
 }
-func New(dir string, demo bool) *Catalog {
+func New(dir string) *Catalog {
 	entries, _ := parse(bundled)
-	c := &Catalog{entries: entries, cache: filepath.Join(dir, "registry-cache.json"), demo: demo, refresh: make(chan struct{}, 1), url: RegistryURL, client: &http.Client{Timeout: 25 * time.Second}}
-	if !demo {
-		var saved struct {
-			Data    json.RawMessage `json:"data"`
-			Fetched time.Time       `json:"fetched"`
-		}
-		if data, err := os.ReadFile(c.cache); err == nil && len(data) <= 4<<20 && json.Unmarshal(data, &saved) == nil {
-			if entries, err := parse(saved.Data); err == nil {
-				c.entries, c.fetched = entries, saved.Fetched
-			}
+	c := &Catalog{entries: entries, cache: filepath.Join(dir, "registry-cache.json"), refresh: make(chan struct{}, 1), url: RegistryURL, client: &http.Client{Timeout: 25 * time.Second}}
+	var saved struct {
+		Data    json.RawMessage `json:"data"`
+		Fetched time.Time       `json:"fetched"`
+	}
+	if data, err := os.ReadFile(c.cache); err == nil && len(data) <= 4<<20 && json.Unmarshal(data, &saved) == nil {
+		if entries, err := parse(saved.Data); err == nil {
+			c.entries, c.fetched = entries, saved.Fetched
 		}
 	}
 	return c
@@ -248,7 +244,7 @@ func (c *Catalog) Lookup(id, version string) (Entry, error) {
 func (c *Catalog) List() Listing {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	out := Listing{Agents: []Option{}, Source: RegistryURL, Fetched: c.fetched, Stale: c.fetched.IsZero() || time.Since(c.fetched) > time.Hour, Demo: c.demo}
+	out := Listing{Agents: []Option{}, Source: RegistryURL, Fetched: c.fetched, Stale: c.fetched.IsZero() || time.Since(c.fetched) > time.Hour}
 	extra := map[string]bool{}
 	for _, s := range supplements() {
 		extra[s.ID] = true
@@ -275,9 +271,6 @@ func (c *Catalog) List() Listing {
 	return out
 }
 func (c *Catalog) Refresh(ctx context.Context) error {
-	if c.demo {
-		return nil
-	}
 	select {
 	case c.refresh <- struct{}{}:
 		defer func() { <-c.refresh }()

@@ -55,6 +55,9 @@ RUN set -eux; \
     useradd --uid 10001 --user-group --home-dir /data --no-create-home brokk; \
     mkdir -p /data; chown brokk:brokk /data
 COPY --from=uv /uv /uvx /usr/local/bin/
+# The images are how Town is distributed, so they carry its license terms and
+# the third-party notices of everything built into it.
+COPY LICENSE NOTICE licenses/THIRD_PARTY_NOTICES.txt /usr/share/licenses/brokk-town/
 # HOME is on the data volume, so npm, uv and gh caches persist with it and the
 # rest of the filesystem can stay read-only.
 ENV HOME=/data/home \
@@ -105,8 +108,10 @@ ENTRYPOINT ["tini", "--", "mayor-bot"]
 
 # Town serves the browser on 8080 and the managed-review callback on 8091.
 # It reaches every bot at the URL its configuration names, so its image holds
-# no bot binary.
+# no bot binary. BROKK_TOWN_STATE_DIR lets bt status and bt web, run with
+# kubectl exec, find the running service without flags.
 FROM runtime AS bt
 COPY --from=build /out/bt /usr/local/bin/bt
+ENV BROKK_TOWN_STATE_DIR=/data
 EXPOSE 8080 8091
-ENTRYPOINT ["tini", "--", "bt", "--state-dir", "/data", "--listen", "0.0.0.0:8080"]
+ENTRYPOINT ["tini", "--", "bt", "--listen", "0.0.0.0:8080"]

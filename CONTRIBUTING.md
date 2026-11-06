@@ -1,14 +1,15 @@
 # Contributing to Brokk Town
 
-Thanks for helping. Brokk Town is one Go module that runs a local service, an
-embedded browser UI and eight bots, each its own binary. This document covers the working
+Thanks for helping. Brokk Town is one Go module that builds a shared service on
+Kubernetes, an embedded browser UI and eight bots, each its own binary and
+container image. This document covers the working
 agreement; [AGENTS.md](AGENTS.md) has the same material in a shorter form for
 automated contributors.
 
 ## Before you start
 
-- For a bug, open an issue with the version (`bt version`), your platform, the
-  exact command or browser action, and what you expected instead.
+- For a bug, open an issue with the version (`bt version`), your Kubernetes
+  version, the exact command or browser action, and what you expected instead.
 - For a behaviour change, open an issue first so the design is agreed before the
   code. Small fixes and documentation changes can go straight to a pull request.
 - Report security problems privately as described in [SECURITY.md](SECURITY.md).
@@ -19,11 +20,12 @@ automated contributors.
 git clone https://github.com/BrokkAi/brokk-town.git
 cd brokk-town
 make build
-export PATH="$PWD/bin:$PATH"
 ```
 
-You need Go 1.27.1 or newer and Node.js 24 for the browser tests. `gh` is only
-needed to exercise real repositories; tests use fakes and the demo service.
+You need Linux, Go 1.27.1 or newer and Node.js 24 for the browser tests. `gh` is
+only needed to exercise real repositories; tests use fakes. To run a change end
+to end, `make images` and deploy them to a local cluster such as kind, as the
+CI `deploy` job does.
 
 ## The gate
 
@@ -43,8 +45,8 @@ and tests (`make js`), and `go vet ./...`. Run it before you push.
   paths that matter — refusals, cancellation, uncertain outcomes and restart.
 - **No live side effects.** Tests must never use a real GitHub repository, a live
   agent, a published registry, or your personal credentials. Use the fakes in
-  `internal/town`, the demo service (`bt --demo`), or the fixture servers the
-  existing tests already use.
+  `internal/town`, the in-process bots, or the fixture servers the existing
+  tests already use.
 - **Privacy.** Worker logs, snapshots and API responses must not leak tokens,
   credential-file contents, absolute local paths, or agent command vectors. If
   you add a field, decide whether it belongs in the public projection.
@@ -72,15 +74,16 @@ pull request.
 [AGENTS.md](AGENTS.md). The short version:
 
 - settings and policies → `docs/configuration.md`
-- commands, browser, API → `docs/operations.md`
+- deployment, sign-in, commands, browser, API → `docs/operations.md`
 - pipeline, bots and the glossary → `docs/workflow.md`
 - internals → `docs/architecture.md`
 
 ## Releases
 
-Maintainers publish by pushing a `vX.Y.Z` tag. The `Release` workflow
-(`.github/workflows/release-town.yml`) runs GoReleaser, which builds the
-archives, checksums them, and publishes the GitHub release. Contributors do
+The nightly workflow tags a green `master` that has unreleased commits;
+maintainers can also push a `vX.Y.Z` tag. The `Release` workflow
+(`.github/workflows/release-town.yml`) builds and pushes the nine container
+images, then publishes the GitHub release. Contributors do
 not need to do anything for a release and should not create tags.
 
 ## Code of conduct

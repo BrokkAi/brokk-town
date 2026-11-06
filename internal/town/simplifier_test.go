@@ -12,7 +12,7 @@ import (
 )
 
 func TestSimplifierIntakeRoutesArrivalsBeforeMayorAndWorkers(t *testing.T) {
-	state := NewState(false)
+	state := NewState()
 	cfg := DefaultConfig("acme/orchard")
 	cfg.SimplifierMode = "auto"
 	town, err := state.Add(cfg)
@@ -52,7 +52,7 @@ func TestSimplifierSuggestAttachesAdviceAndAutoActs(t *testing.T) {
 	}, {
 		mode: "auto", decision: "admit", stage: "queued", house: Issue,
 	}} {
-		state := NewState(false)
+		state := NewState()
 		town, _ := state.Add(DefaultConfig("acme/orchard"))
 		task := &Task{ID: "issue:12", Kind: "issue", Number: 12, Title: "Complex feature", Stage: "simplifying", House: Simplifier, Updated: time.Now()}
 		town.Tasks[task.ID] = task
@@ -65,7 +65,7 @@ func TestSimplifierSuggestAttachesAdviceAndAutoActs(t *testing.T) {
 }
 
 func TestSimplifierAutoDeclineClosesIssue(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	town := addTown(t, store)
 	task := &Task{ID: "issue:21", Kind: "issue", Number: 21, Title: "Speculative matrix", Stage: "declined", House: Hall, External: true, Simplification: &Simplification{Mode: "auto", Decision: "decline", Detail: "No callers."}, Updated: time.Now()}
 	update(t, store, func(st *State) { st.Towns[town.ID].Tasks[task.ID] = task })
@@ -92,7 +92,7 @@ func TestSimplifierAutoDeclineClosesIssue(t *testing.T) {
 
 func autoDeclinedIssue(t *testing.T) (*Store, *Town, *fakeGH, *Supervisor) {
 	t.Helper()
-	store := testStore(t, false)
+	store := testStore(t)
 	town := addTown(t, store)
 	task := &Task{ID: "issue:21", Kind: "issue", Number: 21, Title: "Speculative matrix", Stage: "declined", House: Hall, External: true, Simplification: &Simplification{Mode: "auto", Decision: "decline", Detail: "No callers."}, Updated: time.Now()}
 	update(t, store, func(st *State) { st.Towns[town.ID].Tasks[task.ID] = task })
@@ -214,7 +214,7 @@ func TestReopeningAnAutoClosedIssueAppealsToTheMayor(t *testing.T) {
 }
 
 func TestSupervisorAppliesSimplifierResult(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	town := addTown(t, store)
 	update(t, store, func(st *State) {
 		current := st.Towns[town.ID]
@@ -243,7 +243,7 @@ func TestSupervisorAppliesSimplifierResult(t *testing.T) {
 
 func TestSimplifierRepositoryScanHasNoItemAssessment(t *testing.T) {
 	workers := &BotWorkers{}
-	x := addTown(t, testStore(t, false))
+	x := addTown(t, testStore(t))
 	result, err := workers.complete(context.Background(), x, Simplifier, dispatch{mode: "auto"}, workerResult{}, nil, func(Progress) {}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -254,7 +254,7 @@ func TestSimplifierRepositoryScanHasNoItemAssessment(t *testing.T) {
 }
 
 func TestSimplifierDispatchCarriesModeAndTypedAssessment(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	x.Tasks["issue:7"] = &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Complex request", Stage: "simplifying", House: Simplifier, Updated: time.Now()}

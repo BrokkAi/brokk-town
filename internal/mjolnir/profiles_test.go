@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -71,11 +69,9 @@ func TestProfileFailuresNeverBecomeEmptySuccess(t *testing.T) {
 	}
 }
 
-func TestProfileDiscoveryCancellationAndDemo(t *testing.T) {
+func TestProfileDiscoveryCancellation(t *testing.T) {
 	started := make(chan struct{}, 1)
-	var calls atomic.Int32
 	c, _ := catalogFixture(t, func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
 		started <- struct{}{}
 		<-r.Context().Done()
 	})
@@ -96,9 +92,5 @@ func TestProfileDiscoveryCancellationAndDemo(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("request did not cancel")
-	}
-	demo := New(filepath.Dir(c.cache), true, c.connection)
-	if _, err := demo.ProfileConfig(context.Background(), Selection{"target", "profile"}, ""); err == nil || calls.Load() != 1 {
-		t.Fatal("demo contacted daemon")
 	}
 }

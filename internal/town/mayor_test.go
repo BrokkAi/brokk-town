@@ -8,7 +8,7 @@ import (
 )
 
 func TestOutsideWorkWaitsForDurableMayoralDecision(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	update(t, store, func(st *State) {
 		current := st.Towns[x.ID]
@@ -49,7 +49,7 @@ func TestOutsideWorkWaitsForDurableMayoralDecision(t *testing.T) {
 }
 
 func TestFeatureProposalsPassThroughSimplifierIntake(t *testing.T) {
-	state := NewState(false)
+	state := NewState()
 	town, err := state.Add(DefaultConfig("acme/orchard"))
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestFeatureProposalsPassThroughSimplifierIntake(t *testing.T) {
 }
 
 func TestDeclinedProposalIsClosedAtSourceExactlyOnce(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	proposal := RemoteIssue{Number: 12, Title: "Separate review model settings", Body: "<!-- feature-bot: proposal -->", State: "open"}
 	gh := &fakeGH{snapshot: inventory()}
@@ -107,7 +107,7 @@ func TestDeclinedProposalIsClosedAtSourceExactlyOnce(t *testing.T) {
 }
 
 func TestDeclinedOutsideIssueIsLeftOpen(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	outside := RemoteIssue{Number: 9, Title: "Outside request", State: "open"}
 	gh := &fakeGH{snapshot: inventory()}

@@ -87,7 +87,7 @@ func waitCapacity(t *testing.T, s *Store, active int) {
 }
 
 func TestCapacitySaturatesAndWakeStartsFreedSlot(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	if err := s.Update(func(st *State) error {
 		st.ServiceConfig.MaxWorkers = 2
 		return nil
@@ -138,7 +138,7 @@ func TestCapacitySaturatesAndWakeStartsFreedSlot(t *testing.T) {
 }
 
 func TestCapacityIncreaseStartsWaitersAndDecreaseKeepsReservations(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	if err := s.Update(func(st *State) error {
 		st.ServiceConfig.MaxWorkers = 1
 		return nil
@@ -209,7 +209,7 @@ func TestCapacityIncreaseStartsWaitersAndDecreaseKeepsReservations(t *testing.T)
 }
 
 func TestCapacityReporterRunDoesNotConsumeAgentSlot(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	if err := s.Update(func(st *State) error {
 		st.ServiceConfig.MaxWorkers = 1
 		add, err := st.Add(DefaultConfig("acme/reporter"))
@@ -256,7 +256,7 @@ func TestCapacityReporterRunDoesNotConsumeAgentSlot(t *testing.T) {
 }
 
 func TestCapacityEnforcesPerTownRoleExclusivityAndIgnoresNonAgents(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	addCapacityTown(t, s, "acme/one", Issue)
 	w := newCapacityWorker(t, "acme/one:issue")
 	sup := NewSupervisor(s, nil, w)
@@ -288,7 +288,7 @@ func TestCapacityEnforcesPerTownRoleExclusivityAndIgnoresNonAgents(t *testing.T)
 }
 
 func TestCapacityDeletionKeepsReservationUntilCleanup(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	addCapacityTown(t, s, "acme/one", Issue)
 	w := newCapacityWorker(t, "acme/one:issue")
 	cleanup := make(chan struct{})
@@ -311,7 +311,7 @@ func TestCapacityDeletionKeepsReservationUntilCleanup(t *testing.T) {
 }
 
 func TestCapacityExcludesRequestPublishingAndModelDiscovery(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	if err := s.Update(func(st *State) error {
 		st.ServiceConfig.MaxWorkers = 1
 		return nil
@@ -356,26 +356,6 @@ func TestCapacityExcludesRequestPublishingAndModelDiscovery(t *testing.T) {
 	sup.mu.Unlock()
 	sup.wg.Wait()
 	waitCapacity(t, s, 0)
-}
-
-func TestDemoCapacityDerivesActiveFromWorkerStatus(t *testing.T) {
-	s := testStore(t, true)
-	addCapacityTown(t, s, "acme/one", Bug)
-	update(t, s, func(st *State) {
-		x := st.Towns["acme/one"]
-		x.Workers[Bug].Status = "working"
-		x.Workers[Issue].Status = "pausing"
-		x.Workers[Repo].Status = "working"
-		x.Workers[Review].Status = "working"
-		x.Deleted = false
-	})
-	if got := s.Snapshot().Capacity.Active; got != 3 {
-		t.Fatalf("demo active status count = %d, want 3", got)
-	}
-	update(t, s, func(st *State) { st.Towns["acme/one"].Deleted = true })
-	if got := s.Snapshot().Capacity.Active; got != 0 {
-		t.Fatalf("deleted demo town counted as active: %d", got)
-	}
 }
 
 // Observe reports an empty repository: this fixture's subject is dispatch, not

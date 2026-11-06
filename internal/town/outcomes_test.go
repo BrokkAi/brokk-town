@@ -8,7 +8,7 @@ import (
 
 func TestOutcomeLedgerCoversLifecycleAndDeduplicatesReconciliation(t *testing.T) {
 	start := time.Date(2026, 9, 10, 9, 0, 0, 0, time.UTC)
-	state := NewState(false)
+	state := NewState()
 	town, err := state.Add(DefaultConfig("acme/widgets"))
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestWorkerResultRetainsAvailableUsageAndCost(t *testing.T) {
 
 func TestOutcomeLedgerPersistsAcrossRestart(t *testing.T) {
 	dir := t.TempDir()
-	store, err := Open(dir, false)
+	store, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestOutcomeLedgerPersistsAcrossRestart(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	store, err = Open(dir, false)
+	store, err = Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

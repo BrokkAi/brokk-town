@@ -12,7 +12,7 @@ import (
 
 func deletedTown(t *testing.T, dir, repo string) {
 	t.Helper()
-	store, err := town.Open(dir, false)
+	store, err := town.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func deletedTown(t *testing.T, dir, repo string) {
 
 func readTown(t *testing.T, dir, id string) *town.Town {
 	t.Helper()
-	store, err := town.Open(dir, false)
+	store, err := town.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,9 +46,10 @@ func readTown(t *testing.T, dir, id string) *town.Town {
 
 func serveOnce(t *testing.T, dir, configFile string) error {
 	t.Helper()
+	sharedTown(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := serve(ctx, dir, "127.0.0.1:0", false, configFile, ""); err != nil && !errors.Is(err, context.Canceled) {
+	if err := serve(ctx, dir, "127.0.0.1:0", configFile, testPublicURL); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
 	return nil

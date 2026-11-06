@@ -34,11 +34,7 @@ func (s *Supervisor) Diagnose(ctx context.Context, id string) (*DiagnosticReport
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	report := &DiagnosticReport{At: s.now().UTC()}
-	if state.Demo {
-		report.Checks = []Diagnostic{{Code: "demo", Status: "unknown", Detail: "The demo uses simulated bots and GitHub; live setup has not been checked.", Action: "Run diagnostics in a repository outside the demo to check its setup."}}
-	} else {
-		report.Checks = s.setupChecks(ctx, t.Config)
-	}
+	report.Checks = s.setupChecks(ctx, t.Config)
 	// Our own read deadlines produce unknown checks. A canceled or expired
 	// caller, however, must not replace the last completed diagnostic.
 	if err := caller.Err(); err != nil {

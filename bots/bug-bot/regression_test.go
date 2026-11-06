@@ -95,7 +95,6 @@ func TestDefinitePostRejectionCanRetry(t *testing.T) {
 }
 
 func testDefinitePostRejectionCanRetry(t *testing.T, explicit bool) {
-	testplatform.SkipPOSIXFakes(t)
 	e, s, _, _, _ := fixture(t)
 	if explicit {
 		e.config.Attempts = 1

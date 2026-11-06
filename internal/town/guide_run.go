@@ -3,7 +3,6 @@ package town
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -103,11 +102,6 @@ func (s *Supervisor) answerGuide(parent context.Context, id, turnID string) {
 	read := func() string { return guideVisibleText(readAnswer()) }
 	done := make(chan error, 1)
 	go func() {
-		state := s.Store.Snapshot()
-		if state.Demo {
-			done <- demoGuide(ctx, saved, turnID, emit)
-			return
-		}
 		run := s.GuideRunner
 		if run == nil {
 			run = guide.Run
@@ -250,35 +244,4 @@ func (s *Supervisor) guideAgent(ctx context.Context, c Config) (runner.AgentConf
 	}
 	a.Mode = ""
 	return a, nil
-}
-func demoGuide(ctx context.Context, t *Town, turnID string, emit func(string) error) error {
-	blocked, queued := 0, 0
-	for _, task := range t.Tasks {
-		if task.Blocked {
-			blocked++
-		}
-		if task.Stage == "queued" || task.Stage == "simplifying" {
-			queued++
-		}
-	}
-	answer := fmt.Sprintf("Assistant, demo: %s has %d tasks queued or in simplification review and %d blocked tasks. ", t.ID, queued, blocked)
-	answer += "The bot inspector shows each bot's status and recent failures. Repository settings show the model, effort, work filters and quiet hours. These are simulated observations. Uncertain writes remain unresolved, and zero new review comments does not prove a clean review."
-	question := strings.ToLower(t.Guide.turn(turnID).Question)
-	for _, role := range Roles {
-		if strings.Contains(question, "pause") && strings.Contains(question, string(role)) {
-			answer += "\nI can propose pausing this bot after its current task finishes. Confirm the exact action below to apply it.\nTOWN_GUIDE_PROPOSAL {\"action\":\"pause\",\"role\":\"" + string(role) + "\"}"
-			break
-		}
-	}
-	for _, chunk := range strings.SplitAfter(answer, " ") {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(15 * time.Millisecond):
-		}
-		if err := emit(chunk); err != nil {
-			return err
-		}
-	}
-	return nil
 }

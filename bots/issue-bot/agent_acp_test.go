@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/BrokkAi/acp-go/runner"
-
-	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 // simulatedACPAgent is a complete ACP agent over stdio. It exists because the
@@ -96,7 +94,6 @@ for line in sys.stdin:
 
 func writeSimulatedAgent(t *testing.T, dir string) string {
 	t.Helper()
-	testplatform.SkipPOSIXFakes(t)
 	path := filepath.Join(dir, "acp-fixture-agent")
 	if err := os.WriteFile(path, []byte(simulatedACPAgent), 0700); err != nil {
 		t.Fatal(err)

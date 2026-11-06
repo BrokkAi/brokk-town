@@ -54,8 +54,7 @@ export function executionControls({ api, getConfig, refresh, onSaved = () => {} 
     const profile = reset ? resolved.profile_id : $("execution-profile").value;
     options("execution-target", targets, target || listing?.default?.target_id, (t) => `${t.id} · ${t.availability}`);
     options("execution-profile", profiles, profile || listing?.default?.profile_id, (p) => `${p.id} · ${p.harness}`);
-    $("execution-status").textContent = listing?.demo ? "Demo: Mjolnir stays offline."
-      : listing?.error ? `${listing.error} Showing the last known options.`
+    $("execution-status").textContent = listing?.error ? `${listing.error} Showing the last known options.`
       : listing?.refreshing ? "Refreshing Mjolnir options…"
       : listing?.stale ? "Cached options are stale."
       : listing?.fetched ? `Options fetched ${listing.fetched}.` : "No Mjolnir options loaded.";

@@ -28,7 +28,7 @@ func fixtureWorkers(t *testing.T) (*BotWorkers, *Town, *Task, string) {
 	t.Helper()
 	isolateGitConfig(t)
 	ctx := context.Background()
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	source := filepath.Join(t.TempDir(), "source")
 	remote := filepath.Join(t.TempDir(), "remote.git")

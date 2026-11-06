@@ -1,98 +1,57 @@
 # Brokk Town
 
-Brokk Town is a local service that runs a team of repository bots against your
+Brokk Town is a shared service that runs a team of repository bots against your
 GitHub repositories. It watches what changes, files useful bug and feature
 issues, implements work, reviews and certifies pull requests, decides what is
-worth doing, keeps the branch it covers healthy, and ships releases. You drive it from a browser, with `bt`
-starting and stopping the local service. Everything runs on your machine with
-the `gh` and agent credentials you already have.
+worth doing, keeps the branch it covers healthy, and ships releases. Your team
+drives it from a browser, signed in with GitHub or Google, and everyone who
+signs in works on the same repositories, decisions and Assistant
+conversations.
 
-The eight bots are Go packages of this module, and each runs as its own binary
-that Town reaches over the network. On your machine `bt` starts them for you;
-with docker compose or Kubernetes each bot runs in its own container (see
+Town and its eight bots run on Kubernetes, each in its own pod with its own
+volume. The bots are Go packages of this module, and each runs as its own
+binary that Town reaches over the network (see
 [docs/operations.md](docs/operations.md#bots)). One release tag (`vX.Y.Z`)
-covers `bt`, the eight bot binaries and their container images.
+covers the nine container images, `ghcr.io/brokkai/brokk-town/<name>`, for
+`linux/amd64` and `linux/arm64`.
 
 ## Requirements
 
-- Go 1.27.1 or newer, the version in [go.mod](go.mod), to install with
-  `go install`. The release binaries need no toolchain.
-- Git.
-- [`gh`](https://cli.github.com/) authenticated for the repositories you add.
-- An ACP agent harness. Town ships an official registry catalog and
-  installs or launches the harness you select; `codex-acp` through `npx` is a
-  common choice.
-- Node.js when the selected harness or Mjolnir is distributed through `npx`.
+- A Kubernetes cluster with an Ingress controller that terminates TLS and a
+  storage class for `ReadWriteOnce` volumes.
+- `kubectl`, whose built-in kustomize applies the manifests.
+- A GitHub token (`GH_TOKEN`) for the repositories you add.
+- A GitHub OAuth app or a Google OAuth client for sign-in.
+- The API keys of an ACP agent harness. Town ships an official registry catalog
+  and installs or launches the harness you select; `codex-acp` through `npx` is
+  a common choice. The images carry `git`, `gh`, `node`/`npx` and `uv`/`uvx`.
 
-## Install
-
-Go 1.27.1 or newer:
+## Deploy
 
 ```sh
-go install github.com/BrokkAi/brokk-town/cmd/...@latest
-export PATH="$(go env GOPATH)/bin:$PATH"
+git clone https://github.com/BrokkAi/brokk-town && cd brokk-town
+deploy/kubernetes/generate-secrets.sh
+# In deploy/kubernetes: set GH_TOKEN and your agent keys in credentials.env,
+# the OAuth client and the allowlist in auth.env and oauth-secrets.env, and
+# replace town.example.com in bt.yaml and ingress.yaml with your address.
+kubectl apply -k deploy/kubernetes
 ```
 
-To pin a specific release:
+People on the allowlist then open your address and sign in. Add, start and
+configure repositories in the browser. The operator, who sets the commands
+Town runs on its hosts, gets a link carrying the access key from Town's pod:
 
 ```sh
-go install github.com/BrokkAi/brokk-town/cmd/...@vX.Y.Z
+kubectl -n brokk-town exec deploy/bt -- bt web
 ```
 
-`cmd/...` installs `bt` and the eight bot binaries side by side, which is where
-`bt` looks for them.
-
-`go install` records the module version in the binary, so `bt version` reports
-what you installed. Or build from a checkout:
-
-```sh
-make build
-export PATH="$PWD/bin:$PATH"
-```
-
-### Without Go
-
-Every release also publishes prebuilt archives for Linux, macOS and Windows on
-amd64 and arm64 on the [releases page](https://github.com/BrokkAi/brokk-town/releases).
-Download the archive for your platform, unpack it, and put `bt` and the bot
-binaries together in a directory on your `PATH`.
-Linux and macOS ship as `.tar.gz`; Windows ships as `.zip`:
-
-```sh
-tar -xzf brokk-town_vX.Y.Z_linux_amd64.tar.gz
-install -m 755 bt *-bot "$HOME/.local/bin/"
-```
-
-Each archive contains `bt`, the eight bot binaries (`bug-bot`, `feature-bot`,
-`issue-bot`, `review-bot`, `release-bot`, `simplifier-bot`, `repo-bot`,
-`mayor-bot`), `LICENSE`, `NOTICE` and
-`licenses/THIRD_PARTY_NOTICES.txt`. The release's `checksums.txt` verifies the
-download.
-
-## First run
-
-Authenticate `gh` and your chosen agent, then start Brokk Town:
-
-```sh
-bt                                     # foreground service
-bt web                                 # print the browser address
-bt status                              # what is running
-bt shutdown                            # stop the service
-```
-
-Bare `bt` runs in the foreground and prints its browser URL, with the access key.
-The server binds loopback only. `bt -d` starts the same service in the background;
-`bt shutdown` stops it. Ctrl+C, SIGTERM or SIGHUP stops a foreground service.
-Add, start and configure repositories in the browser.
-
-`bt --demo` starts an isolated simulated repository that never contacts
-GitHub, an agent or the network. It is the fastest way to look
-around.
+See [docs/operations.md](docs/operations.md) for the deployment, sign-in and
+the API.
 
 ## Bots
 
 Each repository is served by eight bots. Every bot has a lifetime agent
-identity, a work policy and a stage in the pipeline. Configuration, the local
+identity, a work policy and a stage in the pipeline. Configuration, the
 API and state call a bot's slot a `house` and name it by its role key.
 
 | Bot | Stage | Role key | Work |
@@ -132,9 +91,10 @@ review close threshold are filed as issues rather than blocking the merge. See
 
 ## Browser
 
-`bt web` prints a loopback URL carrying the access key. The browser shows the
-same committed state as the API and never writes anything the service did not
-record. It has three views of the same snapshot:
+People open Town's address and sign in with GitHub or Google. The browser shows
+the same committed state as the API and never writes anything the service did
+not record. Activity names who made each change. It has three views of the
+same snapshot:
 
 - **Overview** — the default single-repository view: summary metrics, the
   pipeline of eight bots with each one's status and workload, and the Activity
@@ -152,58 +112,64 @@ no image assets. See [docs/operations.md](docs/operations.md#browser).
 
 ## Command line
 
-`bt` starts, stops and locates the local service. All day-to-day operation —
+`bt` is Town's service and a small client for it. All day-to-day operation —
 repositories, bots, tasks, decisions, settings, diagnostics, History and
 Storage — happens in the browser.
 
 | Command | Purpose |
 | --- | --- |
-| `bt` | Run the service in the foreground. |
-| `bt -d` | Run the service in the background. |
+| `bt` | Run the service; the `bt` image's entrypoint. |
 | `bt status` | Show whether Town is running and what it serves (`--json` for state). |
-| `bt web` | Print the browser address. |
-| `bt shutdown` | Stop the service and its work. |
+| `bt web` | Print the operator's browser link, with the access key. |
 | `bt version` | Print the version. |
 
-Every command documents its own flags: `bt COMMAND --help`. See
-[docs/operations.md](docs/operations.md) for the service reference.
+Run them in Town's pod, such as `kubectl -n brokk-town exec deploy/bt -- bt
+status`. Every command documents its own flags: `bt COMMAND --help`. See
+[docs/operations.md](docs/operations.md#commands).
 
 ## Configuration
 
-Settings live in Town's state directory, not in the repository. Use the
-browser to change them. A `--config` file can seed service settings and
-repositories at startup:
-
-```sh
-bt --config config.json
-```
+Settings live in Town's state directory, on its volume, not in the repository.
+Use the browser to change them. A `--config` file, mounted into Town's pod and
+added to its arguments in `bt.yaml`, can seed service settings and repositories
+at startup.
 
 The file is either a JSON array of repository configurations or an object with
-`max_workers`, `quiet_hours`, `attention_hook` and `towns` (the repositories). See
-[docs/configuration.md](docs/configuration.md) and
+`max_workers`, `quiet_hours`, `attention_hook`, `bots` and `towns` (the
+repositories). See [docs/configuration.md](docs/configuration.md) and
 [docs/config.example.json](docs/config.example.json).
 
 ## Development
 
+Go 1.27.1 or newer (the version in [go.mod](go.mod)) on Linux, and Node.js for
+the browser tests:
+
 ```sh
-make build     # build bin/bt
+make build     # bin/bt and the eight bot binaries
 make check     # race tests, browser tests and vet
+make images    # the nine container images
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow and
+Tests host the bots in their own process with fakes, and never reach GitHub
+or an agent. To try a change end to end, build the images and deploy them to a
+local cluster such as [kind](https://kind.sigs.k8s.io/), as CI does. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow and
 [docs/architecture.md](docs/architecture.md) for how the pieces fit together.
 
 ## Releasing
 
-A release is a tag push:
+The nightly workflow (`.github/workflows/nightly.yml`) tags the next minor
+version when `master` has unreleased commits and CI is green. A tag push also
+releases:
 
 ```sh
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-The tag starts the `Release` workflow (`.github/workflows/release-town.yml`),
-which runs [GoReleaser](https://goreleaser.com/) to build the archives for
-Linux, macOS and Windows, checksum them, and publish a GitHub release.
+The `Release` workflow (`.github/workflows/release-town.yml`) builds and pushes
+the nine images for `linux/amd64` and `linux/arm64`, tagged with the version
+and `latest`, then publishes the GitHub release with generated notes and the
+third-party license file.
 
 ## License
 

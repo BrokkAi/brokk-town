@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BrokkAi/brokk-town/internal/testplatform"
-
 	"github.com/BrokkAi/acp-go/runner"
 	"github.com/BrokkAi/brokk-town/internal/osrun"
 )
@@ -313,7 +311,6 @@ func TestVerificationFailureDoesNotPush(t *testing.T) {
 }
 
 func TestVerifierMustPreserveReviewedArtifact(t *testing.T) {
-	testplatform.RequirePOSIXShell(t)
 	for _, tc := range []struct {
 		name       string
 		command    string
