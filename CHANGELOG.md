@@ -13,6 +13,9 @@
   is now the nine container images for `linux/amd64` and `linux/arm64` plus a
   GitHub release carrying the third-party license file. The images carry the
   license notices, and `bt status` and `bt web` in Town's pod need no flags.
+  `deploy/kubernetes/generate-secrets.sh` moves the files it wrote to `base/`
+  and `multi-user/` into place. A plain `http://` public URL is accepted only
+  on a loopback host.
 - Remove demo mode: `bt --demo`, the simulated repositories, `BROKK_BOT_DEMO`
   and the bots' `--demo` flag. Town refuses state written by a demo and a bot
   that reports demo mode. CI instead deploys the real manifests to a kind

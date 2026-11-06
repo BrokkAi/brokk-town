@@ -1,12 +1,11 @@
-// Package auth signs people into a shared Town with GitHub or Google.
+// Package auth signs people into Town with GitHub or Google.
 //
-// It is used only in multi-user mode (bt --auth oauth). A person signs in
-// through the provider's authorization-code flow with PKCE, Town checks the
-// identity against the configured allowlist, and the browser then holds an
-// HMAC-signed session cookie. Sessions are stateless: the cookie carries the
-// identity and its expiry, and every request re-checks the allowlist, so a
-// person removed from it loses access at the next restart. Rotating the
-// session key file signs everyone out.
+// A person signs in through the provider's authorization-code flow with PKCE,
+// Town checks the identity against the configured allowlist, and the browser
+// then holds an HMAC-signed session cookie. Sessions are stateless: the
+// cookie carries the identity and its expiry, and every request re-checks the
+// allowlist, so a person removed from it loses access at the next restart.
+// Rotating the session key file signs everyone out.
 package auth
 
 import (
@@ -115,7 +114,7 @@ type Provider struct {
 	APIURL string
 }
 
-// Config is multi-user sign-in for one Town.
+// Config is sign-in for one Town.
 type Config struct {
 	// Origin is the browser address, such as https://town.example.com.
 	Origin string
@@ -139,10 +138,10 @@ type Service struct {
 func New(cfg Config) (*Service, error) {
 	origin, err := url.Parse(cfg.Origin)
 	if err != nil || (origin.Scheme != "https" && origin.Scheme != "http") || origin.Host == "" || origin.Path != "" {
-		return nil, errors.New("multi-user sign-in needs the public URL browsers use, such as https://town.example.com")
+		return nil, errors.New("sign-in needs the public URL browsers use, such as https://town.example.com")
 	}
 	if cfg.GitHub == nil && cfg.Google == nil {
-		return nil, errors.New("multi-user sign-in needs a GitHub or Google OAuth client")
+		return nil, errors.New("sign-in needs a GitHub or Google OAuth client: set BROKK_TOWN_GITHUB_CLIENT_ID or BROKK_TOWN_GOOGLE_CLIENT_ID and its secret file")
 	}
 	for name, p := range map[string]*Provider{"GitHub": cfg.GitHub, "Google": cfg.Google} {
 		if p != nil && (p.ClientID == "" || p.ClientSecret == "") {
@@ -150,7 +149,7 @@ func New(cfg Config) (*Service, error) {
 		}
 	}
 	if cfg.Allow.empty() {
-		return nil, errors.New("multi-user sign-in needs an allowlist: set allowed GitHub users or organizations, Google Workspace domains, or emails")
+		return nil, errors.New("sign-in needs an allowlist: set allowed GitHub users or organizations, Google Workspace domains, or emails")
 	}
 	if cfg.GitHub == nil && len(cfg.Allow.GitHubUsers)+len(cfg.Allow.GitHubOrgs) > 0 {
 		return nil, errors.New("GitHub users or organizations are allowed, but no GitHub OAuth client is configured")

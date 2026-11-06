@@ -88,14 +88,24 @@ jobs:
             kubectl -n brokk-town rollout status "deployment/$deployment" --timeout=5m
           done
           kubectl -n brokk-town exec deploy/bt -- bt status
-          kubectl -n brokk-town exec deploy/bt -- sh -ec '
-            curl -fsS http://127.0.0.1:8080/api/session | grep -q github
-            for bot in bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot; do
-              identity="$(curl -fsS -H "Authorization: Bearer $(cat "/run/secrets/brokk/$bot/token")" "http://$bot:8080/v1/identity")"
-              echo "$identity"
-              printf "%s" "$identity" | grep -q "\"name\":\"$bot\""
-            done
-            echo "every bot answered Town over the network"'
+          # In Town's pod, reach each bot at the URL and with the token file
+          # bt.yaml gives Town, and check it reports the role Town expects.
+          kubectl -n brokk-town exec -i deploy/bt -- sh -es <<'CHECK'
+          curl -fsS http://127.0.0.1:8080/api/session | grep -q github
+          for role in bug feature issue review release simplifier repo hall; do
+            upper="$(printf '%s' "$role" | tr '[:lower:]' '[:upper:]')"
+            url="$(printenv "BROKK_TOWN_BOT_${upper}_URL" || true)"
+            token_file="$(printenv "BROKK_TOWN_BOT_${upper}_TOKEN_FILE" || true)"
+            if [ -z "$url" ] || [ -z "$token_file" ]; then
+              echo "Town has no URL or token file for the $role bot" >&2
+              exit 1
+            fi
+            identity="$(curl -fsS -H "Authorization: Bearer $(cat "$token_file")" "$url/v1/identity")"
+            echo "$identity"
+            printf '%s' "$identity" | grep -q "\"role\":\"$role\""
+          done
+          echo "every bot answered at the address and with the token Town uses"
+          CHECK
       - name: Kubernetes diagnostics
         if: failure()
         run: |

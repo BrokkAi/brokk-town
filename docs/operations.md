@@ -31,7 +31,10 @@ generated from local files that are never committed:
 | `auth.env` | ConfigMap `brokk-town-auth` | The OAuth client IDs, the allowlist and where the client secrets are mounted. |
 | `oauth-secrets.env` | Secret `brokk-town-oauth` | The OAuth client secrets, mounted into `bt` as files under `/run/secrets/brokk-oauth`. |
 
-`generate-secrets.sh` keeps files that already exist. The manifests use the
+`generate-secrets.sh` keeps files that already exist, and moves the ones an
+earlier release wrote to `deploy/kubernetes/base/` and
+`deploy/kubernetes/multi-user/` into place rather than generating new tokens
+and credentials that would replace the live ones. The manifests use the
 images `ghcr.io/brokkai/brokk-town/<name>:latest`; pin a release with an overlay
 that sets `images`, or build them from a checkout with `make images`
 (`IMAGES` and `IMAGE_TAG` choose the registry and tag).
@@ -42,7 +45,9 @@ several, its ingress class. Town listens on plain HTTP on port 8080 behind it.
 Ingress host and the OAuth apps' callback URLs, and the browser's `Host` and
 `Origin` must match it. For a trial without an Ingress, use
 `--public-url http://127.0.0.1:8080` with
-`kubectl -n brokk-town port-forward svc/bt 8080`.
+`kubectl -n brokk-town port-forward svc/bt 8080`; plain `http://` is accepted
+only for `127.0.0.1`, `::1` or `localhost`, since sign-in cookies and the access
+key would otherwise cross the network in the clear.
 
 Deployments use the `Recreate` strategy because each pod owns its volume, and
 Town holds a single-writer lock on its state: a second Town on the same state
@@ -137,7 +142,7 @@ for the exact flags. The global flag is `--state-dir`; `--listen`,
 
 | Command | Description |
 | --- | --- |
-| `bt` | Run the service in the foreground; the `bt` image's entrypoint. `--public-url` is required. |
+| `bt` | Run the service in the foreground; the `bt` image's entrypoint. `--public-url` is required. Town does not start, or apply its config file, unless sign-in is configured and every bot has a URL and a token. |
 | `bt status [--json]` | Running state, served repositories, and full snapshot with `--json`. |
 | `bt web` | Print the operator's browser link, with the access key. |
 | `bt version` | Print the version. |

@@ -280,19 +280,26 @@ func serve(ctx context.Context, dir, address, configFile, publicURL string) erro
 	if err != nil {
 		return err
 	}
-	var fileBots map[town.Role]fileBot
+	var configs []townEntry
+	var service fileService
 	if configFile != "" {
 		data, e := os.ReadFile(configFile)
 		if e != nil {
 			return e
 		}
-		configs, service, e := decodeConfigFile(data)
-		if e != nil {
+		if configs, service, e = decodeConfigFile(data); e != nil {
 			return e
 		}
-		fileBots = service.Bots
+	}
+	// A Town that cannot reach every bot does not start, and so must not
+	// apply its config file either.
+	bots, err := townBots(service.Bots)
+	if err != nil {
+		return err
+	}
+	if configFile != "" {
 		var restored []string
-		if e = store.Update(func(s *town.State) error {
+		if e := store.Update(func(s *town.State) error {
 			restored = nil
 			if service.MaxWorkers != nil {
 				if err := (town.ServiceConfig{MaxWorkers: *service.MaxWorkers}).Validate(); err != nil {
@@ -360,10 +367,6 @@ func serve(ctx context.Context, dir, address, configFile, publicURL string) erro
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	bots, err := townBots(fileBots)
-	if err != nil {
-		return err
-	}
 	callback, stopCallback, err := agentCallback(ctx, slog.Default())
 	if err != nil {
 		return err
@@ -429,18 +432,29 @@ func serve(ctx context.Context, dir, address, configFile, publicURL string) erro
 }
 
 // serviceOrigin is the address people open, which --public-url names:
-// normally https:// through the Ingress that terminates TLS, or http:// for a
-// trial through kubectl port-forward. Town listens on plain HTTP itself, and
-// the browser's Host and Origin must match this address.
+// normally https:// through the Ingress that terminates TLS, or http:// on a
+// loopback host for a trial through kubectl port-forward. Over plain HTTP to
+// anything else, sign-in cookies and the access key would cross the network in
+// the clear. Town listens on plain HTTP itself, and the browser's Host and
+// Origin must match this address.
 func serviceOrigin(address, publicURL string) (string, error) {
 	parsed, err := url.Parse(publicURL)
-	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", errors.New("--public-url must be https://host[:port] (or http:// for a trial through kubectl port-forward), the address people open")
+	if err != nil || (parsed.Scheme != "https" && (parsed.Scheme != "http" || !loopbackHost(parsed.Hostname()))) || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("--public-url must be https://host[:port], the address people open (or http:// on 127.0.0.1 or localhost for a trial through kubectl port-forward)")
 	}
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		return "", err
 	}
 	return parsed.Scheme + "://" + parsed.Host, nil
+}
+
+// loopbackHost reports a host name that only reaches this machine.
+func loopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // townEntry is one town from a config file together with whether that file

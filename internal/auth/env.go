@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// Environment variables that configure multi-user sign-in. Client secrets are
-// read from files only: Town passes its environment to the subprocesses it
-// starts, and a secret in a variable would travel with it.
+// Environment variables that configure sign-in. Client secrets are read from
+// files only: Town passes its environment to the subprocesses it starts, and a
+// secret in a variable would travel with it.
 const (
 	EnvGitHubClientID         = "BROKK_TOWN_GITHUB_CLIENT_ID"
 	EnvGitHubClientSecretFile = "BROKK_TOWN_GITHUB_CLIENT_SECRET_FILE"

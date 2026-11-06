@@ -83,6 +83,12 @@ func TestPublicURLIsTheAddressPeopleOpen(t *testing.T) {
 		{"https://town.example.com", "https://town.example.com"},
 		{"https://town.example.com/", "https://town.example.com"},
 		{"http://127.0.0.1:8080", "http://127.0.0.1:8080"},
+		{"http://localhost:8080", "http://localhost:8080"},
+		{"http://[::1]:8080", "http://[::1]:8080"},
+		// Over plain HTTP to anything but loopback, sign-in cookies and the
+		// access key would cross the network in the clear.
+		{"http://town.example.com", ""},
+		{"http://10.0.0.5:8080", ""},
 		{"https://town.example.com/town", ""},
 		{"ftp://town.example.com", ""},
 		{"", ""},
@@ -119,6 +125,26 @@ func TestTownStartsOnlyWhenSharedAndEveryBotIsReachable(t *testing.T) {
 		err := serve(t.Context(), t.TempDir(), "127.0.0.1:0", "", testPublicURL)
 		if err == nil || !strings.Contains(err.Error(), "review-bot (BROKK_TOWN_BOT_REVIEW_URL)") {
 			t.Fatalf("started without review-bot: %v", err)
+		}
+	})
+	t.Run("bots before the config file", func(t *testing.T) {
+		sharedTown(t)
+		t.Setenv(botEnv(town.Hall, "URL"), "")
+		dir := t.TempDir()
+		config := filepath.Join(t.TempDir(), "towns.json")
+		if err := os.WriteFile(config, []byte(`{"max_workers":7,"towns":[{"repo":"acme/app","harness":"custom","agent":{"command":["fake"]},"merge_policy":"manual","poll_seconds":60,"report_seconds":1800,"max_cycles":5}]}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := serve(t.Context(), dir, "127.0.0.1:0", config, testPublicURL); err == nil || !strings.Contains(err.Error(), "mayor-bot") {
+			t.Fatalf("started without mayor-bot: %v", err)
+		}
+		store, err := town.Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		if state := store.Snapshot(); len(state.Towns) != 0 || state.ServiceConfig.MaxWorkers == 7 {
+			t.Fatalf("a Town that did not start applied its config file: %d towns, max_workers %d", len(state.Towns), state.ServiceConfig.MaxWorkers)
 		}
 	})
 	t.Run("bot in the config file", func(t *testing.T) {

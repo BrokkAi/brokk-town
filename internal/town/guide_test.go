@@ -242,3 +242,17 @@ func TestGuideRedactsContextAndSplitOutput(t *testing.T) {
 		t.Fatal("guide leaked private value")
 	}
 }
+
+// The Assistant names a question's author as the browser does: a question
+// asked with the access key comes from the operator.
+func TestGuideSpeakerMatchesTheBrowser(t *testing.T) {
+	for _, tc := range []struct{ author, want string }{
+		{"", "Operator"},
+		{"Ada Lovelace (@ada)", "User Ada Lovelace (@ada)"},
+		{"Ada\nLovelace", "User Ada Lovelace"},
+	} {
+		if got := guideSpeaker(GuideTurn{Author: tc.author}); got != tc.want {
+			t.Errorf("guideSpeaker(%q) = %q, want %q", tc.author, got, tc.want)
+		}
+	}
+}

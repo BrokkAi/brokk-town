@@ -5,8 +5,19 @@
 # files is committed.
 set -eu
 dir="$(dirname "$0")"
-tokens="$dir/bot-tokens.env"
 umask 077
+# Earlier releases kept these files in base/ and multi-user/. Move them here
+# rather than generate new ones, which would replace the live bot tokens and
+# credentials on the next apply.
+for moved in base/bot-tokens.env base/credentials.env multi-user/auth.env multi-user/oauth-secrets.env; do
+  old="$dir/$moved"
+  new="$dir/$(basename "$moved")"
+  if [ -e "$old" ] && [ ! -e "$new" ]; then
+    mv "$old" "$new"
+    echo "moved $old to $new"
+  fi
+done
+tokens="$dir/bot-tokens.env"
 if [ ! -s "$tokens" ]; then
   for bot in bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot; do
     printf '%s=%s\n' "$bot" "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
