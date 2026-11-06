@@ -122,7 +122,7 @@ func botAgent(c Config, root string) (botapi.Agent, error) {
 		entry = *c.HarnessDefinition
 	} else {
 		var err error
-		entry, err = harness.New(filepath.Join(root, "harnesses"), false).Lookup(c.harness(), "")
+		entry, err = harness.New(filepath.Join(root, "harnesses")).Lookup(c.harness(), "")
 		if err != nil {
 			return botapi.Agent{}, err
 		}
@@ -220,9 +220,6 @@ func (s *Supervisor) add(repo string, prepare func(existing *Town) (Config, erro
 		}
 	}
 	err := s.Store.Update(func(st *State) error {
-		if st.Demo {
-			return errors.New("use a live service to add real repositories")
-		}
 		existing := st.Towns[id]
 		if existing != nil && !existing.Deleted {
 			return errors.New("repository already exists")
@@ -625,10 +622,6 @@ func (s *Supervisor) ChoicesForRole(ctx context.Context, id string, role Role, s
 	if err != nil {
 		s.mu.Unlock()
 		return AgentChoices{}, err
-	}
-	if s.Store.Snapshot().Demo {
-		s.mu.Unlock()
-		return AgentChoices{Models: []ChoiceValue{{Value: "demo-model", Name: "Demo model"}}, Efforts: []ChoiceValue{{Value: "low", Name: "Low"}, {Value: "high", Name: "High"}}}, nil
 	}
 	key := id + ":choices"
 	if s.running[key] != nil {

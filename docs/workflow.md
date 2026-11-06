@@ -199,12 +199,13 @@ repository's event log (`events`) and streamed to connected clients. Events are
 bounded (the most recent 512) and carry a sequence, time, `town` (the
 repository id), kind, from/to bots, cargo and title. The browser's Activity
 feed reads them from the same committed state: a handoff names both bots, with
-"External" for a submission from outside (`outside`) and "You" for your own
-action (`operator`).
+"External" for a submission from outside (`outside`) and "Operator" for an
+operator action (`operator`), which Activity attributes to the person who made
+it.
 
 ## Glossary
 
-Configuration, the local API, events and `state.json` keep the identifiers
+Configuration, the API, events and `state.json` keep the identifiers
 below, unchanged; search for these when you script against the API or read
 state.
 
@@ -226,7 +227,7 @@ state.
 | Delayed | status `delayed`; Mayor Bot answers `delay` for a bot update |
 | status report | `bulletins`, `bulletin_seconds` |
 | External | `outside` |
-| You | `operator` |
+| Operator | `operator` |
 | Assistant | `/api/guide`, package `internal/guide` |
 | History | `POST /api/history`, `towns/<key>/history/` |
 | Storage | `POST /api/storage`, `POST /api/storage/cleanup` |
@@ -238,4 +239,3 @@ state.
 | Start, Start all | control action `start` |
 | Pause | control action `pause` |
 | Stop now | control action `stop` |
-| Demo | demo mode: `bt --demo`, `demo` in state |

@@ -17,7 +17,7 @@ import (
 )
 
 func TestBotProfilesInheritAndRemainIndependent(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	sup := NewSupervisor(store, nil, nil)
 	if err := sup.Settings(x.ID, AgentSettings{Harness: ptr("custom"), Command: ptr([]string{"town-agent", "private-default"}), Model: ptr("default"), Effort: ptr("low")}); err != nil {
@@ -64,7 +64,7 @@ func TestBotProfilesInheritAndRemainIndependent(t *testing.T) {
 }
 
 func TestBotSettingsResolveAtDispatchAndFreezeActiveRun(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	update(t, store, func(st *State) { st.Towns[x.ID].Workers[Review].Enabled = true })
 	stale := store.Snapshot().Towns[x.ID]
@@ -106,7 +106,7 @@ func TestBotSettingsResolveAtDispatchAndFreezeActiveRun(t *testing.T) {
 
 func TestBotProfilePersistencePinningAndPrivacy(t *testing.T) {
 	dir := t.TempDir()
-	store, err := Open(dir, false)
+	store, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestBotProfilePersistencePinningAndPrivacy(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	store, err = Open(dir, false)
+	store, err = Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestBotProfilePersistencePinningAndPrivacy(t *testing.T) {
 }
 
 func TestBotProfileValidationIsAtomic(t *testing.T) {
-	store := testStore(t, true)
+	store := testStore(t)
 	x := addTown(t, store)
 	sup := NewSupervisor(store, nil, nil)
 	before := store.Snapshot()
@@ -215,7 +215,7 @@ func TestBotProfileValidationIsAtomic(t *testing.T) {
 }
 
 func TestRoleChoicesUsePrivateProfileAndCanPreviewInheritance(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	exe, err := os.Executable()
 	if err != nil {
@@ -249,7 +249,7 @@ func TestRoleChoicesUsePrivateProfileAndCanPreviewInheritance(t *testing.T) {
 func TestNestedCertificationAndRepairUseTheirBotProfiles(t *testing.T) {
 	b, town, task, _ := fixtureWorkers(t)
 	bin := t.TempDir()
-	npx := filepath.Join(bin, exeName("npx"))
+	npx := filepath.Join(bin, "npx")
 	if err := os.WriteFile(npx, []byte("unused fake executable"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -290,31 +290,8 @@ func TestNestedCertificationAndRepairUseTheirBotProfiles(t *testing.T) {
 	}
 }
 
-func TestDemoBotProfilesNeverLaunchAgents(t *testing.T) {
-	store := testStore(t, true)
-	x := addTown(t, store)
-	sup := NewSupervisor(store, nil, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
-		t.Fatal("demo started a worker")
-		return RunResult{}, nil
-	}))
-	t.Setenv("PATH", t.TempDir())
-	for _, role := range AgentRoles {
-		if err := sup.SettingsForRole(x.ID, role, AgentSettings{Harness: ptr("custom"), Command: ptr([]string{"unavailable-agent"}), Model: ptr(string(role))}); err != nil {
-			t.Fatal(err)
-		}
-		if err := sup.Control(x.ID, role, "start", ""); err != nil {
-			t.Fatal(err)
-		}
-		choices, err := sup.ChoicesForRole(context.Background(), x.ID, role, AgentSettings{})
-		if err != nil || len(choices.Models) != 1 || choices.Models[0].Value != "demo-model" {
-			t.Fatal(role, choices, err)
-		}
-	}
-	sup.schedule(context.Background())
-}
-
 func TestActivePublicProfileRemainsCapturedUntilWorkerFinishes(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]

@@ -32,7 +32,7 @@ Every bot runs in its own process, so Town and a bot can stop independently.
 The rule is the same as for any interrupted run: a run the bot may have acted
 on, whose result Town did not receive whole, becomes a recovery hold.
 
-- **Town stops or restarts** (`bt shutdown`, SIGTERM, a pod rescheduled). Town
+- **Town stops or restarts** (SIGTERM, a rollout, a pod rescheduled). Town
   cancels its runs: it asks each bot to stop the run, waits up to 30 seconds
   for the result the bot completed (its transcripts are recorded), then
   records the run as interrupted, which is a recovery hold. If Town dies
@@ -40,7 +40,7 @@ on, whose result Town did not receive whole, becomes a recovery hold.
   on the bot; the open `run` in `state.json` becomes a hold at the next
   startup. A restarted Town never reattaches to a run it lost.
 - **A bot stops, restarts or loses its connection mid-run.** A bot that shuts
-  down (a rollout, `docker compose restart`) stops its runs and reports each as
+  down (a rollout, a pod rescheduled) stops its runs and reports each as
   cut short, with what it completed; a bot that dies leaves the stream without
   a result, or silent for a minute. Either way the run becomes a hold.
 - **A bot answers something the contract forbids** — frames out of order, an
@@ -99,8 +99,8 @@ Opening the store repairs what is safely repairable and reports the rest:
   and can be re-asked.
 - A known obsolete startup failure — a default-branch error written by an older
   release — is retired so the first inventory can proceed.
-- Demo state written by an older release is set aside with every byte kept, and
-  the demo seeds itself again. Real state is never discarded this way.
+- State that says it is demo state, written by a release that had a demo mode,
+  is refused; Town never opens or discards it.
 
 ## Reopening archived tasks
 

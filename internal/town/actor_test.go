@@ -8,7 +8,7 @@ import (
 )
 
 func TestStoreAsAttributesOnlyItsOwnOperatorEvents(t *testing.T) {
-	store, err := Open(t.TempDir(), false)
+	store, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -30,7 +30,7 @@ func (o *healthObserver) Observe(ctx context.Context, t *Town, request Inventory
 
 func repoTown(t *testing.T) (*Store, *Town, *fakeGH) {
 	t.Helper()
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		st.Towns[x.ID].Initialized = true

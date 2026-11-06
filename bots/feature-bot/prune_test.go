@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func completedFixture(t *testing.T) (engine, *State, CompletedWorkspace) {
@@ -106,7 +104,6 @@ func TestPruneProtectedWorkspaces(t *testing.T) {
 	for _, kind := range []string{"tracked", "staged", "locked", "attached", "head", "foreign", "symlink", "parent-symlink", "active", "ambiguous", "active-alias", "assume-unchanged", "legacy"} {
 		t.Run(kind, func(t *testing.T) {
 			if kind == "symlink" || kind == "parent-symlink" || kind == "active-alias" {
-				testplatform.RequireSymlinks(t)
 			}
 			e, s, w := completedFixture(t)
 			switch kind {
@@ -302,7 +299,6 @@ func TestCompletionLifecycle(t *testing.T) {
 }
 
 func TestPrunePartialRemovalFailure(t *testing.T) {
-	testplatform.SkipPOSIXFakes(t)
 	e, s, first := completedFixture(t)
 	if err := e.step(context.Background(), s, true); err != nil {
 		t.Fatal(err)
@@ -414,7 +410,6 @@ func TestPruneFinishesRemovalWithoutGitFile(t *testing.T) {
 }
 
 func TestPruneOperationalErrorsFail(t *testing.T) {
-	testplatform.SkipPOSIXFakes(t)
 	e, _, w := completedFixture(t)
 	realGit, err := exec.LookPath("git")
 	if err != nil {

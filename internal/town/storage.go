@@ -491,9 +491,6 @@ func (s *Supervisor) CleanupStorage(ctx context.Context, id string, ageHours int
 	if ageHours < 0 || ageHours > 24*3650 {
 		return nil, errors.New("invalid retention period")
 	}
-	if s.Store.Snapshot().Demo {
-		return nil, errors.New("demo storage cleanup is disabled")
-	}
 	release, err := s.beginStorage(id)
 	if err != nil {
 		return nil, err

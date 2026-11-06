@@ -20,13 +20,15 @@ Both are required to enable Mjolnir. The names used up to 0.10.0, `BT_MJOLNIR_AP
 `BT_MJOLNIR_TOKEN_FILE` and `BT_MJOLNIR_COMMAND`, are still read when the new
 ones are unset. `mj api-info` prints the values for a local
 daemon. The connection is deliberately restricted to loopback, rejects redirects
-and proxies, and never falls back to the public internet. Demo mode ignores the
-connection entirely.
+and proxies, and never falls back to the public internet, so the daemon must
+answer on the loopback address of Town's pod. Set the variables in the `bt`
+container's `env` in `deploy/kubernetes/bt.yaml`:
 
-```sh
-export BROKK_TOWN_MJOLNIR_API_URL=http://127.0.0.1:PORT/api/v1
-export BROKK_TOWN_MJOLNIR_TOKEN_FILE=$HOME/.local/state/mjolnir/token
-bt -d
+```yaml
+- name: BROKK_TOWN_MJOLNIR_API_URL
+  value: http://127.0.0.1:PORT/api/v1
+- name: BROKK_TOWN_MJOLNIR_TOKEN_FILE
+  value: /run/secrets/mjolnir/token
 ```
 
 ## Catalog

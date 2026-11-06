@@ -8,7 +8,7 @@ import (
 )
 
 func TestFeatureWorkerUsesDiscoveryCadenceAndNoSyntheticDelivery(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) { st.Towns[x.ID].Workers[Feature].Enabled = true })
 	now := time.Now()
@@ -33,20 +33,4 @@ func TestFeatureWorkerUsesDiscoveryCadenceAndNoSyntheticDelivery(t *testing.T) {
 			t.Fatal("worker success must not invent a filed issue")
 		}
 	}
-}
-
-func TestFeatureDemoNeverSchedulesRealWork(t *testing.T) {
-	s := testStore(t, true)
-	x := addTown(t, s)
-	update(t, s, func(st *State) {
-		town := st.Towns[x.ID]
-		town.Initialized = true
-		town.Workers[Feature].Enabled = true
-	})
-	sup := NewSupervisor(s, nil, workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
-		t.Error("demo launched a real worker")
-		return RunResult{}, nil
-	}))
-	sup.schedule(context.Background())
-	sup.wg.Wait()
 }

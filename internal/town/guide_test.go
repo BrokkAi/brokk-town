@@ -9,14 +9,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/BrokkAi/acp-go/runner"
 )
 
 func guideFixture(t *testing.T) (*Supervisor, string) {
 	t.Helper()
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	update(t, store, func(st *State) {
 		x := st.Towns[x.ID]
@@ -190,7 +189,7 @@ func TestGuideConversationReconnectRestartAndBoundedIDs(t *testing.T) {
 	update(t, s.Store, func(st *State) { st.Towns[id].Guide.turn(queued.ID).Status = "answering" })
 	root := filepath.Dir(s.Store.path)
 	s.Store.Close()
-	again, err := Open(root, false)
+	again, err := Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +206,7 @@ func TestGuideConversationReconnectRestartAndBoundedIDs(t *testing.T) {
 		t.Fatal("restart replayed interrupted prompt")
 	}
 }
-func TestGuideRedactsContextAndSplitOutputAndDemoNeverInvokesAgent(t *testing.T) {
+func TestGuideRedactsContextAndSplitOutput(t *testing.T) {
 	s, id := guideFixture(t)
 	update(t, s.Store, func(st *State) {
 		x := st.Towns[id]
@@ -242,32 +241,4 @@ func TestGuideRedactsContextAndSplitOutputAndDemoNeverInvokesAgent(t *testing.T)
 	if strings.Contains(saved.Question+saved.Answer+saved.Detail, "supersecret123") {
 		t.Fatal("guide leaked private value")
 	}
-	demo := testStore(t, true)
-	x := addTown(t, demo)
-	sup := NewSupervisor(demo, newGH(1), nil)
-	sup.GuideRunner = func(context.Context, runner.AgentConfig, string, string, func(string) error) error {
-		t.Error("demo invoked a real guide")
-		return nil
-	}
-	q := askGuide(t, sup, x.ID, "demo-question", "Explain queued work")
-	sup.answerGuide(context.Background(), x.ID, q.ID)
-	answer := demo.Snapshot().Towns[x.ID].Guide.turn(q.ID)
-	if answer.Status != "complete" || !strings.Contains(answer.Answer, "Assistant, demo") {
-		t.Fatal(answer)
-	}
-}
-
-func TestDemoServiceLoopProcessesGuideWithoutExecutionDependencies(t *testing.T) {
-	store := testStore(t, true)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- runDemo(ctx, store, time.Hour) }()
-	eventually(t, func() bool { return len(store.Snapshot().Towns) > 0 })
-	sup := NewSupervisor(store, nil, nil)
-	id := "brokkai/orchard"
-	turn := askGuide(t, sup, id, "demo-loop-question", "What needs attention?")
-	eventually(t, func() bool { return store.Snapshot().Towns[id].Guide.turn(turn.ID).Status == "complete" })
-	cancel()
-	<-done
 }

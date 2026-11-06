@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 func TestHistoryFinishPersistsReceiptsAndBaseline(t *testing.T) {
@@ -56,7 +54,7 @@ func TestHistoryFinishPersistsReceiptsAndBaseline(t *testing.T) {
 		t.Fatal("interrupted temporary write affected state")
 	}
 	info, err := os.Stat(filepath.Join(cfg.StateDirectory, "state.json"))
-	if err != nil || !testplatform.OwnerOnly(info.Mode()) {
+	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatalf("private state permissions: %v %v", info, err)
 	}
 }

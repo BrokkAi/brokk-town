@@ -17,7 +17,7 @@ func (w *releaseRetryWorker) Run(context.Context, *Town, Role, func(Progress), *
 }
 
 func TestReleaseRetryControlIsConsumedByTheNextRun(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		w := st.Towns[x.ID].Workers[Release]

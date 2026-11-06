@@ -44,7 +44,7 @@ func TestMjolnirReadOnlyAcceptance(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Minute)
 	defer cancel()
 	connection := mjolnir.Environment()
-	catalog := mjolnir.New(cfg.Root, false, connection)
+	catalog := mjolnir.New(cfg.Root, connection)
 	selection := mjolnir.Selection{Target: cfg.Target, Profile: cfg.Profile}
 	pin, err := catalog.DiscoverRuntime(ctx, selection, cfg.Discovery)
 	if err != nil {

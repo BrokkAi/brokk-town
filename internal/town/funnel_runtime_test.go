@@ -9,7 +9,7 @@ import (
 )
 
 func TestFunnelConfigAndNormalizedTaskPersistWithoutCredentialReference(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	config := DefaultConfig("acme/orchard")
 	config.Funnels = FunnelConfigs{{ID: "slack-ready", Provider: "slack", Location: SourceLocation{"channel": "C123"}, Credentials: SecretRef{Name: "secret-reference-never-public"}, Enabled: true, PriorityPolicy: "operator-explicit", ReadOnly: true}}
 	update(t, store, func(state *State) {
@@ -37,7 +37,7 @@ func TestFunnelConfigAndNormalizedTaskPersistWithoutCredentialReference(t *testi
 		t.Fatalf("public snapshot leaked credential reference: %s", public)
 	}
 	store.Close()
-	reopened, err := Open(filepath.Dir(store.path), false)
+	reopened, err := Open(filepath.Dir(store.path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestFunnelConfigAndNormalizedTaskPersistWithoutCredentialReference(t *testi
 }
 
 func TestIncompleteFunnelPageNeverBecomesCleanQueue(t *testing.T) {
-	state := NewState(false)
+	state := NewState()
 	town, _ := state.Add(DefaultConfig("acme/orchard"))
 	town.Initialized = true
 	page := DiscoveryPage{Funnel: "linear", Provider: "linear", Complete: false, Outcome: Outcome{Kind: OutcomeIncomplete, Detail: "cursor expired", Covered: false}, ObservedAt: time.Now()}
@@ -61,7 +61,7 @@ func TestIncompleteFunnelPageNeverBecomesCleanQueue(t *testing.T) {
 }
 
 func TestDoneFunnelItemsAreRetainedWithoutArrivalDelivery(t *testing.T) {
-	state := NewState(false)
+	state := NewState()
 	town, _ := state.Add(DefaultConfig("acme/orchard"))
 	town.Initialized = true
 	now := time.Unix(200, 0).UTC()

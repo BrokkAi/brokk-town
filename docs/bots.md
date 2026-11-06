@@ -3,15 +3,11 @@
 Each bot is a Go package of this module under `bots/` and runs as its own
 binary, `cmd/<bot>` (for example `review-bot`), built from that package and
 the shared server in `internal/botapi/botserver`. Town reaches a bot only over
-the network through the bot contract in `internal/botapi`, wherever it runs:
-started by `bt` on a loopback port, in its own container under docker compose,
-or in its own pod on Kubernetes (see [operations.md](operations.md#bots)). Each
-bot's prompt, configuration, GitHub access and durable state stay with its
-package, and its private files live under its own data root at
-`towns/<key>/<role>/{checkout,state}`, one directory per repository. A bot that
-`bt` starts on the same machine uses Town's state directory as its data root,
-so its workspaces sit where they always have; a bot in a container keeps them
-on its own volume.
+the network through the bot contract in `internal/botapi`; each bot runs in its
+own pod on Kubernetes (see [operations.md](operations.md#bots)). Each bot's
+prompt, configuration, GitHub access and durable state stay with its package,
+and its private files live on its own volume, under its data root at
+`towns/<key>/<role>/{checkout,state}`, one directory per repository.
 
 Town sends the repository's agent profile and work policy in a contract
 request; the bot's `worker.go` adapts it into the bot's own config, resolves the
@@ -179,9 +175,7 @@ variable.
 | `--root DIR` | `BROKK_BOT_ROOT` | Data root for workspaces and installed harnesses. Required. |
 | `--token-file FILE` | `BROKK_BOT_TOKEN_FILE` | File holding the bearer token Town must present. `BROKK_BOT_TOKEN` holds the token itself instead. Required, at least 16 characters. |
 | `--tls-cert FILE`, `--tls-key FILE` | `BROKK_BOT_TLS_CERT`, `BROKK_BOT_TLS_KEY` | Serve HTTPS with this certificate. |
-| `--demo` | `BROKK_BOT_DEMO=1` | Answer every run with a canned result for its role; never run git, gh or an agent. Only a demo Town dispatches to a demo bot, and a demo Town dispatches to nothing else. |
 | `--log-level` | `BROKK_BOT_LOG_LEVEL` | `debug`, `info`, `warn` or `error`. |
-| `--exit-with-parent` | | Exit when standard input closes; `bt` passes it to the bots it starts. |
 | `--version` | | Print the version. |
 
 Once listening, a bot prints one JSON line on standard output naming its
@@ -196,7 +190,7 @@ runs reads its API keys the same way. The container images carry `git`, `gh`,
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /v1/healthz` | Liveness. The only endpoint that needs no token. |
-| `GET /v1/identity` | The bot's name, role, version, contract version and demo flag. |
+| `GET /v1/identity` | The bot's name, role, version and contract version. |
 | `POST /v1/run` | One `botapi.Request` in; an NDJSON stream of frames out. |
 | `POST /v1/cancel` | Stops the run named by the `Brokk-Run-Id` header. |
 | `POST /v1/storage` | One `botapi.StorageRequest` in; its `StorageResult` out. |

@@ -17,7 +17,7 @@ import (
 // and later canceled inventories left that error beside a repair recovery hold.
 func legacyBranchFailure(t *testing.T, dir string, enabled, recovery bool) *Town {
 	t.Helper()
-	st := NewState(false)
+	st := NewState()
 	x, err := st.Add(DefaultConfig("acme/orchard"))
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestOpenRetiresLegacyDefaultBranchFailure(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				dir := t.TempDir()
 				before := legacyBranchFailure(t, dir, enabled, recovery)
-				s, err := Open(dir, false)
+				s, err := Open(dir)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -106,7 +106,7 @@ func TestOpenRetiresLegacyDefaultBranchFailure(t *testing.T) {
 					t.Fatal("inventory is not immediately eligible after upgrade")
 				}
 				s.Close()
-				reopened, err := Open(dir, false)
+				reopened, err := Open(dir)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -126,7 +126,7 @@ func TestOpenKeepsOtherRepositoryFailures(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			dir := t.TempDir()
 			before := legacyBranchFailure(t, dir, true, false)
-			st := NewState(false)
+			st := NewState()
 			st.Towns[before.ID] = before
 			switch scenario {
 			case "pinned branch":
@@ -143,7 +143,7 @@ func TestOpenKeepsOtherRepositoryFailures(t *testing.T) {
 				before.Config.Branch = "../bad"
 			}
 			writeStartupState(t, dir, st)
-			s, err := Open(dir, false)
+			s, err := Open(dir)
 			if scenario == "invalid configured branch" {
 				if err == nil {
 					s.Close()
@@ -177,7 +177,7 @@ func TestStartupRecoverySurvivesCanceledInventoryAndReportsNewFailure(t *testing
 		t.Run(failure.Error(), func(t *testing.T) {
 			dir := t.TempDir()
 			before := legacyBranchFailure(t, dir, true, true)
-			s, err := Open(dir, false)
+			s, err := Open(dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +200,7 @@ func TestStartupRecoverySurvivesCanceledInventoryAndReportsNewFailure(t *testing
 			}
 			check(s.Snapshot().Towns[before.ID])
 			s.Close()
-			reopened, err := Open(dir, false)
+			reopened, err := Open(dir)
 			if err != nil {
 				t.Fatal(err)
 			}

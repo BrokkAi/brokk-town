@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -31,15 +30,16 @@ import (
 
 var version = "dev"
 
-// connection advertises the running local service and its identity.
+// connection advertises the running service and its identity to clients on
+// its own host, such as bt status run with kubectl exec.
 type connection struct {
 	URL     string `json:"url"`
 	Token   string `json:"token"`
 	PID     int    `json:"pid"`
 	Version string `json:"version,omitempty"`
 	// Local is where a client on the service's own host reaches it, when that
-	// differs from URL: in a container the browser's published address may
-	// not be where Town listens.
+	// differs from URL: the address people open is published through an
+	// Ingress, not where Town listens.
 	Local string `json:"local,omitempty"`
 }
 
@@ -51,21 +51,8 @@ func (c connection) base() string {
 	return c.URL
 }
 
-// executablePath resolves the real binary behind any launcher symlink, such as
-// the npm shim, so bt -d starts the binary itself.
-var executablePath = func() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	if resolved, e := filepath.EvalSymlinks(exe); e == nil {
-		exe = resolved
-	}
-	return exe, nil
-}
-
-// serviceToken persists the local access key so browser bookmarks, open tabs,
-// survive service restarts. Delete the file to rotate it.
+// serviceToken persists the operator's access key so browser bookmarks and
+// open tabs survive service restarts. Delete the file to rotate it.
 func serviceToken(dir string) (string, error) {
 	path := filepath.Join(dir, "token")
 	if b, err := os.ReadFile(path); err == nil {
@@ -95,16 +82,18 @@ func describeLock(dir string, err error) error {
 		return err
 	}
 	if conn, e := readConnection(dir); e == nil && conn.PID > 0 {
-		return fmt.Errorf("%w (pid %d at %s; stop it with bt shutdown, or Ctrl+C if it runs in a terminal)", err, conn.PID, conn.URL)
+		return fmt.Errorf("%w (pid %d at %s)", err, conn.PID, conn.URL)
 	}
 	return err
 }
 
+// stateHome is the default state directory: BROKK_TOWN_STATE_DIR, which the
+// bt image sets to its data volume, or brokk-town under the XDG state home.
 func stateHome() string {
-	base := os.Getenv("XDG_STATE_HOME")
-	if base == "" && runtime.GOOS == "windows" {
-		base = os.Getenv("LOCALAPPDATA")
+	if dir := os.Getenv("BROKK_TOWN_STATE_DIR"); dir != "" {
+		return dir
 	}
+	base := os.Getenv("XDG_STATE_HOME")
 	if base == "" {
 		home, _ := os.UserHomeDir()
 		base = filepath.Join(home, ".local", "state")
@@ -114,13 +103,12 @@ func stateHome() string {
 func buildVersion() string { return botapi.BuildVersion(version) }
 
 // shutdownSignals end the process through the ordinary shutdown sequence.
-// SIGHUP belongs here: closing a terminal or dropping an SSH connection would
-// otherwise kill the service outright, leaving its workers running in their own
-// process groups and a stale connection.json advertising a dead URL.
+// Kubernetes stops a pod with SIGTERM; SIGHUP must not kill the service
+// outright, leaving its workers running in their own process groups and a
+// stale connection.json advertising a dead URL.
 var shutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 func main() {
-	readyPipe = takeReadyPipe()
 	ctx, cancel := signal.NotifyContext(context.Background(), shutdownSignals...)
 	defer cancel()
 	err := run(ctx, os.Args[1:])
@@ -194,33 +182,16 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	abs := runtimeDir(base, *fl.demo)
 	switch command {
 	case "":
-		if *fl.daemon && *fl.publicURL != "" {
-			return errors.New("--public-url is for running Town in a container, in the foreground; it cannot be combined with -d")
+		if *fl.publicURL == "" {
+			return errors.New("--public-url is required: the address people open in their browsers, such as https://town.example.com")
 		}
-		if *fl.daemon {
-			return startBackground(ctx, base, *fl.demo, *fl.listen, *fl.config)
-		}
-		if *fl.multiUser && *fl.publicURL == "" {
-			return errors.New("--multi-user needs --public-url, the address people open in their browsers")
-		}
-		return serveWith(ctx, abs, *fl.listen, *fl.demo, *fl.config, *fl.publicURL, *fl.multiUser)
+		return serve(ctx, base, *fl.listen, *fl.config, *fl.publicURL)
 	case "status":
-		return printStatus(ctx, abs, *fl.json)
-	case "shutdown":
-		conn, alive := serviceAlive(ctx, abs)
-		if !alive {
-			return errors.New("Brokk Town is not running")
-		}
-		if err := stopProcess(ctx, conn); err != nil {
-			return err
-		}
-		fmt.Println("Brokk Town stopped")
-		return nil
+		return printStatus(ctx, base, *fl.json)
 	case "web":
-		conn, err := requireService(ctx, abs)
+		conn, err := requireService(ctx, base)
 		if err != nil {
 			return err
 		}
@@ -231,32 +202,11 @@ func run(ctx context.Context, args []string) error {
 	}
 }
 
-// browserLink returns the browser address with its access key only when
-// stdout is an interactive terminal. Redirected output, such as the background
-// service's log, gets a pointer to bt web so the key never lands in a file.
-func browserLink(conn connection, demo bool) string {
-	if stdoutIsTerminal() {
-		return conn.URL + "/#token=" + conn.Token
-	}
-	if demo {
-		return "run bt web --demo for the link"
-	}
-	return "run bt web for the link"
-}
-
-var stdoutIsTerminal = func() bool {
-	info, err := os.Stdout.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
-// serveBanner is what the foreground service prints once it is listening.
-func serveBanner(conn connection, demo bool) string {
-	return fmt.Sprintf("Brokk Town %s\nBrowser: %s\n", buildVersion(), browserLink(conn, demo))
-}
-
-// backgroundBanner is what bt -d prints once the detached service is ready.
-func backgroundBanner(conn connection, demo bool, logs string) string {
-	return fmt.Sprintf("Brokk Town running (pid %d)\nBrowser: %s\nLogs: %s\n", conn.PID, browserLink(conn, demo), logs)
+// serveBanner is what the service prints once it is listening. It goes to the
+// pod's log, so it never carries the access key: bt web prints the operator's
+// link.
+func serveBanner(conn connection) string {
+	return fmt.Sprintf("Brokk Town %s\nPeople on the allowlist sign in at %s; run bt web for the operator's link\n", buildVersion(), conn.URL)
 }
 
 func readConnection(dir string) (connection, error) {
@@ -305,38 +255,30 @@ func request(ctx context.Context, c connection, method, path string, body, out a
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
-func serve(ctx context.Context, dir, address string, demo bool, configFile, publicURL string) error {
-	return serveWith(ctx, dir, address, demo, configFile, publicURL, false)
-}
 
-// serveWith runs Town. multiUser shares it with the people its sign-in
-// allowlist admits; otherwise the local access key is the only credential.
-func serveWith(ctx context.Context, dir, address string, demo bool, configFile, publicURL string, multiUser bool) error {
-	origin, err := serviceOrigin(address, publicURL, multiUser)
+// serve runs Town, shared with the people its sign-in allowlist admits. The
+// operator's access key also reaches it, from clients on its own host.
+func serve(ctx context.Context, dir, address, configFile, publicURL string) error {
+	origin, err := serviceOrigin(address, publicURL)
 	if err != nil {
 		return err
 	}
-	store, err := town.Open(dir, demo)
+	store, err := town.Open(dir)
 	if err != nil {
 		return describeLock(dir, err)
 	}
 	defer store.Close()
-	var signin *auth.Service
-	if multiUser {
-		key, e := auth.SessionKey(dir)
-		if e != nil {
-			return fmt.Errorf("session key: %w", e)
-		}
-		cfg, e := auth.FromEnvironment(origin, key, os.Getenv)
-		if e != nil {
-			return e
-		}
-		if signin, e = auth.New(cfg); e != nil {
-			return e
-		}
+	key, err := auth.SessionKey(dir)
+	if err != nil {
+		return fmt.Errorf("session key: %w", err)
 	}
-	if notice := store.Notice(); notice != "" {
-		fmt.Fprintf(os.Stderr, "bt: %s\n", notice)
+	cfg, err := auth.FromEnvironment(origin, key, os.Getenv)
+	if err != nil {
+		return err
+	}
+	signin, err := auth.New(cfg)
+	if err != nil {
+		return err
 	}
 	var fileBots map[town.Role]fileBot
 	if configFile != "" {
@@ -349,9 +291,6 @@ func serveWith(ctx context.Context, dir, address string, demo bool, configFile, 
 			return e
 		}
 		fileBots = service.Bots
-		if demo {
-			return errors.New("real config is not accepted in demo mode")
-		}
 		var restored []string
 		if e = store.Update(func(s *town.State) error {
 			restored = nil
@@ -421,20 +360,19 @@ func serveWith(ctx context.Context, dir, address string, demo bool, configFile, 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	fleet, err := townBots(dir, demo, fileBots, slog.Default())
+	bots, err := townBots(fileBots)
 	if err != nil {
 		return err
 	}
-	defer fleet.Stop()
-	callback, stopCallback, err := agentCallback(ctx, fleet, slog.Default())
+	callback, stopCallback, err := agentCallback(ctx, slog.Default())
 	if err != nil {
 		return err
 	}
 	defer stopCallback()
 	gh := town.GitHubClient{}
-	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh, Bots: fleet.bots, Callback: callback}
+	workers := &town.BotWorkers{Root: dir, Store: store, GitHub: gh, Bots: bots, Callback: callback}
 	supervisor := town.NewSupervisor(store, gh, workers)
-	supervisor.Mjolnir = mjolnir.New(dir, demo, mjolnir.Environment())
+	supervisor.Mjolnir = mjolnir.New(dir, mjolnir.Environment())
 	workers.Mjolnir = supervisor.Mjolnir
 	if command := mjolnir.Setting("BROKK_TOWN_MJOLNIR_COMMAND"); command != "" {
 		if json.Unmarshal([]byte(command), &workers.MjolnirCommand) != nil || len(workers.MjolnirCommand) == 0 || workers.MjolnirCommand[0] == "" {
@@ -446,9 +384,7 @@ func serveWith(ctx context.Context, dir, address string, demo bool, configFile, 
 		return err
 	}
 	local := ""
-	if origin == "" {
-		origin = "http://" + listener.Addr().String()
-	} else if _, port, e := net.SplitHostPort(listener.Addr().String()); e == nil && "http://127.0.0.1:"+port != origin {
+	if _, port, e := net.SplitHostPort(listener.Addr().String()); e == nil && "http://127.0.0.1:"+port != origin {
 		local = "http://127.0.0.1:" + port
 	}
 	conn := connection{URL: origin, Local: local, Token: token, PID: os.Getpid(), Version: buildVersion()}
@@ -461,27 +397,13 @@ func serveWith(ctx context.Context, dir, address string, demo bool, configFile, 
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Local: conn.Local, Version: buildVersion(), TaskGitHub: gh, Shutdown: func() { cancel(context.Canceled) }, Auth: signin}
+	server := &web.Server{Store: store, Supervisor: supervisor, Token: conn.Token, Origin: conn.URL, Local: conn.Local, Version: buildVersion(), TaskGitHub: gh, Auth: signin}
 	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, BaseContext: func(net.Listener) context.Context { return ctx }}
-	results := make(chan error, 3)
+	results := make(chan error, 2)
 	remaining := 2
 	go func() { results <- httpServer.Serve(listener) }()
-	if demo {
-		go func() { results <- town.Demo(ctx, store) }()
-		remaining++
-		go func() { results <- town.DemoBots(ctx, store, workers) }()
-	} else {
-		go func() { results <- supervisor.Run(ctx) }()
-	}
-	if signin != nil {
-		fmt.Printf("Brokk Town %s\nShared Town: people on the allowlist sign in at %s\n", buildVersion(), conn.URL)
-	} else {
-		fmt.Print(serveBanner(conn, demo))
-	}
-	if demo {
-		fmt.Println("DEMO: simulated events only; no GitHub or agent processes.")
-	}
-	signalReady()
+	go func() { results <- supervisor.Run(ctx) }()
+	fmt.Print(serveBanner(conn))
 	select {
 	case <-ctx.Done():
 		err = ctx.Err()
@@ -499,9 +421,6 @@ func serveWith(ctx context.Context, dir, address string, demo bool, configFile, 
 	for range remaining {
 		<-results
 	}
-	// The bots Town started outlive its workers, so a canceled run can still
-	// report what it completed; then they stop.
-	fleet.Stop()
 	_ = os.Remove(filepath.Join(dir, "connection.json"))
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -509,42 +428,19 @@ func serveWith(ctx context.Context, dir, address string, demo bool, configFile, 
 	return err
 }
 
-// serviceOrigin is the address the browser uses. Town binds a loopback IP and
-// is reached at it. In a container it binds every interface and is reached
-// through a published port, whose address --public-url names; the browser's
-// Host and Origin must match it.
-//
-// A multi-user Town is reached at a public URL, normally https:// through a
-// TLS-terminating proxy or ingress; it still listens on plain HTTP itself.
-func serviceOrigin(address, publicURL string, multiUser bool) (string, error) {
-	if publicURL == "" {
-		return "", loopbackAddress(address)
-	}
+// serviceOrigin is the address people open, which --public-url names:
+// normally https:// through the Ingress that terminates TLS, or http:// for a
+// trial through kubectl port-forward. Town listens on plain HTTP itself, and
+// the browser's Host and Origin must match this address.
+func serviceOrigin(address, publicURL string) (string, error) {
 	parsed, err := url.Parse(publicURL)
-	scheme := parsed != nil && (parsed.Scheme == "http" || (multiUser && parsed.Scheme == "https"))
-	if err != nil || !scheme || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		if multiUser {
-			return "", errors.New("--public-url must be https://host[:port] (or http:// for a trial on one machine), the address people open")
-		}
-		return "", errors.New("--public-url must be http://host:port, the address the browser uses")
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("--public-url must be https://host[:port] (or http:// for a trial through kubectl port-forward), the address people open")
 	}
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		return "", err
 	}
 	return parsed.Scheme + "://" + parsed.Host, nil
-}
-
-// loopbackAddress rejects anything but a literal loopback IP. The service has
-// no remote authentication; an SSH tunnel is the supported remote path.
-func loopbackAddress(address string) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return err
-	}
-	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return errors.New("bind to a loopback IP; use an SSH tunnel for remote access")
-	}
-	return nil
 }
 
 // townEntry is one town from a config file together with whether that file

@@ -255,7 +255,6 @@ function installFixture() {
 
 const state = {
   seq: 1,
-  demo: true,
   version: "v0.1.2",
   capacity: { active: 1, limit: 4 },
   service_config: { max_workers: 4 },
@@ -320,7 +319,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
     if (url === "/api/capacity") return { ok: true, json: async () => state.capacity };
     if (url === "/api/update") return { ok: true, json: async () => ({ ok: true, restart_required: true }) };
     if (url === "/api/state") return { ok: true, json: async () => state };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: true, agents: [] }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ agents: [] }) };
     if (url.startsWith("/api/outcomes")) return { ok: true, blob: async () => ({}) };
     return { ok: true, json: async () => ({}) };
   };
@@ -448,8 +447,8 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
   assert.match(elements.inspection.textContent, /Issue Bot/, "the decision names where the task goes");
   assert.match(elements.inspection.textContent, /Simplifier Bot · suggest mode · decline/);
   assert.match(elements.inspection.textContent, /second registry for one caller/);
-  assert.match(elements.inspection.textContent, /Demo: simulated arrival/, "the demo explains why no live body follows");
-  assert.equal(requests.some((request) => request.url === "/api/task-detail"), false, "demo never fetches live details");
+  assert.match(elements.inspection.textContent, /Loading live details from GitHub/, "an arrival reads its live body from its source");
+  assert.equal(requests.some((request) => request.url === "/api/task-detail"), true, "the decision fetches live details");
   await elements.inspection.querySelectorAll("button").find((button) => button.id === "admit-task").onclick();
   assert.equal(requests.some((request) => request.url === "/api/control" && request.options.body.includes('"action":"admit"')), true);
   elements.pipeline.querySelectorAll("[data-house]").find((button) => button.dataset.house === "hall").onclick();
@@ -494,7 +493,7 @@ test("app handlers render views, inspect work, preserve focused capacity input, 
 async function openMayoralDecision(taskDetail) {
   const elements = installFixture();
   const requests = [];
-  const live = { ...state, seq: 1, demo: false };
+  const live = { ...state, seq: 1 };
   const message = `data: ${JSON.stringify(live)}\n\n`;
   let served = false;
   globalThis.fetch = async (url, options = {}) => {
@@ -504,7 +503,7 @@ async function openMayoralDecision(taskDetail) {
     }
     if (url === "/api/task-detail") return taskDetail(url, options);
     if (url === "/api/state") return { ok: true, json: async () => live };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ agents: [] }) };
     return { ok: true, json: async () => ({}) };
   };
   await import(`./app.js?live-detail=${Date.now()}-${Math.random()}`);
@@ -547,7 +546,7 @@ test("mayoral inspection stays decidable when live details fail", async () => {
 
 test("an open decision keeps its markup across snapshots and puts the decision above the body", async () => {
   const elements = installFixture();
-  const live = { ...state, seq: 1, demo: false };
+  const live = { ...state, seq: 1 };
   let releaseSecond;
   const messages = [
     `data: ${JSON.stringify(live)}\n\n`,
@@ -571,7 +570,7 @@ test("an open decision keeps its markup across snapshots and puts the decision a
         }),
       };
     if (url === "/api/state") return { ok: true, json: async () => live };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ agents: [] }) };
     return { ok: true, json: async () => ({}) };
   };
   await import(`./app.js?inspection-stability=${Date.now()}-${Math.random()}`);
@@ -621,7 +620,7 @@ test("the inbox lists every repository's decisions, opens the right bot, and dec
       return { ok: true, body: { getReader: () => ({ read: async () => !served ? (served = true, { value: new TextEncoder().encode(`data: ${JSON.stringify(twoTowns)}\n\n`), done: false }) : { done: true } }) } };
     }
     if (url === "/api/state") return { ok: true, json: async () => twoTowns };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: true, agents: [] }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ agents: [] }) };
     return { ok: true, json: async () => ({}) };
   };
   await import(`./app.js?inbox-test=${Date.now()}`);
@@ -746,7 +745,6 @@ async function openTownHallPanel(budget, adjust = () => {}) {
   const elements = installFixture();
   const live = structuredClone(state);
   live.seq = 1;
-  live.demo = false;
   live.towns["acme/project"].budget = budget;
   adjust(live.towns["acme/project"]);
   const message = `data: ${JSON.stringify(live)}\n\n`;
@@ -755,7 +753,7 @@ async function openTownHallPanel(budget, adjust = () => {}) {
     if (url === "/api/events")
       return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(message), done: false }) : { done: true }) }) } };
     if (url === "/api/state") return { ok: true, json: async () => live };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ agents: [] }) };
     return { ok: true, json: async () => ({}) };
   };
   await import(`./app.js?budget=${Date.now()}-${Math.random()}`);
@@ -817,7 +815,6 @@ test("a bot shows its work policy and marks the inventory that policy holds back
   const elements = installFixture();
   const live = structuredClone(state);
   live.seq = 1;
-  live.demo = false;
   const t = live.towns["acme/project"];
   t.config.work_policies = [
     { role: "issue", labels: ["agent-ready"], summary: "Takes work labelled agent-ready." },
@@ -830,7 +827,7 @@ test("a bot shows its work policy and marks the inventory that policy holds back
     if (url === "/api/events")
       return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(message), done: false }) : { done: true }) }) } };
     if (url === "/api/state") return { ok: true, json: async () => live };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ agents: [] }) };
     return { ok: true, json: async () => ({}) };
   };
   await import(`./app.js?policy=${Date.now()}-${Math.random()}`);
@@ -855,7 +852,7 @@ test("a bot shows its work policy and marks the inventory that policy holds back
 // opens its details; a pipeline card opens the bot.
 test("the overview lists the pipeline in order, open tasks by urgency, metrics, and activity routes", async () => {
   const elements = installFixture();
-  const live = structuredClone({ ...state, seq: 1, demo: false });
+  const live = structuredClone({ ...state, seq: 1 });
   live.towns["acme/project"].tasks["issue:9"] = { id: "issue:9", kind: "issue", number: 9, title: "Fresh lead", house: "simplifier", stage: "simplifying" };
   live.towns["acme/project"].tasks["pr:10"] = { id: "pr:10", kind: "pr", number: 10, title: "Blocked review", house: "review", stage: "queued", blocked: true };
   // Attention is the projected status, not only the blocked flag: an
@@ -873,7 +870,7 @@ test("the overview lists the pipeline in order, open tasks by urgency, metrics, 
     if (url === "/api/events")
       return { ok: true, body: { getReader: () => ({ read: async () => (!served ? ((served = true), { value: new TextEncoder().encode(message), done: false }) : { done: true }) }) } };
     if (url === "/api/state") return { ok: true, json: async () => live };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ agents: [] }) };
     return { ok: true, json: async () => ({}) };
   };
   await import(`./app.js?overview=${Date.now()}-${Math.random()}`);
@@ -922,7 +919,7 @@ test("the overview lists the pipeline in order, open tasks by urgency, metrics, 
 test("the task inspector snoozes a task and resumes a snoozed one", async () => {
   const elements = installFixture();
   const requests = [];
-  const live = structuredClone({ ...state, seq: 1, demo: false });
+  const live = structuredClone({ ...state, seq: 1 });
   live.towns["acme/project"].tasks["issue:5"] = { id: "issue:5", kind: "issue", number: 5, title: "Wait for the vendor", house: "issue", stage: "queued", deferred_until: "2999-01-01T09:00:00Z", defer_reason: "vendor API not released" };
   const message = `data: ${JSON.stringify(live)}\n\n`;
   let served = false;
@@ -932,7 +929,7 @@ test("the task inspector snoozes a task and resumes a snoozed one", async () => 
       return { ok: true, body: { getReader: () => ({ read: async () => !served ? (served = true, { value: new TextEncoder().encode(message), done: false }) : { done: true } }) } };
     }
     if (url === "/api/state") return { ok: true, json: async () => live };
-    if (url === "/api/harnesses") return { ok: true, json: async () => ({ demo: false, agents: [] }) };
+    if (url === "/api/harnesses") return { ok: true, json: async () => ({ agents: [] }) };
     return { ok: true, json: async () => ({ ok: true }) };
   };
   await import(`./app.js?snooze=${Date.now()}-${Math.random()}`);
@@ -1072,7 +1069,6 @@ test("a hidden tab keeps the newest snapshot and paints it when shown", async ()
 test("a write in flight stays disabled across snapshot redraws and focus returns after it settles", async () => {
   const elements = installFixture();
   const live = structuredClone(state);
-  live.demo = false;
   let releaseSnapshot;
   const messages = [
     `data: ${JSON.stringify(live)}\n\n`,
@@ -1133,7 +1129,6 @@ test("a write in flight stays disabled across snapshot redraws and focus returns
 test("a write that never answers is released at its deadline, and paired controls block each other", async () => {
   const elements = installFixture();
   const live = structuredClone(state);
-  live.demo = false;
   const deadlines = [];
   const timeout = AbortSignal.timeout;
   AbortSignal.timeout = (ms) => {

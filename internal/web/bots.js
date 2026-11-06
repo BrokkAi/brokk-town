@@ -18,7 +18,7 @@ export const bots = {
 export const botOrder = ["repo", "bug", "feature", "simplifier", "hall", "issue", "review", "release"];
 
 // Event endpoints that are not bots.
-const parties = { outside: "External", operator: "You" };
+const parties = { outside: "External", operator: "Operator" };
 
 export function isBot(role) {
   return Object.hasOwn(bots, role);

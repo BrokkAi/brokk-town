@@ -244,7 +244,7 @@ func TestTownQuietHoursOverrideOrOptOutOfTheServiceDefault(t *testing.T) {
 }
 
 func TestQuietHoursHoldAgentDispatchButKeepTheInventoryRunning(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/quiet", nil)
 	update(t, s, func(st *State) {
 		st.ServiceConfig.QuietHours = evenings()
@@ -274,7 +274,7 @@ func TestQuietHoursHoldAgentDispatchButKeepTheInventoryRunning(t *testing.T) {
 }
 
 func TestQuietHoursLetRunningWorkFinishAndResumeWithoutTheOperator(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	addCapacityTown(t, s, "acme/night", Issue, Bug)
 	update(t, s, func(st *State) {
 		st.Towns["acme/night"].Config.QuietHours = &[]QuietWindow{{Days: []string{"mon"}, Start: "18:00", End: "19:00"}}
@@ -340,7 +340,7 @@ func TestQuietHoursLetRunningWorkFinishAndResumeWithoutTheOperator(t *testing.T)
 }
 
 func TestQuietHoursHoldTownsOwnGitHubWritesDuringTheInventory(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	update(t, s, func(st *State) {
 		task := st.Towns[x.ID].Tasks["pr:1"]
@@ -374,7 +374,7 @@ func TestQuietHoursHoldTownsOwnGitHubWritesDuringTheInventory(t *testing.T) {
 }
 
 func TestQuietHoursReachClientsDistinctFromPausedWorkingAndFailed(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/public", nil)
 	update(t, s, func(st *State) {
 		st.ServiceConfig.QuietHours = evenings()
@@ -428,7 +428,7 @@ func TestQuietHoursReachClientsDistinctFromPausedWorkingAndFailed(t *testing.T) 
 
 func TestPausedAndQuietHoursSurviveRestart(t *testing.T) {
 	dir := t.TempDir()
-	s, err := Open(dir, false)
+	s, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +440,7 @@ func TestPausedAndQuietHoursSurviveRestart(t *testing.T) {
 	})
 	s.Close()
 
-	reopened, err := Open(dir, false)
+	reopened, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +466,7 @@ func TestPausedAndQuietHoursSurviveRestart(t *testing.T) {
 }
 
 func TestQuietHoursSettingsRoundTrip(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/settings", nil)
 	sup := NewSupervisor(s, nil, nil)
 	own := []QuietWindow{{Days: []string{"sat", "sun"}, Start: "00:00", End: "24:00"}}
@@ -523,7 +523,7 @@ func TestQuietHoursSettingsRoundTrip(t *testing.T) {
 // A review dispatch that began before the window must not merge once quiet
 // hours have started: the gate is checked again just before the write.
 func TestMergeWaitsWhenQuietHoursBeginMidDispatch(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	update(t, s, func(st *State) {
 		st.Towns[x.ID].Config.QuietHours = &[]QuietWindow{{Days: []string{"mon"}, Start: "18:00", End: "19:00"}}

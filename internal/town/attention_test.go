@@ -60,8 +60,7 @@ func attentionLines(path string) []string {
 func fixtureHook(path string) []string { return []string{"/bin/sh", "-c", `cat >> "$1"`, "hook", path} }
 
 func TestAttentionTransitionsDurableAndOffWorkerLoop(t *testing.T) {
-	skipPOSIXFakes(t)
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
 	output := filepath.Join(t.TempDir(), "notices")
@@ -110,8 +109,7 @@ func TestAttentionTransitionsDurableAndOffWorkerLoop(t *testing.T) {
 }
 
 func TestAttentionRestartKeepsQueueButNeverReplaysAnUncertainClaim(t *testing.T) {
-	skipPOSIXFakes(t)
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
 	output := filepath.Join(t.TempDir(), "notices")
@@ -132,7 +130,7 @@ func TestAttentionRestartKeepsQueueButNeverReplaysAnUncertainClaim(t *testing.T)
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := Open(dir, false)
+	reopened, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +148,7 @@ func TestAttentionRestartKeepsQueueButNeverReplaysAnUncertainClaim(t *testing.T)
 }
 
 func TestAttentionProjectionAndSnoozeExpiry(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	update(t, store, func(st *State) {
 		st.ServiceConfig.AttentionHook = AttentionHook{Enabled: true, Command: []string{"fixture"}}
@@ -178,14 +176,13 @@ func TestAttentionProjectionAndSnoozeExpiry(t *testing.T) {
 }
 
 func TestAttentionHookTimeoutFailureAndPrivacy(t *testing.T) {
-	skipPOSIXFakes(t)
 	notice := AttentionNotice{Town: "acme/project", Task: "issue:1", Role: Issue, Reason: "blocked", Seq: 7}
 	started := time.Now()
 	command := []string{"/bin/sh", "-c", "while :; do printf private-output; done"}
 	if got := runAttentionHook(context.Background(), t.TempDir(), command, notice, 80*time.Millisecond); got != "interrupted_or_timed_out" || time.Since(started) > 2*time.Second {
 		t.Fatal(got, time.Since(started))
 	}
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
 	sink := &osrun.Tail{Capacity: 4096}
@@ -210,24 +207,5 @@ func TestAttentionHookTimeoutFailureAndPrivacy(t *testing.T) {
 	}
 	if !reflect.DeepEqual(before, store.Snapshot().Towns) {
 		t.Fatal("failure changed town state")
-	}
-}
-
-func TestDemoNeverQueuesOrRunsAttentionHook(t *testing.T) {
-	store := testStore(t, true)
-	x := addTown(t, store)
-	s := NewSupervisor(store, nil, nil)
-	output := filepath.Join(t.TempDir(), "forbidden")
-	command := fixtureHook(output)
-	if err := s.SetAttentionHook(AttentionHookEdit{Enabled: ptr(true), Command: &command}); err != nil {
-		t.Fatal(err)
-	}
-	update(t, store, func(st *State) { attentionTask(st, x.ID, 1, true); st.Towns[x.ID].Workers[Review].Status = "failed" })
-	startAttention(t, s)
-	if len(store.Snapshot().AttentionPending) != 0 {
-		t.Fatal("demo queued a hook")
-	}
-	if _, err := os.Stat(output); !os.IsNotExist(err) {
-		t.Fatal("demo ran hook")
 	}
 }

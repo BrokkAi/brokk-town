@@ -1,6 +1,7 @@
 # Publishes Town's browser port over HTTPS. Set the host, the TLS secret and,
-# if the cluster has several, the ingress class. The managed-review callback
-# (8091) stays inside the cluster.
+# if the cluster has several, the ingress class. The host must match
+# --public-url in bt.yaml. The managed-review callback (8091) stays inside the
+# cluster.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

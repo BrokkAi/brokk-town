@@ -12,7 +12,7 @@ import (
 // pull request #5 for issue #3, which Simplifier is assessing.
 func ownPullTown(t *testing.T, mode string) (*Store, *Town, *fakeGH, *Supervisor) {
 	t.Helper()
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	gh := newGH(5)
 	gh.snapshot.Issues = []RemoteIssue{{Number: 3, Title: "Issue 3", State: "open"}}
@@ -77,7 +77,7 @@ func TestSimplifierDeclinedOwnPullIsClosedAndItsIssueStartsOver(t *testing.T) {
 }
 
 func TestOutsideDeclinedPullIsStillLeftOpen(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	gh := newGH(5)
 	update(t, store, func(st *State) {

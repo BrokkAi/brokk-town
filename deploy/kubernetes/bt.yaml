@@ -22,8 +22,7 @@ spec:
   selector:
     app.kubernetes.io/name: bt
   ports:
-    # The browser and local API. Reach it with
-    #   kubectl -n brokk-town port-forward svc/bt 8080
+    # The browser and API, which the Ingress publishes.
     - name: http
       port: 8080
       targetPort: http
@@ -66,8 +65,10 @@ spec:
         - name: bt
           image: ghcr.io/brokkai/brokk-town/bt:latest
           imagePullPolicy: IfNotPresent
-          # The image starts bt with --state-dir /data --listen 0.0.0.0:8080.
-          args: ["--public-url", "http://127.0.0.1:8080"]
+          # The image starts bt with --listen 0.0.0.0:8080 and its state in
+          # /data. Replace town.example.com with the address people open; it
+          # must match the Ingress host and the OAuth apps' callback URLs.
+          args: ["--public-url", "https://town.example.com"]
           env:
             - name: BROKK_TOWN_CALLBACK_URL
               value: http://bt:8091
@@ -107,6 +108,8 @@ spec:
             - secretRef:
                 name: brokk-town-credentials
                 optional: true
+            - configMapRef:
+                name: brokk-town-auth
           ports:
             - name: http
               containerPort: 8080
@@ -132,6 +135,9 @@ spec:
               mountPath: /data
             - name: tokens
               mountPath: /run/secrets/brokk
+              readOnly: true
+            - name: oauth
+              mountPath: /run/secrets/brokk-oauth
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -162,5 +168,9 @@ spec:
                         path: repo-bot/token
                       - key: mayor-bot
                         path: mayor-bot/token
+        - name: oauth
+          secret:
+            secretName: brokk-town-oauth
+            defaultMode: 0440
         - name: tmp
           emptyDir: {}

@@ -1,0 +1,46 @@
+# Brokk Town on Kubernetes: Town (bt) and each bot in its own Deployment with
+# its own volume. People sign in with GitHub or Google and share the same
+# repositories, decisions and Assistant conversations; an Ingress that
+# terminates TLS publishes Town.
+#
+#   deploy/kubernetes/generate-secrets.sh
+#   # fill in credentials.env, auth.env and oauth-secrets.env, and replace
+#   # town.example.com in bt.yaml and ingress.yaml
+#   kubectl apply -k deploy/kubernetes
+#
+# See docs/operations.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: brokk-town
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: brokk-town
+resources:
+  - namespace.yaml
+  - bt.yaml
+  - bots.yaml
+  - network.yaml
+  - ingress.yaml
+configMapGenerator:
+  # OAuth client IDs, the allowlist and where the client secrets are mounted.
+  - name: brokk-town-auth
+    envs: [auth.env]
+    options:
+      disableNameSuffixHash: true
+secretGenerator:
+  # One bearer token per bot, keyed by the bot's name.
+  - name: brokk-town-bot-tokens
+    envs: [bot-tokens.env]
+    options:
+      disableNameSuffixHash: true
+  # GH_TOKEN and the agent harnesses' API keys, given to Town and every bot.
+  - name: brokk-town-credentials
+    envs: [credentials.env]
+    options:
+      disableNameSuffixHash: true
+  # The OAuth client secrets, mounted as files; Town never reads them from
+  # its environment.
+  - name: brokk-town-oauth
+    envs: [oauth-secrets.env]
+    options:
+      disableNameSuffixHash: true

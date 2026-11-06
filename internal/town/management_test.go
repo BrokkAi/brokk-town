@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,7 +20,7 @@ import (
 func ptr[T any](v T) *T { return &v }
 
 func TestSettingsApplyAtDispatchAndDoNotChangeActiveRun(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) { st.Towns[x.ID].Config.Agent.Model = "old"; st.Towns[x.ID].Workers[Bug].Enabled = true })
 	stale := s.Snapshot().Towns[x.ID]
@@ -55,7 +54,7 @@ func TestSettingsApplyAtDispatchAndDoNotChangeActiveRun(t *testing.T) {
 
 func TestNewTownWorkersStartSafelyAndEnabledStateSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
-	store, err := Open(dir, false)
+	store, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +86,7 @@ func TestNewTownWorkersStartSafelyAndEnabledStateSurvivesRestart(t *testing.T) {
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	store, err = Open(dir, false)
+	store, err = Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +98,7 @@ func TestNewTownWorkersStartSafelyAndEnabledStateSurvivesRestart(t *testing.T) {
 }
 
 func TestManualMergePolicyPreventsReleaseWorkerCombinations(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	town := addTown(t, store)
 	update(t, store, func(state *State) {
 		worker := state.Towns[town.ID].Workers[Release]
@@ -149,7 +148,7 @@ func TestManualMergePolicyPreventsReleaseWorkerCombinations(t *testing.T) {
 }
 
 func TestAgentSettingsPreservePrivateConfigAndSwitchHarness(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		st.Towns[x.ID].Config.Agent = runner.AgentConfig{Command: []string{"agent", "private-argument"}, Environment: map[string]string{"KEY": "private-value"}, Model: "original", Effort: "low", AuthMethod: "login", Mode: "mode"}
@@ -194,7 +193,7 @@ func TestAgentSettingsPreservePrivateConfigAndSwitchHarness(t *testing.T) {
 }
 
 func TestDeleteCancelsWorkRetainsRecoveryAndRestoresPaused(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]
@@ -280,7 +279,7 @@ func sampleRequest() IssueRequest {
 
 func TestIssueLostResponseSurvivesRestartWithoutDuplicatePost(t *testing.T) {
 	dir := t.TempDir()
-	s, err := Open(dir, false)
+	s, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +309,7 @@ func TestIssueLostResponseSurvivesRestartWithoutDuplicatePost(t *testing.T) {
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s, err = Open(dir, false)
+	s, err = Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +343,7 @@ func TestIssueLostResponseSurvivesRestartWithoutDuplicatePost(t *testing.T) {
 }
 
 func TestMissingReceiptNeverRepostsAndDeleteCancelsQueuedSubmission(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	sup := NewSupervisor(s, nil, nil)
 	posts := 0
@@ -372,31 +371,6 @@ func TestMissingReceiptNeverRepostsAndDeleteCancelsQueuedSubmission(t *testing.T
 	sup.publishRequest(context.Background(), x.ID, r.ID)
 	if posts != 1 || s.Snapshot().Towns[x.ID].Requests[r.ID].Status != "canceled" {
 		t.Fatal("deleted town submitted queued issue")
-	}
-}
-
-func TestDemoRequestsAndChoicesCannotRunRealClients(t *testing.T) {
-	s := testStore(t, true)
-	x := addTown(t, s)
-	sup := NewSupervisor(s, nil, nil)
-	sup.Publisher = requestPublisher{post: func(context.Context, string, string, string) (RemoteIssue, error) {
-		t.Fatal("demo POST")
-		return RemoteIssue{}, nil
-	}}
-	r := sampleRequest()
-	r.Kind = "bug"
-	result, err := sup.SubmitRequest(x.ID, r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sup.schedule(context.Background())
-	sup.publishRequest(context.Background(), x.ID, r.ID)
-	if result.Status != "confirmed" || result.URL != "" || s.Snapshot().Towns[x.ID].Tasks[fmt.Sprintf("issue:%d", result.Number)] == nil {
-		t.Fatal(result)
-	}
-	c, err := sup.Choices(context.Background(), x.ID, AgentSettings{})
-	if err != nil || len(c.Models) == 0 {
-		t.Fatal("demo choices", c, err)
 	}
 }
 
@@ -467,7 +441,7 @@ func TestChoiceAgentHelper(t *testing.T) {
 
 func TestSavedRegistryDefinitionSurvivesCatalogChangesAndRestart(t *testing.T) {
 	dir := t.TempDir()
-	store, err := Open(dir, false)
+	store, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +460,7 @@ func TestSavedRegistryDefinitionSurvivesCatalogChangesAndRestart(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	store, err = Open(dir, false)
+	store, err = Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +479,7 @@ func TestSavedRegistryDefinitionSurvivesCatalogChangesAndRestart(t *testing.T) {
 	}
 	// Preparation uses the pinned package without executing it.
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, exeName("npx")), []byte("fake executable"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, "npx"), []byte("fake executable"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
@@ -521,11 +495,10 @@ func TestSavedRegistryDefinitionSurvivesCatalogChangesAndRestart(t *testing.T) {
 	}
 }
 
-func TestRequestedHarnessSettingsAndDemoChoices(t *testing.T) {
-	store := testStore(t, true)
+func TestRequestedHarnessSettings(t *testing.T) {
+	store := testStore(t)
 	x := addTown(t, store)
 	sup := NewSupervisor(store, nil, nil)
-	t.Setenv("PATH", t.TempDir()) // Demo must work without any agent executable.
 	for _, id := range []string{"BrokkAi/anvil", "BrokkAi/muse-acp", "foundev/draupnir", "opencode"} {
 		if err := sup.Settings(x.ID, AgentSettings{Harness: ptr(id)}); err != nil {
 			t.Fatal(id, err)
@@ -533,9 +506,6 @@ func TestRequestedHarnessSettingsAndDemoChoices(t *testing.T) {
 		c := store.Snapshot().Towns[x.ID].Config
 		if c.harness() != harness.Canonical(id) || c.HarnessDefinition == nil {
 			t.Fatal(c)
-		}
-		if choices, err := sup.Choices(context.Background(), x.ID, AgentSettings{}); err != nil || len(choices.Models) == 0 {
-			t.Fatal(id, choices, err)
 		}
 	}
 }

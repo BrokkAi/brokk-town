@@ -36,7 +36,7 @@ test("attention form keeps saved commands private and edits only on submission",
 
 test("late attention save cannot override a reopened dialog and duplicates are held", async () => {
   let finish, calls = 0;
-  const control = attentionSettings({ getState: () => ({demo: true}), refresh: async () => {}, api: async () => { calls++; return new Promise((resolve) => { finish = resolve; }); } });
+  const control = attentionSettings({ getState: () => ({}), refresh: async () => {}, api: async () => { calls++; return new Promise((resolve) => { finish = resolve; }); } });
   control.open();
   fields["attention-hook-command"].value = '["notify"]';
   const pending = submit();
@@ -48,5 +48,5 @@ test("late attention save cannot override a reopened dialog and duplicates are h
   finish({enabled: true, configured: true});
   await pending;
   assert.equal(fields["save-attention-hook"].disabled, false);
-  assert.match(fields["attention-hook-status"].textContent, /Disabled.*demo never runs hooks/);
+  assert.equal(fields["attention-hook-status"].textContent, "Disabled · no command saved.");
 });

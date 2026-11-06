@@ -1,154 +1,102 @@
 # Operations
 
-`bt` is both the service and its client. This page is the operator reference:
-running the service, the commands, the browser and the local API.
+`bt` is both the service and a small client for it. This page is the operator
+reference: deploying Town on Kubernetes, sign-in, the commands, the browser and
+the API.
 
-## Running the service
+## Deploying on Kubernetes
+
+Town runs on Kubernetes, and every Town is shared: people sign in with GitHub
+or Google and work on the same repositories (see [Sign-in](#sign-in)).
+`deploy/kubernetes` is a kustomization of the whole deployment:
 
 ```sh
-bt                      # foreground, prints the browser URL
-bt -d                   # background service
-bt shutdown             # stop it
-bt status               # running? which repositories? --json for the full snapshot
-bt web                  # print the browser URL with its access key
-bt --demo               # demo: a simulated repository, no GitHub or agents
+deploy/kubernetes/generate-secrets.sh
+# fill in credentials.env, auth.env and oauth-secrets.env in deploy/kubernetes,
+# and replace town.example.com in bt.yaml and ingress.yaml
+kubectl apply -k deploy/kubernetes
+kubectl -n brokk-town exec deploy/bt -- bt web     # the operator's link
 ```
 
-`bt` starts the eight bot binaries installed beside it, unless a bot's URL is
-configured; see [Bots](#bots).
+It creates a `brokk-town` namespace (restricted pod security); a Deployment,
+Service and PersistentVolumeClaim for `bt` and for each bot; an Ingress that
+publishes Town's browser port over HTTPS; network policies that admit only
+`bt` to the bots and only the bots to `bt`'s callback port; and these objects,
+generated from local files that are never committed:
 
-The service is single-writer per state directory. Starting a second one on the
-same directory fails with the identity of the process that holds it. Ctrl+C,
-SIGTERM and SIGHUP stop a foreground service; a background service is stopped by
-`bt shutdown`, which uses the authenticated local API on Windows where there is
-no portable signal.
+| File | Object | Holds |
+| --- | --- | --- |
+| `bot-tokens.env` | Secret `brokk-town-bot-tokens` | One random token per bot, keyed by bot name. Each bot mounts only its own; `bt` mounts them all. |
+| `credentials.env` | Secret `brokk-town-credentials` | `GH_TOKEN` and the agent harnesses' API keys, given to every pod as environment. |
+| `auth.env` | ConfigMap `brokk-town-auth` | The OAuth client IDs, the allowlist and where the client secrets are mounted. |
+| `oauth-secrets.env` | Secret `brokk-town-oauth` | The OAuth client secrets, mounted into `bt` as files under `/run/secrets/brokk-oauth`. |
 
-`bt status` and `bt version` work while the service is stopped. `bt web` and
-`bt shutdown` require a running service. Day-to-day operation happens in the
-browser.
+`generate-secrets.sh` keeps files that already exist. The manifests use the
+images `ghcr.io/brokkai/brokk-town/<name>:latest`; pin a release with an overlay
+that sets `images`, or build them from a checkout with `make images`
+(`IMAGES` and `IMAGE_TAG` choose the registry and tag).
+
+Set the Ingress host, its TLS secret (`brokk-town-tls`) and, if the cluster has
+several, its ingress class. Town listens on plain HTTP on port 8080 behind it.
+`--public-url` in `bt.yaml` is the address people open: it must match the
+Ingress host and the OAuth apps' callback URLs, and the browser's `Host` and
+`Origin` must match it. For a trial without an Ingress, use
+`--public-url http://127.0.0.1:8080` with
+`kubectl -n brokk-town port-forward svc/bt 8080`.
+
+Deployments use the `Recreate` strategy because each pod owns its volume, and
+Town holds a single-writer lock on its state: a second Town on the same state
+directory fails with the identity of the process that holds it. Pods are given
+90 seconds (bots) and 120 seconds (Town) to stop, so running work reports what
+it completed.
+
+### Bots
+
+Each of the eight bots runs from its own image in its own Deployment, keeps its
+workspaces on its own volume, and accepts only its own token. Town reaches
+every bot over the network through the bot contract
+([bots.md](bots.md#bot-binaries)); `bt.yaml` names each bot's address and token
+file in `BROKK_TOWN_BOT_<ROLE>_URL` and `BROKK_TOWN_BOT_<ROLE>_TOKEN_FILE`, and
+the managed-review callback, which Review Bot uses to reach the agent of a
+managed review, in `BROKK_TOWN_CALLBACK_URL` (see
+[configuration.md](configuration.md#bot-endpoints)). Town does not start unless every
+bot has an address and a token.
+
+Before a dispatch Town asks the bot for its identity. A bot that cannot answer
+is not sent the work; the dispatch fails with the reason and the bot backs off.
+The version it reports is recorded with the run. A bot from an older release
+that reports demo mode is refused.
 
 ### State directory
 
-Default `$XDG_STATE_HOME/brokk-town` (`%LOCALAPPDATA%\brokk-town` on Windows), or
-`--state-dir DIR`. Demo state lives in a `demo` subdirectory of the same base so
-it can never open real state.
+Town keeps its state on the `bt-data` volume at `/data`, which the `bt` image
+names in `BROKK_TOWN_STATE_DIR`. Elsewhere it is `--state-dir DIR`, or
+`$XDG_STATE_HOME/brokk-town` by default.
 
 | Path | Contents |
 | --- | --- |
 | `state.json` | The committed snapshot. |
 | `daemon.lock` | Single-writer lock. |
-| `token` | Local API access key, mode 0600. Delete it to rotate. |
-| `session-key` | Signs a shared Town's sign-in cookies, mode 0600. Delete it to sign everyone out. |
-| `connection.json` | URL, PID and version advertised to clients. |
-| `logs/serve.log`, `logs/serve.err.log` | Background service output. |
-| `towns/<key>/<role>/checkout` | A bot's private git checkout, for a bot `bt` starts itself. |
-| `towns/<key>/<role>/state` | A bot's durable state, likewise. |
+| `token` | The operator's access key, mode 0600. Delete it to rotate. |
+| `session-key` | Signs the sign-in cookies, mode 0600. Delete it to sign everyone out. |
+| `connection.json` | URL, PID and version advertised to clients in the pod. |
 | `towns/<key>/history/` | Archived terminal tasks (History). |
 | `mjolnir-options.json` | Cached Mjolnir catalog. |
 
-Back up the whole directory to preserve a repository. Do not edit `state.json` by
-hand; the service validates it on open and repairs or reports what it can.
+Back up the volume to preserve a repository. Do not edit `state.json` by hand;
+the service validates it on open and repairs or reports what it can.
 
-## Bots
+## Sign-in
 
-Each of the eight bots is its own binary, and Town reaches every one over the
-network through the bot contract ([bots.md](bots.md#bot-binaries)). There are
-three ways to run them; Town picks per bot, so they can be mixed.
+Everyone who signs in works on the same Town: the same repositories, tasks,
+decisions, settings and Assistant conversations, updated live in every browser.
+Activity names who made each change ("pause bug — by Ada Lovelace (@ada)"), and
+the Assistant labels each question with who asked it. There are no private
+Towns and no roles: everyone admitted can do what the browser offers, with the
+exceptions below.
 
-### On your machine
-
-A release archive, `go install github.com/BrokkAi/brokk-town/cmd/...@latest`
-and `make build` all put `bt` and the eight bot binaries in one directory.
-For every bot without a configured URL, `bt` starts that bot's binary from the
-directory `bt` is in (or `BROKK_TOWN_BOT_DIR`):
-
-- on a loopback port the bot chooses, with a random token generated for that
-  launch and passed in its environment;
-- with Town's state directory as its data root, so its workspaces stay under
-  `towns/<key>/<role>/` as before;
-- with `bt`'s environment, so `gh`, `git` and the harness use your existing
-  credentials.
-
-`bt` restarts a bot that exits, backing off up to 30 seconds, with a new port
-and token each time. A dispatch waits up to a minute for a starting bot and
-otherwise fails with the reason, which the bot's card shows. When `bt` stops it
-lets running bots report what they completed, then closes their standard
-input; a bot also exits on its own if `bt` dies. A missing binary is reported
-on the bot's card ("cannot find the review-bot binary"). Bot output appears in
-`bt`'s log, prefixed by the bot.
-
-### docker compose
-
-`docker-compose.yml` runs `bt` and the eight bots, each in its own container
-with its own volume, from the images `ghcr.io/brokkai/brokk-town/<name>`
-(`BROKK_TOWN_IMAGES` and `BROKK_TOWN_VERSION` select another registry or tag;
-`--build` builds them from the checkout's `Dockerfile`):
-
-```sh
-printf 'GH_TOKEN=%s\n' "$(gh auth token)" > brokk.env   # plus your agent API keys
-docker compose up -d --build
-docker compose exec bt bt web --state-dir /data         # browser link with its access key
-```
-
-A one-shot `bot-tokens` service writes a random token per bot to a volume on
-first start; each bot mounts only its own, and Town mounts them all. Every
-container reads `brokk.env`, when present, for `GH_TOKEN` and agent keys. Town
-listens on `127.0.0.1:8080` of the host (`BT_PORT` changes it) and serves the
-managed-review callback to the bots at `http://bt:8091`. The demo needs no
-credentials:
-
-```sh
-docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
-```
-
-### Kubernetes
-
-`deploy/kubernetes/base` is a kustomization: a `brokk-town` namespace, one
-Deployment, Service and PersistentVolumeClaim per bot and for `bt`, network
-policies that admit only `bt` to the bots and only the bots to `bt`'s callback
-port, and two Secrets generated from local files:
-
-```sh
-deploy/kubernetes/generate-secrets.sh    # random bot tokens; fill in credentials.env
-kubectl apply -k deploy/kubernetes/base
-kubectl -n brokk-town port-forward svc/bt 8080
-kubectl -n brokk-town exec deploy/bt -- bt web --state-dir /data
-```
-
-`brokk-town-bot-tokens` holds one token per bot, keyed by bot name; each bot
-mounts only its own key, and `bt` mounts them all. `brokk-town-credentials`
-holds `GH_TOKEN` and agent keys and is given to every pod as environment.
-`deploy/kubernetes/demo` is the same deployment in demo mode. Deployments use
-the `Recreate` strategy because each pod owns its volume.
-
-### Running bt in a container
-
-In a container `bt` listens on every interface and is reached through a
-published or forwarded port. `--public-url http://127.0.0.1:8080` names the
-address the browser uses; it allows a non-loopback `--listen`, and the browser
-must use exactly that address. Town also answers at its own loopback port, which
-`connection.json` records for `bt status`, `bt web` and `bt shutdown` run inside
-the container. `--public-url` cannot be combined with `-d`. Containers are given
-90 seconds (bots) and 120 seconds (Town) to stop, so running work reports what
-it completed.
-
-### Shared Town
-
-By default Town has one operator: whoever holds the local access key. Started
-with `--multi-user`, Town is shared instead. People sign in with GitHub or
-Google, and everyone who signs in works on the same Town: the same
-repositories, tasks, decisions, settings and Assistant conversations, updated
-live in every browser. Activity names who made each change ("pause bug — by Ada
-Lovelace (@ada)"), and the Assistant labels each question with who asked it.
-There are no private Towns and no roles: everyone admitted can do what the
-browser offers, with the exceptions below.
-
-Multi-user mode is for docker compose and Kubernetes, behind a reverse proxy or
-Ingress that terminates TLS. `--multi-user` needs `--public-url`, which may be
-`https://` here: the address people open, which must also be the OAuth apps'
-callback base.
-
-Sign-in is configured from the environment. Configure GitHub, Google or both:
+Sign-in is configured from the environment, which `auth.env` supplies on
+Kubernetes. Configure GitHub, Google or both:
 
 | Variable | Meaning |
 | --- | --- |
@@ -162,11 +110,11 @@ Sign-in is configured from the environment. Configure GitHub, Google or both:
 | `BROKK_TOWN_ALLOW_EMAILS` | Admit these verified email addresses, from either provider. |
 
 Lists are comma-separated and case-insensitive. Town refuses to start without
-at least one allowlist rule, since a Town open to every GitHub or Google
-account is never intended. Client secrets are read only from files, never from
-the environment, because Town passes its environment to the commands it
-starts. For an organization that restricts OAuth app access, an owner must
-approve the app before membership can be read.
+an OAuth client and at least one allowlist rule, since a Town open to every
+GitHub or Google account is never intended. Client secrets are read only from
+files, never from the environment, because Town passes its environment to the
+commands it starts. For an organization that restricts OAuth app access, an
+owner must approve the app before membership can be read.
 
 A sign-in lasts seven days in an HTTP-only, same-site cookie signed with the
 `session-key` file in the state directory. Every request re-checks the
@@ -174,57 +122,34 @@ allowlist, so removing someone and restarting Town signs them out; organization
 membership is checked when a person signs in. Delete `session-key` and restart
 to sign everyone out.
 
-A signed-in person cannot stop Town or name a command for Town's hosts to run:
-a custom agent command, its model probe and the attention hook stay with the
-operator, who sets them in the config file or with the local access key
-(`bt web` inside the container prints a link that carries it). Choosing a
-harness from the catalog is open to everyone.
-
-With docker compose, put the client IDs and allowlist in `brokk-auth.env` and
-the secrets as files in `./brokk-auth/` (readable by uid 10001), then:
-
-```sh
-BT_PUBLIC_URL=https://town.example.com \
-  docker compose -f docker-compose.yml -f docker-compose.multi-user.yml up -d --build
-```
-
-On Kubernetes, `deploy/kubernetes/generate-secrets.sh` also writes
-`deploy/kubernetes/multi-user/auth.env` and `oauth-secrets.env` to fill in.
-Replace `town.example.com` in that overlay's `bt-multi-user.yaml` and
-`ingress.yaml`, then `kubectl apply -k deploy/kubernetes/multi-user`.
-
-### Checking the bots
-
-In demo mode Town sends every bot a demo dispatch over the network shortly
-after it starts and every five minutes. Activity records each bot's first
-answer ("Review Bot v1.4.0 answered a demo dispatch over the network"), and
-then only changes: a bot that stops answering, with the reason, and its
-recovery.
-`scripts/demo-dispatch-check.sh` waits for all eight answers from any `bt status
---json`, which is how CI checks the compose and Kubernetes deployments.
-
-For a real dispatch Town first asks the bot for its identity. A bot that cannot
-answer is not sent the work; the dispatch fails with the reason and the bot
-backs off. The version it reports is recorded with the run.
+A signed-in person cannot name a command for Town's hosts to run: a custom
+agent command, its model probe and the attention hook stay with the operator,
+who sets them in the config file or with the access key. `bt web` in Town's
+pod prints a link that carries it. Choosing a harness from the catalog is open
+to everyone.
 
 ## Commands
 
-Run `bt COMMAND --help` for the exact flags. Global flags are `--state-dir` and
-`--demo`; `--listen`, `--public-url`, `--multi-user` and `--config` apply to
-the service.
+Run the commands in Town's pod, such as
+`kubectl -n brokk-town exec deploy/bt -- bt status`, and `bt COMMAND --help`
+for the exact flags. The global flag is `--state-dir`; `--listen`,
+`--public-url` and `--config` apply to the service.
 
 | Command | Description |
 | --- | --- |
-| `bt` / `bt -d` | Run the service in the foreground or background. |
+| `bt` | Run the service in the foreground; the `bt` image's entrypoint. `--public-url` is required. |
 | `bt status [--json]` | Running state, served repositories, and full snapshot with `--json`. |
-| `bt web` | Print the browser address. |
-| `bt shutdown` | Stop the service and its work. |
+| `bt web` | Print the operator's browser link, with the access key. |
 | `bt version` | Print the version. |
 
-The browser and local API own everything else: adding and deleting
-repositories, starting and pausing bots, retrying or snoozing tasks, decisions
-(accepting or declining a task), settings, diagnostics, History, Storage, the
-Assistant, requests, harnesses, execution placement and the attention hook.
+SIGTERM, which Kubernetes sends to stop a pod, Ctrl+C and SIGHUP stop the
+service. `bt status` and `bt version` work while the service is stopped; `bt
+web` requires a running service.
+
+The browser and API own everything else: adding and deleting repositories,
+starting and pausing bots, retrying or snoozing tasks, decisions (accepting or
+declining a task), settings, diagnostics, History, Storage, the Assistant,
+requests, harnesses, execution placement and the attention hook.
 
 ### Diagnostics
 
@@ -242,21 +167,21 @@ of duplicated. Pending and uncertain submissions hold Storage cleanup.
 
 ### Attention hook
 
-**Global settings** configure an optional local command that receives one small
+**Global settings** configure an optional command that receives one small
 JSON object on stdin when a repository needs attention — a blocked state, a
-completed task, an exhausted retry budget. It is disabled by default, never
-runs in demo mode, and runs for at most ten seconds independently of quiet
-hours. Stdout and stderr are discarded.
+completed task, an exhausted retry budget. It is disabled by default and runs
+in Town's pod for at most ten seconds, independently of quiet hours. Stdout
+and stderr are discarded.
 
 The payload contains public identities and a fixed reason code only. Use it to
-drive a desktop notifier or your own monitoring; do not expect repository
-content or error text.
+drive your own notifications or monitoring; do not expect repository content
+or error text.
 
 ## Browser
 
-`bt web` prints a loopback URL containing the access key; in a shared Town
-people open the public URL and sign in instead. The browser reads the
-same committed snapshot and writes only through the authenticated API. It is
+People open the public URL and sign in; `bt web` prints the operator's link,
+which carries the access key instead. The browser reads the same committed
+snapshot and writes only through the authenticated API. It is
 plain HTML, CSS and JavaScript modules, with no build step, no animation, no
 canvas drawing and no image assets.
 
@@ -271,7 +196,8 @@ canvas drawing and no image assets.
   or an uncertain write — then those awaiting a decision; a snoozed task waits
   its turn), and the **Activity** feed lists recent events: a handoff names
   both bots, such as `External → Triage`, with "External" for a submission
-  from outside and "You" for your own action.
+  from outside and "Operator" for an operator action, which Activity
+  attributes to the person who made it.
 - **Board** — tasks in columns by stage (Open, Simplification, Queued, In
   progress, Blocked, Review, Ready, Shipped, Completed), for one repository or
   all of them.
@@ -352,19 +278,16 @@ they are never presented as zero. `GET /api/outcomes` returns the report as JSON
 and CSV, and `POST /api/outcomes/judgment` records an operator judgment against a
 record.
 
-## Local API
+## API
 
-The service binds loopback and serves the UI plus `/api/*`. Every API request
-must carry `Authorization: Bearer <token>` where the token is the contents of the
-state directory's `token` file, and must be same-origin. In a shared Town a
-signed-in browser's session cookie works instead, and its writes must carry the
-public URL as their `Origin`. `GET /api/session` needs no credentials: it says
-whether Town is `local` or `multi-user`, which sign-in providers it offers and
-who the caller is signed in as. The sign-in routes are `GET
-/auth/login/{github|google}`, `GET /auth/callback/{provider}` and `POST
-/auth/logout`. Responses are
-`no-store`. `POST /api/shutdown` is present only when the service registered a
-shutdown hook.
+The service serves the UI plus `/api/*`. Every API request must be
+same-origin and carry a signed-in browser's session cookie, whose writes must
+carry the public URL as their `Origin`, or the operator's access key as
+`Authorization: Bearer <token>`, where the token is the contents of the state
+directory's `token` file. `GET /api/session` needs no credentials: it lists the
+sign-in providers Town offers and who the caller is signed in as. The sign-in
+routes are `GET /auth/login/{github|google}`, `GET /auth/callback/{provider}`
+and `POST /auth/logout`. Responses are `no-store`.
 
 | Route | Purpose |
 | --- | --- |
@@ -388,8 +311,6 @@ shutdown hook.
 | `POST /api/requests`, `POST /api/requests/check` | Submit or check an issue request. |
 | `POST /api/diagnostics` | Run read-only setup diagnostics for a repository. |
 | `GET /api/outcomes`, `POST /api/outcomes/judgment` | Outcome report and operator judgments. |
-| `POST /api/shutdown` | Stop the service. |
 
-A local Town's API is private to this machine. Do not expose its listen address
-to a network; the token is the only authorization. Expose only a shared Town,
-and only over HTTPS.
+Publish Town only over HTTPS, through the Ingress. The access key carries the
+operator's powers; keep it to Town's pod and the operator's own browser.

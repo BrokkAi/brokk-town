@@ -12,7 +12,7 @@ import (
 // simplifierIntake is one arrival sitting in Simplifier intake, the state every
 // assessment is dispatched from.
 func simplifierIntake(kind string, number int) (*State, *Town, *Task) {
-	state := NewState(false)
+	state := NewState()
 	town, _ := state.Add(DefaultConfig("acme/orchard"))
 	task := &Task{
 		ID: fmt.Sprintf("%s:%d", kind, number), Kind: kind, Number: number, Title: "Arrival",

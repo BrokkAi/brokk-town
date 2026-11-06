@@ -6,14 +6,14 @@ const pendingKey = "brokk-town-guide-pending";
 
 // These handlers are the only network entry points. render only consumes
 // state; reconnecting SSE never resubmits or confirms a conversation.
-// In a shared Town everyone sees one conversation per repository; each
-// question names who asked it.
+// Everyone sees one conversation per repository; each question names who
+// asked it.
 export const conflictMessage = "Someone else asked the Assistant first. Read their question, then send yours again.";
 export function guideError(error) {
   return /conversation changed/.test(error?.message || "") ? conflictMessage : error?.message || "";
 }
 
-export function guidePanel({api, getTown, getState, onOpen = () => {}, isShared = () => false}) {
+export function guidePanel({api, getTown, getState, onOpen = () => {}}) {
   let townID = "", sending = false, pending = null, order = "";
   const rows = new Map(), conversations = new Map();
   try { pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null"); } catch {}
@@ -56,7 +56,7 @@ export function guidePanel({api, getTown, getState, onOpen = () => {}, isShared 
     const ids = turns.map((turn) => turn.id).join(",");
     for (const turn of turns) {
       const item = row(turn);
-      item.question.textContent = `${whoLabel(turn.author, {shared: isShared()})}: ${turn.question}`; item.answer.textContent = `Assistant: ${turn.answer || (busy(turn.status) ? "…" : "No completed answer.")}`;
+      item.question.textContent = `${whoLabel(turn.author)}: ${turn.question}`; item.answer.textContent = `Assistant: ${turn.answer || (busy(turn.status) ? "…" : "No completed answer.")}`;
       item.status.textContent = `${turn.status}${turn.detail ? ` · ${turn.detail}` : ""}`;
       item.proposal.textContent = turn.proposal ? `${turn.proposal.status === "confirmed" ? "Confirmed" : "Proposed action"}: ${turn.proposal.description}` : "";
       item.confirm.hidden = !turn.proposal || turn.proposal.status === "confirmed";

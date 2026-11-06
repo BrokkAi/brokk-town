@@ -138,8 +138,8 @@ func (rs *Runs) Prepare(ctx context.Context, plan RunPlan, create SessionCreator
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if rs.Catalog == nil || rs.Catalog.listing.Demo || rs.Catalog.identity == "" {
-		return nil, errors.New("Mjolnir execution requires a configured connection outside demo mode")
+	if rs.Catalog == nil || rs.Catalog.identity == "" {
+		return nil, errors.New("Mjolnir execution requires a configured connection")
 	}
 	placement, err := rs.Catalog.ResolvePlacement(ctx, plan.Repository, plan.Placement.Workspace.Name, plan.Placement.Bundle)
 	if err != nil {
@@ -316,8 +316,8 @@ func (r *Run) Destroy(ctx context.Context) error {
 // Records is read-only recovery: unfinished records stay unfinished. A missing
 // creation ID is uncertainty, not evidence that the daemon did nothing.
 func (rs *Runs) Records() ([]RunRecord, error) {
-	if rs.Catalog == nil || rs.Catalog.listing.Demo || rs.Catalog.identity == "" {
-		return nil, errors.New("Mjolnir recovery requires its configured daemon connection outside demo mode")
+	if rs.Catalog == nil || rs.Catalog.identity == "" {
+		return nil, errors.New("Mjolnir recovery requires its configured daemon connection")
 	}
 	entries, err := os.ReadDir(rs.Directory)
 	if errors.Is(err, os.ErrNotExist) {

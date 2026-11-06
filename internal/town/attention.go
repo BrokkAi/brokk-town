@@ -172,7 +172,7 @@ func attentionSet(st State, now time.Time) map[string]AttentionNotice {
 // Repeated transitions for an identity already queued coalesce into one notice.
 func queueAttention(previous State, next *State, now time.Time) {
 	h := next.ServiceConfig.AttentionHook
-	if next.Demo || !h.Enabled {
+	if !h.Enabled {
 		next.AttentionPending = nil
 		next.AttentionSeen = nil
 		return
@@ -198,7 +198,7 @@ const attentionHookTimeout = 10 * time.Second
 func (s *Store) attentionReady() (active, pending bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.state.AttentionActive != nil, !s.state.Demo && s.state.ServiceConfig.AttentionHook.Enabled && len(s.state.AttentionPending) > 0
+	return s.state.AttentionActive != nil, s.state.ServiceConfig.AttentionHook.Enabled && len(s.state.AttentionPending) > 0
 }
 
 func (s *Supervisor) watchAttention(ctx context.Context) {
@@ -216,7 +216,7 @@ func (s *Supervisor) watchAttention(ctx context.Context) {
 			var notice *AttentionNotice
 			var command []string
 			err := s.Store.Update(func(st *State) error {
-				if st.Demo || !st.ServiceConfig.AttentionHook.Enabled {
+				if !st.ServiceConfig.AttentionHook.Enabled {
 					return nil
 				}
 				keys := make([]string, 0, len(st.AttentionPending))

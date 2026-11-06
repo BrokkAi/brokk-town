@@ -101,7 +101,7 @@ func TestBudgetWindowsCoverTheirPeriod(t *testing.T) {
 }
 
 func TestBudgetAccumulatesAttemptsAndAgentTime(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/spend", &Budget{Period: "day", MaxAttempts: 3})
 	now := time.Now()
 	charge(t, s, x.ID, Issue, ms(90_000), now)
@@ -119,7 +119,7 @@ func TestBudgetAccumulatesAttemptsAndAgentTime(t *testing.T) {
 }
 
 func TestBudgetDoesNotChargeInventoryAttempts(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/inventory", &Budget{Period: "day", MaxAttempts: 1})
 	now := time.Now()
 	// A repo attempt that never repaired holds no agent slot.
@@ -134,7 +134,7 @@ func TestBudgetDoesNotChargeInventoryAttempts(t *testing.T) {
 }
 
 func TestBudgetCountsMissingElapsedTimeAsUnmeasured(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/untimed", &Budget{Period: "day", MaxAgentMinutes: 10})
 	now := time.Now()
 	charge(t, s, x.ID, Issue, nil, now)
@@ -149,7 +149,7 @@ func TestBudgetCountsMissingElapsedTimeAsUnmeasured(t *testing.T) {
 }
 
 func TestBudgetExhaustionExplainsItselfAndNamesTheReset(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/limit", &Budget{Period: "day", MaxAttempts: 2})
 	now := time.Now()
 	charge(t, s, x.ID, Issue, ms(1_000), now)
@@ -169,7 +169,7 @@ func TestBudgetExhaustionExplainsItselfAndNamesTheReset(t *testing.T) {
 }
 
 func TestBudgetMinutesExhaustSeparatelyFromAttempts(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/minutes", &Budget{Period: "day", MaxAgentMinutes: 2})
 	now := time.Now()
 	charge(t, s, x.ID, Issue, ms(125_000), now)
@@ -180,7 +180,7 @@ func TestBudgetMinutesExhaustSeparatelyFromAttempts(t *testing.T) {
 }
 
 func TestBudgetResetsWhenThePeriodRollsOver(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/rollover", &Budget{Period: "day", MaxAttempts: 1})
 	now := time.Now()
 	charge(t, s, x.ID, Issue, ms(1_000), now)
@@ -202,7 +202,7 @@ func TestBudgetResetsWhenThePeriodRollsOver(t *testing.T) {
 
 func TestBudgetSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
-	s, err := Open(dir, false)
+	s, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestBudgetSurvivesRestart(t *testing.T) {
 	charge(t, s, x.ID, Issue, ms(45_000), now)
 	s.Close()
 
-	reopened, err := Open(dir, false)
+	reopened, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestBudgetSurvivesRestart(t *testing.T) {
 }
 
 func TestBudgetHoldsAgentDispatchButKeepsTheInventoryRunning(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/gate", &Budget{Period: "day", MaxAttempts: 1})
 	if err := s.Update(func(st *State) error {
 		st.Towns[x.ID].Workers[Repo].Enabled = true
@@ -249,7 +249,7 @@ func TestBudgetHoldsAgentDispatchButKeepsTheInventoryRunning(t *testing.T) {
 }
 
 func TestBudgetIsPerTownAcrossSharedWorkerSlots(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	spent := budgetTown(t, s, "acme/spent", &Budget{Period: "day", MaxAttempts: 1})
 	free := budgetTown(t, s, "acme/free", &Budget{Period: "day", MaxAttempts: 5})
 	unlimited := budgetTown(t, s, "acme/unlimited", nil)
@@ -275,7 +275,7 @@ func TestBudgetIsPerTownAcrossSharedWorkerSlots(t *testing.T) {
 }
 
 func TestBudgetRunningWorkFinishesAfterTheLimitIsReached(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	addCapacityTown(t, s, "acme/running", Issue)
 	if err := s.Update(func(st *State) error {
 		st.Towns["acme/running"].Config.Budget = &Budget{Period: "day", MaxAttempts: 1}
@@ -304,7 +304,7 @@ func TestBudgetRunningWorkFinishesAfterTheLimitIsReached(t *testing.T) {
 }
 
 func TestBudgetReachesClientsAndNeverShowsMissingCostAsZero(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/public", &Budget{Period: "week", MaxAgentMinutes: 60})
 	now := time.Now()
 	charge(t, s, x.ID, Issue, ms(120_000), now)
@@ -350,7 +350,7 @@ func TestBudgetReachesClientsAndNeverShowsMissingCostAsZero(t *testing.T) {
 }
 
 func TestBudgetSettingsRoundTripAndClear(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := budgetTown(t, s, "acme/settings", nil)
 	sup := NewSupervisor(s, nil, nil)
 	set := &Budget{Period: "month", MaxAttempts: 200}

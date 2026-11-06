@@ -26,7 +26,6 @@ type Store struct {
 	path        string
 	lock        *os.File
 	changed     chan struct{}
-	notice      string
 	// actorMu serializes Store.As, so the actor it sets belongs to exactly
 	// one caller's updates.
 	actorMu sync.Mutex
@@ -73,7 +72,7 @@ func clipActor(actor string) string {
 // ErrServiceRunning means another process holds this state directory's lock.
 var ErrServiceRunning = errors.New("another Brokk Town service is running")
 
-func Open(dir string, demo bool) (*Store, error) {
+func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -85,49 +84,18 @@ func Open(dir string, demo bool) (*Store, error) {
 		f.Close()
 		return nil, fmt.Errorf("%w: %w", ErrServiceRunning, err)
 	}
-	s := &Store{state: NewState(demo), path: filepath.Join(dir, "state.json"), lock: f, changed: make(chan struct{})}
+	s := &Store{state: NewState(), path: filepath.Join(dir, "state.json"), lock: f, changed: make(chan struct{})}
 	b, err := os.ReadFile(s.path)
 	if err == nil {
-		err = json.Unmarshal(b, &s.state)
-		parsed := err == nil
-		// Unmarshal leaves absent fields unchanged. Since the initial state is
-		// marked as demo, read the marker from the file itself before accepting
-		// or replacing it as demo state.
-		explicitDemo := parsed && demoStateIsDisposable(demo, b)
-		if err == nil {
-			if demo && !explicitDemo {
-				err = errors.New("state format or demo mode mismatch; use a separate state directory")
-			} else {
-				err = validateState(s.state, demo)
-			}
-		}
-		// Demo state is a simulation, so a file an older Town wrote must not
-		// stop the demo from starting. It is set aside with every byte kept and
-		// the demo seeds itself again. Only a file that parsed and says it is
-		// demo state is treated this way: anything else may be real work that
-		// someone pointed at this directory, and that is never discarded.
-		if err != nil && explicitDemo {
-			if rejected, e := setAside(s.path); e == nil {
-				s.notice = fmt.Sprintf("demo state this build of Brokk Town cannot read was set aside as %s; starting a fresh demo", filepath.Base(rejected))
-				s.state = NewState(true)
-				err = nil
-			}
+		if demoState(b) {
+			err = errors.New("this state directory holds demo state, and demo mode has been removed; use another state directory")
+		} else if err = json.Unmarshal(b, &s.state); err == nil {
+			err = validateState(s.state)
 		}
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		s.Close()
-		if demo {
-			return nil, fmt.Errorf("read Brokk Town state: %w (the demo keeps its state in %s; move that file aside to start over)", err, dir)
-		}
 		return nil, fmt.Errorf("read Brokk Town state: %w", err)
-	}
-	if s.notice != "" {
-		// Leave the directory holding a state this Town can reopen, rather than
-		// waiting for the first write.
-		if err := s.Update(func(*State) error { return nil }); err != nil {
-			s.Close()
-			return nil, fmt.Errorf("replace unreadable demo state: %w", err)
-		}
 	}
 	if err := s.loadHistory(); err != nil {
 		s.Close()
@@ -185,47 +153,16 @@ func Open(dir string, demo bool) (*Store, error) {
 	return s, nil
 }
 
-// Notice reports a one-time fact about how this store was opened, such as a
-// demo state that had to be set aside. It is empty when nothing happened. Call
-// it before the store is shared: it is not synchronized with writes.
-func (s *Store) Notice() string { return s.notice }
-
-// demoStateIsDisposable requires a demo marker in the saved JSON. The default
-// value in Store.state cannot prove that a file belongs to the demo.
-func demoStateIsDisposable(demo bool, data []byte) bool {
-	if !demo {
-		return false
-	}
+// demoState reports a state file an older Town wrote for its demo. Its
+// repositories are simulated, so it is never opened as real state.
+func demoState(data []byte) bool {
 	var marker struct {
-		Demo *bool `json:"demo"`
+		Demo bool `json:"demo"`
 	}
-	return json.Unmarshal(data, &marker) == nil && marker.Demo != nil && *marker.Demo
+	return json.Unmarshal(data, &marker) == nil && marker.Demo
 }
 
-// setAside renames a state file to a sibling name, keeping the original bytes
-// and permissions so a reset never destroys the evidence of what was there.
-func setAside(path string) (string, error) {
-	dir, base := filepath.Split(path)
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	stamp := time.Now().UTC().Format("20060102-150405")
-	for i := 0; i < 100; i++ {
-		name := fmt.Sprintf("%s.rejected-%s.json", stem, stamp)
-		if i > 0 {
-			name = fmt.Sprintf("%s.rejected-%s-%d.json", stem, stamp, i)
-		}
-		target := filepath.Join(dir, name)
-		if _, err := os.Lstat(target); err == nil {
-			continue // Another rejected state already holds that name.
-		}
-		if err := os.Rename(path, target); err != nil {
-			return "", err
-		}
-		return target, nil
-	}
-	return "", fmt.Errorf("no free name beside %s", path)
-}
-
-func validateState(s State, demo bool) error {
+func validateState(s State) error {
 	for key, notice := range s.AttentionPending {
 		if key != notice.key() || !notice.valid() {
 			return errors.New("invalid attention hook notice")
@@ -237,8 +174,8 @@ func validateState(s State, demo bool) error {
 	if err := s.ServiceConfig.Validate(); err != nil {
 		return err
 	}
-	if (s.Format != 1 && s.Format != 2) || s.Demo != demo || s.Towns == nil {
-		return errors.New("state format or demo mode mismatch; use a separate state directory")
+	if (s.Format != 1 && s.Format != 2) || s.Towns == nil {
+		return errors.New("state format mismatch; use a separate state directory")
 	}
 	var last uint64
 	for _, e := range s.Events {
@@ -413,32 +350,11 @@ func (s *Store) Close() error {
 	return err
 }
 
-// Demo reports whether this is a demo store, without copying the state.
-func (s *Store) Demo() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.state.Demo
-}
-
 func (s *Store) Snapshot() State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := clone(s.state)
-	active := s.active
-	if out.Demo {
-		active = 0
-		for _, t := range out.Towns {
-			if t.Deleted {
-				continue
-			}
-			for role, w := range t.Workers {
-				if OccupiesAgentSlot(role) && (w.Status == "working" || w.Status == "pausing") {
-					active++
-				}
-			}
-		}
-	}
-	out.Capacity = &Capacity{Active: active, Limit: out.ServiceConfig.MaxWorkers}
+	out.Capacity = &Capacity{Active: s.active, Limit: out.ServiceConfig.MaxWorkers}
 	return out
 }
 
@@ -518,7 +434,7 @@ func (s *Store) Update(fn func(*State) error) error {
 		enforceManualReleasePolicy(town)
 		boundStateText(town)
 	}
-	if err := validateState(next, s.state.Demo); err != nil {
+	if err := validateState(next); err != nil {
 		return err
 	}
 	queueAttention(s.state, &next, time.Now())

@@ -10,11 +10,11 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/auth"
 )
 
-// caller is who sent an API request: the holder of the local access key, or
-// a person signed in to a multi-user Town.
+// caller is who sent an API request: the holder of the operator's access
+// key, or a person who signed in.
 type caller struct {
-	// Operator is true for the local access key: the bt CLI on the service's
-	// host, or a browser opened from bt web.
+	// Operator is true for the access key: the bt CLI in Town's container, or
+	// a browser opened from bt web.
 	Operator bool
 	Identity auth.Identity
 }
@@ -26,8 +26,7 @@ func callerOf(r *http.Request) caller {
 	return c
 }
 
-// authenticate identifies the caller. The local access key always works; a
-// session cookie works only in multi-user mode.
+// authenticate identifies the caller by the access key or a session cookie.
 func (s *Server) authenticate(r *http.Request) (caller, bool) {
 	header := r.Header.Get("Authorization")
 	if strings.HasPrefix(header, "Bearer ") {
@@ -35,9 +34,6 @@ func (s *Server) authenticate(r *http.Request) (caller, bool) {
 		if s.Token != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(s.Token)) == 1 {
 			return caller{Operator: true}, true
 		}
-		return caller{}, false
-	}
-	if s.Auth == nil {
 		return caller{}, false
 	}
 	identity, ok := s.Auth.Identity(r)
@@ -57,12 +53,10 @@ var attributed = map[string]bool{
 	"/api/requests":  true,
 }
 
-// operatorOnly lists the API routes a signed-in person cannot use in a
-// multi-user Town: they stop the service or run a command of the caller's
-// choosing on Town's host.
+// operatorOnly lists the API routes a signed-in person cannot use: they run a
+// command of the caller's choosing on Town's host.
 var operatorOnly = map[string]string{
-	"/api/shutdown":       "Only the operator can stop Town; use bt shutdown on its host.",
-	"/api/attention-hook": "The attention hook runs a command on Town's host; the operator sets it with the local access key.",
+	"/api/attention-hook": "The attention hook runs a command on Town's host; the operator sets it with the access key.",
 }
 
 // serveAPI authenticates an API request, guards a session's writes against
@@ -75,11 +69,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, next http.Hand
 	}
 	who, ok := s.authenticate(r)
 	if !ok {
-		message := "local access key required"
-		if s.Auth != nil {
-			message = "sign in required"
-		}
-		problem(w, message, http.StatusUnauthorized)
+		problem(w, "sign in required", http.StatusUnauthorized)
 		return
 	}
 	safe := r.Method == http.MethodGet || r.Method == http.MethodHead
@@ -137,11 +127,7 @@ func (b *bufferedResponse) Write(p []byte) (int, error) {
 // session tells the browser how to sign in and who it is signed in as. It
 // needs no credentials and reveals nothing beyond the caller's own identity.
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
-	if s.Auth == nil {
-		respond(w, map[string]any{"mode": "local"})
-		return
-	}
-	out := map[string]any{"mode": "multi-user", "providers": s.Auth.Providers(), "user": nil}
+	out := map[string]any{"providers": s.Auth.Providers(), "user": nil}
 	if who, ok := s.authenticate(r); ok && !who.Operator {
 		out["user"] = who.Identity.Public()
 	}
@@ -151,8 +137,8 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 // hostCommandRefused explains why a signed-in person may not name a command
 // for Town or a bot to run. Choosing a harness from the catalog is fine; an
 // arbitrary command is the operator's decision.
-const hostCommandRefused = "A custom agent command runs on Town's hosts, so only the operator sets it in a multi-user Town (the config file or the local access key). Choose a harness instead."
+const hostCommandRefused = "A custom agent command runs on Town's hosts, so only the operator sets it (the config file or the access key). Choose a harness instead."
 
 func (s *Server) refusesCommand(r *http.Request, command *[]string) bool {
-	return s.Auth != nil && command != nil && !callerOf(r).Operator
+	return command != nil && !callerOf(r).Operator
 }

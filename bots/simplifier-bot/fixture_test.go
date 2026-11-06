@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 // Each bot owns its fixtures. These subprocesses speak the real gh/ACP
@@ -235,7 +233,6 @@ func saveGitHubFixture(t *testing.T, root string, f fixtureGitHub) {
 }
 func installFixture(t *testing.T, cfg *Config, reply string, f fixtureGitHub) string {
 	t.Helper()
-	testplatform.SkipPOSIXFakes(t)
 	root := t.TempDir()
 	exe, err := os.Executable()
 	if err != nil {

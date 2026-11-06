@@ -152,7 +152,7 @@ func TestArtifactFailuresNeverReturnEmptySuccessOrPrivateErrors(t *testing.T) {
 	}
 }
 
-func TestArtifactValidationAndDemoNeverContactDaemon(t *testing.T) {
+func TestArtifactValidationNeverContactsDaemon(t *testing.T) {
 	var calls atomic.Int32
 	c, _ := catalogFixture(t, func(w http.ResponseWriter, r *http.Request) { calls.Add(1) })
 	for _, filename := range []string{"", "/etc/passwd", "../sibling", "a/../b", "a\\b", "result.json\n", " result.json", "."} {
@@ -168,14 +168,8 @@ func TestArtifactValidationAndDemoNeverContactDaemon(t *testing.T) {
 	if _, err := c.ReadDiff(t.Context(), "session", "HEAD~2"); err == nil {
 		t.Fatal("accepted a mutable revision")
 	}
-	demo := New(t.TempDir(), true, c.connection)
-	_, e1 := demo.ReadFile(t.Context(), "session", "result.json")
-	_, e2 := demo.ReadDiff(t.Context(), "session", evidenceBase)
-	_, e3 := demo.ExportBundle(t.Context(), "session")
-	_, e4 := demo.ReadTranscript(t.Context(), "session", 0)
-	_, e5 := demo.ReadSession(t.Context(), SessionIdentity{"session", "workspace", "bundle", Selection{"target", "profile"}})
-	if e1 == nil || e2 == nil || e3 == nil || e4 == nil || e5 == nil || calls.Load() != 0 {
-		t.Fatal("invalid evidence request or demo contacted the daemon")
+	if calls.Load() != 0 {
+		t.Fatal("invalid evidence request contacted the daemon")
 	}
 }
 

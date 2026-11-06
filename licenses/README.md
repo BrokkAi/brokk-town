@@ -9,8 +9,10 @@ sh scripts/licenses.sh
 ```
 
 It reproduces the project license and notice, then every legal file of every
-module in the build, then the supplementary texts below. GoReleaser runs the same
-script before packaging, and CI fails if the committed file is not current.
+module in the build, then the supplementary texts below. The release workflow
+runs the same script before it attaches the file to the GitHub release, every
+image carries the committed file in `/usr/share/licenses/brokk-town/`, and CI
+fails if the committed file is not current.
 
 The script only collects text. It does not classify or approve licenses, so a
 dependency change is reviewed by reading its license in the generated diff.
@@ -20,6 +22,6 @@ dependency change is reviewed by reading its license in the generated diff.
 `GO_LICENSE.txt`, `GO_PATENTS.txt` and `UNICODE_LICENSE.txt` are not part of the
 module graph: the Go runtime and the Unicode tables are not modules, so there is
 no module directory to copy them from. They are appended to every generated
-notice file because the release archives ship compiled binaries.
+notice file because the container images ship compiled binaries.
 
 Separately installed coding agents and interpreters have their own terms.

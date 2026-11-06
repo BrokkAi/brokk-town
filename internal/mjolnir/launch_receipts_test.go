@@ -226,11 +226,9 @@ func TestLaunchEvidenceRemainsSeparateFromCurrentCheckout(t *testing.T) {
 	}
 }
 
-func TestSessionReceiptReadHonorsCancellationAndDemoIsolation(t *testing.T) {
+func TestSessionReceiptReadHonorsCancellation(t *testing.T) {
 	started := make(chan struct{}, 1)
-	var calls atomic.Int32
 	c, _ := catalogFixture(t, func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
 		started <- struct{}{}
 		<-r.Context().Done()
 	})
@@ -242,11 +240,6 @@ func TestSessionReceiptReadHonorsCancellationAndDemoIsolation(t *testing.T) {
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("lost cancellation: %v", err)
-	}
-	demo := New(t.TempDir(), true, c.connection)
-	got, err := demo.ReadSession(t.Context(), launchSession())
-	if err == nil || got != (SessionState{}) || calls.Load() != 1 {
-		t.Fatal("demo read receipt or contacted daemon")
 	}
 }
 

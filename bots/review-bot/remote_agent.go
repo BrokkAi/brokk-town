@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -51,7 +50,7 @@ func parseRemoteAgent(value string) (remoteAgentEndpoint, error) {
 	}
 	switch parsed.Scheme {
 	case "unix":
-		socket := filepath.FromSlash(unixSocketPath(parsed.Path, runtime.GOOS == "windows"))
+		socket := parsed.Path
 		if parsed.Host != "" || !filepath.IsAbs(socket) {
 			return remoteAgentEndpoint{}, errors.New("remote_agent unix URL requires an absolute socket path")
 		}
@@ -63,16 +62,6 @@ func parseRemoteAgent(value string) (remoteAgentEndpoint, error) {
 		return remoteAgentEndpoint{url: parsed.String()}, nil
 	}
 	return remoteAgentEndpoint{}, errors.New("remote_agent must be unix:///path, an http(s) URL or an absolute socket path")
-}
-
-// unixSocketPath turns a unix URL's path into a socket path. On Windows the
-// URL form of C:\x.sock is unix:///C:/x.sock, whose path keeps a leading slash
-// before the drive letter.
-func unixSocketPath(path string, windows bool) string {
-	if windows && len(path) >= 3 && path[0] == '/' && path[2] == ':' && ('a' <= path[1]|0x20 && path[1]|0x20 <= 'z') {
-		return path[1:]
-	}
-	return path
 }
 
 // The parent owns target execution and artifact validation. Review Bot retains

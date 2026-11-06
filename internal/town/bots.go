@@ -20,8 +20,8 @@ func BotName(role Role) string { return workerBotNames[role] }
 
 // botIdentity asks the role's bot who it is before Town records a dispatch to
 // it. A bot that cannot answer has not been sent the work, so the dispatch
-// fails without an uncertain outcome. A demo bot only ever answers a demo
-// service, and a demo service only ever dispatches to a demo bot.
+// fails without an uncertain outcome. A bot from a release that had a demo
+// mode may still run with it; Town never dispatches real work to it.
 func (b *BotWorkers) botIdentity(ctx context.Context, role Role) (string, error) {
 	identifier, ok := b.Bots[role].(botapi.Identifier)
 	if !ok || b.botRun != nil {
@@ -31,12 +31,8 @@ func (b *BotWorkers) botIdentity(ctx context.Context, role Role) (string, error)
 	if err != nil {
 		return "", err
 	}
-	demo := b.Store != nil && b.Store.Demo()
-	if identity.Demo != demo {
-		if identity.Demo {
-			return "", fmt.Errorf("%s is running in demo mode; Town will not apply its canned results to a real repository", workerBotNames[role])
-		}
-		return "", fmt.Errorf("%s is a real bot; the demo dispatches only to bots started with --demo", workerBotNames[role])
+	if identity.Demo {
+		return "", fmt.Errorf("%s is running in demo mode; Town will not apply its canned results to a real repository", workerBotNames[role])
 	}
 	return recordedVersion(identity.Version), nil
 }

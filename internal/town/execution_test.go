@@ -33,7 +33,7 @@ func executionCatalog(t *testing.T) *mjolnir.Catalog {
 	if err := os.WriteFile(token, []byte("fixture"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c := mjolnir.New(dir, false, mjolnir.Connection{URL: h.URL + "/api/v1", TokenFile: token})
+	c := mjolnir.New(dir, mjolnir.Connection{URL: h.URL + "/api/v1", TokenFile: token})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { c.Run(ctx); close(done) }()
@@ -49,7 +49,7 @@ func executionCatalog(t *testing.T) *mjolnir.Catalog {
 }
 
 func TestManagedChoicesUseRolePlacementAndPreserveLocalPins(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
 	s.Mjolnir = executionCatalog(t)
@@ -100,7 +100,7 @@ func TestMjolnirCommandDefaultsToNpx(t *testing.T) {
 }
 
 func TestPrepareRespectsPerBotPlacementWithoutLocalRegistryLookup(t *testing.T) {
-	s := NewSupervisor(testStore(t, false), nil, nil)
+	s := NewSupervisor(testStore(t), nil, nil)
 	cfg := DefaultConfig("acme/project")
 	cfg.Harness = "missing-from-local-registry"
 	cfg.Execution = &mjolnir.Selection{Target: "builder", Profile: "coder"}
@@ -120,21 +120,8 @@ func TestPrepareRespectsPerBotPlacementWithoutLocalRegistryLookup(t *testing.T) 
 	}
 }
 
-func TestManagedDemoChoicesStayOffline(t *testing.T) {
-	store := testStore(t, true)
-	x := addTown(t, store)
-	s := NewSupervisor(store, nil, nil)
-	update(t, store, func(st *State) {
-		st.Towns[x.ID].Config.Execution = &mjolnir.Selection{Target: "builder", Profile: "coder"}
-	})
-	choices, err := s.ChoicesForRole(context.Background(), x.ID, Review, AgentSettings{})
-	if err != nil || len(choices.Models) != 1 || choices.Models[0].Value != "demo-model" {
-		t.Fatal(choices, err)
-	}
-}
-
 func TestExecutionInheritanceIsIndependentAndDurable(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	s := NewSupervisor(store, nil, nil)
 	s.Mjolnir = executionCatalog(t)
@@ -187,7 +174,7 @@ func TestExecutionInheritanceIsIndependentAndDurable(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := Open(dir, false)
+	reopened, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +186,7 @@ func TestExecutionInheritanceIsIndependentAndDurable(t *testing.T) {
 }
 
 func TestManagedExecutionIsHeldWithoutBudgetOrLocalFallback(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	remote := mjolnir.Selection{Target: "builder", Profile: "coder"}
 	update(t, store, func(st *State) {
@@ -248,7 +235,7 @@ func TestManagedExecutionIsHeldWithoutBudgetOrLocalFallback(t *testing.T) {
 }
 
 func TestDispatchedExecutionAndRecoveryKeepOriginalSelection(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	update(t, store, func(st *State) { st.Towns[x.ID].Workers[Review].Enabled = true })
 	started, release := make(chan struct{}), make(chan struct{})
@@ -286,7 +273,7 @@ func TestDispatchedExecutionAndRecoveryKeepOriginalSelection(t *testing.T) {
 }
 
 func TestManagedSelectionPreservesUncertaintyAndBlocksInheritedProfileProbe(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	remote := mjolnir.Selection{Target: "builder", Profile: "coder"}
 	update(t, store, func(st *State) {

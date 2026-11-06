@@ -25,7 +25,7 @@ func TestWorkerCancellationCauseAndPhaseSurviveRestart(t *testing.T) {
 		{"redacted service cause", "[redacted]", errors.New("service failed with bearer abcdefghijklmnopqrstuvwxyz")},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := addTown(t, s)
 			update(t, s, func(st *State) {
 				x := st.Towns[x.ID]
@@ -83,7 +83,7 @@ func TestWorkerCancellationCauseAndPhaseSurviveRestart(t *testing.T) {
 			check(s.Snapshot())
 			dir := filepath.Dir(s.path)
 			s.Close()
-			reopened, err := Open(dir, false)
+			reopened, err := Open(dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -94,7 +94,7 @@ func TestWorkerCancellationCauseAndPhaseSurviveRestart(t *testing.T) {
 }
 
 func TestSupervisorFailureReachesCanceledWorker(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		x := st.Towns[x.ID]
@@ -110,7 +110,7 @@ func TestSupervisorFailureReachesCanceledWorker(t *testing.T) {
 		return RunResult{}, ctx.Err()
 	})
 	sup := NewSupervisor(s, newGH(1), worker)
-	sup.Mjolnir = mjolnir.New(t.TempDir(), true, mjolnir.Connection{})
+	sup.Mjolnir = mjolnir.New(t.TempDir(), mjolnir.Connection{})
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	done := make(chan error, 1)

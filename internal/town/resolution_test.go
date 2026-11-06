@@ -41,7 +41,7 @@ func TestSecondReviewClosesOnBlockingFindingsAndDefersTheRest(t *testing.T) {
 		{"the reviewer's rating stands when the certifier gave none", "", []Finding{{ID: "finding:a", State: "open", Detail: "wrong result"}}, true, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := testStore(t, false)
+			s := testStore(t)
 			x := setupPR(t, s, 1)
 			update(t, s, func(st *State) {
 				town := st.Towns[x.ID]
@@ -77,7 +77,7 @@ func TestSecondReviewClosesOnBlockingFindingsAndDefersTheRest(t *testing.T) {
 }
 
 func TestFollowUpsAreFiledOnceThePullRequestMerges(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]
@@ -127,7 +127,7 @@ func TestFollowUpsAreFiledOnceThePullRequestMerges(t *testing.T) {
 
 func TestInconclusiveReviewCountsAsAFailedAttempt(t *testing.T) {
 	for _, external := range []bool{false, true} {
-		s := testStore(t, false)
+		s := testStore(t)
 		x := setupPR(t, s, 1)
 		update(t, s, func(st *State) {
 			town := st.Towns[x.ID]
@@ -156,7 +156,7 @@ func TestInconclusiveReviewCountsAsAFailedAttempt(t *testing.T) {
 }
 
 func TestNextTaskPrefersPullRequestsThatHaveNotFailed(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]
@@ -180,7 +180,7 @@ func TestNextTaskPrefersPullRequestsThatHaveNotFailed(t *testing.T) {
 
 func TestRequeuedIssueStaysQueuedUntilIssueBotStartsOver(t *testing.T) {
 	root := t.TempDir()
-	store := testStore(t, false)
+	store := testStore(t)
 	town := addTown(t, store)
 	update(t, store, func(st *State) {
 		st.Towns[town.ID].Tasks["issue:8"] = &Task{ID: "issue:8", Kind: "issue", Number: 8, Title: "Redo", House: Issue, Stage: "queued", Requeue: 18}
@@ -210,7 +210,7 @@ func TestRequeuedIssueStaysQueuedUntilIssueBotStartsOver(t *testing.T) {
 }
 
 func TestReviewCloseSeverityIsATownSetting(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	sup := NewSupervisor(s, newGH(1), workerFunc(func(context.Context, *Town, Role, func(Progress), *slog.Logger) (RunResult, error) {
 		return RunResult{}, nil

@@ -104,7 +104,7 @@ func TestPolicyLabelFiltersDecideWhichWorkIsEligible(t *testing.T) {
 }
 
 func TestPolicyRestrictsTownSelectionToEligibleWork(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := policyTown(t, s, "acme/select", map[Role]BotPolicy{
 		Issue:  {Labels: []string{"agent-ready"}},
 		Review: {Only: 12},
@@ -130,7 +130,7 @@ func TestPolicyRestrictsTownSelectionToEligibleWork(t *testing.T) {
 }
 
 func TestPolicyKeepsFilteredWorkVisibleAndLabelled(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := policyTown(t, s, "acme/visible", map[Role]BotPolicy{Issue: {Labels: []string{"agent-ready"}}})
 	if err := s.Update(func(st *State) error {
 		town := st.Towns[x.ID]
@@ -187,7 +187,7 @@ func TestPolicyReachesOnlyItsOwnHouse(t *testing.T) {
 }
 
 func TestPolicySettingsRoundTripPerRole(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := policyTown(t, s, "acme/settings", nil)
 	sup := NewSupervisor(s, nil, nil)
 	policy := &BotPolicy{Labels: []string{"agent-ready"}, Only: 4, Attempts: 2}

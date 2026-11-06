@@ -22,7 +22,7 @@ test("every role the API knows has one pipeline stage", () => {
   assert.equal(botName("hall"), "Mayor Bot");
   assert.equal(botLabel("issue"), "Implementation");
   assert.equal(botName("outside"), "External");
-  assert.equal(botName("operator"), "You");
+  assert.equal(botName("operator"), "Operator");
   assert.equal(isBot("outside"), false);
   assert.equal(isBot("toString"), false, "only own role keys count");
 });
@@ -30,7 +30,7 @@ test("every role the API knows has one pipeline stage", () => {
 test("activity routes name both ends and other events by kind", () => {
   assert.equal(eventRoute({ kind: "delivery", from: "outside", to: "hall" }), "External → Triage");
   assert.equal(eventRoute({ kind: "delivery", from: "issue", to: "review" }), "Implementation → Review");
-  assert.equal(eventRoute({ kind: "delivery", from: "operator", to: "issue" }), "You → Implementation");
+  assert.equal(eventRoute({ kind: "delivery", from: "operator", to: "issue" }), "Operator → Implementation");
   assert.equal(eventRoute({ kind: "control" }), "Control");
   assert.equal(eventRoute({ kind: "uncertain_write" }), "Uncertain write");
 });

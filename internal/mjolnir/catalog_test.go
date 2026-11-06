@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -26,7 +25,7 @@ func catalogFixture(t *testing.T, handler http.HandlerFunc) (*Catalog, *httptest
 	if err := os.WriteFile(token, []byte("private-token\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return New(dir, false, Connection{URL: server.URL + "/api/v1", TokenFile: token}), server
+	return New(dir, Connection{URL: server.URL + "/api/v1", TokenFile: token}), server
 }
 
 func TestCatalogContractCacheRestartAndUnavailableDaemon(t *testing.T) {
@@ -57,7 +56,7 @@ func TestCatalogContractCacheRestartAndUnavailableDaemon(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(c.cache)
-	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+	if info.Mode().Perm() != 0600 {
 		t.Fatal(info.Mode())
 	}
 	for _, secret := range []string{"private-token", "private-key", "secret-profile", c.connection.URL, c.connection.TokenFile} {
@@ -66,7 +65,7 @@ func TestCatalogContractCacheRestartAndUnavailableDaemon(t *testing.T) {
 		}
 	}
 	server.Close()
-	restarted := New(filepath.Dir(c.cache), false, c.connection)
+	restarted := New(filepath.Dir(c.cache), c.connection)
 	if len(restarted.List().Targets) != 2 {
 		t.Fatal("cache lost on restart")
 	}
@@ -75,7 +74,7 @@ func TestCatalogContractCacheRestartAndUnavailableDaemon(t *testing.T) {
 	if after.Error == "" || !after.Stale || after.Fetched != v.Fetched || len(after.Targets) != 2 {
 		t.Fatal(after)
 	}
-	other := New(filepath.Dir(c.cache), false, Connection{URL: "http://127.0.0.1:1/api/v1", TokenFile: c.connection.TokenFile})
+	other := New(filepath.Dir(c.cache), Connection{URL: "http://127.0.0.1:1/api/v1", TokenFile: c.connection.TokenFile})
 	if len(other.List().Targets) != 0 {
 		t.Fatal("used another daemon's catalog")
 	}
@@ -167,23 +166,14 @@ func TestBackgroundReadDoesNotBlockListAndCancels(t *testing.T) {
 	}
 }
 
-func TestDemoAndInvalidConnectionsNeverContactDaemon(t *testing.T) {
-	var calls atomic.Int32
-	c, _ := catalogFixture(t, func(w http.ResponseWriter, r *http.Request) { calls.Add(1); t.Error("unexpected contact") })
-	demo := New(filepath.Dir(c.cache), true, c.connection)
-	demo.RequestRefresh()
-	demo.refreshNow(context.Background())
-	demo.Run(context.Background())
-	if !demo.List().Demo || demo.List().Configured || len(demo.List().Targets) != 0 || calls.Load() != 0 {
-		t.Fatal(demo.List())
-	}
+func TestInvalidConnectionsReportTheirError(t *testing.T) {
 	for _, connection := range []Connection{
 		{URL: "http://example.com/api/v1", TokenFile: "token"},
 		{URL: "http://user:secret@127.0.0.1/api/v1", TokenFile: "token"},
 		{URL: "http://127.0.0.1/api/v1?token=secret", TokenFile: "token"},
 		{URL: "http://127.0.0.1/api/v1"},
 	} {
-		x := New(t.TempDir(), false, connection)
+		x := New(t.TempDir(), connection)
 		x.RequestRefresh()
 		x.Run(context.Background())
 		data, _ := json.Marshal(x.List())

@@ -38,7 +38,7 @@ func TestMayorHouseIsAnAgentHouseAtTownHall(t *testing.T) {
 	if !ValidAgentRole(Hall) || !ValidRole(Hall) || workerBotNames[Hall] != "mayor-bot" {
 		t.Fatal("Town Hall is not wired to mayor-bot")
 	}
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	if w := x.Workers[Hall]; w == nil || w.Enabled || w.Status != "paused" {
 		t.Fatalf("a new town's Mayor Bot must start paused: %+v", x.Workers[Hall])
@@ -60,7 +60,7 @@ func TestMayorHouseIsAnAgentHouseAtTownHall(t *testing.T) {
 }
 
 func TestNextJudgmentOrderBackoffAndArrivalContext(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := hallTown(t, store)
 	now := time.Now()
 	if task := nextJudgment(x, now); task == nil || task.ID != "issue:1" {
@@ -88,7 +88,7 @@ func TestNextJudgmentOrderBackoffAndArrivalContext(t *testing.T) {
 }
 
 func TestBulletinWindowNeedsMergesAndTheInterval(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	now := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
 	if _, _, due := bulletinWindow(x, now); due {
@@ -115,7 +115,7 @@ func TestBulletinWindowNeedsMergesAndTheInterval(t *testing.T) {
 }
 
 func TestMayorBotResultsApplyThroughTheMayorsPath(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := hallTown(t, store)
 	results := map[string]RunResult{
 		"issue:1": {JudgedTask: "issue:1", Judgment: &Judgment{Decision: "admit", Reason: "A real defect with a bounded fix."}},
@@ -161,7 +161,7 @@ func TestMayorBotResultsApplyThroughTheMayorsPath(t *testing.T) {
 }
 
 func TestMayorBotFailuresBackOffThenLeaveTheArrivalForThePerson(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := hallTown(t, store)
 	update(t, store, func(st *State) {
 		delete(st.Towns[x.ID].Tasks, "pr:4")
@@ -203,7 +203,7 @@ func TestMayorBotFailuresBackOffThenLeaveTheArrivalForThePerson(t *testing.T) {
 }
 
 func TestMayorBotBulletinsBuildAContiguousFeed(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	now := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
 	update(t, store, func(st *State) {
@@ -258,7 +258,7 @@ func TestMayorBotBulletinsBuildAContiguousFeed(t *testing.T) {
 }
 
 func TestMayorDispatchCarriesTheArrivalAndDuty(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	x.Config.Agent = runner.AgentConfig{Command: []string{"fake-agent"}}
 	pendingAt(x, &Task{ID: "issue:7", Kind: "issue", Number: 7, Title: "Complex request", Simplification: &Simplification{Mode: "suggest", Decision: "decline", Detail: "Adds a registry."}})

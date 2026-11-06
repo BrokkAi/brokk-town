@@ -88,7 +88,7 @@ func (s *Supervisor) SubmitRequest(id string, input IssueRequest) (*IssueRequest
 		if t == nil || t.Deleted {
 			return errors.New("unknown repository")
 		}
-		if !st.Demo && s.Publisher == nil {
+		if s.Publisher == nil {
 			return errors.New("issue publishing is unavailable")
 		}
 		if old := t.Requests[input.ID]; old != nil {
@@ -113,13 +113,6 @@ func (s *Supervisor) SubmitRequest(id string, input IssueRequest) (*IssueRequest
 		}
 		t.Requests[r.ID] = r
 		st.Event(id, "request", "operator", "hall", "", "Issue submission queued: "+r.Title, s.now())
-		if st.Demo {
-			n := 10000
-			for t.Tasks[fmt.Sprintf("issue:%d", n)] != nil {
-				n++
-			}
-			confirmRequest(st, t, r, RemoteIssue{Number: n, Title: r.Title, Body: r.githubBody(), State: "open"}, s.now())
-		}
 		result = clone(r)
 		return nil
 	})
@@ -197,7 +190,7 @@ func (s *Supervisor) publishRequest(ctx context.Context, id, requestID string) {
 	create := false
 	err := s.Store.Update(func(st *State) error {
 		t := st.Towns[id]
-		if t == nil || t.Deleted || st.Demo || ctx.Err() != nil {
+		if t == nil || t.Deleted || ctx.Err() != nil {
 			return context.Canceled
 		}
 		r := t.Requests[requestID]

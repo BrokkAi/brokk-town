@@ -82,9 +82,8 @@ if (token) {
   sessionStorage.setItem("brokk-town-token", token);
 }
 if (token || failedSignIn) history.replaceState(null, "", location.pathname);
-// session says how this browser signs in: "local" (the access key) or
-// "multi-user" (GitHub or Google, with user set once signed in).
-let session = { mode: "local" };
+// session names the sign-in providers, and the user once signed in.
+let session = { providers: [], user: null };
 const signIn = account({ $, getSession: () => session, getToken: () => token });
 let overview = (() => {
   try { return localStorage.getItem("brokk-town-scope") !== "town"; }
@@ -248,16 +247,16 @@ async function connect() {
     });
     if (!response.ok) {
       if (response.status === 401) {
-        // An expired sign-in or a rotated key: sign in again. In a shared
-        // Town a refused access key is dropped, so the tab offers sign-in
-        // rather than asking for a key forever.
+        // An expired sign-in or a rotated key. A refused access key is
+        // dropped, so a reload offers sign-in rather than the same key.
         session = { ...session, user: null };
-        if (session.mode === "multi-user" && token) {
+        const keyRefused = !!token;
+        if (keyRefused) {
           token = "";
           try { sessionStorage.removeItem("brokk-town-token"); } catch {}
         }
         signIn.render();
-        signIn.showSignIn(session.mode === "multi-user" ? "Your sign-in expired. Sign in again." : "");
+        signIn.showSignIn(keyRefused ? "" : "Your sign-in expired. Sign in again.", keyRefused);
         return;
       }
       throw new Error("Brokk Town is unavailable");
@@ -589,7 +588,7 @@ function chooseHouse(role) {
 storagePanel({ api, getTown: town });
 historyPanel({ api, getTown: town });
 
-const guideUI = guidePanel({api, getTown:town, getState:()=>state, onOpen:()=>chooseHouse("hall"), isShared:()=>session.mode === "multi-user"});
+const guideUI = guidePanel({api, getTown:town, getState:()=>state, onOpen:()=>chooseHouse("hall")});
 
 function renderTownControls(t) {
  $("#town-storage").disabled = !t;
@@ -633,8 +632,6 @@ function render() {
   const t = town();
   renderViewSwitcher();
   renderCapacity();
-  $("#mode").hidden = !state.demo;
-  $("#demo-note").hidden = !state.demo;
   $("#empty").hidden = !!t;
   renderTownControls(t);
   guideUI.render();
@@ -990,13 +987,11 @@ function renderInspection() {
     if (liveCapable) {
       const key = `${selectedTown}\n${selectedTask}`;
       if (!liveDetail || liveDetail.key !== key) {
-        liveDetail = { key, status: state.demo ? "demo" : "loading" };
-        if (!state.demo) fetchLiveDetail(selectedTown, selectedTask);
+        liveDetail = { key, status: "loading" };
+        fetchLiveDetail(selectedTown, selectedTask);
       }
       if (liveDetail.status === "loading") {
         liveBlock = `<p class="muted">Loading live details from GitHub…</p>`;
-      } else if (liveDetail.status === "demo") {
-        liveBlock = `<p class="muted">Demo: simulated arrival, no live source.</p>`;
       } else if (liveDetail.status === "failed") {
         liveBlock = `<p class="muted">Live details unavailable${liveDetail.error ? `: ${esc(liveDetail.error)}` : ""}. The summary above is current as of the last sync.</p>`;
       } else {
@@ -1441,8 +1436,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeInspector();
   if (/^[1-8]$/.test(e.key)) chooseHouse(botOrder[Number(e.key) - 1]);
 });
-// Ask how to sign in before connecting, so a shared Town shows its sign-in
-// screen rather than the local access-key instructions.
+// Ask how to sign in before connecting, so the sign-in screen names the
+// providers this Town offers.
 readSession().then((answer) => {
   session = answer;
   signIn.render();

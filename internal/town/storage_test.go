@@ -18,7 +18,7 @@ import (
 
 func storageFixture(t *testing.T) (*Supervisor, string, string) {
 	t.Helper()
-	st := testStore(t, false)
+	st := testStore(t)
 	x := addTown(t, st)
 	update(t, st, func(s *State) {
 		x := s.Towns[x.ID]
@@ -102,7 +102,7 @@ func TestStorageCleanupPreservesIdentityAndRestart(t *testing.T) {
 		t.Fatal("stale receipt accepted")
 	}
 	s.Store.Close()
-	reopened, err := Open(root, false)
+	reopened, err := Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,6 @@ func TestStorageRetainsUnfinishedUnknownChangedAndSymlinkedEvidence(t *testing.T
 			case "symlink":
 				outside := filepath.Join(t.TempDir(), "precious")
 				os.WriteFile(outside, []byte("private"), 0600)
-				requireSymlinks(t)
 				os.Remove(path)
 				if err := os.Symlink(outside, path); err != nil {
 					t.Fatal(err)
@@ -199,7 +198,7 @@ func TestStorageReservationBlocksWorkersAndStandaloneLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestStorageCancellationAndDemoDoNotRemove(t *testing.T) {
+func TestStorageCancellationDoesNotRemove(t *testing.T) {
 	s, id, root := storageFixture(t)
 	path := savedTranscript(t, s, id, root, "keep", true)
 	a := findArtifact(t, s, id, "keep.jsonl", 0)
@@ -211,10 +210,6 @@ func TestStorageCancellationAndDemoDoNotRemove(t *testing.T) {
 	}
 	if _, err = s.CleanupStorage(ctx, id, 0, []string{a.ID}); err == nil {
 		t.Fatal("canceled cleanup accepted")
-	}
-	demo := NewSupervisor(testStore(t, true), nil, nil)
-	if _, err = demo.CleanupStorage(context.Background(), id, 0, []string{a.ID}); err == nil {
-		t.Fatal("demo cleanup allowed")
 	}
 	if _, err = os.Stat(path); err != nil {
 		t.Fatal(err)

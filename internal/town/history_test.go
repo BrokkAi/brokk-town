@@ -13,7 +13,7 @@ import (
 
 func historyFixture(t *testing.T, n int) (*Store, string, time.Time) {
 	t.Helper()
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	now := time.Now().UTC()
 	update(t, s, func(st *State) {
@@ -52,13 +52,13 @@ func TestHistoryArchivalLeavesHotStateAndSurvivesRestart(t *testing.T) {
 	}
 	for _, e := range s.history[id] {
 		info, err := os.Stat(filepath.Join(historyRoot(filepath.Dir(s.path), id), "objects", e.filename()))
-		if err != nil || !ownerOnly(info.Mode()) {
+		if err != nil || info.Mode().Perm() != 0600 {
 			t.Fatal(info, err)
 		}
 	}
 	root := filepath.Dir(s.path)
 	s.Close()
-	again, err := Open(root, false)
+	again, err := Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestHistoryFailedHotCommitKeepsBothCopiesAndReopensSafely(t *testing.T) {
 	}
 	s.path = original
 	s.Close()
-	again, err := Open(root, false)
+	again, err := Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,12 +205,12 @@ func TestHistoryCorruptionAndMissingIndexFailClosed(t *testing.T) {
 	if err := os.Remove(filepath.Join(historyRoot(root, id), "index.json")); err != nil {
 		t.Fatal(err)
 	}
-	if opened, err := Open(root, false); err == nil {
+	if opened, err := Open(root); err == nil {
 		opened.Close()
 		t.Fatal("missing identity index accepted")
 	}
 }
-func TestHistoryDemoCancellationAndSymlinksPreserveTasks(t *testing.T) {
+func TestHistoryCancellationAndSymlinksPreserveTasks(t *testing.T) {
 	s, id, now := historyFixture(t, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -221,24 +221,12 @@ func TestHistoryDemoCancellationAndSymlinksPreserveTasks(t *testing.T) {
 		t.Fatal("cancellation lost task")
 	}
 	base := historyRoot(filepath.Dir(s.path), id)
-	requireSymlinks(t)
 	os.RemoveAll(base)
 	if err := os.Symlink(t.TempDir(), base); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.ArchiveCompleted(context.Background(), id, now); err == nil {
 		t.Fatal("followed history symlink")
-	}
-	demo := testStore(t, true)
-	x := addTown(t, demo)
-	update(t, demo, func(st *State) {
-		st.Towns[x.ID].Tasks["issue:1"] = &Task{ID: "issue:1", Kind: "issue", Number: 1, House: Issue, Stage: "closed", Updated: now.Add(-time.Hour * 1000)}
-	})
-	if err := demo.ArchiveCompleted(context.Background(), x.ID, now); err != nil {
-		t.Fatal(err)
-	}
-	if demo.Snapshot().Towns[x.ID].Tasks["issue:1"] == nil {
-		t.Fatal("demo archived tasks")
 	}
 }
 func TestHistoryTranscriptCleanupUsesArchivedTerminalIdentity(t *testing.T) {

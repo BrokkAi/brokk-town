@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 // This test process acts as a tiny ACP peer over real stdin/stdout pipes.
@@ -169,7 +167,6 @@ func TestWirePeer(t *testing.T) {
 	}
 }
 func TestAgentProcessInteroperabilityAndTimeout(t *testing.T) {
-	testplatform.RequirePOSIXShell(t)
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +223,6 @@ func TestAgentProcessInteroperabilityAndTimeout(t *testing.T) {
 }
 
 func TestAgentSelectsModelBeforeReleaseWork(t *testing.T) {
-	testplatform.RequirePOSIXShell(t)
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

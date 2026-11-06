@@ -33,7 +33,7 @@ func fakeService(t *testing.T, state string) (string, chan string) {
 	return dir, seen
 }
 
-func TestStatusAndShutdownWithoutTown(t *testing.T) {
+func TestStatusWithoutTown(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	if err := run(ctx, []string{"status", "--state-dir", dir}); err != nil {
@@ -42,8 +42,8 @@ func TestStatusAndShutdownWithoutTown(t *testing.T) {
 	if err := run(ctx, []string{"status", "--state-dir", dir, "--json"}); err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Fatalf("status --json of a stopped Town: %v", err)
 	}
-	if err := run(ctx, []string{"shutdown", "--state-dir", dir}); err == nil || !strings.Contains(err.Error(), "not running") {
-		t.Fatalf("shutdown of a stopped Town: %v", err)
+	if err := run(ctx, []string{"web", "--state-dir", dir}); err == nil || !strings.Contains(err.Error(), "not running") {
+		t.Fatalf("web of a stopped Town: %v", err)
 	}
 }
 

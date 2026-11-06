@@ -10,7 +10,7 @@ import (
 )
 
 func TestInventoryCursorFullBaselineDailyResyncAndBranchChanges(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	now := time.Now().UTC()
 	if inventoryCursor(x, now) != nil {
@@ -31,7 +31,7 @@ func TestInventoryCursorFullBaselineDailyResyncAndBranchChanges(t *testing.T) {
 		t.Fatal("branch change retained cursor")
 	}
 	s.Close()
-	again, err := Open(filepath.Dir(s.path), false)
+	again, err := Open(filepath.Dir(s.path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestInventoryCursorFullBaselineDailyResyncAndBranchChanges(t *testing.T) {
 	}
 }
 func TestIncrementalAbsencePreservesClosingClaimAndFullCursor(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	now := time.Now().UTC()
 	update(t, s, func(st *State) {
@@ -74,7 +74,7 @@ func (w *failedInventory) Observe(_ context.Context, _ *Town, request InventoryR
 	return RunResult{}, errors.New("fixture incomplete page")
 }
 func TestIncrementalFailureDoesNotAdvanceDurableCursor(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	now := time.Now().UTC()
 	update(t, s, func(st *State) {
@@ -91,7 +91,7 @@ func TestIncrementalFailureDoesNotAdvanceDurableCursor(t *testing.T) {
 	}
 }
 func TestIncrementalCloseRechecksMissingPRBeforeAnyWrite(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	now := time.Now()
 	update(t, s, func(st *State) { st.Towns[x.ID].Tasks["pr:1"].Stage = "closing" })

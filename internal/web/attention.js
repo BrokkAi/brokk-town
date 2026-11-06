@@ -3,7 +3,7 @@ const $ = (id) => document.querySelector(`#${id}`);
 export function attentionSettings({ api, getState, refresh }) {
   let generation = 0, abort = null, saving = false;
   function status(hook) {
-    $("attention-hook-status").textContent = `${hook?.enabled ? "Enabled" : "Disabled"} · ${hook?.configured ? "private command saved" : "no command saved"}${getState()?.demo ? " · demo never runs hooks" : ""}.`;
+    $("attention-hook-status").textContent = `${hook?.enabled ? "Enabled" : "Disabled"} · ${hook?.configured ? "private command saved" : "no command saved"}.`;
   }
   $("attention-hook-form").onsubmit = async (event) => {
     event.preventDefault();

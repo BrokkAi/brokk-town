@@ -92,9 +92,6 @@ func (s *Supervisor) DiscoverExecutionRuntime(ctx context.Context, id string, ro
 		return RuntimeDiscovery{}, errors.New("invalid execution role")
 	}
 	snapshot := s.Store.Snapshot()
-	if snapshot.Demo {
-		return RuntimeDiscovery{}, errors.New("Mjolnir runtime selection is offline in demo mode")
-	}
 	t := snapshot.Towns[id]
 	if t == nil || t.Deleted {
 		return RuntimeDiscovery{}, errors.New("unknown repository")

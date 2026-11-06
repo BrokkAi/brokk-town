@@ -9,14 +9,12 @@ import (
 	"testing"
 )
 
-// socketURL names a socket the way the parent does: unix:///tmp/x.sock, or
-// unix:///C:/x.sock on Windows.
+// socketURL names a socket the way the parent does: unix:///tmp/x.sock.
 func socketURL(path string) string {
 	return "unix:///" + strings.TrimPrefix(filepath.ToSlash(path), "/")
 }
 
 func TestParseRemoteAgentAcceptsSocketsAndNetworkURLs(t *testing.T) {
-	// An absolute path on this platform: /tmp/... here, C:\... on Windows.
 	socket := filepath.Join(t.TempDir(), "agent.sock")
 	for _, tc := range []struct {
 		value, url, socket string
@@ -34,26 +32,6 @@ func TestParseRemoteAgentAcceptsSocketsAndNetworkURLs(t *testing.T) {
 	for _, bad := range []string{"relative.sock", "unix://host/agent.sock", "unix:relative", "http:///v1/agent", "ftp://town/v1/agent", "http://user:pass@town/v1/agent", "http://town/v1/agent?x=1"} {
 		if _, err := parseRemoteAgent(bad); err == nil {
 			t.Fatalf("parseRemoteAgent(%q) accepted an endpoint it cannot use", bad)
-		}
-	}
-}
-
-// The parent names a Windows socket as unix:///C:/..., which must not read the
-// drive letter as a host or keep the slash in front of it.
-func TestUnixSocketPathHandlesWindowsDrives(t *testing.T) {
-	for _, tc := range []struct {
-		path    string
-		windows bool
-		want    string
-	}{
-		{"/C:/Users/a/agent.sock", true, "C:/Users/a/agent.sock"},
-		{"/c:/x.sock", true, "c:/x.sock"},
-		{"/tmp/agent.sock", true, "/tmp/agent.sock"},
-		{"/C:/Users/a/agent.sock", false, "/C:/Users/a/agent.sock"},
-		{"/tmp/agent.sock", false, "/tmp/agent.sock"},
-	} {
-		if got := unixSocketPath(tc.path, tc.windows); got != tc.want {
-			t.Fatalf("unixSocketPath(%q, %v) = %q, want %q", tc.path, tc.windows, got, tc.want)
 		}
 	}
 }

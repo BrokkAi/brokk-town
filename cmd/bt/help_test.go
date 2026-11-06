@@ -23,13 +23,13 @@ func TestRootHelpHasCobraSections(t *testing.T) {
 			t.Fatalf("root help missing %q:\n%s", section, help)
 		}
 	}
-	for _, cmd := range []string{"status", "web", "shutdown", "version", "help"} {
+	for _, cmd := range []string{"status", "web", "version", "help"} {
 		if !strings.Contains(help, "  "+cmd+" ") {
 			t.Fatalf("root help omits command %q:\n%s", cmd, help)
 		}
 	}
 	// The root lists the startup and shared connection flags, with a --help row.
-	for _, f := range []string{"--state-dir", "--listen", "--demo", "--config", "\n  -d ", "-h, --help"} {
+	for _, f := range []string{"--state-dir", "--listen", "--config", "--public-url", "-h, --help"} {
 		if !strings.Contains(help, f) {
 			t.Fatalf("root help omits flag %q:\n%s", f, help)
 		}
@@ -45,7 +45,7 @@ func TestCommandHelpFiltersToRelevantFlags(t *testing.T) {
 			t.Fatalf("status help missing %q:\n%s", want, status)
 		}
 	}
-	for _, other := range []string{"--config", "--listen", "run Brokk Town in the background"} {
+	for _, other := range []string{"--config", "--listen", "--public-url"} {
 		if strings.Contains(status, other) {
 			t.Fatalf("status help leaks %q:\n%s", other, status)
 		}
@@ -62,7 +62,7 @@ func TestHelpRequestsNeedNoService(t *testing.T) {
 	ctx := context.Background()
 	for _, args := range [][]string{
 		{"--help"}, {"-h"}, {"help"}, {"help", "status"},
-		{"status", "--help"}, {"web", "-h"}, {"shutdown", "--help"}, {"version", "--help"},
+		{"status", "--help"}, {"web", "-h"}, {"version", "--help"},
 	} {
 		if err := run(ctx, args); err != nil {
 			t.Fatalf("%v: %v", args, err)
@@ -78,7 +78,7 @@ func TestUnknownCommandsPointAtHelp(t *testing.T) {
 	if err := run(ctx, []string{"help", "bogus"}); err == nil || !strings.Contains(err.Error(), "unknown command") {
 		t.Fatalf("help bogus: %v", err)
 	}
-	for _, removed := range []string{"service", "serve", "capacity", "check-request", "add", "settings", "start", "retry", "guide"} {
+	for _, removed := range []string{"service", "serve", "capacity", "check-request", "add", "settings", "start", "retry", "guide", "shutdown"} {
 		if err := run(ctx, []string{removed}); err == nil || !strings.Contains(err.Error(), "unknown command") {
 			t.Fatalf("removed command %s: %v", removed, err)
 		}
@@ -100,7 +100,7 @@ func TestCommandsRejectFlagsTheyDoNotTake(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"status", "--state-dir", dir, "-d"}, "-d: not a flag of bt status"},
+		{[]string{"status", "--state-dir", dir, "--public-url", testPublicURL}, "--public-url: not a flag of bt status"},
 		{[]string{"web", "--state-dir", dir, "--json"}, "--json: not a flag of bt web"},
 		{[]string{"--state-dir", dir, "--json"}, "--json: not a flag of bt"},
 	} {

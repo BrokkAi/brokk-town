@@ -595,9 +595,8 @@ type Event struct {
 	To    string    `json:"to,omitempty"`
 	Cargo string    `json:"cargo,omitempty"`
 	Title string    `json:"title"`
-	// Actor names the signed-in person behind an operator action in a
-	// multi-user Town. It is empty for automatic work and for the local
-	// access key.
+	// Actor names the signed-in person behind an operator action. It is empty
+	// for automatic work and for the operator's access key.
 	Actor string `json:"actor,omitempty"`
 }
 type Town struct {
@@ -711,7 +710,6 @@ type State struct {
 	Capacity         *Capacity                  `json:"capacity,omitempty"`
 	Format           int                        `json:"format"`
 	Seq              uint64                     `json:"seq"`
-	Demo             bool                       `json:"demo"`
 	Towns            map[string]*Town           `json:"towns"`
 	Events           []Event                    `json:"events"`
 	// actor is the person on whose behalf the current Store.Update runs, set
@@ -719,8 +717,8 @@ type State struct {
 	actor string
 }
 
-func NewState(demo bool) State {
-	return State{ServiceConfig: ServiceConfig{MaxWorkers: DefaultMaxWorkers}, Format: 1, Demo: demo, Towns: map[string]*Town{}, Events: []Event{}}
+func NewState() State {
+	return State{ServiceConfig: ServiceConfig{MaxWorkers: DefaultMaxWorkers}, Format: 1, Towns: map[string]*Town{}, Events: []Event{}}
 }
 func (s *State) Add(c Config) (*Town, error) {
 	if err := c.Validate(); err != nil {

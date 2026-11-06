@@ -2,26 +2,36 @@
 
 ## Unreleased
 
-- Share a Town with your team: `bt --multi-user` (docker compose with
-  `docker-compose.multi-user.yml`, Kubernetes with
-  `deploy/kubernetes/multi-user`) lets people sign in with GitHub or Google and
-  work on the same repositories, decisions, settings and Assistant
-  conversations. An allowlist of GitHub organizations or users, Google
-  Workspace domains or emails decides who gets in. Activity names who made each
-  change, and each Assistant question names who asked it. Custom agent
-  commands, the attention hook and shutdown stay with the operator's access
-  key. A Town started without the flag is unchanged.
+- Run Town only on Kubernetes, and only as a shared Town. `deploy/kubernetes`
+  is the one deployment: Town and each bot in its own pod with its own volume,
+  published through an Ingress that terminates TLS. `bt` requires
+  `--public-url` and sign-in settings, and reaches every bot at its configured
+  URL. Removed: the local service on your machine (`bt` starting the bot
+  binaries itself, `bt -d`, `bt shutdown`, `POST /api/shutdown`,
+  `BROKK_TOWN_BOT_DIR`), the docker compose files, the release archives and
+  their GoReleaser configuration, and support for Windows and macOS. A release
+  is now the nine container images for `linux/amd64` and `linux/arm64` plus a
+  GitHub release carrying the third-party license file. The images carry the
+  license notices, and `bt status` and `bt web` in Town's pod need no flags.
+- Remove demo mode: `bt --demo`, the simulated repositories, `BROKK_BOT_DEMO`
+  and the bots' `--demo` flag. Town refuses state written by a demo and a bot
+  that reports demo mode. CI instead deploys the real manifests to a kind
+  cluster with placeholder sign-in and checks that Town's pod reaches every bot.
+- Share Town with your team: people sign in with GitHub or Google and work on
+  the same repositories, decisions, settings and Assistant conversations. An
+  allowlist of GitHub organizations or users, Google Workspace domains or
+  emails decides who gets in. Activity names who made each change, and each
+  Assistant question names who asked it. Custom agent commands and the
+  attention hook stay with the operator's access key, which `bt web` prints in
+  Town's pod.
 - Run every bot as its own binary (`bug-bot`, `feature-bot`, `issue-bot`,
   `review-bot`, `release-bot`, `simplifier-bot`, `repo-bot`, `mayor-bot`) and
   container image, reached by Town over an authenticated HTTP contract with a
-  streamed run, cancellation, storage and identity. On one machine `bt` starts
-  the binaries installed beside it on loopback; `docker-compose.yml` and
-  `deploy/kubernetes/` run each bot in its own container with its own volume.
-  Town records each bot's reported version with its runs, and a run whose
-  stream breaks becomes a recovery hold. Release archives now carry all nine
-  binaries; install from source with `go install .../cmd/...@latest`.
+  streamed run, cancellation, storage and identity. Town records each bot's
+  reported version with its runs, and a run whose stream breaks becomes a
+  recovery hold.
 - Managed reviews reach Town's agent on an authenticated callback listener
-  (`BROKK_TOWN_CALLBACK_URL`) that a bot in another container can reach.
+  (`BROKK_TOWN_CALLBACK_URL`) that a bot in another pod can reach.
 - Redesign the browser as a clean, professional dashboard. The default
   **Overview** view shows summary metrics, the pipeline of eight bots with each
   one's status and workload, a table of open tasks (blocked first, then those
@@ -41,14 +51,13 @@
 - Mjolnir settings are now `BROKK_TOWN_MJOLNIR_API_URL`,
   `BROKK_TOWN_MJOLNIR_TOKEN_FILE` and `BROKK_TOWN_MJOLNIR_COMMAND`. The
   `BT_MJOLNIR_*` names are still read when the new ones are unset.
-- The local API, config keys, role keys, event kinds and `state.json` are
+- The API, config keys, role keys, event kinds and `state.json` are
   unchanged — `town`, `towns`, `/api/towns`, `house`, `hall`, `operator`,
   `mayoral_decision`, `awaiting_mayor`, `bulletins`, `bulletin_seconds` and
   `/api/guide` keep their names. The glossary in `docs/workflow.md` maps each
   browser term to its identifier.
 - Release nightly: when `master` has new commits, a scheduled workflow runs CI
-  on Linux, macOS and Windows and, if it passes, tags and publishes the next
-  minor version. A failure opens an issue with the failed jobs and errors.
+  and, if it passes, tags and publishes the next minor version. A failure opens an issue with the failed jobs and errors.
 - Update acp-go to 0.13.0. A run whose agent exits while a request is still
   in flight now fails within a few seconds instead of waiting for the caller's
   deadline, and an agent that exits with a failure status after a completed

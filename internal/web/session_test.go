@@ -12,26 +12,11 @@ import (
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
-// sharedFixture is a multi-user Town that admits @ada and @grace.
+// sharedFixture is a Town with one repository that admits @ada and @grace.
 func sharedFixture(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
-	store, err := town.Open(t.TempDir(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { store.Close() })
-	s := &Server{Store: store, Token: "test-key", Supervisor: town.NewSupervisor(store, nil, nil)}
-	httpServer := httptest.NewUnstartedServer(s.Handler())
-	s.Origin = "http://" + httpServer.Listener.Addr().String()
-	s.Auth, err = auth.New(auth.Config{Origin: s.Origin, GitHub: &auth.Provider{ClientID: "id", ClientSecret: "secret"}, Allow: auth.Allow{GitHubUsers: []string{"ada", "grace"}}, Key: []byte(strings.Repeat("k", 32))})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The handler reads s.Auth when it is built; rebuild it now that it is set.
-	httpServer.Config.Handler = s.Handler()
-	httpServer.Start()
-	t.Cleanup(httpServer.Close)
-	if err := store.Update(func(st *town.State) error { _, e := st.Add(town.DefaultConfig("acme/project")); return e }); err != nil {
+	s, httpServer := fixture(t)
+	if err := s.Store.Update(func(st *town.State) error { _, e := st.Add(town.DefaultConfig("acme/project")); return e }); err != nil {
 		t.Fatal(err)
 	}
 	return s, httpServer
@@ -71,13 +56,12 @@ func status(t *testing.T, r *http.Response, want int) {
 func TestSessionEndpointTellsTheBrowserHowToSignIn(t *testing.T) {
 	s, _ := sharedFixture(t)
 	var anonymous struct {
-		Mode      string            `json:"mode"`
 		Providers []string          `json:"providers"`
 		User      map[string]string `json:"user"`
 	}
 	r := as(t, s, "", "GET", "/api/session", "", "")
 	status(t, r, 200)
-	if json.NewDecoder(r.Body).Decode(&anonymous) != nil || anonymous.Mode != "multi-user" || len(anonymous.Providers) != 1 || anonymous.Providers[0] != "github" || anonymous.User != nil {
+	if json.NewDecoder(r.Body).Decode(&anonymous) != nil || len(anonymous.Providers) != 1 || anonymous.Providers[0] != "github" || anonymous.User != nil {
 		t.Fatalf("anonymous session %+v", anonymous)
 	}
 	r = as(t, s, "ada", "GET", "/api/session", "", "")
@@ -86,13 +70,6 @@ func TestSessionEndpointTellsTheBrowserHowToSignIn(t *testing.T) {
 	}
 	if json.NewDecoder(r.Body).Decode(&signed) != nil || signed.User["display"] != "Ada (@ada)" {
 		t.Fatalf("signed-in session %+v", signed)
-	}
-	_, local := fixture(t)
-	r = call(t, local.URL, "GET", "/api/session", "", "", "")
-	status(t, r, 200)
-	var mode map[string]any
-	if json.NewDecoder(r.Body).Decode(&mode) != nil || mode["mode"] != "local" || len(mode) != 1 {
-		t.Fatalf("local session %+v", mode)
 	}
 }
 
@@ -119,7 +96,7 @@ func TestSignedInPeopleShareOneTownAndAreNamedInActivity(t *testing.T) {
 		t.Fatalf("the change is not attributed: %+v", started)
 	}
 
-	// The local access key keeps working for the bt CLI, unattributed.
+	// The access key keeps working for the bt CLI, unattributed.
 	status(t, call(t, "http://"+strings.TrimPrefix(s.Origin, "http://"), "POST", "/api/control", `{"town":"acme/project","role":"bug","action":"pause"}`, "test-key", ""), 200)
 	events := s.Store.Snapshot().Events
 	if last := events[len(events)-1]; last.Kind != "control" || last.Actor != "" {
@@ -156,7 +133,6 @@ func TestSignedInPeopleCannotRunCommandsOnTownsHosts(t *testing.T) {
 		{"/api/choices", `{"town":"acme/project","role":"bug","agent":{"command":["sh","-c","id"]}}`},
 		{"/api/towns", `{"repo":"acme/other","agent":{"command":["sh","-c","id"]}}`},
 		{"/api/attention-hook", `{"enabled":true,"command":["sh","-c","id"]}`},
-		{"/api/shutdown", `{}`},
 	} {
 		status(t, as(t, s, "ada", "POST", tc.path, tc.body, s.Origin), 403)
 	}
@@ -168,12 +144,12 @@ func TestSignedInPeopleCannotRunCommandsOnTownsHosts(t *testing.T) {
 }
 
 func TestAPublishedHTTPSOriginAcceptsItsProxiedHost(t *testing.T) {
-	store, err := town.Open(t.TempDir(), false)
+	store, err := town.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	s := &Server{Store: store, Token: "test-key", Supervisor: town.NewSupervisor(store, nil, nil), Origin: "https://town.example.com"}
+	s := &Server{Store: store, Token: "test-key", Supervisor: town.NewSupervisor(store, nil, nil), Origin: "https://town.example.com", Auth: testAuth(t, "https://town.example.com")}
 	handler := s.Handler()
 	for host, want := range map[string]int{"town.example.com": 200, "evil.example.com": 403} {
 		req := httptest.NewRequest("GET", "http://"+host+"/api/state", nil)

@@ -359,7 +359,6 @@ test("optional tools validate input and use the visible navigation", async () =>
   const registered = new Map(),
     calls = [];
   const state = {
-    demo: true,
     towns: { "acme/a": { id: "acme/a", tasks: {}, workers: {} } },
   };
   const cleanup = registerTownTools(

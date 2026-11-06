@@ -44,8 +44,9 @@ type Identity struct {
 	Version string `json:"version"`
 	// Contract is the contract Version the bot speaks.
 	Contract int `json:"contract"`
-	// Demo marks a bot that answers every run with a canned result and never
-	// reaches GitHub or an agent. Only a demo service may dispatch to it.
+	// Demo is reported by a bot from a release that had a demo mode, started
+	// in it: it answers every run with a canned result. Bots no longer set
+	// it, and Town refuses to dispatch to a bot that does.
 	Demo bool `json:"demo,omitempty"`
 }
 

@@ -41,33 +41,10 @@ func TestRequestReportsServiceError(t *testing.T) {
 	}
 }
 
-func stubTerminal(t *testing.T, terminal bool) {
-	t.Helper()
-	previous := stdoutIsTerminal
-	stdoutIsTerminal = func() bool { return terminal }
-	t.Cleanup(func() { stdoutIsTerminal = previous })
-}
-
-func TestBannersKeepAccessKeyOffRedirectedOutput(t *testing.T) {
-	conn := connection{URL: "http://127.0.0.1:1234", Token: "secret-key", PID: 42}
-	banners := map[string]func(demo bool) string{
-		"serve":      func(demo bool) string { return serveBanner(conn, demo) },
-		"background": func(demo bool) string { return backgroundBanner(conn, demo, "/state/logs") },
-	}
-	for name, banner := range banners {
-		stubTerminal(t, true)
-		if got := banner(false); !strings.Contains(got, "Browser: http://127.0.0.1:1234/#token=secret-key\n") {
-			t.Fatalf("%s on a terminal: %q", name, got)
-		}
-		stubTerminal(t, false)
-		for _, demo := range []bool{false, true} {
-			got := banner(demo)
-			if strings.Contains(got, "secret-key") || !strings.Contains(got, "run bt web") {
-				t.Fatalf("%s redirected: %q", name, got)
-			}
-		}
-		if got := banner(true); !strings.Contains(got, "bt web --demo") {
-			t.Fatalf("%s redirected demo: %q", name, got)
-		}
+// The banner lands in the pod's log, so it never carries the access key.
+func TestBannerKeepsAccessKeyOutOfTheLog(t *testing.T) {
+	got := serveBanner(connection{URL: testPublicURL, Token: "secret-key", PID: 42})
+	if strings.Contains(got, "secret-key") || !strings.Contains(got, testPublicURL) || !strings.Contains(got, "run bt web") {
+		t.Fatalf("banner: %q", got)
 	}
 }

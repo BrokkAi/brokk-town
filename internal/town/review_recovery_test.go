@@ -8,7 +8,7 @@ import (
 )
 
 func TestExhaustedReviewRefreshesInventoryWithoutStallingOtherPRs(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	at := time.Now()
 	update(t, s, func(st *State) {

@@ -1,11 +1,11 @@
 #!/bin/sh
-# Writes the files deploy/kubernetes/base turns into Secrets: a random token
-# for each bot, kept if it already exists, and a credentials file to fill in.
-# It also writes the multi-user overlay's sign-in settings and OAuth secrets
-# to fill in. None of these files is committed.
+# Writes the files deploy/kubernetes turns into Secrets and a ConfigMap: a
+# random token for each bot, kept if it already exists, a credentials file,
+# the sign-in settings and the OAuth client secrets to fill in. None of these
+# files is committed.
 set -eu
-base="$(dirname "$0")/base"
-tokens="$base/bot-tokens.env"
+dir="$(dirname "$0")"
+tokens="$dir/bot-tokens.env"
 umask 077
 if [ ! -s "$tokens" ]; then
   for bot in bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot; do
@@ -13,7 +13,7 @@ if [ ! -s "$tokens" ]; then
   done > "$tokens"
   echo "wrote $tokens"
 fi
-credentials="$base/credentials.env"
+credentials="$dir/credentials.env"
 if [ ! -e "$credentials" ]; then
   cat > "$credentials" <<'CREDENTIALS'
 # GitHub token for gh and git in Town and every bot.
@@ -22,12 +22,11 @@ GH_TOKEN=
 CREDENTIALS
   echo "wrote $credentials; set GH_TOKEN and your agent keys in it"
 fi
-multi="$(dirname "$0")/multi-user"
-auth="$multi/auth.env"
+auth="$dir/auth.env"
 if [ ! -e "$auth" ]; then
   cat > "$auth" <<'AUTH'
-# Sign-in for a shared Town. Configure GitHub, Google or both, and at least one
-# allowlist rule. Lists are comma-separated. See "Shared Town" in
+# Sign-in for Town. Configure GitHub, Google or both, and at least one
+# allowlist rule. Lists are comma-separated. See "Sign-in" in
 # docs/operations.md.
 #
 # GitHub OAuth app: callback URL https://town.example.com/auth/callback/github
@@ -44,7 +43,7 @@ if [ ! -e "$auth" ]; then
 AUTH
   echo "wrote $auth; set the OAuth client IDs and the allowlist in it"
 fi
-oauth="$multi/oauth-secrets.env"
+oauth="$dir/oauth-secrets.env"
 if [ ! -e "$oauth" ]; then
   cat > "$oauth" <<'OAUTH'
 # The OAuth client secrets, one per provider you configured in auth.env.

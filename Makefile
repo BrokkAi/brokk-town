@@ -1,7 +1,9 @@
 BOTS := bug-bot feature-bot issue-bot review-bot release-bot simplifier-bot repo-bot mayor-bot
+# Where make images tags Town's image and each bot's.
+IMAGES ?= ghcr.io/brokkai/brokk-town
+IMAGE_TAG ?= latest
 
 .PHONY: build bots test js check images
-# bt starts the bot binaries it finds next to itself, so they build together.
 build: bots
 	go build -o bin/bt ./cmd/bt
 bots:
@@ -16,4 +18,4 @@ check: test
 	go vet ./...
 # One image per bot plus Town's, all from the one Dockerfile.
 images:
-	docker compose build
+	@for target in bt $(BOTS); do docker build --target $$target -t $(IMAGES)/$$target:$(IMAGE_TAG) . || exit 1; done

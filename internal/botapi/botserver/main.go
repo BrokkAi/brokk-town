@@ -38,7 +38,6 @@ const (
 	EnvTokenFile = "BROKK_BOT_TOKEN_FILE"
 	EnvTLSCert   = "BROKK_BOT_TLS_CERT"
 	EnvTLSKey    = "BROKK_BOT_TLS_KEY"
-	EnvDemo      = "BROKK_BOT_DEMO"
 	EnvLogLevel  = "BROKK_BOT_LOG_LEVEL"
 )
 
@@ -46,7 +45,7 @@ const (
 // returns.
 func Main(version string, worker func(root string) botapi.Worker) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	err := Run(ctx, os.Args[1:], version, worker, os.Stdin, os.Stdout, os.Stderr)
+	err := Run(ctx, os.Args[1:], version, worker, os.Stdout, os.Stderr)
 	cancel()
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, filepath.Base(os.Args[0])+":", err)
@@ -55,7 +54,7 @@ func Main(version string, worker func(root string) botapi.Worker) {
 }
 
 // Run is Main with its process environment passed in.
-func Run(ctx context.Context, args []string, version string, worker func(root string) botapi.Worker, stdin io.Reader, stdout, stderr io.Writer) error {
+func Run(ctx context.Context, args []string, version string, worker func(root string) botapi.Worker, stdout, stderr io.Writer) error {
 	probe := worker("")
 	fs := flag.NewFlagSet(probe.Name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -64,9 +63,7 @@ func Run(ctx context.Context, args []string, version string, worker func(root st
 	tokenFile := fs.String("token-file", os.Getenv(EnvTokenFile), "file holding the bearer token the service must present ("+EnvTokenFile+"; or the token itself in "+EnvToken+")")
 	certFile := fs.String("tls-cert", os.Getenv(EnvTLSCert), "serve TLS with this certificate ("+EnvTLSCert+")")
 	keyFile := fs.String("tls-key", os.Getenv(EnvTLSKey), "the certificate's private key ("+EnvTLSKey+")")
-	demo := fs.Bool("demo", envBool(EnvDemo), "answer every run with a canned result; never reach GitHub or an agent ("+EnvDemo+")")
 	level := fs.String("log-level", envOr(EnvLogLevel, "info"), "least severe record to send: debug, info, warn or error ("+EnvLogLevel+")")
-	parent := fs.Bool("exit-with-parent", false, "exit when standard input closes, as it does when the parent that started the bot exits")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -106,28 +103,15 @@ func Run(ctx context.Context, args []string, version string, worker func(root st
 	}
 	w := worker(absRoot)
 	w.LogLevel = logLevel
-	var bot botapi.Bot = w
-	if *demo {
-		bot = demoBot{worker: w}
-	}
 	server := &Server{
-		Bot:      bot,
-		Identity: botapi.Identity{Name: w.Name, Role: w.Role, Version: version, Contract: botapi.Version, Demo: *demo},
+		Bot:      w,
+		Identity: botapi.Identity{Name: w.Name, Role: w.Role, Version: version, Contract: botapi.Version},
 		Token:    token,
 		Log:      log,
 	}
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	if *parent {
-		go func() {
-			_, _ = io.Copy(io.Discard, stdin)
-			log.Info("parent exited; stopping")
-			cancel()
-		}()
 	}
 	httpServer := &http.Server{
 		Handler:           server.Handler(),
@@ -147,7 +131,7 @@ func Run(ctx context.Context, args []string, version string, worker func(root st
 	}()
 	ready, _ := json.Marshal(Ready{Address: listener.Addr().String(), Name: w.Name, Role: w.Role, Version: version})
 	fmt.Fprintln(stdout, string(ready))
-	log.Info("serving the bot contract", "address", listener.Addr().String(), "version", version, "tls", *certFile != "", "demo", *demo)
+	log.Info("serving the bot contract", "address", listener.Addr().String(), "version", version, "tls", *certFile != "")
 	select {
 	case err = <-served:
 		return err
@@ -190,12 +174,4 @@ func envOr(name, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-func envBool(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
 }

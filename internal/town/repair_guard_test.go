@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/BrokkAi/brokk-town/internal/testplatform"
 )
 
 var fixtureCommitter = []string{"-c", "user.name=Fixture", "-c", "user.email=fixture@example.test"}
@@ -44,7 +42,6 @@ const repairReceipt = `TOWN_REPAIR {"summary":"Fixed the defect","checks":["Regr
 // Each way an agent can hand back something other than one new commit on top
 // of the reviewed head is refused before anything is saved or pushed.
 func TestRepairGuardsRefuseEveryUnsafeResult(t *testing.T) {
-	testplatform.RequirePOSIXShell(t)
 	for _, tc := range []struct {
 		name   string
 		agent  func(ctx context.Context, tree sessionTree) (string, error)
@@ -248,7 +245,6 @@ func TestResumeRepairPublishesTheSavedCommit(t *testing.T) {
 
 // resumeRepair republishes only the exact saved, verified commit.
 func TestResumeRepairRefusesAChangedSavedRepair(t *testing.T) {
-	testplatform.RequirePOSIXShell(t)
 	for _, tc := range []struct {
 		name   string
 		change func(t *testing.T, b *BotWorkers, x *Town, i *Intent, remote string)

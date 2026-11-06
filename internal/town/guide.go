@@ -25,8 +25,8 @@ type GuideTurn struct {
 	ID       string `json:"id"`
 	Sequence uint64 `json:"sequence"`
 	Question string `json:"question"`
-	// Author is the signed-in person who asked, in a multi-user Town. Empty
-	// means the local operator.
+	// Author is the signed-in person who asked. Empty means the operator's
+	// access key.
 	Author   string               `json:"author,omitempty"`
 	Answer   string               `json:"answer"`
 	Status   string               `json:"status"`

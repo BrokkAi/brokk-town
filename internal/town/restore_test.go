@@ -12,7 +12,7 @@ import (
 // Adding a deleted town again applies the settings it is added with, keeps its
 // recovery records and branch, and never resumes automation.
 func TestReaddAppliesNewSettingsAndKeepsRecovery(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	update(t, s, func(st *State) {
 		town := st.Towns[x.ID]
@@ -72,7 +72,7 @@ func TestReaddAppliesNewSettingsAndKeepsRecovery(t *testing.T) {
 // The operator's add request supplies only a merge policy and agent settings;
 // restoring through it keeps everything else the town was configured with.
 func TestAddRepoRestoreOverlaysOnlySuppliedSettings(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	funnel := FunnelConfig{ID: "github-ready", Provider: "github", Location: SourceLocation{"repository": "acme/orchard"}, Enabled: true, PriorityPolicy: "operator-explicit"}
 	review := BotAgentConfig{Harness: "custom", Agent: runner.AgentConfig{Command: []string{"reviewer"}}}
@@ -119,7 +119,7 @@ func TestAddRepoRestoreOverlaysOnlySuppliedSettings(t *testing.T) {
 }
 
 func TestDeleteOfDeletedTownIsUnknown(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := addTown(t, s)
 	sup := NewSupervisor(s, nil, nil)
 	if err := sup.Delete(x.ID); err != nil {

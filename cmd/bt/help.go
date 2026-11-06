@@ -13,29 +13,22 @@ import (
 // help, and a help command. Flag parsing stays on the standard library.
 
 type cliFlags struct {
-	daemon *bool
 	dir    *string
 	listen *string
-	demo   *bool
 	config *string
 	json   *bool
-	// publicURL is the browser's address for a service in a container.
+	// publicURL is the address people open, which sign-in redirects to.
 	publicURL *string
-	// multiUser shares Town with people who sign in with GitHub or Google.
-	multiUser *bool
 }
 
 // addCLIFlags defines the process and connection flags shared by the small
-// command surface. Day-to-day operation lives in the browser and local API.
+// command surface. Day-to-day operation lives in the browser and API.
 func addCLIFlags(fs *flag.FlagSet) *cliFlags {
 	fl := &cliFlags{}
-	fl.daemon = fs.Bool("d", false, "run Brokk Town in the background")
-	fl.dir = fs.String("state-dir", stateHome(), "private state directory")
-	fl.listen = fs.String("listen", defaultListen, "loopback HTTP address to serve on")
-	fl.demo = fs.Bool("demo", false, "the isolated demo (simulated repositories)")
-	fl.config = fs.String("config", "", "optional JSON array or object with max_workers, quiet_hours and towns, applied at startup")
-	fl.publicURL = fs.String("public-url", "", "the http://host:port browsers use when Town runs in a container (https:// with --multi-user); allows --listen on any interface")
-	fl.multiUser = fs.Bool("multi-user", false, "share Town with people who sign in with GitHub or Google; needs --public-url and the sign-in settings in docs/operations.md")
+	fl.dir = fs.String("state-dir", stateHome(), "private state directory (BROKK_TOWN_STATE_DIR)")
+	fl.listen = fs.String("listen", defaultListen, "HTTP address to serve on")
+	fl.config = fs.String("config", "", "optional JSON array or object with max_workers, quiet_hours, bots and towns, applied at startup")
+	fl.publicURL = fs.String("public-url", "", "the https://host people open (required); sign-in needs the settings in docs/operations.md")
 	fl.json = fs.Bool("json", false, "print the full Town state as JSON (status)")
 	return fl
 }
@@ -50,18 +43,17 @@ type commandInfo struct {
 
 // globalFlagNames are the persistent flags: they apply to every command and
 // select which service a client talks to.
-var globalFlagNames = []string{"demo", "state-dir"}
+var globalFlagNames = []string{"state-dir"}
 
-// runFlagNames start Town: bare bt in the foreground, or bt -d.
-var runFlagNames = []string{"config", "d", "listen", "multi-user", "public-url"}
+// runFlagNames start Town: bare bt, as its container runs it.
+var runFlagNames = []string{"config", "listen", "public-url"}
 
 // rootCommand is bare bt, which runs Town rather than a client command.
 var rootCommand = commandInfo{flags: runFlagNames}
 
 var cliCommands = []commandInfo{
 	{name: "status", short: "Show whether Town is running and its repositories", long: "Show whether Town is running, where, and which repositories it serves. Use --json for the full Town state.", args: "[flags]", flags: []string{"json"}},
-	{name: "web", short: "Print the browser address for Town", long: "Print the browser address, with its access key, for the running service.", args: "[flags]", flags: nil},
-	{name: "shutdown", short: "Stop Town and its bots", long: "Stop the running Brokk Town service and all its bot processes. Use it for a service started with bt -d; Ctrl+C stops one in the foreground.", args: "[flags]", flags: nil},
+	{name: "web", short: "Print the operator's browser link for Town", long: "Print the browser address, with the operator's access key, for the running service.", args: "[flags]", flags: nil},
 	{name: "version", short: "Print the version", long: "Print the bt version.", args: "", flags: nil},
 }
 
@@ -176,9 +168,9 @@ func writeCommands(out io.Writer, cmds []commandInfo) {
 // printRootHelp renders the top-level help: description, usage, commands,
 // flags, and the --help pointer.
 func printRootHelp(out io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintln(out, "Brokk Town — a local service with a browser.")
-	fmt.Fprintln(out, "Run bt in the foreground, or bt -d in the background. Ctrl+C or bt shutdown stops Town and its bots.")
-	fmt.Fprintln(out, "Use bt web for the browser address. Manage repositories, bots, tasks and settings in the browser.")
+	fmt.Fprintln(out, "Brokk Town — a shared service with a browser, run on Kubernetes.")
+	fmt.Fprintln(out, "Bare bt runs Town in the foreground, as its container does; people sign in with GitHub or Google.")
+	fmt.Fprintln(out, "In Town's pod, bt status shows what it serves and bt web prints the operator's link. Manage repositories, bots, tasks and settings in the browser.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
 	fmt.Fprintln(out, "  bt [command] [flags]")

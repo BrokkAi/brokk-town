@@ -16,7 +16,7 @@ func retarget(p Pull, branch string) Pull {
 }
 
 func TestRetargetedPRIsNotMergedOutsideTheTownBranch(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	gh := newGH(1)
 	// The operator changed the base to release; head and base commits, title,
@@ -63,7 +63,7 @@ func TestMergeGateRequiresTheConfiguredBranch(t *testing.T) {
 }
 
 func TestReconcileRetiresAndRestoresARetargetedPR(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	if task := x.Tasks["pr:1"]; task.Audit == nil || task.Stage != "ready" {
 		t.Fatalf("fixture is not a reviewed, ready PR: %+v", task)
@@ -103,7 +103,7 @@ func TestReconcileRetiresAndRestoresARetargetedPR(t *testing.T) {
 }
 
 func TestRetargetedPRIsNotDisturbedOnceMerged(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	update(t, s, func(st *State) {
 		task := st.Towns[x.ID].Tasks["pr:1"]
@@ -133,7 +133,7 @@ func (g *retargetBeforeMerge) Pull(ctx context.Context, repo string, n int) (Pul
 }
 
 func TestMergeRechecksTargetBranchImmediatelyBeforeIntent(t *testing.T) {
-	s := testStore(t, false)
+	s := testStore(t)
 	x := setupPR(t, s, 1)
 	gh := &retargetBeforeMerge{fakeGH: newGH(1)}
 	sup := NewSupervisor(s, gh, observing{gh: gh.fakeGH})

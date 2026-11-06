@@ -10,15 +10,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/BrokkAi/brokk-town/internal/botapi"
 	"github.com/BrokkAi/brokk-town/internal/botapi/botclient"
-	"github.com/BrokkAi/brokk-town/internal/botlaunch"
 	"github.com/BrokkAi/brokk-town/internal/town"
 )
 
@@ -62,34 +58,13 @@ func botEnv(role town.Role, suffix string) string {
 	return "BROKK_TOWN_BOT_" + strings.ToUpper(string(role)) + "_" + suffix
 }
 
-// botFleet is the set of bots one service reaches, and the processes it
-// started for the ones it runs itself.
-type botFleet struct {
-	bots     map[town.Role]botapi.Bot
-	launched []*botlaunch.Process
-	remote   map[town.Role]bool
-}
-
-// Stop stops every bot the service launched, in parallel.
-func (f *botFleet) Stop() {
-	var wg sync.WaitGroup
-	for _, p := range f.launched {
-		wg.Add(1)
-		go func() { defer wg.Done(); p.Stop() }()
-	}
-	wg.Wait()
-}
-
-// townBots resolves each role's bot. A role with a URL, from its environment
-// variable or the config file's bots object, is reached at that address with
-// its token; that is how a docker compose or Kubernetes deployment runs. Any
-// other role's binary is started on this machine on a loopback port, as the
-// desktop app runs, keeping its workspaces under the service's own state
-// directory.
-func townBots(dir string, demo bool, file map[town.Role]fileBot, log *slog.Logger) (*botFleet, error) {
-	fleet := &botFleet{bots: map[town.Role]botapi.Bot{}, remote: map[town.Role]bool{}}
+// townBots resolves each role's bot. Every bot runs in its own container and
+// is reached at the URL its environment variable or the config file's bots
+// object names, with its token.
+func townBots(file map[town.Role]fileBot) (map[town.Role]botapi.Bot, error) {
+	bots := map[town.Role]botapi.Bot{}
 	caFile := os.Getenv("BROKK_TOWN_BOT_CA_FILE")
-	var local []town.Role
+	var missing []string
 	for _, role := range town.AgentRoles {
 		name := town.BotName(role)
 		entry := file[role]
@@ -100,7 +75,7 @@ func townBots(dir string, demo bool, file map[town.Role]fileBot, log *slog.Logge
 			entry.TokenFile = v
 		}
 		if entry.URL == "" {
-			local = append(local, role)
+			missing = append(missing, fmt.Sprintf("%s (%s)", name, botEnv(role, "URL")))
 			continue
 		}
 		token := os.Getenv(botEnv(role, "TOKEN"))
@@ -122,69 +97,31 @@ func townBots(dir string, demo bool, file map[town.Role]fileBot, log *slog.Logge
 		if err != nil {
 			return nil, err
 		}
-		fleet.bots[role] = client
-		fleet.remote[role] = true
+		bots[role] = client
 	}
-	if len(local) == 0 {
-		return fleet, nil
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("Town reaches every bot over the network; set the URL of %s, or name it in the config file's bots object", strings.Join(missing, ", "))
 	}
-	binDir, err := botDirectory()
-	if err != nil {
-		return nil, err
-	}
-	for _, role := range local {
-		name := town.BotName(role)
-		p := botlaunch.Start(botlaunch.Spec{Name: name, Role: string(role), Executable: filepath.Join(binDir, name+exeSuffix()), Root: dir, Demo: demo}, log)
-		fleet.launched = append(fleet.launched, p)
-		fleet.bots[role] = p
-	}
-	return fleet, nil
-}
-
-// botDirectory is where the bot binaries are installed: BROKK_TOWN_BOT_DIR,
-// or the directory bt itself is in, as a release archive lays them out.
-func botDirectory() (string, error) {
-	if dir := os.Getenv("BROKK_TOWN_BOT_DIR"); dir != "" {
-		return filepath.Abs(dir)
-	}
-	exe, err := executablePath()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Dir(exe), nil
-}
-
-func exeSuffix() string {
-	if runtime.GOOS == "windows" {
-		return ".exe"
-	}
-	return ""
+	return bots, nil
 }
 
 // agentCallback starts the listener bots use to reach a managed dispatch's
 // agent. BROKK_TOWN_CALLBACK_URL is the address bots use, and
 // BROKK_TOWN_CALLBACK_LISTEN where the service listens for it (":8091" when
-// only the URL is set). Without a URL the service listens on a loopback port,
-// which bots it launched itself can reach. It returns nil when there is no
-// listener to start.
-func agentCallback(ctx context.Context, fleet *botFleet, log *slog.Logger) (*town.AgentCallback, func(), error) {
+// unset). It returns nil when there is no listener to start.
+func agentCallback(ctx context.Context, log *slog.Logger) (*town.AgentCallback, func(), error) {
 	advertised := os.Getenv("BROKK_TOWN_CALLBACK_URL")
 	listen := os.Getenv("BROKK_TOWN_CALLBACK_LISTEN")
 	if advertised == "" {
-		if fleet.remote[town.Review] {
-			log.Warn("review-bot is remote but BROKK_TOWN_CALLBACK_URL is not set; managed reviews will fail until it is")
-			return nil, func() {}, nil
-		}
-		listen = "127.0.0.1:0"
-	} else if listen == "" {
+		log.Warn("BROKK_TOWN_CALLBACK_URL is not set; managed reviews will fail until it is")
+		return nil, func() {}, nil
+	}
+	if listen == "" {
 		listen = ":8091"
 	}
 	listener, err := net.Listen("tcp", listen)
 	if err != nil {
 		return nil, nil, fmt.Errorf("agent callback: %w", err)
-	}
-	if advertised == "" {
-		advertised = "http://" + listener.Addr().String()
 	}
 	callback, err := town.NewAgentCallback(advertised)
 	if err != nil {

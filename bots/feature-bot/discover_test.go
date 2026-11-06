@@ -27,15 +27,6 @@ func discoveryRepo(t *testing.T) (string, string) {
 	return source, remote
 }
 
-// A Windows drive path is a local repository, not a URL with a one-letter
-// scheme.
-func TestDiscoveryTreatsDrivePathsAsLocalRepositories(t *testing.T) {
-	for _, value := range []string{`C:\repo`, "C:/repo"} {
-		if isRemoteURL(value) {
-			t.Fatalf("%q was treated as a remote URL", value)
-		}
-	}
-}
 func TestDiscoveryDefaultsAndPersistentWorkspace(t *testing.T) {
 	source, remote := discoveryRepo(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())

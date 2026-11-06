@@ -57,7 +57,6 @@ func TestTailIsBoundedAndUTF8(t *testing.T) {
 	}
 }
 func TestProcessTreeCancellation(t *testing.T) {
-	testplatform.RequirePOSIXShell(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()

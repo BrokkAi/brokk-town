@@ -92,7 +92,7 @@ func (r *recordingBot) Storage(context.Context, botapi.StorageRequest) (botapi.S
 }
 
 func TestDispatchSendsASelectionAndKeepsOnlyTheBotsReport(t *testing.T) {
-	store := testStore(t, false)
+	store := testStore(t)
 	x := addTown(t, store)
 	update(t, store, func(st *State) {
 		c := &st.Towns[x.ID].Config

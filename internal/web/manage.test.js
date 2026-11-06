@@ -54,7 +54,6 @@ afterEach(() => {
 });
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const catalog = {
-  demo: true,
   agents: ["codex-acp", "claude-code", "opencode"].map((id) => ({
     id, name: id, source: "registry", available: true, version: "2.0",
   })),

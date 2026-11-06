@@ -1,7 +1,7 @@
 name: Nightly
-# Every night, if master has commits the latest release does not, run CI on
-# every platform. Green: tag the next minor version and publish it. Red: open
-# an issue naming the failed jobs and their errors.
+# Every night, if master has commits the latest release does not, run CI.
+# Green: tag the next minor version and publish it. Red: open an issue naming
+# the failed jobs and their errors.
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -41,7 +41,7 @@ jobs:
           echo "tag=v$major.$((minor + 1)).0" >>"$GITHUB_OUTPUT"
 
   ci:
-    # Called from a scheduled run, ci.yml runs Linux, macOS and Windows.
+    # The same checks as a pull request, including the kind round trip.
     needs: changes
     if: needs.changes.outputs.changed == 'true'
     uses: ./.github/workflows/ci.yml
